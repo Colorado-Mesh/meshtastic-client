@@ -10,6 +10,10 @@ files:
   - package.json
 asarUnpack:
   - "node_modules/better-sqlite3/**/*"
+publish:
+  provider: github
+  owner: Denver-Mesh
+  repo: meshtastic-client
 mac:
   identity: "-"
   category: public.app-category.utilities
