@@ -1,6 +1,6 @@
 {
   "name": "mesh-client",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Cross-platform Meshtastic desktop client — BLE, Serial, HTTP, and MQTT support",
   "main": "dist-electron/main/index.js",
   "scripts": {
@@ -17,11 +17,11 @@
     "dist:linux": "npm dedupe && npm run build && electron-builder --linux",
     "dist:win": "npm dedupe && npm run build && electron-builder --win"
   },
-    "author": "Mesh Contributors <nv0n@denvermesh.org>",
-    "contributors": [
+  "author": "Mesh Contributors <nv0n@denvermesh.org>",
+  "contributors": [
     "Joey Stanford https://github.com/rinchen",
     "dude.eth https://github.com/defidude"
-    ],
+  ],
   "license": "MIT",
   "keywords": [
     "meshtastic",
