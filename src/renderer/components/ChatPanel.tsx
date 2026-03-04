@@ -529,7 +529,7 @@ export default function ChatPanel({
           onClick={() => { setChannel(-1); setViewMode("channels"); }}
           className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
             viewMode === "channels" && channel === -1
-              ? "bg-brand-green text-white"
+              ? "bg-green-600 text-white"
               : "bg-secondary-dark text-muted hover:text-gray-200"
           }`}
         >

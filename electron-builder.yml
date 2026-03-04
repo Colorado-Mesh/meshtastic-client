@@ -25,7 +25,7 @@ mac:
   target:
     - dmg
     - zip
-  icon: resources/icon.png
+  icon: resources/icon.icns
   entitlements: resources/entitlements.mac.plist
   entitlementsInherit: resources/entitlements.mac.inherit.plist
 linux:
@@ -37,7 +37,7 @@ linux:
 win:
   target:
     - nsis
-  icon: resources/icon.png
+  icon: resources/icon.ico
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

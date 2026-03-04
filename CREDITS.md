@@ -6,6 +6,9 @@
 
 **[dude.eth](https://github.com/defidude)** ported the concept to Electron, enabling cross-platform support across Mac, Linux, and Windows. Both Joey and dude.eth are now actively co-developing this Electron version together.
 
+### Contributors
+
+megabear - KD5IHC created the icon
 ## Denver Mesh
 
 Thanks to the [Denver Mesh](https://denvermesh.org) community for fostering open-source Meshtastic development in Colorado.

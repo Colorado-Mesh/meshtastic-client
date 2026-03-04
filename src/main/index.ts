@@ -37,17 +37,36 @@ app.commandLine.appendSwitch(
   "Serial"
 );
 
+// ─── Icon Path Helper ──────────────────────────────────────────────
+/**
+ * Resolves the correct icon file based on the platform and package status.
+ * Now pointing specifically to the /resources folder.
+ */
+function getAppIconPath() {
+  const ext = process.platform === "win32" ? "ico" : process.platform === "darwin" ? "icns" : "png";
+  
+  if (app.isPackaged) {
+    // Packaged apps look in the flattened Resources folder
+    return path.join(process.resourcesPath, `icon.${ext}`);
+  }
+  
+  // DEVELOPMENT: index.js is in dist-electron/main/, so we go up two levels
+  // Use .ico for Windows-dev, .png for Mac/Linux-dev
+  const devExt = process.platform === "win32" ? "ico" : "png";
+  return path.join(__dirname, `../../resources/icon.${devExt}`);
+}
+
 function buildTrayIcon(hasUnread: boolean): Electron.NativeImage {
-  const iconPath = app.isPackaged
+  const trayIconPath = app.isPackaged
     ? path.join(process.resourcesPath, "icon.png")
-    : path.join(__dirname, "../../resources/icon.png");
+    : path.join(__dirname, "../../resources/icon.png"); // Fixed from /assets
 
   const size = process.platform === "darwin" ? 16 : 22;
-  const base = nativeImage.createFromPath(iconPath).resize({ width: size, height: size });
+  const base = nativeImage.createFromPath(trayIconPath).resize({ width: size, height: size });
 
   if (!hasUnread) return base;
 
-  // Overlay a 4px red dot in the top-right corner
+  // Overlay the red dot for unread messages
   const bitmap = Buffer.from(base.toBitmap());
   const dotR = 2;
   const dotCx = size - dotR - 1;
@@ -93,9 +112,8 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     title: "Meshtastic Client",
-    // In packaged mode, electron-builder sets the app icon via mac.icon config.
-    // Only set the icon manually during development.
-    icon: app.isPackaged ? undefined : path.join(__dirname, "../../resources/icon.png"),
+    // Use the helper to select .ico, .icns, or .png automatically
+    icon: getAppIconPath(),
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.js"),
       contextIsolation: true,
@@ -601,6 +619,11 @@ ipcMain.handle("session:clearData", async () => {
 app.whenReady().then(() => {
   try {
     initDatabase();
+    // Force the dock icon n development on macOS
+    if (!app.isPackaged && process.platform === 'darwin') {
+      const iconPath = path.join(__dirname, "../../resources/icon.png");
+      app.dock.setIcon(iconPath);
+    }
     createWindow();
   } catch (error) {
     console.error("Fatal startup error:", error);
