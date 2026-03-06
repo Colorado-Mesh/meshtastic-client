@@ -7,15 +7,16 @@ import type { MeshNode, NodeAnomaly } from "../lib/types";
 import { getNodeStatus, haversineDistanceKm } from "../lib/nodeStatus";
 import { useDiagnosticsStore } from "../stores/diagnosticsStore";
 import RefreshButton from "./RefreshButton";
+import NodeInfoBody from "./NodeInfoBody";
 import type { LocationFilter } from "../App";
 
-// ─── Anomaly halo styles ──────────────────────────────────────────────────────
+// ─── Map styles (anomaly halos + dark popup) ──────────────────────────────────
 
-const ANOMALY_HALO_STYLE_ID = "anomaly-halo-keyframes";
-function ensureAnomalyHaloStyles() {
-  if (document.getElementById(ANOMALY_HALO_STYLE_ID)) return;
+const MAP_STYLE_ID = "map-styles";
+function ensureMapStyles() {
+  if (document.getElementById(MAP_STYLE_ID)) return;
   const style = document.createElement("style");
-  style.id = ANOMALY_HALO_STYLE_ID;
+  style.id = MAP_STYLE_ID;
   style.textContent = `
     @keyframes anomaly-pulse {
       0%, 100% { opacity: 0.75; }
@@ -28,6 +29,28 @@ function ensureAnomalyHaloStyles() {
     .anomaly-halo-error {
       animation: anomaly-pulse 1.4s ease-in-out infinite;
       pointer-events: none !important;
+    }
+    .leaflet-popup-content-wrapper {
+      background: #0d0d0d;
+      border: 1px solid #374151;
+      color: #e5e7eb;
+      border-radius: 0.75rem;
+      padding: 0;
+      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+    }
+    .leaflet-popup-tip {
+      background: #0d0d0d;
+    }
+    .leaflet-popup-content {
+      margin: 0;
+      min-width: 220px;
+      max-width: 320px;
+    }
+    .leaflet-popup-close-button {
+      color: #9ca3af !important;
+    }
+    .leaflet-popup-close-button:hover {
+      color: #e5e7eb !important;
     }
   `;
   document.head.appendChild(style);
@@ -95,11 +118,6 @@ function getMarkerIcon(
   return createMarkerIcon(color, isSelf, cu, opacity, isMqttOnly);
 }
 
-function formatTime(ts: number): string {
-  if (!ts) return "Never";
-  return new Date(ts).toLocaleString();
-}
-
 // ─── DiagnosticPanes ──────────────────────────────────────────────────────────
 // Creates a dedicated Leaflet pane for anomaly halos. Sits above overlayPane
 // (400) but below markerPane (600). The whole pane is pointer-events:none so
@@ -130,6 +148,7 @@ interface MapMarkerProps {
   isSelf: boolean;
   anomalyHalosEnabled: boolean;
   congestionHalosEnabled: boolean;
+  homeNode?: MeshNode | null;
 }
 
 function MapMarker({
@@ -138,6 +157,7 @@ function MapMarker({
   isSelf,
   anomalyHalosEnabled,
   congestionHalosEnabled,
+  homeNode,
 }: MapMarkerProps) {
   const status = getNodeStatus(node.last_heard);
   const cu = congestionHalosEnabled ? (node.channel_utilization ?? 0) : 0;
@@ -192,54 +212,15 @@ function MapMarker({
         zIndexOffset={isSelf ? 1000 : 0}
       >
         <Popup>
-          <div className="text-gray-900 text-sm space-y-1">
-            <div className="font-bold flex items-center gap-1.5">
+          <div className="px-4 py-3">
+            <div className="font-semibold text-gray-100 mb-2 flex items-center gap-1.5">
               {isSelf && <span title="Your node">★</span>}
               {node.long_name || `!${node.node_id.toString(16)}`}
+              <span className="text-xs text-muted font-mono ml-1">
+                !{node.node_id.toString(16)}
+              </span>
             </div>
-            {node.short_name && (
-              <div className="text-gray-600">{node.short_name}</div>
-            )}
-            <div className="flex items-center gap-1 text-xs">
-              <span
-                className={`inline-block w-2 h-2 rounded-full ${
-                  status === "online"
-                    ? "bg-brand-green"
-                    : status === "stale"
-                      ? "bg-amber-500"
-                      : "bg-gray-400"
-                }`}
-              />
-              <span className="capitalize">{status}</span>
-            </div>
-            {node.battery > 0 && <div>Battery: {node.battery}%</div>}
-            {!node.heard_via_mqtt_only && node.snr !== 0 && (
-              <div>SNR: {node.snr.toFixed(1)} dB</div>
-            )}
-            {node.heard_via_mqtt_only && (
-              <div className="text-blue-600 text-xs">🌐 Via MQTT</div>
-            )}
-            {node.channel_utilization != null && (
-              <div>Ch. Util: {node.channel_utilization.toFixed(1)}%</div>
-            )}
-            <div>Last heard: {formatTime(node.last_heard)}</div>
-            <div className="text-xs text-muted">
-              {node.latitude.toFixed(5)}, {node.longitude.toFixed(5)}
-            </div>
-            {anomaly && (
-              <div
-                className={`mt-1 px-2 py-1 rounded text-xs border ${
-                  isError
-                    ? "bg-red-50 border-red-300 text-red-700"
-                    : "bg-amber-50 border-amber-300 text-amber-700"
-                }`}
-              >
-                <span className="font-semibold">
-                  {isError ? "⚠ Error: " : "⚠ Warning: "}
-                </span>
-                {anomaly.description}
-              </div>
-            )}
+            <NodeInfoBody node={node} homeNode={homeNode} />
           </div>
         </Popup>
       </Marker>
@@ -285,6 +266,8 @@ export default function MapPanel({
   isConnected,
   locationFilter,
 }: Props) {
+  const homeNode = nodes.get(myNodeNum) ?? null;
+
   const congestionHalosEnabled = useDiagnosticsStore(
     (s) => s.congestionHalosEnabled,
   );
@@ -302,7 +285,7 @@ export default function MapPanel({
   }, [anomalies]);
 
   useEffect(() => {
-    ensureAnomalyHaloStyles();
+    ensureMapStyles();
   }, []);
 
   const nodesWithPosition = useMemo(() => {
@@ -401,6 +384,7 @@ export default function MapPanel({
             isSelf={node.node_id === myNodeNum}
             anomalyHalosEnabled={anomalyHalosEnabled}
             congestionHalosEnabled={congestionHalosEnabled}
+            homeNode={homeNode}
           />
         ))}
       </MapContainer>
