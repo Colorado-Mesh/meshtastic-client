@@ -8,6 +8,7 @@ const mqttManager = new MQTTManager();
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isConnected = false;
+let isQuitting = false;
 
 // Pending Bluetooth callback from Chromium's Web Bluetooth API
 let pendingBluetoothCallback: ((deviceId: string) => void) | null = null;
@@ -40,7 +41,6 @@ app.commandLine.appendSwitch(
 // ─── Icon Path Helper ──────────────────────────────────────────────
 /**
  * Resolves the correct icon file based on the platform and package status.
- * Now pointing specifically to the /resources folder.
  */
 function getAppIconPath() {
   const ext = process.platform === "win32" ? "ico" : process.platform === "darwin" ? "icns" : "png";
@@ -57,27 +57,45 @@ function getAppIconPath() {
 }
 
 function buildTrayIcon(hasUnread: boolean): Electron.NativeImage {
+  // Use a conditional path that works for both dev and production
   const trayIconPath = app.isPackaged
-    ? path.join(process.resourcesPath, "icon.png")
-    : path.join(__dirname, "../../resources/icon.png"); // Fixed from /assets
+    ? path.join(process.resourcesPath, "icon.png") // Packaged location
+    : path.join(__dirname, "../../resources/icon.png"); // Dev location
 
   const size = process.platform === "darwin" ? 16 : 22;
-  const base = nativeImage.createFromPath(trayIconPath).resize({ width: size, height: size });
+  
+  // Create the image from the path
+  const image = nativeImage.createFromPath(trayIconPath);
+  
+  // CRITICAL FOR MAC: Set as template so it handles Dark/Light mode
+  if (process.platform === 'darwin') {
+    image.setTemplateImage(true);
+  }
+
+  const base = image.resize({ width: size, height: size });
 
   if (!hasUnread) return base;
 
   // Overlay the red dot for unread messages
-  const bitmap = Buffer.from(base.toBitmap());
-  const dotR = 2;
-  const dotCx = size - dotR - 1;
+  // Use getSize() after resize so the dot scales correctly with retina/2x template images.
+  // toBitmap() on macOS template images may return a buffer that is not exactly
+  // width*height*4 bytes, so we allocate the expected size and copy what we have.
+  const { width: actualW, height: actualH } = base.getSize();
+  const expectedSize = actualW * actualH * 4;
+  const rawBitmap = base.toBitmap();
+  const bitmap = Buffer.alloc(expectedSize, 0);
+  rawBitmap.copy(bitmap, 0, 0, Math.min(rawBitmap.length, expectedSize));
+
+  const dotR = Math.max(2, Math.round(actualW / 8));
+  const dotCx = actualW - dotR - 1;
   const dotCy = dotR + 1;
 
-  for (let py = 0; py < size; py++) {
-    for (let px = 0; px < size; px++) {
+  for (let py = 0; py < actualH; py++) {
+    for (let px = 0; px < actualW; px++) {
       const dx = px - dotCx;
       const dy = py - dotCy;
       if (dx * dx + dy * dy <= dotR * dotR) {
-        const idx = (py * size + px) * 4;
+        const idx = (py * actualW + px) * 4;
         bitmap[idx]     = 239; // R
         bitmap[idx + 1] = 68;  // G
         bitmap[idx + 2] = 68;  // B
@@ -86,7 +104,7 @@ function buildTrayIcon(hasUnread: boolean): Electron.NativeImage {
     }
   }
 
-  return nativeImage.createFromBitmap(bitmap, { width: size, height: size });
+  return nativeImage.createFromBitmap(bitmap, { width: actualW, height: actualH });
 }
 
 function setupTray(window: BrowserWindow) {
@@ -100,7 +118,16 @@ function setupTray(window: BrowserWindow) {
     Menu.buildFromTemplate([
       { label: "Show Mesh-Client", click: () => { window.show(); window.focus(); } },
       { type: "separator" },
-      { label: "Quit", click: () => app.quit() },
+      {
+        label: "Quit",
+        click: () => {
+          isQuitting = true;
+          mqttManager.disconnect();
+          isConnected = false;
+          mainWindow?.destroy();
+          app.quit();
+        },
+      },
     ])
   );
 }
@@ -229,15 +256,13 @@ function createWindow() {
 
   // Handle window close event
   mainWindow.on('close', (event) => {
-    if (isConnected || mqttManager.getStatus() === "connected") {
+    if (!isQuitting && (isConnected || mqttManager.getStatus() === "connected")) {
       event.preventDefault();
       if (process.platform === 'darwin') {
         mainWindow.hide();
       } else {
         mainWindow.minimize();
       }
-    } else {
-      app.quit();
     }
   });
 
@@ -303,6 +328,7 @@ ipcMain.handle("mqtt:connect", async (_event, settings) => {
 ipcMain.handle("mqtt:disconnect", async () => {
   mqttManager.disconnect();
 });
+ipcMain.handle("mqtt:getClientId", async () => mqttManager.getClientId());
 ipcMain.handle("mqtt:publish", async (_event, args) => {
   return mqttManager.publish(
     args.text,
@@ -315,6 +341,7 @@ ipcMain.handle("mqtt:publish", async (_event, args) => {
 
 // ─── IPC: Force quit (disconnect all, then quit) ────────────────────
 ipcMain.handle("app:quit", async () => {
+  isQuitting = true;
   mqttManager.disconnect();
   isConnected = false;
   app.quit();
@@ -649,11 +676,12 @@ app.whenReady().then(() => {
 });
 
 app.on("before-quit", () => {
+  isQuitting = true;
   closeDatabase();
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
+  if (process.platform !== "darwin" || isQuitting) {
     app.quit();
   }
 });

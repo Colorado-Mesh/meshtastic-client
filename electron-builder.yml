@@ -12,7 +12,7 @@ asarUnpack:
   - "node_modules/better-sqlite3/**/*"
 publish:
   provider: github
-  owner: Denver-Mesh
+  owner: Colorado-Mesh
   repo: meshtastic-client
 mac:
   identity: "-"

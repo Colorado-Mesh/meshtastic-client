@@ -2,16 +2,16 @@
 
 ## Authors
 
-**[Joey (NV0N)](https://github.com/rinchen)** created the original [Meshtastic Mac Client](https://github.com/Denver-Mesh/meshtastic_mac_client) — a Python/PyQt6 desktop app for macOS. Joey built it out of frustration with the lack of native BLE-capable Meshtastic clients for Mac and shared it with the Denver Meshtastic community.
+**[Joey (NV0N)](https://github.com/rinchen)** created the original [Meshtastic Mac Client](https://github.com/Denver-Mesh/meshtastic_mac_client) — a Python/PyQt6 desktop app for macOS. Joey built it out of frustration with the lack of native BLE-capable Meshtastic clients for Mac and shared it with the Colorado Meshtastic community.
 
 **[dude.eth](https://github.com/defidude)** ported the concept to Electron, enabling cross-platform support across Mac, Linux, and Windows. Both Joey and dude.eth are now actively co-developing this Electron version together.
 
 ### Contributors
 
 megabear - KD5IHC created the icon
-## Denver Mesh
+## Colorado Mesh
 
-Thanks to the [Denver Mesh](https://denvermesh.org) community for fostering open-source Meshtastic development in Colorado.
+Thanks to the [Colorado Mesh](https://coloradomesh.org) community for fostering open-source Meshtastic development in Colorado.
 
 ## Libraries & Tools
 

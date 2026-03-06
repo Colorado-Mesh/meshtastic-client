@@ -67,6 +67,8 @@ export function useDevice() {
   // ─── MQTT session tracking ────────────────────────────────────
   // Tracks current MQTT connection status in a ref for use in callbacks
   const mqttStatusRef = useRef<MQTTStatus>("disconnected");
+  // Mirror channelConfigs state into a ref so MQTT callbacks don't have stale closures
+  const channelConfigsRef = useRef<typeof channelConfigs>([]);
   // Nodes heard via RF this session — prevents MQTT-only flag from being set
   const rfHeardNodeIds = useRef<Set<number>>(new Set());
   // Dedup map shared between RF and MQTT handlers
@@ -110,6 +112,9 @@ export function useDevice() {
     },
     []
   );
+
+  // Keep channelConfigsRef in sync so MQTT callbacks always see current config
+  useEffect(() => { channelConfigsRef.current = channelConfigs; }, [channelConfigs]);
 
   // ─── Packet dedup helper (shared by RF and MQTT handlers) ──────
   const isDuplicate = useCallback((packetId: number): boolean => {
@@ -320,10 +325,25 @@ export function useDevice() {
 
     const unsubMsg = window.electronAPI.mqtt.onMessage((rawMsg) => {
       const msg = rawMsg as Omit<ChatMessage, "id"> & { from_mqtt?: boolean };
+
+      // Packet ID dedup (catches our own uplink echoes)
       if (msg.packetId && isDuplicate(msg.packetId)) {
         useDiagnosticsStore.getState().recordDuplicate(msg.sender_id);
         return;
       }
+
+      // If a device is connected, enforce downlink channel config
+      if (deviceRef.current) {
+        const chCfg = channelConfigsRef.current.find(c => c.index === msg.channel);
+        if (!chCfg?.downlinkEnabled) return; // drop: downlink not enabled for this channel
+
+        // Re-transmit over RF (gateway downlink behavior)
+        // isEcho check in onMeshPacket prevents the re-TX echo from being re-uploaded to MQTT
+        deviceRef.current
+          .sendText(msg.payload, "broadcast", true, msg.channel)
+          .catch(() => {}); // non-fatal; RF TX failure doesn't affect chat display
+      }
+
       // Deduplicate by content too (same sender + timestamp)
       setMessages((prev) => {
         const isDup = prev.some(
@@ -455,6 +475,21 @@ export function useDevice() {
           return [...prev, msg];
         });
         window.electronAPI.db.saveMessage(msg);
+
+        // Gateway uplink: forward RF messages to MQTT if uplinkEnabled for this channel
+        // Skip our own echoes, reactions, and DMs (privacy)
+        if (!isEcho && !emoji && !msg.to && mqttStatusRef.current === "connected") {
+          const chCfg = channelConfigsRef.current.find(c => c.index === msg.channel);
+          if (chCfg?.uplinkEnabled) {
+            window.electronAPI.mqtt.publish({
+              text: msg.payload,
+              from: msg.sender_id,
+              channel: msg.channel,
+              destination: BROADCAST_ADDR,
+              channelName: "LongFast",
+            }).then(isDuplicate).catch(() => {}); // register echo packetId; non-fatal
+          }
+        }
 
         // Desktop notification for incoming messages when app is not focused
         if (!isEcho && !emoji && document.hidden) {
@@ -1024,6 +1059,18 @@ export function useDevice() {
         )
       );
       window.electronAPI.db.updateMessageStatus(packetId, "acked");
+
+      // Hybrid mode: if uplinkEnabled for this channel, also publish to MQTT
+      const chCfg = channelConfigsRef.current.find(c => c.index === channel);
+      if (chCfg?.uplinkEnabled && mqttStatusRef.current === "connected" && myNodeNumRef.current) {
+        window.electronAPI.mqtt.publish({
+          text,
+          from: myNodeNumRef.current,
+          channel,
+          destination: destination ?? BROADCAST_ADDR,
+          channelName: "LongFast",
+        }).then(isDuplicate).catch(() => {}); // register echo packetId; non-fatal
+      }
     } catch (err) {
       // NAK or timeout — extract packet ID and error from rejection
       const pe = err as any;

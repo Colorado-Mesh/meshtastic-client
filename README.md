@@ -4,7 +4,7 @@ A cross-platform Meshtastic desktop client for **Mac**, **Linux**, and **Windows
 
 Connect to your Meshtastic devices over Bluetooth, USB Serial, or WiFi. Independently, you can connect directly to MQTT.
 
-> Created by **[Joey (NV0N)](https://github.com/rinchen)** & **[dude.eth](https://github.com/defidude)**. Based on the [original Mac client](https://github.com/Denver-Mesh/meshtastic_mac_client). Part of [**Denver Mesh**](https://github.com/Denver-Mesh/meshtastic-client).
+> Created by **[Joey (NV0N)](https://github.com/rinchen)** & **[dude.eth](https://github.com/defidude)**. Based on the [original Mac client](https://github.com/Denver-Mesh/meshtastic_mac_client). Part of [**Colorado Mesh**](https://github.com/Colorado-Mesh/meshtastic-client).
 
 ---
 
@@ -25,7 +25,7 @@ Connect to your Meshtastic devices over Bluetooth, USB Serial, or WiFi. Independ
 ### Mac
 
 ```bash
-git clone https://github.com/Denver-Mesh/meshtastic-client
+git clone https://github.com/Colorado-Mesh/meshtastic-client
 cd meshtastic-client
 npm install
 npm start
@@ -38,7 +38,7 @@ On first Bluetooth connection, macOS will show a system popup requesting Bluetoo
 ### Linux
 
 ```bash
-git clone https://github.com/Denver-Mesh/meshtastic-client
+git clone https://github.com/Colorado-Mesh/meshtastic-client
 cd meshtastic-client
 npm install
 npm start
@@ -54,7 +54,7 @@ sudo usermod -a -G dialout $USER
 ### Windows
 
 ```bash
-git clone https://github.com/Denver-Mesh/meshtastic-client
+git clone https://github.com/Colorado-Mesh/meshtastic-client
 cd meshtastic-client
 npm install
 npm start
@@ -206,4 +206,4 @@ MIT — see [LICENSE](LICENSE)
 
 ## Credits
 
-See [CREDITS.md](CREDITS.md). Created by **[Joey (NV0N)](https://github.com/rinchen)** & **[dude.eth](https://github.com/defidude)**. Based on the [original Mac client](https://github.com/Denver-Mesh/meshtastic_mac_client). Part of **[Denver Mesh](https://github.com/Denver-Mesh/meshtastic-client)**.
+See [CREDITS.md](CREDITS.md). Created by **[Joey (NV0N)](https://github.com/rinchen)** & **[dude.eth](https://github.com/defidude)**. Based on the [original Mac client](https://github.com/Denver-Mesh/meshtastic_mac_client). Part of **[Colorado Mesh](https://github.com/Colorado-Mesh/meshtastic-client)**.

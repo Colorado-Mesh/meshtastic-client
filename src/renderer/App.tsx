@@ -194,7 +194,7 @@ export default function App() {
         >
           <div className="flex items-center gap-3">
             <h1 className="text-lg font-bold text-bright-green tracking-wide">
-              Denver Mesh
+              Colorado Mesh
             </h1>
             <span className="text-xs text-muted">Meshtastic Client</span>
           </div>
@@ -334,18 +334,18 @@ export default function App() {
           <span>
             A Project by{" "}
             <a
-              href="https://denvermesh.org/"
-              title="Denver Mesh"
+              href="https://coloradomesh.org/"
+              title="Colorado Mesh"
               className="text-bright-green underline hover:opacity-80"
               target="_blank"
               rel="noopener noreferrer"
             >
-              Denver Mesh
+              Colorado Mesh
             </a>
             . Join us on{" "}
             <a
               href="https://discord.com/invite/McChKR5NpS"
-              title="Denver Mesh Discord"
+              title="Colorado Mesh Discord"
               className="text-bright-green underline hover:opacity-80"
               target="_blank"
               rel="noopener noreferrer"
@@ -354,8 +354,8 @@ export default function App() {
             </a>
             . Code on{" "}
             <a
-              href="https://github.com/Denver-Mesh/meshtastic-client"
-              title="Denver Mesh on GitHub"
+              href="https://github.com/Colorado-Mesh/meshtastic-client"
+              title="Colorado Mesh on GitHub"
               className="text-bright-green underline hover:opacity-80"
               target="_blank"
               rel="noopener noreferrer"

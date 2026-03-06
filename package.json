@@ -17,7 +17,7 @@
     "dist:linux": "npm dedupe && npm run build && electron-builder --linux",
     "dist:win": "npm dedupe && npm run build && electron-builder --win"
   },
-  "author": "Mesh Contributors <nv0n@denvermesh.org>",
+  "author": "Mesh Contributors <nv0n@coloradomesh.org>",
   "contributors": [
     "Joey Stanford https://github.com/rinchen",
     "dude.eth https://github.com/defidude",
@@ -34,7 +34,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/Denver-Mesh/meshtastic-client"
+    "url": "https://github.com/Colorado-Mesh/meshtastic-client"
   },
   "devDependencies": {
     "@meshtastic/core": "npm:@jsr/meshtastic__core@^2.6.6",
