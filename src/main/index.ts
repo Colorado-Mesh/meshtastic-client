@@ -312,6 +312,7 @@ ipcMain.handle("mqtt:connect", async (_event, settings) => {
 ipcMain.handle("mqtt:disconnect", async () => {
   mqttManager.disconnect();
 });
+ipcMain.handle("mqtt:getClientId", async () => mqttManager.getClientId());
 ipcMain.handle("mqtt:publish", async (_event, args) => {
   return mqttManager.publish(
     args.text,

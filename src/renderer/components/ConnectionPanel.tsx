@@ -154,7 +154,11 @@ export default function ConnectionPanel({
 
   // Listen for MQTT events from main process
   useEffect(() => window.electronAPI.mqtt.onError(setMqttError), []);
-  useEffect(() => window.electronAPI.mqtt.onClientId(setMqttClientId), []);
+  useEffect(() => {
+    // Restore clientId if already connected when this component mounts (e.g. after tab switch)
+    window.electronAPI.mqtt.getClientId().then((id) => { if (id) setMqttClientId(id); });
+    return window.electronAPI.mqtt.onClientId(setMqttClientId);
+  }, []);
 
   // Clear MQTT error/clientId when connection succeeds or is disconnected
   useEffect(() => {

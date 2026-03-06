@@ -210,6 +210,10 @@ export class MQTTManager extends EventEmitter {
     return this.status;
   }
 
+  getClientId(): string {
+    return this.clientId;
+  }
+
   private setStatus(s: MQTTStatus): void {
     this.status = s;
     this.emit("status", s);
