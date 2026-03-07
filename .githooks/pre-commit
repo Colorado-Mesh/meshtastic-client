@@ -1,0 +1,4 @@
+#!/bin/sh
+# Run accessibility tests before every commit.
+# To skip in an emergency: git commit --no-verify
+npm run test:run

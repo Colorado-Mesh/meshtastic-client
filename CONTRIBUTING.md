@@ -13,6 +13,39 @@ npm run build     # Production build
 npm run lint      # Run ESLint + Prettier checks
 ```
 
+## Accessibility Requirements
+
+Every interactive element added or modified must have an accessible label. This applies to all contributors — human and AI.
+
+### Required ARIA/HTML for common patterns
+
+| Element type | What to add |
+|---|---|
+| `<button>` with icon only (no text) | `aria-label="Descriptive action"` |
+| `<button>` that toggles state | `aria-pressed={boolean}` + `aria-label` |
+| `<input>` / `<select>` / `<textarea>` | `<label htmlFor="id">` + matching `id`, **or** `aria-label` |
+| Status that changes dynamically | Wrap in `<div role="status" aria-live="polite">` |
+| Error message | `role="alert"` on the element |
+| Modal / dialog | `role="dialog" aria-modal="true" aria-labelledby="heading-id"` |
+| Confirmation dialog | `role="alertdialog"` instead of `role="dialog"` |
+| Color-only indicator (status dot, badge) | `aria-label="Online"` / `"Offline"` etc. |
+| Decorative icon inside a labelled button | `aria-hidden="true"` on the `<svg>` |
+| Sortable `<th>` | `scope="col"` + `aria-sort="ascending"\|"descending"\|"none"` |
+| `<table>` | `<caption className="sr-only">Description</caption>` |
+| SVG icon used as an image | `role="img" aria-label="..."` |
+
+### Rule: never add a new `<input>` without a label
+
+If the input has a visible label element next to it, use `htmlFor`/`id`. If it's standalone (search bars, inline number fields), use `aria-label`. The axe tests will catch missing labels on every commit — fix them before the commit goes through.
+
+### Running the tests
+
+```bash
+npm run test:run      # run once (also runs automatically on git commit)
+npm test              # watch mode
+npm run test:a11y     # verbose output with full violation details
+```
+
 ## AI Tools Policy
 
 AI coding assistants (Claude Code, GitHub Copilot, etc.) are welcome for brainstorming, boilerplate, and first drafts. However:

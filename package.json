@@ -12,6 +12,7 @@
     "start": "npm run build && electron .",
     "trace-deprecation": "npm run build && NODE_OPTIONS='--trace-deprecation' electron .",
     "postinstall": "electron-builder install-app-deps",
+    "prepare": "git config core.hooksPath .githooks",
     "predist": "npm dedupe",
     "dist": "npm run build && electron-builder",
     "dist:mac": "npm dedupe && npm run build && electron-builder --mac",

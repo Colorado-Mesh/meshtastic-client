@@ -2,9 +2,9 @@ name: Accessibility Tests
 
 on:
   push:
-    branches: [main, weekend-coding]
+    branches: [main]
   pull_request:
-    branches: [main, weekend-coding]
+    branches: [main]
 
 jobs:
   component-a11y:
