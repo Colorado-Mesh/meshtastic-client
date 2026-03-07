@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import type { MeshDevice } from "@meshtastic/core";
 import { create } from "@bufbuild/protobuf";
 import { Channel as ProtobufChannel, Mesh, Portnums } from "@meshtastic/protobufs";
+import { normalizeReactionEmoji } from "../lib/reactions";
 import { resolveOurPosition } from "../lib/gpsSource";
 import type { OurPosition } from "../lib/gpsSource";
 import { createConnection, reconnectBle, safeDisconnect, clearCapturedBleDevice } from "../lib/connection";
@@ -380,7 +381,17 @@ export function useDevice() {
     });
 
     const unsubMsg = window.electronAPI.mqtt.onMessage((rawMsg) => {
-      const msg = rawMsg as Omit<ChatMessage, "id"> & { from_mqtt?: boolean };
+      const raw = rawMsg as Omit<ChatMessage, "id"> & { from_mqtt?: boolean };
+      const msg: Omit<ChatMessage, "id"> & { from_mqtt?: boolean } = raw.emoji != null && raw.replyId != null
+        ? { ...raw, emoji: normalizeReactionEmoji(raw.emoji, raw.payload) ?? raw.emoji }
+        : raw;
+      // Record MQTT path before dedup check (captures all copies, new and duplicate)
+      if (msg.packetId && msg.sender_id) {
+        useDiagnosticsStore.getState().recordPacketPath(msg.packetId, msg.sender_id, {
+          transport: 'mqtt',
+          timestamp: Date.now(),
+        });
+      }
 
       // Packet ID dedup (catches our own uplink echoes)
       if (msg.packetId && isDuplicate(msg.packetId)) {
@@ -514,16 +525,20 @@ export function useDevice() {
 
         touchLastData();
         const isEcho = meshPacket.from === myNodeNumRef.current;
-        const emoji = dataPacket.emoji || undefined;
+        const payloadText = new TextDecoder().decode(dataPacket.payload);
         const replyId = dataPacket.replyId
           || (isEcho ? pendingReplyIdRef.current : undefined)
           || undefined;
         if (isEcho) pendingReplyIdRef.current = undefined;
+        const wireEmoji = (dataPacket as { emoji?: number }).emoji;
+        const emoji = replyId
+          ? (normalizeReactionEmoji(wireEmoji, payloadText) ?? wireEmoji ?? undefined)
+          : undefined;
 
         const msg: ChatMessage = {
           sender_id: meshPacket.from,
           sender_name: getNodeName(meshPacket.from),
-          payload: new TextDecoder().decode(dataPacket.payload),
+          payload: payloadText,
           channel: meshPacket.channel ?? 0,
           timestamp: meshPacket.rxTime ? meshPacket.rxTime * 1000 : Date.now(),
           packetId: meshPacket.id,
@@ -876,11 +891,22 @@ export function useDevice() {
       const unsub9 = device.events.onMeshPacket.subscribe((packet) => {
         touchLastData();
         const mp = packet as {
+          id?: number;
           rxSnr?: number;
           rxRssi?: number;
           from?: number;
         };
         if (!mp.from) return;
+
+        // Record RF path for packet redundancy tracking
+        if (mp.id) {
+          useDiagnosticsStore.getState().recordPacketPath(mp.id, mp.from, {
+            transport: 'rf',
+            snr: mp.rxSnr,
+            rssi: mp.rxRssi,
+            timestamp: Date.now(),
+          });
+        }
 
         if (mp.rxSnr || mp.rxRssi) {
           updateNodes((prev) => {

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from "react";
 import type { ChatMessage, MeshNode } from "../lib/types";
+import { emojiDisplayChar, emojiDisplayLabel } from "../lib/reactions";
 
 function StatusBadge({ status, transport, error }: {
   status: "sending" | "acked" | "failed";
@@ -511,7 +512,7 @@ export default function ChatPanel({
     return Array.from(grouped.entries()).map(([emoji, senders]) => ({
       emoji,
       count: senders.length,
-      tooltip: `${REACTION_LABEL_MAP.get(emoji) ?? emojiFromCode(emoji)}: ${senders.join(", ")}`,
+      tooltip: `${emojiDisplayLabel(emoji)}: ${senders.join(", ")}`,
     }));
   }
 
@@ -928,7 +929,7 @@ export default function ChatPanel({
                           className="inline-flex items-center gap-0.5 bg-secondary-dark/80 border border-gray-600/50 rounded-full px-1.5 py-0.5 text-xs cursor-default"
                           title={r.tooltip}
                         >
-                          {emojiFromCode(r.emoji)}
+                          {emojiDisplayChar(r.emoji)}
                           {r.count > 1 && (
                             <span className="text-muted text-[10px]">
                               {r.count}
