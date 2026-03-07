@@ -35,6 +35,7 @@ interface DiagnosticsState {
   congestionHalosEnabled: boolean;
   anomalyHalosEnabled: boolean;
   ignoreMqttEnabled: boolean;
+  mqttIgnoredNodes: Set<number>;
   processNodeUpdate(node: MeshNode, homeNode: MeshNode | null): void;
   recordDuplicate(fromNodeId: number): void;
   recordPacketPath(packetId: number, fromNodeId: number, path: PacketPath): void;
@@ -42,6 +43,7 @@ interface DiagnosticsState {
   setCongestionHalosEnabled(enabled: boolean): void;
   setAnomalyHalosEnabled(enabled: boolean): void;
   setIgnoreMqttEnabled(enabled: boolean): void;
+  setNodeMqttIgnored(nodeId: number, ignored: boolean): void;
 }
 
 // Module-level debounce timer and pending analysis buffer
@@ -68,6 +70,21 @@ function saveAdminKey(key: string, value: boolean): void {
   } catch {}
 }
 
+function loadMqttIgnoredNodes(): Set<number> {
+  try {
+    const raw = localStorage.getItem("mesh-client:mqttIgnoredNodes");
+    return raw ? new Set<number>(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function saveMqttIgnoredNodes(nodes: Set<number>): void {
+  try {
+    localStorage.setItem("mesh-client:mqttIgnoredNodes", JSON.stringify([...nodes]));
+  } catch {}
+}
+
 export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
   anomalies: new Map(),
   hopHistory: new Map(),
@@ -77,6 +94,7 @@ export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
   congestionHalosEnabled: loadAdminBool("congestionHalosEnabled"),
   anomalyHalosEnabled: loadAdminBool("anomalyHalosEnabled"),
   ignoreMqttEnabled: loadAdminBool("ignoreMqttEnabled"),
+  mqttIgnoredNodes: loadMqttIgnoredNodes(),
 
   processNodeUpdate(node: MeshNode, homeNode: MeshNode | null) {
     const now = Date.now();
@@ -109,7 +127,8 @@ export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
         for (const [nodeId, { node: n, homeNode: hn }] of pendingAnalyses) {
           const history = state.hopHistory.get(nodeId) ?? [];
           const stats = state.packetStats.get(nodeId);
-          const anomaly = analyzeNode(n, stats, hn, history, state.ignoreMqttEnabled);
+          const ignoreMqtt = state.ignoreMqttEnabled || state.mqttIgnoredNodes.has(nodeId);
+          const anomaly = analyzeNode(n, stats, hn, history, ignoreMqtt);
           if (anomaly) newAnomalies.set(nodeId, anomaly);
           else newAnomalies.delete(nodeId);
         }
@@ -180,7 +199,8 @@ export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
         if (nodeId === myNodeNum) continue;
         const history = state.hopHistory.get(nodeId) ?? [];
         const stats = state.packetStats.get(nodeId);
-        const anomaly = analyzeNode(node, stats, homeNode, history, state.ignoreMqttEnabled);
+        const ignoreMqtt = state.ignoreMqttEnabled || state.mqttIgnoredNodes.has(nodeId);
+        const anomaly = analyzeNode(node, stats, homeNode, history, ignoreMqtt);
         if (anomaly) newAnomalies.set(nodeId, anomaly);
       }
       set({ anomalies: newAnomalies });
@@ -200,5 +220,15 @@ export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
   setIgnoreMqttEnabled(enabled: boolean) {
     saveAdminKey("ignoreMqttEnabled", enabled);
     set({ ignoreMqttEnabled: enabled });
+  },
+
+  setNodeMqttIgnored(nodeId: number, ignored: boolean) {
+    set((state) => {
+      const next = new Set(state.mqttIgnoredNodes);
+      if (ignored) next.add(nodeId);
+      else next.delete(nodeId);
+      saveMqttIgnoredNodes(next);
+      return { mqttIgnoredNodes: next };
+    });
   },
 }));

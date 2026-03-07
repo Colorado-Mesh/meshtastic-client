@@ -66,6 +66,8 @@ export default function DiagnosticsPanel({
   const setAnomalyHalosEnabled = useDiagnosticsStore((s) => s.setAnomalyHalosEnabled);
   const ignoreMqttEnabled = useDiagnosticsStore((s) => s.ignoreMqttEnabled);
   const setIgnoreMqttEnabled = useDiagnosticsStore((s) => s.setIgnoreMqttEnabled);
+  const mqttIgnoredNodes = useDiagnosticsStore((s) => s.mqttIgnoredNodes);
+  const setNodeMqttIgnored = useDiagnosticsStore((s) => s.setNodeMqttIgnored);
 
   const [search, setSearch] = useState("");
   const [tracePending, setTracePending] = useState<number | null>(null);
@@ -237,6 +239,34 @@ export default function DiagnosticsPanel({
         </div>
       </div>
 
+      {/* Per-Node MQTT Filters */}
+      {mqttIgnoredNodes.size > 0 && (
+        <div className="bg-secondary-dark rounded-lg p-3">
+          <h3 className="text-xs font-medium text-muted mb-2">Per-Node MQTT Filters</h3>
+          <div className="flex flex-wrap gap-1.5">
+            {[...mqttIgnoredNodes].map((nodeId) => {
+              const n = nodes.get(nodeId);
+              const label = n?.short_name || n?.long_name || `!${nodeId.toString(16)}`;
+              return (
+                <span
+                  key={nodeId}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-yellow-500/20 text-yellow-300 border border-yellow-500/30"
+                >
+                  {label}
+                  <button
+                    onClick={() => setNodeMqttIgnored(nodeId, false)}
+                    className="ml-0.5 hover:text-yellow-100 leading-none"
+                    title="Remove per-node MQTT filter"
+                  >
+                    ✕
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Anomaly Table */}
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-3">
@@ -356,47 +386,68 @@ export default function DiagnosticsPanel({
                         })()}
                       </td>
                       <td className="px-4 py-2.5 text-right">
-                        {isPending ? (
-                          <span className="flex items-center justify-end gap-1.5 text-xs text-blue-400">
-                            <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                            </svg>
-                            Tracing...
-                          </span>
-                        ) : traceHops ? (
-                          <div className="text-right">
-                            <div className="text-[10px] text-muted mb-0.5">Route</div>
-                            <div className="text-xs text-gray-300 font-mono flex flex-wrap justify-end gap-0.5">
-                              {traceHops.map((hop, i) => (
-                                <span key={i} className="flex items-center gap-0.5">
-                                  {i > 0 && <span className="text-gray-600">›</span>}
-                                  <span className={i === 0 || i === traceHops.length - 1 ? "text-brand-green" : ""}>{hop}</span>
-                                </span>
-                              ))}
+                        <div className="flex flex-col items-end gap-1.5">
+                          {/* Trace Route button */}
+                          {isPending ? (
+                            <span className="flex items-center justify-end gap-1.5 text-xs text-blue-400">
+                              <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                              </svg>
+                              Tracing...
+                            </span>
+                          ) : traceHops ? (
+                            <div className="text-right">
+                              <div className="text-[10px] text-muted mb-0.5">Route</div>
+                              <div className="text-xs text-gray-300 font-mono flex flex-wrap justify-end gap-0.5">
+                                {traceHops.map((hop, i) => (
+                                  <span key={i} className="flex items-center gap-0.5">
+                                    {i > 0 && <span className="text-gray-600">›</span>}
+                                    <span className={i === 0 || i === traceHops.length - 1 ? "text-brand-green" : ""}>{hop}</span>
+                                  </span>
+                                ))}
+                              </div>
+                              <button
+                                onClick={() => handleTraceRoute(anomaly.nodeId)}
+                                disabled={!isConnected}
+                                className="mt-1 px-2 py-0.5 text-[10px] bg-secondary-dark hover:bg-gray-600 disabled:opacity-40 text-gray-400 rounded"
+                              >
+                                Re-trace
+                              </button>
                             </div>
+                          ) : (
                             <button
                               onClick={() => handleTraceRoute(anomaly.nodeId)}
-                              disabled={!isConnected}
-                              className="mt-1 px-2 py-0.5 text-[10px] bg-secondary-dark hover:bg-gray-600 disabled:opacity-40 text-gray-400 rounded"
+                              disabled={!isConnected || tracePending !== null}
+                              title={isFailed ? "Trace route timed out — click to retry" : undefined}
+                              className={`px-2.5 py-1 text-xs rounded transition-colors whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed ${
+                                isFailed
+                                  ? "bg-red-900/40 hover:bg-red-900/60 text-red-300 border border-red-800/50"
+                                  : "bg-secondary-dark hover:bg-gray-600 text-gray-300"
+                              }`}
                             >
-                              Re-trace
+                              {isFailed ? "Retry Trace" : "Trace Route"}
                             </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => handleTraceRoute(anomaly.nodeId)}
-                            disabled={!isConnected || tracePending !== null}
-                            title={isFailed ? "Trace route timed out — click to retry" : undefined}
-                            className={`px-2.5 py-1 text-xs rounded transition-colors whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed ${
-                              isFailed
-                                ? "bg-red-900/40 hover:bg-red-900/60 text-red-300 border border-red-800/50"
-                                : "bg-secondary-dark hover:bg-gray-600 text-gray-300"
-                            }`}
-                          >
-                            {isFailed ? "Retry Trace" : "Trace Route"}
-                          </button>
-                        )}
+                          )}
+                          {/* Per-node MQTT ignore toggle */}
+                          {mqttIgnoredNodes.has(anomaly.nodeId) ? (
+                            <button
+                              onClick={() => setNodeMqttIgnored(anomaly.nodeId, false)}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 hover:bg-yellow-500/30 transition-colors whitespace-nowrap"
+                              title="Click to stop ignoring MQTT for this node"
+                            >
+                              MQTT Ignored ✕
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => setNodeMqttIgnored(anomaly.nodeId, true)}
+                              className="px-2 py-0.5 text-[10px] rounded bg-secondary-dark hover:bg-gray-600 text-muted hover:text-gray-300 transition-colors whitespace-nowrap"
+                              title="Exclude this node's MQTT data from diagnostics"
+                            >
+                              Ignore MQTT
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

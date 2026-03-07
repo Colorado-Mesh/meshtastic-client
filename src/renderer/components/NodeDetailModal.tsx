@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { MeshNode } from "../lib/types";
 import NodeInfoBody from "./NodeInfoBody";
+import { useDiagnosticsStore } from "../stores/diagnosticsStore";
 
 interface NodeDetailModalProps {
   node: MeshNode | null;
@@ -32,6 +33,8 @@ export default function NodeDetailModal({
   const [positionRequestedAt, setPositionRequestedAt] = useState<number | null>(null);
   const [traceRoutePending, setTraceRoutePending] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const mqttIgnoredNodes = useDiagnosticsStore((s) => s.mqttIgnoredNodes);
+  const setNodeMqttIgnored = useDiagnosticsStore((s) => s.setNodeMqttIgnored);
 
   // Close on Escape
   useEffect(() => {
@@ -122,9 +125,16 @@ export default function NodeDetailModal({
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-700">
           <div className="min-w-0">
-            <h3 className="text-lg font-semibold text-gray-100 truncate">
-              {displayName}
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-gray-100 truncate">
+                {displayName}
+              </h3>
+              {mqttIgnoredNodes.has(node.node_id) && (
+                <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-yellow-500/20 text-yellow-300 border border-yellow-500/30">
+                  MQTT Ignored
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-2 mt-0.5">
               <span className="text-xs text-muted font-mono">{hexId}</span>
               {node.hw_model && node.hw_model !== "0" && (
@@ -193,6 +203,29 @@ export default function NodeDetailModal({
               💬 Message
             </button>
           )}
+        </div>
+
+        {/* MQTT Ignore toggle */}
+        <div className="px-5 py-2 border-t border-gray-700/50 flex items-center justify-between gap-3">
+          <div>
+            <div className="text-xs font-medium text-gray-300">MQTT Ignore</div>
+            <div className="text-xs text-muted">Exclude this node's MQTT data from diagnostics</div>
+          </div>
+          <button
+            onClick={() => setNodeMqttIgnored(node.node_id, !mqttIgnoredNodes.has(node.node_id))}
+            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${
+              mqttIgnoredNodes.has(node.node_id) ? "bg-yellow-500" : "bg-gray-600"
+            }`}
+            role="switch"
+            aria-checked={mqttIgnoredNodes.has(node.node_id)}
+            title={mqttIgnoredNodes.has(node.node_id) ? "Stop ignoring MQTT for this node" : "Ignore MQTT for this node"}
+          >
+            <span
+              className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                mqttIgnoredNodes.has(node.node_id) ? "translate-x-4" : "translate-x-0"
+              }`}
+            />
+          </button>
         </div>
 
         {/* Action status */}
