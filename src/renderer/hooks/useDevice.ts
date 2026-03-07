@@ -738,9 +738,43 @@ export function useDevice() {
           deviceMetrics?: { batteryLevel?: number; voltage?: number };
           variant?: {
             case?: string;
-            value?: { batteryLevel?: number; voltage?: number };
+            value?: {
+              batteryLevel?: number;
+              voltage?: number;
+              channelUtilization?: number;
+              airUtilTx?: number;
+              numPacketsRxBad?: number;
+              numRxDupe?: number;
+              numPacketsRx?: number;
+              numPacketsTx?: number;
+            };
           };
         };
+
+        // Handle localStats variant (connected node's radio statistics)
+        if (tel.variant?.case === "localStats" && tel.variant.value && packet.from === myNodeNumRef.current) {
+          const ls = tel.variant.value;
+          updateNodes((prev) => {
+            const updated = new Map(prev);
+            const existing = updated.get(myNodeNumRef.current);
+            if (existing) {
+              const node: MeshNode = {
+                ...existing,
+                channel_utilization: ls.channelUtilization ?? existing.channel_utilization,
+                air_util_tx: ls.airUtilTx ?? existing.air_util_tx,
+                num_packets_rx_bad: ls.numPacketsRxBad ?? existing.num_packets_rx_bad,
+                num_rx_dupe: ls.numRxDupe ?? existing.num_rx_dupe,
+                num_packets_rx: ls.numPacketsRx ?? existing.num_packets_rx,
+                num_packets_tx: ls.numPacketsTx ?? existing.num_packets_tx,
+              };
+              updated.set(myNodeNumRef.current, node);
+              window.electronAPI.db.saveNode(node);
+            }
+            return updated;
+          });
+          return;
+        }
+
         const metrics = tel.deviceMetrics ?? tel.variant?.value;
         if (!metrics) return;
 

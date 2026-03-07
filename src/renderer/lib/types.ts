@@ -41,6 +41,11 @@ export interface MeshNode {
   heard_via_mqtt?: boolean;      // session-only: true if any MQTT update was received this session
   source?: "rf" | "mqtt";       // persistent: written to DB
   lastPositionWarning?: string; // set when bad GPS data received; cleared on valid update
+  // LocalStats telemetry (connected node only, from localStats variant)
+  num_packets_rx_bad?: number;
+  num_rx_dupe?: number;
+  num_packets_rx?: number;
+  num_packets_tx?: number;
 }
 
 export type RemediationCategory = 'Configuration' | 'Physical' | 'Hardware' | 'Software';
