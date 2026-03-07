@@ -174,6 +174,22 @@ export function useDevice() {
     return `!${nodeNum.toString(16)}`;
   }, []);
 
+  // Picker-style label: "icon_XXXX" (same format as BLE picker). If short_name
+  // already ends with _ + 4 hex digits, use it; else append _ + last 4 hex of node ID.
+  const getPickerStyleNodeLabel = useCallback((nodeNum: number): string => {
+    const node = nodesRef.current.get(nodeNum);
+    const fourHex = nodeNum.toString(16).slice(-4);
+    if (node?.short_name) {
+      if (/_[0-9a-fA-F]{4}$/.test(node.short_name)) return node.short_name;
+      return `${node.short_name}_${fourHex}`;
+    }
+    if (node?.long_name)
+      return node.long_name.length > 7
+        ? `${node.long_name.slice(0, 7)}_${fourHex}`
+        : `${node.long_name}_${fourHex}`;
+    return `!${nodeNum.toString(16)}`;
+  }, []);
+
   // Extended label: short_name + hex suffix, long_name, or hex fallback.
   // Used in the header for the connected node display.
   const getFullNodeLabel = useCallback((nodeNum: number): string => {
@@ -1531,6 +1547,8 @@ export function useDevice() {
     refreshOurPosition,
     sendPositionToDevice,
     updateGpsInterval,
+    getNodeName,
+    getPickerStyleNodeLabel,
     getFullNodeLabel,
     getNodes,
   };
