@@ -689,6 +689,7 @@ export default function ChatPanel({
             const reactions = getGroupedReactions(msg.packetId);
             const showPicker =
               pickerOpenFor === (msg.packetId ?? -(i + 1));
+            const pickerOpensAbove = i >= filteredMessages.length - 3;
 
             // Day separator
             const daySeparator = daySeparatorIndices.has(i) ? (
@@ -885,9 +886,9 @@ export default function ChatPanel({
                   {/* Emoji picker */}
                   {showPicker && (
                     <div
-                      className={`flex flex-col gap-0.5 bg-secondary-dark border border-gray-600 rounded-xl px-2 py-1.5 mt-1 shadow-lg ${
-                        isOwn ? "self-end" : "self-start"
-                      }`}
+                      className={`flex flex-col gap-0.5 bg-secondary-dark border border-gray-600 rounded-xl px-2 py-1.5 shadow-lg ${
+                        pickerOpensAbove ? "mb-1 order-first" : "mt-1"
+                      } ${isOwn ? "self-end" : "self-start"}`}
                     >
                       <div className="flex gap-1">
                         {REACTION_EMOJIS.slice(0, 6).map((re) => (
