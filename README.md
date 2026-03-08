@@ -106,7 +106,28 @@ sudo apt install build-essential python3
 sudo dnf groupinstall "Development Tools" && sudo dnf install python3
 ```
 
+**Building distributables:**
+
+On Debian/Ubuntu, to also build `.rpm` packages you need the `rpm` package:
+```bash
+sudo apt install rpm
+```
+
+On Fedora/RedHat, building `.deb` packages is not easily supported. Use these targets instead:
+```bash
+npm run dist:linux -- --linux rpm
+npm run dist:linux -- --linux appimage
+```
+
 BLE requires BlueZ. If Bluetooth doesn't work, try launching with `--enable-features=WebBluetooth`.
+
+**Sandbox issues (dev mode or AppImage):**
+
+Some Linux configurations require disabling Electron's sandbox. If the app fails to launch, try:
+```bash
+npm run dev -- --no-sandbox        # dev mode
+./MeshClient.AppImage --no-sandbox # AppImage
+```
 
 For serial access, add yourself to the `dialout` group (then log out and back in):
 ```bash
