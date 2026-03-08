@@ -9,6 +9,8 @@ on:
 jobs:
   component-a11y:
     name: Component Accessibility (axe)
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
