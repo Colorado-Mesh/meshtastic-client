@@ -31,8 +31,14 @@ mac:
   entitlementsInherit: resources/entitlements.mac.inherit.plist
 linux:
   target:
-    - AppImage
-    - deb
+    - target: AppImage
+      arch:
+        - x64
+        - arm64
+    - target: deb
+      arch:
+        - x64
+        - arm64
   category: Utility
   icon: resources/icon.png
 win:

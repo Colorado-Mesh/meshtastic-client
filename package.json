@@ -16,7 +16,7 @@
     "predist": "npm dedupe",
     "dist": "npm run build && electron-builder",
     "dist:mac": "npm dedupe && npm run build && electron-builder --mac",
-    "dist:linux": "npm dedupe && npm run build && electron-builder --linux",
+    "dist:linux": "npm dedupe && npm run build && electron-builder --linux --x64 --arm64",
     "dist:win": "npm dedupe && npm run build && electron-builder --win",
     "test": "vitest",
     "test:run": "vitest run",
