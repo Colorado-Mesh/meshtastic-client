@@ -242,14 +242,71 @@ Enter your broker URL, topic, and optional credentials in the MQTT section of th
 ### Project Structure
 
 ```
-src/
-├── main/           # Electron main process (window, BLE handler, SQLite, MQTT manager)
-├── preload/        # Context bridge (IPC)
-└── renderer/       # React app
-    ├── components/ # All UI panels (Chat, Nodes, Map, Radio, App, Diagnostics, etc.)
-    ├── hooks/      # useDevice — Meshtastic device state management
-    ├── stores/     # Zustand stores (diagnostics state)
-    └── lib/        # Transport setup, TypeScript types, diagnostics engines, GPS resolution
+meshtastic-client/
+├── src/
+│   ├── main/
+│   │   ├── index.ts              # Window creation, BLE/Serial intercept, all IPC handlers
+│   │   ├── database.ts           # SQLite schema & migrations (WAL mode, schema v7)
+│   │   ├── mqtt-manager.ts       # MQTT client: AES decrypt, dedup, protobuf decode
+│   │   ├── updater.ts            # Auto-update checks via electron-updater
+│   │   └── gps.ts                # Main-process GPS helper
+│   ├── preload/
+│   │   └── index.ts              # contextBridge: exposes window.electronAPI (db, BLE, serial, session)
+│   └── renderer/
+│       ├── App.tsx               # Shell: 8 tabs, keyboard shortcuts (Cmd/Ctrl+1–8), status header
+│       ├── main.tsx              # React entry point
+│       ├── components/
+│       │   ├── ChatPanel.tsx         # Chat UI, DMs, emoji reactions, channel switching
+│       │   ├── NodeListPanel.tsx     # Node browser with online/stale/offline/MQTT filter
+│       │   ├── MapPanel.tsx          # Node positions on OpenStreetMap (Leaflet)
+│       │   ├── TelemetryPanel.tsx    # Battery/voltage/SNR charts (Recharts)
+│       │   ├── AdminPanel.tsx        # Reboot, shutdown, factory reset, trace route
+│       │   ├── ConfigPanel.tsx       # Device & channel configuration editor
+│       │   ├── ConnectionPanel.tsx   # BLE/Serial/HTTP/MQTT connection setup
+│       │   ├── DiagnosticsPanel.tsx  # Network health score, anomaly table, halo toggles
+│       │   ├── RadioPanel.tsx        # Radio settings, fixed position, GPS send
+│       │   ├── AppPanel.tsx          # App settings, GPS interval, database management
+│       │   ├── NodeDetailModal.tsx   # Detailed node info overlay
+│       │   ├── NodeInfoBody.tsx      # Shared node info content (modal + map popup)
+│       │   ├── KeyboardShortcutsModal.tsx
+│       │   ├── UpdateBanner.tsx      # In-app update notification
+│       │   ├── ErrorBoundary.tsx     # Top-level React error boundary
+│       │   ├── SignalBars.tsx        # SNR/RSSI signal strength indicator
+│       │   ├── RefreshButton.tsx
+│       │   ├── Toast.tsx
+│       │   └── Tabs.tsx
+│       ├── hooks/
+│       │   └── useDevice.ts          # Core hook: device lifecycle, 3 transports, auto-reconnect
+│       ├── stores/
+│       │   ├── diagnosticsStore.ts   # Zustand: anomalies, packet stats, halo flags, MQTT ignore
+│       │   └── mapViewportStore.ts   # Zustand: persisted map center/zoom
+│       └── lib/
+│           ├── types.ts              # TypeScript interfaces: MeshNode, ChatMessage, DeviceState…
+│           ├── connection.ts         # Connection factory: BLE/Serial/HTTP transport creation
+│           ├── gpsSource.ts          # GPS waterfall: device coords → browser geolocation → null
+│           ├── nodeStatus.ts         # Node freshness: online <30 min, stale <2 h, offline 2 h+
+│           ├── coordUtils.ts         # Coordinate conversion helpers
+│           ├── reactions.ts          # Emoji reaction helpers
+│           ├── roleInfo.tsx          # Node role display metadata
+│           ├── signal.ts             # SNR/RSSI signal quality helpers
+│           └── diagnostics/
+│               ├── RoutingDiagnosticEngine.ts  # Hop anomaly detectors (hop_goblin, bad_route, etc.)
+│               ├── RFDiagnosticEngine.ts        # RF-layer signal diagnostics
+│               └── RemediationEngine.ts         # Suggested fixes for detected anomalies
+├── resources/
+│   ├── icons/                    # App icons (linux/, mac/, win/)
+│   └── images/                   # Bundled image assets
+├── scripts/
+│   ├── rebuild-native.mjs        # Rebuilds better-sqlite3 for Electron ABI (postinstall)
+│   └── wait-for-dev.mjs          # Waits for Vite dev server before launching Electron
+├── docs/
+│   └── accessibility-checklist.md
+├── electron-builder.yml          # Distributable config (targets, icons, signing)
+├── vite.config.ts                # Renderer build (Vite)
+├── vitest.config.ts              # Test runner config
+├── tsconfig.json                 # Base TypeScript config (renderer)
+├── tsconfig.main.json            # TypeScript config for main/preload
+└── package.json
 ```
 
 ---
@@ -277,6 +334,12 @@ npm run dev
 This starts the Vite dev server, watches main/preload for changes, and launches Electron automatically. For the best experience, install [React DevTools](https://react.dev/link/react-devtools).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for coding conventions, branch workflow, and PR guidelines.
+
+---
+
+## Community
+
+Join the `#mesh-client-development` channel on Discord for help, feedback, and development discussion: https://discord.com/invite/McChKR5NpS
 
 ---
 
@@ -321,6 +384,64 @@ The app uses npm package overrides to force `follow-redirects` and `cacheable-re
 ```bash
 npm run trace-deprecation
 ```
+
+### "A native module failed to load" dialog on startup
+
+**Cause**: `better-sqlite3` was compiled for a different Electron ABI — common after an Electron or Node version change.
+
+**Fix**: Run `npm install` (the postinstall script rebuilds native modules for the correct ABI automatically).
+
+- **Windows**: Also ensure the [Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist) is installed.
+
+### Database directory is not writable
+
+**Error**: `"Database directory is not writable: <path>"`
+
+**Cause**: File permissions on the app's `userData` directory are too restrictive.
+
+**Fix**:
+- **Mac/Linux**: `chmod 755 ~/Library/Application\ Support/mesh-client` (or `~/.config/mesh-client` on Linux)
+- **Windows**: Right-click `%APPDATA%\mesh-client` → Properties → Security → grant your user Full Control
+
+### MQTT: "Connection lost after N reconnect attempts"
+
+**Cause**: Broker unreachable, bad credentials, or wrong port.
+
+**Fix**: Verify the broker URL, port (default 1883, or 8883 for TLS), and username/password. Check that your firewall allows outbound connections on the broker port.
+
+### MQTT: "Subscribe failed"
+
+**Cause**: Topic permission denied on the broker, or wildcards not allowed by the broker ACL.
+
+**Fix**: Confirm the broker's ACL allows your client to subscribe to the configured topic prefix.
+
+### BLE auto-reconnect: "No previously connected BLE device found"
+
+**Cause**: The reconnect card appeared, but the browser lost the cached device handle — for example, the app was fully quit and relaunched.
+
+**Fix**: Click **Forget this device** on the reconnect card and pair fresh using the Bluetooth picker.
+
+### GPS "Location unavailable" or stuck on the map
+
+**Cause**: Browser geolocation was denied, or the device has no GPS fix yet.
+
+**Fix**:
+- Grant location permission when prompted by the app.
+- Or set coordinates manually via the **Radio** tab → Fixed Position.
+- Note: The IP-geolocation fallback provides city-level accuracy only — not suitable for position broadcasting.
+
+### "Something went wrong" blank screen
+
+**Cause**: An unhandled React render error, usually from a corrupt or unexpected database value.
+
+**Fix**: Open the **App** tab → **Clear Database**, then restart. If the window never loads at all, delete the SQLite file manually:
+- **Mac**: `~/Library/Application Support/mesh-client/`
+- **Windows**: `%APPDATA%\mesh-client\`
+- **Linux**: `~/.config/mesh-client/`
+
+### Update check fails / no update banner
+
+The app functions fully offline — this is not a critical error. If "Update check failed" appears in the console, verify network connectivity. Update checks are rate-limited by the GitHub API and may silently skip when the limit is reached.
 
 ---
 
