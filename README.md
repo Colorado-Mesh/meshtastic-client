@@ -112,6 +112,25 @@ For serial access, add yourself to the `dialout` group (then log out and back in
 ```bash
 sudo usermod -a -G dialout $USER
 ```
+
+**ARM architecture (Raspberry Pi, etc.) — additional requirements:**
+
+Install these extra libraries before running in development mode:
+```bash
+sudo apt install zlib1g-dev libfuse2
+```
+
+Electron's sandbox requires elevated privileges on ARM. Either grant sandbox permissions:
+```bash
+sudo sysctl -w kernel.unprivileged_userns_clone=1
+```
+
+Or launch with the no-sandbox flag:
+```bash
+npm run dev -- --no-sandbox
+# or
+electron . --no-sandbox
+```
 </details>
 
 <details>
