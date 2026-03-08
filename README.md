@@ -89,6 +89,11 @@ If serial isn't detected, make sure you have the correct USB drivers for your de
 5. Click **Connect** and select your device from the picker
 6. Wait for status to show **Configured** — you're connected!
 
+After a successful connection, Mesh-Client remembers your last device. On the next launch:
+- **Serial** — auto-connects silently in the background
+- **Bluetooth / WiFi** — a one-click reconnect card appears; click **Reconnect** (BLE requires a user gesture, WiFi shows your saved address)
+- **MQTT** — auto-reconnects using your saved broker settings
+
 For **MQTT**, enter your broker URL, topic, and optional credentials in the MQTT section of the Connection tab. When connected, the section collapses to a compact info card showing the server, client ID, and topic.
 
 ---
@@ -134,8 +139,8 @@ The distributable is output to the `release/` directory.
 
 - **Bluetooth LE** — pair wirelessly with nearby Meshtastic devices; the last-used device is remembered and a one-click reconnect card appears on the Connection tab so you can reconnect without going through the picker again (device name persists across sessions)
 - **USB Serial** — plug in via USB cable
-- **WiFi/HTTP** — connect to network-enabled nodes
-- **MQTT** — subscribe to a Meshtastic MQTT broker to receive mesh traffic over the internet; send messages via MQTT even when no hardware device is connected; AES-128-CTR encryption/decryption, automatic deduplication with RF, exponential-backoff reconnect, and per-message delivery status indicators
+- **WiFi/HTTP** — connect to network-enabled nodes; the last-used address is remembered and a one-click reconnect card appears on the Connection tab so you can reconnect without re-entering the IP/hostname
+- **MQTT** — subscribe to a Meshtastic MQTT broker to receive mesh traffic over the internet; auto-reconnects on startup using saved settings; send messages via MQTT even when no hardware device is connected; AES-128-CTR encryption/decryption, automatic deduplication with RF, exponential-backoff reconnect, and per-message delivery status indicators
 - **Chat** — send/receive messages across channels with delivery indicators (ACK/NAK), emoji reactions (11 emojis with compose picker), reply-to-message (hover to reply; quoted preview shown in bubble), and an unread message divider that persists across restarts and auto-scrolls you to where you left off when switching tabs
 - **Channel Management** — create and configure channels with custom names and PSK encryption
 - **Node List** — all discovered nodes with SNR, RSSI signal strength, battery, GPS, last heard, and packet redundancy score; distance filter hides nodes beyond a configurable range; favorite/pin nodes for quick access; scroll-to-top button

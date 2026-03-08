@@ -164,7 +164,10 @@ export default function ConnectionPanel({
   myNodeLabel,
 }: Props) {
   const [connectionType, setConnectionType] = useState<ConnectionType>("ble");
-  const [httpAddress, setHttpAddress] = useState("meshtastic.local");
+  const [httpAddress, setHttpAddress] = useState(() => {
+    const last = loadLastConnection();
+    return last?.type === "http" && last.httpAddress ? last.httpAddress : "meshtastic.local";
+  });
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [connectionStage, setConnectionStage] = useState("");
@@ -385,29 +388,7 @@ export default function ConnectionPanel({
 
     autoConnectFiredRef.current = true;
 
-    if (lastConnection.type === "http") {
-      const addr = lastConnection.httpAddress ?? "meshtastic.local";
-      setHttpAddress(addr);
-      setConnectionType("http");
-      isAutoConnectingRef.current = true;
-      setIsAutoConnecting(true);
-      setConnecting(true);
-      setConnectionStage("Please wait...");
-      autoConnectTimeoutRef.current = setTimeout(() => {
-        isAutoConnectingRef.current = false;
-        setIsAutoConnecting(false);
-        setError("Auto-connect timed out.");
-        setConnecting(false);
-        setConnectionStage("");
-      }, 30_000);
-      onConnect("http", addr).catch((err) => {
-        isAutoConnectingRef.current = false;
-        setIsAutoConnecting(false);
-        setError(err instanceof Error ? err.message : "Auto-connect failed");
-        setConnecting(false);
-        setConnectionStage("");
-      });
-    } else if (lastConnection.type === "serial") {
+    if (lastConnection.type === "serial") {
       setConnectionType("serial");
       isAutoConnectingRef.current = true;
       setIsAutoConnecting(true);
@@ -428,7 +409,7 @@ export default function ConnectionPanel({
         setConnectionStage("");
       });
     }
-    // BLE: do not auto-trigger — show one-click reconnect button instead
+    // HTTP + BLE: do not auto-trigger — show one-click reconnect card instead
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // intentionally empty — fires once on mount
 
