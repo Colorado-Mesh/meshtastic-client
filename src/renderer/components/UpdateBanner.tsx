@@ -1,4 +1,4 @@
-import type { UpdateState } from "../App";
+import type { UpdateState } from '../App';
 
 interface Props {
   updateState: UpdateState;
@@ -15,7 +15,7 @@ export default function UpdateBanner({
   onViewRelease,
   onDismiss,
 }: Props) {
-  if (updateState.phase === "idle" || updateState.dismissed) return null;
+  if (updateState.phase === 'idle' || updateState.dismissed) return null;
 
   const { phase, version, isPackaged, isMac } = updateState;
 
@@ -28,11 +28,9 @@ export default function UpdateBanner({
       aria-live="polite"
       className="flex items-center gap-3 px-4 py-2 bg-gray-900 border-b border-brand-green/30 text-sm"
     >
-      {phase === "available" && (
+      {phase === 'available' && (
         <>
-          <span className="text-brand-green font-medium">
-            Update v{version} available
-          </span>
+          <span className="text-brand-green font-medium">Update v{version} available</span>
           {useReleasePage ? (
             <button
               onClick={onViewRelease}
@@ -51,7 +49,7 @@ export default function UpdateBanner({
         </>
       )}
 
-      {phase === "downloading" && (
+      {phase === 'downloading' && (
         <>
           <span className="text-gray-300">Downloading update…</span>
           <div className="flex-1 max-w-[160px] h-1.5 bg-gray-700 rounded-full overflow-hidden">
@@ -60,13 +58,11 @@ export default function UpdateBanner({
               style={{ width: `${updateState.percent ?? 0}%` }}
             />
           </div>
-          <span className="text-gray-400 text-xs tabular-nums">
-            {updateState.percent ?? 0}%
-          </span>
+          <span className="text-gray-400 text-xs tabular-nums">{updateState.percent ?? 0}%</span>
         </>
       )}
 
-      {phase === "ready" && (
+      {phase === 'ready' && (
         <>
           <span className="text-brand-green font-medium">Ready to install</span>
           <button
@@ -84,14 +80,12 @@ export default function UpdateBanner({
         </>
       )}
 
-      {phase === "error" && (
-        <span className="text-red-400">
-          Update check failed — check your network connection
-        </span>
+      {phase === 'error' && (
+        <span className="text-red-400">Update check failed — check your network connection</span>
       )}
 
       {/* Dismiss — not shown during active download */}
-      {phase !== "downloading" && (
+      {phase !== 'downloading' && (
         <button
           onClick={onDismiss}
           aria-label="Dismiss update banner"

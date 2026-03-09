@@ -9,6 +9,7 @@
 ### Contributors
 
 megabear - KD5IHC created the icon
+
 ## Colorado Mesh
 
 Thanks to the [Colorado Mesh](https://coloradomesh.org) community for fostering open-source Meshtastic development in Colorado.

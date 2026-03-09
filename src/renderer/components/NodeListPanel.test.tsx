@@ -1,6 +1,7 @@
 import { render } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
-import { describe, it, expect, vi } from 'vitest';
+
 import NodeListPanel from './NodeListPanel';
 
 vi.mock('../stores/diagnosticsStore', () => ({
@@ -30,7 +31,7 @@ describe('NodeListPanel accessibility', () => {
         onNodeClick={vi.fn()}
         locationFilter={defaultFilter}
         onToggleFavorite={vi.fn()}
-      />
+      />,
     );
     const results = await axe(container);
     expect(results).toHaveNoViolations();

@@ -1,5 +1,5 @@
-import { Component } from "react";
-import type { ErrorInfo, ReactNode } from "react";
+import type { ErrorInfo, ReactNode } from 'react';
+import { Component } from 'react';
 
 interface Props {
   children: ReactNode;
@@ -21,19 +21,17 @@ export default class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    console.error("ErrorBoundary caught:", error, errorInfo);
+    console.error('ErrorBoundary caught:', error, errorInfo);
   }
 
   render() {
     if (this.state.hasError) {
       return (
         <div className="flex flex-col items-center justify-center h-full p-8 space-y-4">
-          <div className="text-red-400 text-xl font-semibold">
-            Something went wrong
-          </div>
+          <div className="text-red-400 text-xl font-semibold">Something went wrong</div>
           <div className="bg-red-900/30 border border-red-800 rounded-lg p-4 max-w-lg w-full">
             <p className="text-sm text-red-300 font-mono break-words">
-              {this.state.error?.message || "An unexpected error occurred"}
+              {this.state.error?.message || 'An unexpected error occurred'}
             </p>
           </div>
           <button
@@ -43,8 +41,7 @@ export default class ErrorBoundary extends Component<Props, State> {
             Try Again
           </button>
           <p className="text-xs text-gray-500">
-            If the problem persists, try switching to a different tab or
-            restarting the application.
+            If the problem persists, try switching to a different tab or restarting the application.
           </p>
         </div>
       );

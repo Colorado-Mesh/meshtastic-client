@@ -1,22 +1,32 @@
-import "leaflet/dist/leaflet.css";
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment } from "react";
-import { MapContainer, TileLayer, Marker, Popup, Circle, CircleMarker, useMap } from "react-leaflet";
-import L from "leaflet";
-import type { MeshNode, NodeAnomaly } from "../lib/types";
-import type { OurPosition } from "../lib/gpsSource";
-import { getNodeStatus, haversineDistanceKm } from "../lib/nodeStatus";
-import { useDiagnosticsStore } from "../stores/diagnosticsStore";
-import { useMapViewportStore } from "../stores/mapViewportStore";
-import NodeInfoBody from "./NodeInfoBody";
-import { useToast } from "./Toast";
-import type { LocationFilter } from "../App";
+import 'leaflet/dist/leaflet.css';
+
+import L from 'leaflet';
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  Circle,
+  CircleMarker,
+  MapContainer,
+  Marker,
+  Popup,
+  TileLayer,
+  useMap,
+} from 'react-leaflet';
+
+import type { LocationFilter } from '../App';
+import type { OurPosition } from '../lib/gpsSource';
+import { getNodeStatus, haversineDistanceKm } from '../lib/nodeStatus';
+import type { MeshNode, NodeAnomaly } from '../lib/types';
+import { useDiagnosticsStore } from '../stores/diagnosticsStore';
+import { useMapViewportStore } from '../stores/mapViewportStore';
+import NodeInfoBody from './NodeInfoBody';
+import { useToast } from './Toast';
 
 // ─── Map styles (anomaly halos + dark popup) ──────────────────────────────────
 
-const MAP_STYLE_ID = "map-styles";
+const MAP_STYLE_ID = 'map-styles';
 function ensureMapStyles() {
   if (document.getElementById(MAP_STYLE_ID)) return;
-  const style = document.createElement("style");
+  const style = document.createElement('style');
   style.id = MAP_STYLE_ID;
   style.textContent = `
     @keyframes anomaly-pulse {
@@ -79,29 +89,29 @@ function ensureMapStyles() {
 // ─── Marker icon helpers ──────────────────────────────────────────────────────
 
 function getCUColor(cu: number): string {
-  if (cu < 15) return "#22c55e";
-  if (cu < 31) return "#eab308";
-  if (cu < 51) return "#f97316";
-  return "#ef4444";
+  if (cu < 15) return '#22c55e';
+  if (cu < 31) return '#eab308';
+  if (cu < 51) return '#f97316';
+  return '#ef4444';
 }
 
 function createMarkerIcon(
   color: string,
   isSelf: boolean,
-  cu: number = 0,
-  markerOpacity: number = 1,
-  isMqttOnly: boolean = false,
+  cu = 0,
+  markerOpacity = 1,
+  isMqttOnly = false,
 ): L.Icon {
   const haloPx = cu <= 0 ? 0 : Math.round((cu / 100) * 14);
   const haloColor = getCUColor(cu);
   const halo = (c: number) =>
     haloPx > 0
       ? `<circle cx="${c}" cy="${c}" r="${c - 0.5}" fill="${haloColor}" opacity="0.4"/>`
-      : "";
+      : '';
   const mqttBadge = (c: number) =>
     isMqttOnly
       ? `<circle cx="${c + 7}" cy="${c - 7}" r="4" fill="#3b82f6" stroke="#fff" stroke-width="1.5"/>`
-      : "";
+      : '';
 
   if (isSelf) {
     const total = 32 + 2 * haloPx;
@@ -127,14 +137,13 @@ function createMarkerIcon(
 }
 
 function getMarkerIcon(
-  status: "online" | "stale" | "offline",
+  status: 'online' | 'stale' | 'offline',
   isSelf: boolean,
   cu: number,
-  isMqttOnly: boolean = false,
+  isMqttOnly = false,
 ): L.Icon {
-  const color =
-    status === "online" ? "#9ae6b4" : status === "stale" ? "#c4a864" : "#6b7280";
-  const opacity = status === "online" ? 1 : status === "stale" ? 0.65 : 0.45;
+  const color = status === 'online' ? '#9ae6b4' : status === 'stale' ? '#c4a864' : '#6b7280';
+  const opacity = status === 'online' ? 1 : status === 'stale' ? 0.65 : 0.45;
   return createMarkerIcon(color, isSelf, cu, opacity, isMqttOnly);
 }
 
@@ -149,12 +158,12 @@ function DiagnosticPanes() {
   // fires — including the useEffect inside react-leaflet that calls layer.addTo(map).
   // This guarantees "diagnosticPane" exists when Circle layers resolve their pane.
   useLayoutEffect(() => {
-    if (!map.getPane("diagnosticPane")) {
-      const pane = map.createPane("diagnosticPane");
+    if (!map.getPane('diagnosticPane')) {
+      const pane = map.createPane('diagnosticPane');
       // 650 = above markerPane (600) so halos are never clipped by it,
       // but still below tooltipPane (700) / popupPane (800).
-      pane.style.zIndex = "650";
-      pane.style.pointerEvents = "none";
+      pane.style.zIndex = '650';
+      pane.style.pointerEvents = 'none';
     }
   }, [map]);
   return null;
@@ -183,92 +192,83 @@ const MapMarker = memo(
     homeNode,
     haloCenterOffset = [0, 0],
   }: MapMarkerProps) {
-  const status = getNodeStatus(node.last_heard);
-  const cuForIcon =
-    congestionHalosEnabled && !anomalyHalosEnabled
-      ? (node.channel_utilization ?? 0)
-      : 0;
+    const status = getNodeStatus(node.last_heard);
+    const cuForIcon =
+      congestionHalosEnabled && !anomalyHalosEnabled ? (node.channel_utilization ?? 0) : 0;
 
-  const icon = useMemo(
-    () => getMarkerIcon(status, isSelf, cuForIcon, node.heard_via_mqtt_only),
-    [status, isSelf, cuForIcon, node.heard_via_mqtt_only],
-  );
+    const icon = useMemo(
+      () => getMarkerIcon(status, isSelf, cuForIcon, node.heard_via_mqtt_only),
+      [status, isSelf, cuForIcon, node.heard_via_mqtt_only],
+    );
 
-  const shouldShowHalo = useMemo(
-    () =>
-      anomalyHalosEnabled &&
-      anomaly !== null &&
-      anomaly.nodeId === node.node_id &&
-      !isSelf,
-    [anomalyHalosEnabled, anomaly, node.node_id, isSelf],
-  );
+    const shouldShowHalo = useMemo(
+      () => anomalyHalosEnabled && anomaly !== null && anomaly.nodeId === node.node_id && !isSelf,
+      [anomalyHalosEnabled, anomaly, node.node_id, isSelf],
+    );
 
-  const isError = anomaly?.severity === "error";
+    const isError = anomaly?.severity === 'error';
 
-  return (
-    <Fragment>
-      {shouldShowHalo && (
-        <Circle
-          key={`anomaly-${node.node_id}`}
-          center={[
-            node.latitude + haloCenterOffset[0],
-            node.longitude + haloCenterOffset[1],
-          ]}
-          radius={500}
-          pane="diagnosticPane"
-          interactive={false}
-          pathOptions={{
-            color: isError ? "#ef4444" : "#FFBF00",
-            fillColor: isError ? "#ef4444" : "#FFBF00",
-            fillOpacity: 0.18,
-            weight: 2,
-            opacity: 0.75,
-            dashArray: "8,6",
-            className: isError ? "anomaly-halo-error" : "anomaly-halo-warning",
-          }}
-        />
-      )}
-      {congestionHalosEnabled && node.channel_utilization != null && (
-        <Circle
-          center={[node.latitude, node.longitude]}
-          radius={300}
-          interactive={false}
-          pathOptions={{
-            color: getCUColor(node.channel_utilization),
-            fillColor: getCUColor(node.channel_utilization),
-            fillOpacity: 0.25,
-            weight: 1,
-            opacity: 0.6,
-          }}
-        />
-      )}
-      <Marker
-        position={[node.latitude, node.longitude]}
-        icon={icon}
-        zIndexOffset={isSelf ? 1000 : 0}
-      >
-        <Popup>
-          <div className="px-4 py-3">
-            <div className="font-semibold text-gray-100 mb-2 flex items-center gap-1.5">
-              {isSelf && <span title="Your node">★</span>}
-              {node.long_name || `!${node.node_id.toString(16)}`}
-              {(() => {
-                const shortId = `!${node.node_id.toString(16)}`;
-                const displayName = node.long_name || shortId;
-                if (shortId === displayName.trim()) return null;
-                return (
-                  <span className="text-xs text-muted font-mono ml-1">
-                    !{node.node_id.toString(16)}
-                  </span>
-                );
-              })()}
+    return (
+      <Fragment>
+        {shouldShowHalo && (
+          <Circle
+            key={`anomaly-${node.node_id}`}
+            center={[node.latitude + haloCenterOffset[0], node.longitude + haloCenterOffset[1]]}
+            radius={500}
+            pane="diagnosticPane"
+            interactive={false}
+            pathOptions={{
+              color: isError ? '#ef4444' : '#FFBF00',
+              fillColor: isError ? '#ef4444' : '#FFBF00',
+              fillOpacity: 0.18,
+              weight: 2,
+              opacity: 0.75,
+              dashArray: '8,6',
+              className: isError ? 'anomaly-halo-error' : 'anomaly-halo-warning',
+            }}
+          />
+        )}
+        {congestionHalosEnabled && node.channel_utilization != null && (
+          <Circle
+            center={[node.latitude, node.longitude]}
+            radius={300}
+            interactive={false}
+            pathOptions={{
+              color: getCUColor(node.channel_utilization),
+              fillColor: getCUColor(node.channel_utilization),
+              fillOpacity: 0.25,
+              weight: 1,
+              opacity: 0.6,
+            }}
+          />
+        )}
+        <Marker
+          position={[node.latitude, node.longitude]}
+          icon={icon}
+          zIndexOffset={isSelf ? 1000 : 0}
+        >
+          <Popup>
+            <div className="px-4 py-3">
+              <div className="font-semibold text-gray-100 mb-2 flex items-center gap-1.5">
+                {isSelf && <span title="Your node">★</span>}
+                {node.long_name || `!${node.node_id.toString(16)}`}
+                {(() => {
+                  const shortId = `!${node.node_id.toString(16)}`;
+                  const displayName = node.long_name || shortId;
+                  if (shortId === displayName.trim()) return null;
+                  return (
+                    <span className="text-xs text-muted font-mono ml-1">
+                      !{node.node_id.toString(16)}
+                    </span>
+                  );
+                })()}
+              </div>
+              <NodeInfoBody node={node} homeNode={homeNode} />
             </div>
-            <NodeInfoBody node={node} homeNode={homeNode} />
-          </div>
-        </Popup>
-      </Marker>
-    </Fragment>
-  );
+          </Popup>
+        </Marker>
+      </Fragment>
+    );
   },
   (prev, next) =>
     prev.node === next.node &&
@@ -338,9 +338,9 @@ function ViewportSaver({ hasAnyPositions }: { hasAnyPositions: boolean }) {
       }
       setViewport(next);
     };
-    map.on("moveend", onMoveEnd);
+    map.on('moveend', onMoveEnd);
     return () => {
-      map.off("moveend", onMoveEnd);
+      map.off('moveend', onMoveEnd);
     };
   }, [map, setViewport, hasAnyPositions]);
   return null;
@@ -368,25 +368,30 @@ function LocateMeControl({
           setLocatedPos(coords);
           map.flyTo(coords, 16);
         } else {
-          addToast("Location unavailable.", "error");
+          addToast('Location unavailable.', 'error');
         }
         return;
       }
       const result = await (window as any).electronAPI.getGpsFix();
-      if (result.status === "error") {
-        addToast(result.message, "error");
+      if (result.status === 'error') {
+        addToast(result.message, 'error');
         return;
       }
-      if ("error" in result) {
-        addToast(result.code === "NO_FIX" ? "GPS hardware not available." : `Location error: ${result.error}`, "error");
+      if ('error' in result) {
+        addToast(
+          result.code === 'NO_FIX'
+            ? 'GPS hardware not available.'
+            : `Location error: ${result.error}`,
+          'error',
+        );
         return;
       }
       const coords: [number, number] = [result.lat, result.lon];
       setLocatedPos(coords);
       map.flyTo(coords, 16);
     } catch (e) {
-      console.error("[LocateMeControl] getGpsFix failed:", e);
-      addToast("Location request failed.", "error");
+      console.error('[LocateMeControl] getGpsFix failed:', e);
+      addToast('Location request failed.', 'error');
     } finally {
       setLoading(false);
     }
@@ -394,17 +399,17 @@ function LocateMeControl({
 
   return (
     <>
-      <div className="leaflet-top leaflet-left" style={{ pointerEvents: "none" }}>
+      <div className="leaflet-top leaflet-left" style={{ pointerEvents: 'none' }}>
         <div
           className="leaflet-control leaflet-bar leaflet-locate-control"
-          style={{ marginTop: "80px", pointerEvents: "auto" }}
+          style={{ marginTop: '80px', pointerEvents: 'auto' }}
         >
           <a
             title="Show my location"
             aria-label="Show my location"
             aria-busy={loading}
             role="button"
-            className={loading ? "locating" : ""}
+            className={loading ? 'locating' : ''}
             onClick={handleLocate}
           >
             <svg
@@ -418,11 +423,11 @@ function LocateMeControl({
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              <circle cx="12" cy="12" r="8"/>
-              <line x1="12" y1="2" x2="12" y2="6"/>
-              <line x1="12" y1="18" x2="12" y2="22"/>
-              <line x1="2" y1="12" x2="6" y2="12"/>
-              <line x1="18" y1="12" x2="22" y2="12"/>
+              <circle cx="12" cy="12" r="8" />
+              <line x1="12" y1="2" x2="12" y2="6" />
+              <line x1="12" y1="18" x2="12" y2="22" />
+              <line x1="2" y1="12" x2="6" y2="12" />
+              <line x1="18" y1="12" x2="22" y2="12" />
             </svg>
           </a>
         </div>
@@ -431,7 +436,7 @@ function LocateMeControl({
         <CircleMarker
           center={locatedPos}
           radius={8}
-          pathOptions={{ color: "#fff", fillColor: "#3b82f6", fillOpacity: 1, weight: 2 }}
+          pathOptions={{ color: '#fff', fillColor: '#3b82f6', fillOpacity: 1, weight: 2 }}
         />
       )}
     </>
@@ -457,9 +462,7 @@ export default function MapPanel({
 }: Props) {
   const homeNode = nodes.get(myNodeNum) ?? null;
 
-  const congestionHalosEnabled = useDiagnosticsStore(
-    (s) => s.congestionHalosEnabled,
-  );
+  const congestionHalosEnabled = useDiagnosticsStore((s) => s.congestionHalosEnabled);
   const anomalyHalosEnabled = useDiagnosticsStore((s) => s.anomalyHalosEnabled);
   const anomalies = useDiagnosticsStore((s) => s.anomalies);
 
@@ -476,7 +479,7 @@ export default function MapPanel({
       homeNode.longitude != null &&
       homeNode.longitude !== 0;
     const maxKm =
-      locationFilter.unit === "miles"
+      locationFilter.unit === 'miles'
         ? locationFilter.maxDistance * 1.60934
         : locationFilter.maxDistance;
 
@@ -485,7 +488,8 @@ export default function MapPanel({
         n.latitude == null ||
         n.longitude == null ||
         !(Math.abs(n.latitude) > 0.0001 || Math.abs(n.longitude) > 0.0001)
-      ) return false;
+      )
+        return false;
       if (locationFilter.hideMqttOnly && n.heard_via_mqtt_only) return false;
       if (locationFilter.enabled && homeHasLocation) {
         const d = haversineDistanceKm(
@@ -555,8 +559,7 @@ export default function MapPanel({
     return nodesWithStatus.map(({ node, anomaly }) => ({
       node,
       anomaly,
-      haloCenterOffset:
-        anomaly != null ? offsetByNodeId.get(node.node_id) ?? [0, 0] : undefined,
+      haloCenterOffset: anomaly != null ? (offsetByNodeId.get(node.node_id) ?? [0, 0]) : undefined,
     }));
   }, [nodesWithStatus]);
 

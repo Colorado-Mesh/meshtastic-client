@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState } from 'react';
 
 interface RefreshButtonProps {
   onRefresh: () => Promise<void>;
@@ -43,7 +43,7 @@ export default function RefreshButton({
       className="p-1.5 rounded-full hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
     >
       <svg
-        className={`w-5 h-5 text-gray-400 ${spinning ? "animate-spin" : ""}`}
+        className={`w-5 h-5 text-gray-400 ${spinning ? 'animate-spin' : ''}`}
         fill="none"
         viewBox="0 0 24 24"
         stroke="currentColor"

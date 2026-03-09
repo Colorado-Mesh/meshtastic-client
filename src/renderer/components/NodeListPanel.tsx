@@ -1,28 +1,29 @@
-import { useState, useMemo, useEffect } from "react";
-import type { MeshNode } from "../lib/types";
-import { getNodeStatus, haversineDistanceKm } from "../lib/nodeStatus";
-import { useDiagnosticsStore } from "../stores/diagnosticsStore";
-import { RoleDisplay } from "../lib/roleInfo";
-import SignalBars from "./SignalBars";
-import type { LocationFilter } from "../App";
+import { useEffect, useMemo, useState } from 'react';
+
+import type { LocationFilter } from '../App';
+import { getNodeStatus, haversineDistanceKm } from '../lib/nodeStatus';
+import { RoleDisplay } from '../lib/roleInfo';
+import type { MeshNode } from '../lib/types';
+import { useDiagnosticsStore } from '../stores/diagnosticsStore';
+import SignalBars from './SignalBars';
 
 type SortField =
-  | "node_id"
-  | "long_name"
-  | "short_name"
-  | "rssi"
-  | "battery"
-  | "last_heard"
-  | "latitude"
-  | "longitude"
-  | "role"
-  | "hops_away"
-  | "via_mqtt"
-  | "voltage"
-  | "channel_utilization"
-  | "air_util_tx"
-  | "altitude"
-  | "redundancy";
+  | 'node_id'
+  | 'long_name'
+  | 'short_name'
+  | 'rssi'
+  | 'battery'
+  | 'last_heard'
+  | 'latitude'
+  | 'longitude'
+  | 'role'
+  | 'hops_away'
+  | 'via_mqtt'
+  | 'voltage'
+  | 'channel_utilization'
+  | 'air_util_tx'
+  | 'altitude'
+  | 'redundancy';
 
 interface Props {
   nodes: Map<number, MeshNode>;
@@ -44,9 +45,9 @@ export default function NodeListPanel({
   const anomalies = useDiagnosticsStore((s) => s.anomalies);
   const ignoreMqttEnabled = useDiagnosticsStore((s) => s.ignoreMqttEnabled);
   const nodeRedundancy = useDiagnosticsStore((s) => s.nodeRedundancy);
-  const [sortField, setSortField] = useState<SortField>("last_heard");
+  const [sortField, setSortField] = useState<SortField>('last_heard');
   const [sortAsc, setSortAsc] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState('');
   const [showScrollTop, setShowScrollTop] = useState(false);
 
   useEffect(() => {
@@ -65,7 +66,7 @@ export default function NodeListPanel({
       setSortAsc(!sortAsc);
     } else {
       setSortField(field);
-      setSortAsc(field === "long_name" || field === "short_name"); // text asc, numbers desc
+      setSortAsc(field === 'long_name' || field === 'short_name'); // text asc, numbers desc
     }
   };
 
@@ -79,7 +80,7 @@ export default function NodeListPanel({
         (n) =>
           n.long_name.toLowerCase().includes(q) ||
           n.short_name.toLowerCase().includes(q) ||
-          n.node_id.toString(16).includes(q)
+          n.node_id.toString(16).includes(q),
       );
     }
 
@@ -91,18 +92,27 @@ export default function NodeListPanel({
     // Filter by distance
     if (locationFilter.enabled) {
       const homeNode = myNodeNum ? nodes.get(myNodeNum) : undefined;
-      const homeHasLocation = homeNode &&
-        homeNode.latitude != null && homeNode.latitude !== 0 &&
-        homeNode.longitude != null && homeNode.longitude !== 0;
+      const homeHasLocation =
+        homeNode &&
+        homeNode.latitude != null &&
+        homeNode.latitude !== 0 &&
+        homeNode.longitude != null &&
+        homeNode.longitude !== 0;
       if (homeHasLocation) {
-        const maxKm = locationFilter.unit === "miles"
-          ? locationFilter.maxDistance * 1.60934
-          : locationFilter.maxDistance;
+        const maxKm =
+          locationFilter.unit === 'miles'
+            ? locationFilter.maxDistance * 1.60934
+            : locationFilter.maxDistance;
         list = list.filter((n) => {
           if (n.node_id === myNodeNum) return true;
           // Nodes without GPS can't be distance-filtered — keep them visible
           if (!n.latitude && !n.longitude) return true;
-          const d = haversineDistanceKm(homeNode!.latitude, homeNode!.longitude, n.latitude, n.longitude);
+          const d = haversineDistanceKm(
+            homeNode!.latitude,
+            homeNode!.longitude,
+            n.latitude,
+            n.longitude,
+          );
           return d <= maxKm;
         });
       }
@@ -120,55 +130,55 @@ export default function NodeListPanel({
       // Regular field sort
       let cmp = 0;
       switch (sortField) {
-        case "node_id":
+        case 'node_id':
           cmp = a.node_id - b.node_id;
           break;
-        case "long_name":
-          cmp = (a.long_name || "").localeCompare(b.long_name || "");
+        case 'long_name':
+          cmp = (a.long_name || '').localeCompare(b.long_name || '');
           break;
-        case "short_name":
-          cmp = (a.short_name || "").localeCompare(b.short_name || "");
+        case 'short_name':
+          cmp = (a.short_name || '').localeCompare(b.short_name || '');
           break;
-        case "rssi":
+        case 'rssi':
           cmp = (a.rssi ?? -999) - (b.rssi ?? -999);
           break;
-        case "battery":
+        case 'battery':
           cmp = (a.battery || 0) - (b.battery || 0);
           break;
-        case "last_heard":
+        case 'last_heard':
           cmp = (a.last_heard || 0) - (b.last_heard || 0);
           break;
-        case "latitude":
+        case 'latitude':
           cmp = (a.latitude || 0) - (b.latitude || 0);
           break;
-        case "longitude":
+        case 'longitude':
           cmp = (a.longitude || 0) - (b.longitude || 0);
           break;
-        case "role":
+        case 'role':
           cmp = (a.role ?? 999) - (b.role ?? 999);
           break;
-        case "hops_away":
+        case 'hops_away':
           cmp = (a.hops_away ?? 999) - (b.hops_away ?? 999);
           break;
-        case "via_mqtt": {
-          const aVal = a.heard_via_mqtt_only ? 2 : (a.via_mqtt ? 1 : 0);
-          const bVal = b.heard_via_mqtt_only ? 2 : (b.via_mqtt ? 1 : 0);
+        case 'via_mqtt': {
+          const aVal = a.heard_via_mqtt_only ? 2 : a.via_mqtt ? 1 : 0;
+          const bVal = b.heard_via_mqtt_only ? 2 : b.via_mqtt ? 1 : 0;
           cmp = aVal - bVal;
           break;
         }
-        case "voltage":
+        case 'voltage':
           cmp = (a.voltage ?? 0) - (b.voltage ?? 0);
           break;
-        case "channel_utilization":
+        case 'channel_utilization':
           cmp = (a.channel_utilization ?? 0) - (b.channel_utilization ?? 0);
           break;
-        case "air_util_tx":
+        case 'air_util_tx':
           cmp = (a.air_util_tx ?? 0) - (b.air_util_tx ?? 0);
           break;
-        case "altitude":
+        case 'altitude':
           cmp = (a.altitude ?? 0) - (b.altitude ?? 0);
           break;
-        case "redundancy": {
+        case 'redundancy': {
           const aRed = nodeRedundancy.get(a.node_id)?.maxPaths ?? 1;
           const bRed = nodeRedundancy.get(b.node_id)?.maxPaths ?? 1;
           cmp = aRed - bRed;
@@ -184,46 +194,65 @@ export default function NodeListPanel({
   const filterStatus = useMemo(() => {
     if (!locationFilter.enabled) return null;
     const homeNode = myNodeNum ? nodes.get(myNodeNum) : undefined;
-    const homeHasLocation = homeNode &&
-      homeNode.latitude != null && homeNode.latitude !== 0 &&
-      homeNode.longitude != null && homeNode.longitude !== 0;
-    if (!homeHasLocation) return "no-gps";
+    const homeHasLocation =
+      homeNode &&
+      homeNode.latitude != null &&
+      homeNode.latitude !== 0 &&
+      homeNode.longitude != null &&
+      homeNode.longitude !== 0;
+    if (!homeHasLocation) return 'no-gps';
     const totalWithGps = Array.from(nodes.values()).filter(
-      (n) => n.node_id !== myNodeNum && (n.latitude || n.longitude)
+      (n) => n.node_id !== myNodeNum && (n.latitude || n.longitude),
     ).length;
     const visibleWithGps = nodeList.filter(
-      (n) => n.node_id !== myNodeNum && (n.latitude || n.longitude)
+      (n) => n.node_id !== myNodeNum && (n.latitude || n.longitude),
     ).length;
     return { hidden: totalWithGps - visibleWithGps };
   }, [locationFilter, myNodeNum, nodes, nodeList]);
 
   function formatTime(ts: number): string {
-    if (!ts) return "Never";
+    if (!ts) return 'Never';
     const diff = Date.now() - ts;
-    if (diff < 60_000) return "Just now";
+    if (diff < 60_000) return 'Just now';
     if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
     if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
     return new Date(ts).toLocaleDateString();
   }
 
   function formatCoord(val: number): string {
-    return val === 0 ? "-" : val.toFixed(4);
+    return val === 0 ? '-' : val.toFixed(4);
   }
 
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field) {
       return (
-        <svg className="w-3 h-3 text-gray-600 ml-1 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+        <svg
+          className="w-3 h-3 text-gray-600 ml-1 inline"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"
+          />
         </svg>
       );
     }
     return (
-      <svg className="w-3 h-3 text-bright-green ml-1 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <svg
+        className="w-3 h-3 text-bright-green ml-1 inline"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        strokeWidth={2}
+      >
         <path
           strokeLinecap="round"
           strokeLinejoin="round"
-          d={sortAsc ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"}
+          d={sortAsc ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}
         />
       </svg>
     );
@@ -232,9 +261,7 @@ export default function NodeListPanel({
   return (
     <div className="flex flex-col min-h-0 h-full gap-3">
       <div className="flex justify-between items-center gap-3 shrink-0">
-        <h2 className="text-xl font-semibold text-gray-200">
-          Node Database ({nodeList.length})
-        </h2>
+        <h2 className="text-xl font-semibold text-gray-200">Node Database ({nodeList.length})</h2>
         <div className="flex items-center gap-2 flex-1 max-w-xs">
           <input
             type="text"
@@ -248,14 +275,15 @@ export default function NodeListPanel({
       </div>
 
       {/* Distance filter status */}
-      {filterStatus === "no-gps" && (
+      {filterStatus === 'no-gps' && (
         <div className="bg-yellow-900/30 border border-yellow-700 text-yellow-300 px-3 py-2 rounded-lg text-xs shrink-0">
           Distance filter is enabled but your device has no GPS fix — all nodes are shown.
         </div>
       )}
-      {filterStatus !== null && filterStatus !== "no-gps" && filterStatus.hidden > 0 && (
+      {filterStatus !== null && filterStatus !== 'no-gps' && filterStatus.hidden > 0 && (
         <div className="bg-brand-green/10 border border-brand-green/30 text-brand-green px-3 py-2 rounded-lg text-xs shrink-0">
-          Distance filter active — {filterStatus.hidden} node{filterStatus.hidden !== 1 ? "s" : ""} hidden beyond {locationFilter.maxDistance} {locationFilter.unit}.
+          Distance filter active — {filterStatus.hidden} node{filterStatus.hidden !== 1 ? 's' : ''}{' '}
+          hidden beyond {locationFilter.maxDistance} {locationFilter.unit}.
         </div>
       )}
 
@@ -263,15 +291,15 @@ export default function NodeListPanel({
       <div className="flex gap-3 text-xs text-muted shrink-0">
         <span className="flex items-center gap-1">
           <span className="w-2 h-2 rounded-full bg-brand-green inline-block" />
-          {nodeList.filter((n) => getNodeStatus(n.last_heard) === "online").length} online
+          {nodeList.filter((n) => getNodeStatus(n.last_heard) === 'online').length} online
         </span>
         <span className="flex items-center gap-1">
           <span className="w-2 h-2 rounded-full bg-yellow-500 inline-block" />
-          {nodeList.filter((n) => getNodeStatus(n.last_heard) === "stale").length} stale
+          {nodeList.filter((n) => getNodeStatus(n.last_heard) === 'stale').length} stale
         </span>
         <span className="flex items-center gap-1">
           <span className="w-2 h-2 rounded-full bg-gray-600 inline-block" />
-          {nodeList.filter((n) => getNodeStatus(n.last_heard) === "offline").length} offline
+          {nodeList.filter((n) => getNodeStatus(n.last_heard) === 'offline').length} offline
         </span>
       </div>
 
@@ -280,140 +308,176 @@ export default function NodeListPanel({
           <caption className="sr-only">Connected mesh nodes</caption>
           <thead>
             <tr className="bg-deep-black text-muted text-left sticky top-0 z-10 whitespace-nowrap">
-              <th scope="col" className="px-3 py-2 w-8"><span className="sr-only">Status</span></th>
-              <th scope="col" className="px-2 py-2 w-6" title="Favorites"><span className="sr-only">Favorite</span></th>
+              <th scope="col" className="px-3 py-2 w-8">
+                <span className="sr-only">Status</span>
+              </th>
+              <th scope="col" className="px-2 py-2 w-6" title="Favorites">
+                <span className="sr-only">Favorite</span>
+              </th>
               <th
                 scope="col"
-                aria-sort={sortField === "node_id" ? (sortAsc ? "ascending" : "descending") : "none"}
+                aria-sort={
+                  sortField === 'node_id' ? (sortAsc ? 'ascending' : 'descending') : 'none'
+                }
                 className="px-3 py-2 cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort("node_id")}
+                onClick={() => handleSort('node_id')}
               >
                 ID <SortIcon field="node_id" />
               </th>
               <th
                 scope="col"
-                aria-sort={sortField === "long_name" ? (sortAsc ? "ascending" : "descending") : "none"}
+                aria-sort={
+                  sortField === 'long_name' ? (sortAsc ? 'ascending' : 'descending') : 'none'
+                }
                 className="px-3 py-2 cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort("long_name")}
+                onClick={() => handleSort('long_name')}
               >
                 Long Name <SortIcon field="long_name" />
               </th>
               <th
                 scope="col"
-                aria-sort={sortField === "short_name" ? (sortAsc ? "ascending" : "descending") : "none"}
+                aria-sort={
+                  sortField === 'short_name' ? (sortAsc ? 'ascending' : 'descending') : 'none'
+                }
                 className="px-3 py-2 cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort("short_name")}
+                onClick={() => handleSort('short_name')}
               >
                 Short <SortIcon field="short_name" />
               </th>
               <th
                 scope="col"
-                aria-sort={sortField === "last_heard" ? (sortAsc ? "ascending" : "descending") : "none"}
+                aria-sort={
+                  sortField === 'last_heard' ? (sortAsc ? 'ascending' : 'descending') : 'none'
+                }
                 className="px-3 py-2 cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort("last_heard")}
+                onClick={() => handleSort('last_heard')}
               >
                 Last Heard <SortIcon field="last_heard" />
               </th>
               <th
                 scope="col"
-                aria-sort={sortField === "role" ? (sortAsc ? "ascending" : "descending") : "none"}
+                aria-sort={sortField === 'role' ? (sortAsc ? 'ascending' : 'descending') : 'none'}
                 className="px-3 py-2 cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort("role")}
+                onClick={() => handleSort('role')}
               >
                 Role <SortIcon field="role" />
               </th>
               <th
                 scope="col"
-                aria-sort={sortField === "hops_away" ? (sortAsc ? "ascending" : "descending") : "none"}
+                aria-sort={
+                  sortField === 'hops_away' ? (sortAsc ? 'ascending' : 'descending') : 'none'
+                }
                 className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort("hops_away")}
+                onClick={() => handleSort('hops_away')}
               >
                 Hops <SortIcon field="hops_away" />
               </th>
               <th
                 scope="col"
-                aria-sort={sortField === "via_mqtt" ? (sortAsc ? "ascending" : "descending") : "none"}
+                aria-sort={
+                  sortField === 'via_mqtt' ? (sortAsc ? 'ascending' : 'descending') : 'none'
+                }
                 className="px-3 py-2 text-center cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort("via_mqtt")}
+                onClick={() => handleSort('via_mqtt')}
               >
                 MQTT <SortIcon field="via_mqtt" />
               </th>
               <th
                 scope="col"
-                aria-sort={sortField === "latitude" ? (sortAsc ? "ascending" : "descending") : "none"}
+                aria-sort={
+                  sortField === 'latitude' ? (sortAsc ? 'ascending' : 'descending') : 'none'
+                }
                 className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort("latitude")}
+                onClick={() => handleSort('latitude')}
               >
                 Lat <SortIcon field="latitude" />
               </th>
               <th
                 scope="col"
-                aria-sort={sortField === "longitude" ? (sortAsc ? "ascending" : "descending") : "none"}
+                aria-sort={
+                  sortField === 'longitude' ? (sortAsc ? 'ascending' : 'descending') : 'none'
+                }
                 className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort("longitude")}
+                onClick={() => handleSort('longitude')}
               >
                 Lon <SortIcon field="longitude" />
               </th>
               <th
                 scope="col"
-                aria-sort={sortField === "rssi" ? (sortAsc ? "ascending" : "descending") : "none"}
+                aria-sort={sortField === 'rssi' ? (sortAsc ? 'ascending' : 'descending') : 'none'}
                 className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort("rssi")}
+                onClick={() => handleSort('rssi')}
               >
                 Signal <SortIcon field="rssi" />
               </th>
               <th
                 scope="col"
                 className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort("rssi")}
+                onClick={() => handleSort('rssi')}
               >
                 RSSI <SortIcon field="rssi" />
               </th>
               <th
                 scope="col"
-                aria-sort={sortField === "battery" ? (sortAsc ? "ascending" : "descending") : "none"}
+                aria-sort={
+                  sortField === 'battery' ? (sortAsc ? 'ascending' : 'descending') : 'none'
+                }
                 className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort("battery")}
+                onClick={() => handleSort('battery')}
               >
                 Battery <SortIcon field="battery" />
               </th>
               <th
                 scope="col"
-                aria-sort={sortField === "voltage" ? (sortAsc ? "ascending" : "descending") : "none"}
+                aria-sort={
+                  sortField === 'voltage' ? (sortAsc ? 'ascending' : 'descending') : 'none'
+                }
                 className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort("voltage")}
+                onClick={() => handleSort('voltage')}
               >
                 Voltage <SortIcon field="voltage" />
               </th>
               <th
                 scope="col"
-                aria-sort={sortField === "channel_utilization" ? (sortAsc ? "ascending" : "descending") : "none"}
+                aria-sort={
+                  sortField === 'channel_utilization'
+                    ? sortAsc
+                      ? 'ascending'
+                      : 'descending'
+                    : 'none'
+                }
                 className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort("channel_utilization")}
+                onClick={() => handleSort('channel_utilization')}
               >
                 Ch.Util <SortIcon field="channel_utilization" />
               </th>
               <th
                 scope="col"
-                aria-sort={sortField === "air_util_tx" ? (sortAsc ? "ascending" : "descending") : "none"}
+                aria-sort={
+                  sortField === 'air_util_tx' ? (sortAsc ? 'ascending' : 'descending') : 'none'
+                }
                 className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort("air_util_tx")}
+                onClick={() => handleSort('air_util_tx')}
               >
                 Air Tx <SortIcon field="air_util_tx" />
               </th>
               <th
                 scope="col"
-                aria-sort={sortField === "altitude" ? (sortAsc ? "ascending" : "descending") : "none"}
+                aria-sort={
+                  sortField === 'altitude' ? (sortAsc ? 'ascending' : 'descending') : 'none'
+                }
                 className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort("altitude")}
+                onClick={() => handleSort('altitude')}
               >
                 Alt <SortIcon field="altitude" />
               </th>
               <th
                 scope="col"
-                aria-sort={sortField === "redundancy" ? (sortAsc ? "ascending" : "descending") : "none"}
+                aria-sort={
+                  sortField === 'redundancy' ? (sortAsc ? 'ascending' : 'descending') : 'none'
+                }
                 className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort("redundancy")}
+                onClick={() => handleSort('redundancy')}
                 title="Echoes: same packet received via multiple paths (e.g. RF + MQTT or multiple RF hops). Higher means better mesh redundancy."
               >
                 Redund. <SortIcon field="redundancy" />
@@ -423,13 +487,10 @@ export default function NodeListPanel({
           <tbody className="divide-y divide-gray-700/50">
             {nodeList.length === 0 ? (
               <tr>
-                <td
-                  colSpan={19}
-                  className="text-center text-muted py-8"
-                >
+                <td colSpan={19} className="text-center text-muted py-8">
                   {searchQuery
-                    ? "No nodes match your search."
-                    : "No nodes discovered yet. Connect to a device to see the mesh network."}
+                    ? 'No nodes match your search.'
+                    : 'No nodes discovered yet. Connect to a device to see the mesh network.'}
                 </td>
               </tr>
             ) : (
@@ -438,22 +499,24 @@ export default function NodeListPanel({
                 const status = getNodeStatus(node.last_heard);
                 const isMqttOnlyDimmed = ignoreMqttEnabled && !!node.heard_via_mqtt_only;
                 const rowOpacity = isMqttOnlyDimmed
-                  ? "opacity-50"
-                  : status === "offline"
-                  ? "opacity-20"
-                  : status === "stale"
-                  ? "opacity-35"
-                  : "";
+                  ? 'opacity-50'
+                  : status === 'offline'
+                    ? 'opacity-20'
+                    : status === 'stale'
+                      ? 'opacity-35'
+                      : '';
 
                 return (
                   <tr
                     key={node.node_id}
                     onClick={() => onNodeClick(node)}
-                    aria-label={node.favorited && !isSelf ? `${node.long_name || node.short_name || "Node"}, favorited` : undefined}
+                    aria-label={
+                      node.favorited && !isSelf
+                        ? `${node.long_name || node.short_name || 'Node'}, favorited`
+                        : undefined
+                    }
                     className={`cursor-pointer hover:bg-secondary-dark/50 transition-colors ${rowOpacity} ${
-                      isSelf
-                        ? "bg-brand-green/5 border-l-2 border-l-brand-green"
-                        : ""
+                      isSelf ? 'bg-brand-green/5 border-l-2 border-l-brand-green' : ''
                     }`}
                   >
                     {/* Status indicator */}
@@ -461,17 +524,26 @@ export default function NodeListPanel({
                       <div className="flex items-center gap-1">
                         <span
                           className={`w-2 h-2 rounded-full ${
-                            status === "online"
-                              ? "bg-brand-green"
-                              : status === "stale"
-                              ? "bg-yellow-500"
-                              : "bg-gray-600"
+                            status === 'online'
+                              ? 'bg-brand-green'
+                              : status === 'stale'
+                                ? 'bg-yellow-500'
+                                : 'bg-gray-600'
                           }`}
-                          aria-label={status === "online" ? "Online" : status === "stale" ? "Stale" : "Offline"}
+                          aria-label={
+                            status === 'online'
+                              ? 'Online'
+                              : status === 'stale'
+                                ? 'Stale'
+                                : 'Offline'
+                          }
                           title={status}
                         />
                         {isSelf && (
-                          <span className="text-[10px] text-bright-green font-bold" title="This is your node">
+                          <span
+                            className="text-[10px] text-bright-green font-bold"
+                            title="This is your node"
+                          >
                             ★
                           </span>
                         )}
@@ -482,12 +554,19 @@ export default function NodeListPanel({
                       {!isSelf && (
                         <button
                           onClick={() => onToggleFavorite(node.node_id, !node.favorited)}
-                          aria-label={node.favorited ? "Remove from favorites" : "Add to favorites"}
+                          aria-label={node.favorited ? 'Remove from favorites' : 'Add to favorites'}
                           aria-pressed={node.favorited}
-                          title={node.favorited ? "Remove from favorites" : "Add to favorites"}
+                          title={node.favorited ? 'Remove from favorites' : 'Add to favorites'}
                         >
-                          <span className={node.favorited ? "text-yellow-400" : "text-gray-600 hover:text-yellow-400"} aria-hidden="true">
-                            {node.favorited ? "★" : "☆"}
+                          <span
+                            className={
+                              node.favorited
+                                ? 'text-yellow-400'
+                                : 'text-gray-600 hover:text-yellow-400'
+                            }
+                            aria-hidden="true"
+                          >
+                            {node.favorited ? '★' : '☆'}
                           </span>
                         </button>
                       )}
@@ -495,17 +574,19 @@ export default function NodeListPanel({
                     <td className="px-3 py-2 font-mono text-xs text-muted">
                       !{node.node_id.toString(16)}
                     </td>
-                    <td className={`px-3 py-2 ${isSelf ? "text-bright-green font-medium" : "text-gray-200"} ${isMqttOnlyDimmed ? "line-through" : ""}`}>
-                      {node.long_name || "-"}
+                    <td
+                      className={`px-3 py-2 ${isSelf ? 'text-bright-green font-medium' : 'text-gray-200'} ${isMqttOnlyDimmed ? 'line-through' : ''}`}
+                    >
+                      {node.long_name || '-'}
                       {isSelf && (
                         <span className="text-[10px] text-bright-green/60 ml-1.5">(you)</span>
                       )}
                       {!isSelf && anomalies.has(node.node_id) && (
                         <svg
                           className={`w-4 h-4 ml-1 inline shrink-0 ${
-                            anomalies.get(node.node_id)?.severity === "error"
-                              ? "text-red-400"
-                              : "text-orange-400"
+                            anomalies.get(node.node_id)?.severity === 'error'
+                              ? 'text-red-400'
+                              : 'text-orange-400'
                           }`}
                           fill="none"
                           viewBox="0 0 24 24"
@@ -513,36 +594,52 @@ export default function NodeListPanel({
                           strokeWidth={2}
                         >
                           <title>{anomalies.get(node.node_id)?.description}</title>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                          />
                         </svg>
                       )}
                     </td>
-                    <td className={`px-3 py-2 text-gray-300 ${isMqttOnlyDimmed ? "line-through" : ""}`}>
-                      {node.short_name || "-"}
+                    <td
+                      className={`px-3 py-2 text-gray-300 ${isMqttOnlyDimmed ? 'line-through' : ''}`}
+                    >
+                      {node.short_name || '-'}
                     </td>
-                    <td className="px-3 py-2 text-muted">
-                      {formatTime(node.last_heard)}
-                    </td>
+                    <td className="px-3 py-2 text-muted">{formatTime(node.last_heard)}</td>
                     <td className="px-3 py-2 text-xs">
                       <RoleDisplay role={node.role} />
                     </td>
-                    <td className={`px-3 py-2 text-right text-xs ${(isSelf && (node.hops_away === undefined || node.hops_away === null) ? 0 : node.hops_away) === 0 ? "text-bright-green" : "text-gray-300"}`}>
-                      {node.heard_via_mqtt_only
-                        ? <span className="text-muted">—</span>
-                        : (isSelf && (node.hops_away === undefined || node.hops_away === null)
-                            ? 0
-                            : node.hops_away !== undefined && node.hops_away !== null
-                            ? node.hops_away
-                            : "-")}
+                    <td
+                      className={`px-3 py-2 text-right text-xs ${(isSelf && (node.hops_away === undefined || node.hops_away === null) ? 0 : node.hops_away) === 0 ? 'text-bright-green' : 'text-gray-300'}`}
+                    >
+                      {node.heard_via_mqtt_only ? (
+                        <span className="text-muted">—</span>
+                      ) : isSelf && (node.hops_away === undefined || node.hops_away === null) ? (
+                        0
+                      ) : node.hops_away !== undefined && node.hops_away !== null ? (
+                        node.hops_away
+                      ) : (
+                        '-'
+                      )}
                     </td>
                     <td className="px-3 py-2 text-center text-gray-300 text-xs">
-                      {node.heard_via_mqtt_only
-                        ? <span title="Heard only via MQTT" className="text-blue-400">🌐</span>
-                        : isSelf && mqttConnected
-                        ? <span title="Connected via MQTT" className="text-blue-400">🌐</span>
-                        : node.via_mqtt
-                        ? <span title="Relay uses MQTT" className="text-gray-400 text-xs">relay</span>
-                        : "-"}
+                      {node.heard_via_mqtt_only ? (
+                        <span title="Heard only via MQTT" className="text-blue-400">
+                          🌐
+                        </span>
+                      ) : isSelf && mqttConnected ? (
+                        <span title="Connected via MQTT" className="text-blue-400">
+                          🌐
+                        </span>
+                      ) : node.via_mqtt ? (
+                        <span title="Relay uses MQTT" className="text-gray-400 text-xs">
+                          relay
+                        </span>
+                      ) : (
+                        '-'
+                      )}
                     </td>
                     <td className="px-3 py-2 text-right font-mono text-xs text-muted">
                       {formatCoord(node.latitude)}
@@ -552,13 +649,19 @@ export default function NodeListPanel({
                     </td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex justify-end">
-                        {node.heard_via_mqtt_only
-                          ? <span className="text-muted text-xs">—</span>
-                          : <SignalBars rssi={node.rssi} isSelf={isSelf} />}
+                        {node.heard_via_mqtt_only ? (
+                          <span className="text-muted text-xs">—</span>
+                        ) : (
+                          <SignalBars rssi={node.rssi} isSelf={isSelf} />
+                        )}
                       </div>
                     </td>
                     <td className="px-3 py-2 text-right font-mono text-xs text-muted">
-                      {node.heard_via_mqtt_only ? "—" : node.rssi != null ? `${node.rssi} dBm` : "-"}
+                      {node.heard_via_mqtt_only
+                        ? '—'
+                        : node.rssi != null
+                          ? `${node.rssi} dBm`
+                          : '-'}
                     </td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex items-center justify-end gap-1.5">
@@ -567,10 +670,10 @@ export default function NodeListPanel({
                             <div
                               className={`h-full rounded-full ${
                                 node.battery > 50
-                                  ? "bg-brand-green"
+                                  ? 'bg-brand-green'
                                   : node.battery > 20
-                                  ? "bg-yellow-500"
-                                  : "bg-red-500"
+                                    ? 'bg-yellow-500'
+                                    : 'bg-red-500'
                               }`}
                               style={{
                                 width: `${Math.min(node.battery, 100)}%`,
@@ -581,29 +684,31 @@ export default function NodeListPanel({
                         <span
                           className={
                             node.battery > 50
-                              ? "text-bright-green"
+                              ? 'text-bright-green'
                               : node.battery > 20
-                              ? "text-yellow-400"
-                              : node.battery > 0
-                              ? "text-red-400"
-                              : "text-muted"
+                                ? 'text-yellow-400'
+                                : node.battery > 0
+                                  ? 'text-red-400'
+                                  : 'text-muted'
                           }
                         >
-                          {node.battery > 0 ? `${node.battery}%` : "-"}
+                          {node.battery > 0 ? `${node.battery}%` : '-'}
                         </span>
                       </div>
                     </td>
                     <td className="px-3 py-2 text-right text-gray-300 text-xs">
-                      {node.voltage != null ? `${node.voltage.toFixed(2)} V` : "-"}
+                      {node.voltage != null ? `${node.voltage.toFixed(2)} V` : '-'}
                     </td>
                     <td className="px-3 py-2 text-right text-gray-300 text-xs">
-                      {node.channel_utilization != null ? `${node.channel_utilization.toFixed(1)}%` : "-"}
+                      {node.channel_utilization != null
+                        ? `${node.channel_utilization.toFixed(1)}%`
+                        : '-'}
                     </td>
                     <td className="px-3 py-2 text-right text-gray-300 text-xs">
-                      {node.air_util_tx != null ? `${node.air_util_tx.toFixed(1)}%` : "-"}
+                      {node.air_util_tx != null ? `${node.air_util_tx.toFixed(1)}%` : '-'}
                     </td>
                     <td className="px-3 py-2 text-right text-gray-300 text-xs">
-                      {node.altitude != null && node.altitude !== 0 ? `${node.altitude} m` : "-"}
+                      {node.altitude != null && node.altitude !== 0 ? `${node.altitude} m` : '-'}
                     </td>
                     {(() => {
                       const red = nodeRedundancy.get(node.node_id);
@@ -612,14 +717,14 @@ export default function NodeListPanel({
                         <td
                           className={`px-3 py-2 text-right text-xs font-mono ${
                             echoes >= 3
-                              ? "text-lime-400"
+                              ? 'text-lime-400'
                               : echoes > 0
-                              ? "text-gray-300"
-                              : "text-muted"
+                                ? 'text-gray-300'
+                                : 'text-muted'
                           }`}
                           title={red ? `${red.score}% connection health` : undefined}
                         >
-                          {echoes > 0 ? `+${echoes}` : "-"}
+                          {echoes > 0 ? `+${echoes}` : '-'}
                         </td>
                       );
                     })()}

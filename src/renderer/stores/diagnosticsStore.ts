@@ -1,6 +1,7 @@
-import { create } from "zustand";
-import type { MeshNode, NodeAnomaly, HopHistoryPoint } from "../lib/types";
-import { analyzeNode } from "../lib/diagnostics/RoutingDiagnosticEngine";
+import { create } from 'zustand';
+
+import { analyzeNode } from '../lib/diagnostics/RoutingDiagnosticEngine';
+import type { HopHistoryPoint, MeshNode, NodeAnomaly } from '../lib/types';
 
 const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 const FIFTEEN_MIN = 15 * 60 * 1000;
@@ -48,14 +49,11 @@ interface DiagnosticsState {
 
 // Module-level debounce timer and pending analysis buffer
 let analysisTimer: ReturnType<typeof setTimeout> | null = null;
-const pendingAnalyses = new Map<
-  number,
-  { node: MeshNode; homeNode: MeshNode | null }
->();
+const pendingAnalyses = new Map<number, { node: MeshNode; homeNode: MeshNode | null }>();
 
 function loadAdminBool(key: string): boolean {
   try {
-    const raw = localStorage.getItem("mesh-client:adminSettings");
+    const raw = localStorage.getItem('mesh-client:adminSettings');
     return raw ? (JSON.parse(raw)[key] ?? false) : false;
   } catch {
     return false;
@@ -64,15 +62,15 @@ function loadAdminBool(key: string): boolean {
 
 function saveAdminKey(key: string, value: boolean): void {
   try {
-    const raw = localStorage.getItem("mesh-client:adminSettings");
+    const raw = localStorage.getItem('mesh-client:adminSettings');
     const s = raw ? JSON.parse(raw) : {};
-    localStorage.setItem("mesh-client:adminSettings", JSON.stringify({ ...s, [key]: value }));
+    localStorage.setItem('mesh-client:adminSettings', JSON.stringify({ ...s, [key]: value }));
   } catch {}
 }
 
 function loadMqttIgnoredNodes(): Set<number> {
   try {
-    const raw = localStorage.getItem("mesh-client:mqttIgnoredNodes");
+    const raw = localStorage.getItem('mesh-client:mqttIgnoredNodes');
     return raw ? new Set<number>(JSON.parse(raw)) : new Set();
   } catch {
     return new Set();
@@ -81,7 +79,7 @@ function loadMqttIgnoredNodes(): Set<number> {
 
 function saveMqttIgnoredNodes(nodes: Set<number>): void {
   try {
-    localStorage.setItem("mesh-client:mqttIgnoredNodes", JSON.stringify([...nodes]));
+    localStorage.setItem('mesh-client:mqttIgnoredNodes', JSON.stringify([...nodes]));
   } catch {}
 }
 
@@ -91,9 +89,9 @@ export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
   packetStats: new Map(),
   packetCache: new Map(),
   nodeRedundancy: new Map(),
-  congestionHalosEnabled: loadAdminBool("congestionHalosEnabled"),
-  anomalyHalosEnabled: loadAdminBool("anomalyHalosEnabled"),
-  ignoreMqttEnabled: loadAdminBool("ignoreMqttEnabled"),
+  congestionHalosEnabled: loadAdminBool('congestionHalosEnabled'),
+  anomalyHalosEnabled: loadAdminBool('anomalyHalosEnabled'),
+  ignoreMqttEnabled: loadAdminBool('ignoreMqttEnabled'),
   mqttIgnoredNodes: loadMqttIgnoredNodes(),
 
   processNodeUpdate(node: MeshNode, homeNode: MeshNode | null) {
@@ -208,17 +206,17 @@ export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
   },
 
   setCongestionHalosEnabled(enabled: boolean) {
-    saveAdminKey("congestionHalosEnabled", enabled);
+    saveAdminKey('congestionHalosEnabled', enabled);
     set({ congestionHalosEnabled: enabled });
   },
 
   setAnomalyHalosEnabled(enabled: boolean) {
-    saveAdminKey("anomalyHalosEnabled", enabled);
+    saveAdminKey('anomalyHalosEnabled', enabled);
     set({ anomalyHalosEnabled: enabled });
   },
 
   setIgnoreMqttEnabled(enabled: boolean) {
-    saveAdminKey("ignoreMqttEnabled", enabled);
+    saveAdminKey('ignoreMqttEnabled', enabled);
     set({ ignoreMqttEnabled: enabled });
   },
 

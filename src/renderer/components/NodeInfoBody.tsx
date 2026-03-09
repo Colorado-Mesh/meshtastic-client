@@ -1,28 +1,29 @@
-import { useState } from "react";
-import type { MeshNode, HopHistoryPoint } from "../lib/types";
-import { useDiagnosticsStore } from "../stores/diagnosticsStore";
-import { RoleDisplay } from "../lib/roleInfo";
-import { getRecommendedAction } from "../lib/diagnostics/RemediationEngine";
+import { useState } from 'react';
+
+import { getRecommendedAction } from '../lib/diagnostics/RemediationEngine';
 import {
   diagnoseConnectedNode,
   diagnoseOtherNode,
   hasLocalStatsData,
   type RFDiagnosis,
-} from "../lib/diagnostics/RFDiagnosticEngine";
+} from '../lib/diagnostics/RFDiagnosticEngine';
+import { RoleDisplay } from '../lib/roleInfo';
+import type { HopHistoryPoint, MeshNode } from '../lib/types';
+import { useDiagnosticsStore } from '../stores/diagnosticsStore';
 
 export const CATEGORY_STYLES: Record<string, string> = {
-  Configuration: "bg-blue-500/20 text-blue-400 border border-blue-500/30",
-  Physical:      "bg-orange-500/20 text-orange-400 border border-orange-500/30",
-  Hardware:      "bg-purple-500/20 text-purple-400 border border-purple-500/30",
-  Software:      "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30",
+  Configuration: 'bg-blue-500/20 text-blue-400 border border-blue-500/30',
+  Physical: 'bg-orange-500/20 text-orange-400 border border-orange-500/30',
+  Hardware: 'bg-purple-500/20 text-purple-400 border border-purple-500/30',
+  Software: 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30',
 };
 
 const EMPTY_HOP_HISTORY: HopHistoryPoint[] = [];
 
 export function formatTime(ts: number): string {
-  if (!ts) return "Never";
+  if (!ts) return 'Never';
   const diff = Date.now() - ts;
-  if (diff < 60_000) return "Just now";
+  if (diff < 60_000) return 'Just now';
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
   return new Date(ts).toLocaleString();
@@ -40,9 +41,7 @@ export function InfoRow({
   return (
     <div className="flex justify-between items-center py-2 border-b border-gray-700/50 last:border-b-0">
       <span className="text-sm text-muted">{label}</span>
-      <span className={`text-sm font-medium ${className || "text-gray-200"}`}>
-        {value}
-      </span>
+      <span className={`text-sm font-medium ${className || 'text-gray-200'}`}>{value}</span>
     </div>
   );
 }
@@ -53,42 +52,42 @@ export interface NodeInfoBodyProps {
   traceRouteHops?: string[];
 }
 
-const SEVERITY_STYLES: Record<RFDiagnosis["severity"], string> = {
-  warning: "text-orange-400",
-  info: "text-blue-400",
+const SEVERITY_STYLES: Record<RFDiagnosis['severity'], string> = {
+  warning: 'text-orange-400',
+  info: 'text-blue-400',
 };
 
-const SEVERITY_ICON: Record<RFDiagnosis["severity"], string> = {
-  warning: "⚠",
-  info: "ℹ",
+const SEVERITY_ICON: Record<RFDiagnosis['severity'], string> = {
+  warning: '⚠',
+  info: 'ℹ',
 };
 
 export default function NodeInfoBody({ node, homeNode, traceRouteHops }: NodeInfoBodyProps) {
   const anomaly = useDiagnosticsStore((s) => s.anomalies.get(node.node_id));
   const nodePacketStats = useDiagnosticsStore((s) => s.packetStats.get(node.node_id));
   const hopHistory = useDiagnosticsStore(
-    (s) => s.hopHistory.get(node.node_id) ?? EMPTY_HOP_HISTORY
+    (s) => s.hopHistory.get(node.node_id) ?? EMPTY_HOP_HISTORY,
   );
   const nodeRedundancy = useDiagnosticsStore((s) => s.nodeRedundancy.get(node.node_id));
   const [pathHistoryOpen, setPathHistoryOpen] = useState(false);
 
   const batteryColor =
     node.battery > 50
-      ? "text-bright-green"
+      ? 'text-bright-green'
       : node.battery > 20
-      ? "text-yellow-400"
-      : node.battery > 0
-      ? "text-red-400"
-      : "text-muted";
+        ? 'text-yellow-400'
+        : node.battery > 0
+          ? 'text-red-400'
+          : 'text-muted';
 
   const snrColor =
     node.snr > 5
-      ? "text-bright-green"
+      ? 'text-bright-green'
       : node.snr > 0
-      ? "text-yellow-400"
-      : node.snr !== 0
-      ? "text-red-400"
-      : "text-muted";
+        ? 'text-yellow-400'
+        : node.snr !== 0
+          ? 'text-red-400'
+          : 'text-muted';
 
   const now = Date.now();
   const oneHourAgo = now - 60 * 60 * 1000;
@@ -102,35 +101,37 @@ export default function NodeInfoBody({ node, homeNode, traceRouteHops }: NodeInf
     if (recentHour[i].h !== recentHour[i - 1].h) hopChanges++;
   }
   const stability =
-    recentHour.length < 2 ? "Unknown"
-    : hopChanges === 0 ? "Stable"
-    : hopChanges <= 2 ? "Moderate"
-    : "Unstable";
+    recentHour.length < 2
+      ? 'Unknown'
+      : hopChanges === 0
+        ? 'Stable'
+        : hopChanges <= 2
+          ? 'Moderate'
+          : 'Unstable';
   const stabilityColor =
-    stability === "Stable" ? "text-brand-green"
-    : stability === "Moderate" ? "text-yellow-400"
-    : stability === "Unknown" ? "text-muted"
-    : "text-red-400";
+    stability === 'Stable'
+      ? 'text-brand-green'
+      : stability === 'Moderate'
+        ? 'text-yellow-400'
+        : stability === 'Unknown'
+          ? 'text-muted'
+          : 'text-red-400';
 
   const offenseSummary = anomaly
-    ? anomaly.type === "hop_goblin"
-      ? "Node is over-hopping for its distance or signal strength"
-      : anomaly.type === "bad_route"
-      ? "Possible routing loop — high packet duplication detected"
-      : anomaly.type === "route_flapping"
-      ? "Route is unstable — hop count changing frequently"
-      : "Reported as 0 hops but GPS data suggests otherwise"
+    ? anomaly.type === 'hop_goblin'
+      ? 'Node is over-hopping for its distance or signal strength'
+      : anomaly.type === 'bad_route'
+        ? 'Possible routing loop — high packet duplication detected'
+        : anomaly.type === 'route_flapping'
+          ? 'Route is unstable — hop count changing frequently'
+          : 'Reported as 0 hops but GPS data suggests otherwise'
     : null;
 
   return (
     <>
       {/* Names */}
-      {node.long_name && (
-        <InfoRow label="Long Name" value={node.long_name} />
-      )}
-      {node.short_name && (
-        <InfoRow label="Short Name" value={node.short_name} />
-      )}
+      {node.long_name && <InfoRow label="Long Name" value={node.long_name} />}
+      {node.short_name && <InfoRow label="Short Name" value={node.short_name} />}
 
       {/* Role */}
       <div className="flex justify-between items-center py-2 border-b border-gray-700/50">
@@ -141,7 +142,7 @@ export default function NodeInfoBody({ node, homeNode, traceRouteHops }: NodeInf
       {/* Signal */}
       <InfoRow
         label="SNR"
-        value={node.snr !== 0 ? `${node.snr.toFixed(1)} dB` : "—"}
+        value={node.snr !== 0 ? `${node.snr.toFixed(1)} dB` : '—'}
         className={snrColor}
       />
 
@@ -154,17 +155,17 @@ export default function NodeInfoBody({ node, homeNode, traceRouteHops }: NodeInf
               <div
                 className={`h-full rounded-full transition-all ${
                   node.battery > 50
-                    ? "bg-brand-green"
+                    ? 'bg-brand-green'
                     : node.battery > 20
-                    ? "bg-yellow-500"
-                    : "bg-red-500"
+                      ? 'bg-yellow-500'
+                      : 'bg-red-500'
                 }`}
                 style={{ width: `${Math.min(node.battery, 100)}%` }}
               />
             </div>
           )}
           <span className={`text-sm font-medium ${batteryColor}`}>
-            {node.battery > 0 ? `${node.battery}%` : "—"}
+            {node.battery > 0 ? `${node.battery}%` : '—'}
           </span>
         </div>
       </div>
@@ -184,9 +185,9 @@ export default function NodeInfoBody({ node, homeNode, traceRouteHops }: NodeInf
       {/* GPS warning */}
       {node.lastPositionWarning && (
         <div className="flex items-start gap-1.5 px-2 py-1.5 mt-1 rounded bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 text-xs">
-            <span>⚠</span>
-            <span>GPS Warning: {node.lastPositionWarning}</span>
-          </div>
+          <span>⚠</span>
+          <span>GPS Warning: {node.lastPositionWarning}</span>
+        </div>
       )}
 
       {/* Routing Health */}
@@ -198,7 +199,9 @@ export default function NodeInfoBody({ node, homeNode, traceRouteHops }: NodeInf
           const remedy = getRecommendedAction(node, homeNode ?? null, nodePacketStats);
           if (!remedy) return null;
           return (
-            <div className={`flex items-start gap-2 p-2 mb-2 rounded-lg text-xs border ${CATEGORY_STYLES[remedy.category]}`}>
+            <div
+              className={`flex items-start gap-2 p-2 mb-2 rounded-lg text-xs border ${CATEGORY_STYLES[remedy.category]}`}
+            >
               <span className="font-semibold shrink-0">{remedy.category}</span>
               <span>{remedy.title}</span>
             </div>
@@ -207,9 +210,11 @@ export default function NodeInfoBody({ node, homeNode, traceRouteHops }: NodeInf
 
         {/* Offense */}
         {anomaly ? (
-          <div className={`flex items-start gap-1.5 text-xs ${
-            anomaly.severity === "error" ? "text-red-400" : "text-orange-400"
-          }`}>
+          <div
+            className={`flex items-start gap-1.5 text-xs ${
+              anomaly.severity === 'error' ? 'text-red-400' : 'text-orange-400'
+            }`}
+          >
             <svg
               className="w-3.5 h-3.5 shrink-0 mt-0.5"
               fill="none"
@@ -217,7 +222,11 @@ export default function NodeInfoBody({ node, homeNode, traceRouteHops }: NodeInf
               stroke="currentColor"
               strokeWidth={2}
             >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              />
             </svg>
             <div>
               <div className="font-medium mb-0.5">{offenseSummary}</div>
@@ -235,42 +244,43 @@ export default function NodeInfoBody({ node, homeNode, traceRouteHops }: NodeInf
             {stability}
             {recentHour.length >= 2 && hopChanges > 0 && (
               <span className="text-gray-500 font-normal ml-1">
-                ({hopChanges} change{hopChanges !== 1 ? "s" : ""})
+                ({hopChanges} change{hopChanges !== 1 ? 's' : ''})
               </span>
             )}
           </span>
         </div>
 
-        {hasSparkline && (() => {
-          const minH = Math.min(...recentHistory.map((p) => p.h));
-          const maxH = Math.max(...recentHistory.map((p) => p.h));
-          const range = maxH - minH || 1;
-          const minT = recentHistory[0].t;
-          const maxT = recentHistory[recentHistory.length - 1].t;
-          const timeRange = maxT - minT || 1;
-          const points = recentHistory
-            .map((p) => {
-              const x = ((p.t - minT) / timeRange) * 200;
-              const y = 40 - ((p.h - minH) / range) * 36 - 2;
-              return `${x.toFixed(1)},${y.toFixed(1)}`;
-            })
-            .join(" ");
-          return (
-            <div className="mt-2">
-              <div className="text-[10px] text-gray-500 mb-0.5">Hop count — 24h</div>
-              <svg viewBox="0 0 200 40" className="w-full h-8 text-brand-green/60">
-                <polyline
-                  points={points}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </div>
-          );
-        })()}
+        {hasSparkline &&
+          (() => {
+            const minH = Math.min(...recentHistory.map((p) => p.h));
+            const maxH = Math.max(...recentHistory.map((p) => p.h));
+            const range = maxH - minH || 1;
+            const minT = recentHistory[0].t;
+            const maxT = recentHistory[recentHistory.length - 1].t;
+            const timeRange = maxT - minT || 1;
+            const points = recentHistory
+              .map((p) => {
+                const x = ((p.t - minT) / timeRange) * 200;
+                const y = 40 - ((p.h - minH) / range) * 36 - 2;
+                return `${x.toFixed(1)},${y.toFixed(1)}`;
+              })
+              .join(' ');
+            return (
+              <div className="mt-2">
+                <div className="text-[10px] text-gray-500 mb-0.5">Hop count — 24h</div>
+                <svg viewBox="0 0 200 40" className="w-full h-8 text-brand-green/60">
+                  <polyline
+                    points={points}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </div>
+            );
+          })()}
 
         {/* Connection Health (packet redundancy) — only shown once echoes have been observed */}
         {nodeRedundancy && nodeRedundancy.maxPaths > 1 && (
@@ -280,13 +290,15 @@ export default function NodeInfoBody({ node, homeNode, traceRouteHops }: NodeInf
           >
             <div className="flex items-center justify-between">
               <span className="text-[10px] text-gray-500">Connection Health</span>
-              <span className={`text-xs font-medium ${
-                nodeRedundancy.score >= 67
-                  ? "text-lime-400"
-                  : nodeRedundancy.score >= 33
-                  ? "text-yellow-400"
-                  : "text-muted"
-              }`}>
+              <span
+                className={`text-xs font-medium ${
+                  nodeRedundancy.score >= 67
+                    ? 'text-lime-400'
+                    : nodeRedundancy.score >= 33
+                      ? 'text-yellow-400'
+                      : 'text-muted'
+                }`}
+              >
                 {nodeRedundancy.score}%
                 {nodeRedundancy.maxPaths >= 3 && (
                   <span className="ml-1 text-[10px] text-lime-400/80">Highly Redundant</span>
@@ -296,7 +308,10 @@ export default function NodeInfoBody({ node, homeNode, traceRouteHops }: NodeInf
 
             {/* Path History toggle — only shown when there are echoes to display */}
             {(() => {
-              const totalEchoes = nodeRedundancy.recentPackets.reduce((s, r) => s + r.paths.length - 1, 0);
+              const totalEchoes = nodeRedundancy.recentPackets.reduce(
+                (s, r) => s + r.paths.length - 1,
+                0,
+              );
               const echoPackets = nodeRedundancy.recentPackets.filter((r) => r.paths.length > 1);
               if (totalEchoes === 0) return null;
               return (
@@ -305,29 +320,37 @@ export default function NodeInfoBody({ node, homeNode, traceRouteHops }: NodeInf
                     onClick={() => setPathHistoryOpen((o) => !o)}
                     className="text-[10px] text-gray-500 hover:text-gray-300 transition-colors flex items-center gap-1"
                   >
-                    <span>{pathHistoryOpen ? "▾" : "▸"}</span>
-                    Path History ({totalEchoes} echo{totalEchoes !== 1 ? "es" : ""})
+                    <span>{pathHistoryOpen ? '▾' : '▸'}</span>
+                    Path History ({totalEchoes} echo{totalEchoes !== 1 ? 'es' : ''})
                   </button>
 
                   {pathHistoryOpen && (
                     <div className="mt-1.5 flex flex-col gap-1.5 max-h-48 overflow-y-auto pr-1">
                       {echoPackets.map((rec) => (
-                        <div key={rec.packetId} className="text-[10px] bg-deep-black/50 rounded p-1.5">
+                        <div
+                          key={rec.packetId}
+                          className="text-[10px] bg-deep-black/50 rounded p-1.5"
+                        >
                           <div className="text-gray-400 mb-0.5 font-mono">
                             #{rec.packetId.toString(16).toUpperCase()} — {rec.paths.length} paths
                           </div>
                           {rec.paths.map((p, i) => (
                             <div key={i} className="text-gray-500 pl-1.5 leading-tight">
-                              {i === 0 ? "Original" : `Echo ${i}`}:{" "}
-                              <span className={p.transport === "rf" ? "text-brand-green/80" : "text-blue-400/80"}>
+                              {i === 0 ? 'Original' : `Echo ${i}`}:{' '}
+                              <span
+                                className={
+                                  p.transport === 'rf' ? 'text-brand-green/80' : 'text-blue-400/80'
+                                }
+                              >
                                 {p.transport.toUpperCase()}
                               </span>
                               {p.snr != null && (
-                                <span className="ml-1">SNR {p.snr > 0 ? "+" : ""}{p.snr.toFixed(1)} dB</span>
+                                <span className="ml-1">
+                                  SNR {p.snr > 0 ? '+' : ''}
+                                  {p.snr.toFixed(1)} dB
+                                </span>
                               )}
-                              {p.rssi != null && (
-                                <span className="ml-1">{p.rssi} dBm</span>
-                              )}
+                              {p.rssi != null && <span className="ml-1">{p.rssi} dBm</span>}
                             </div>
                           ))}
                         </div>
@@ -352,8 +375,8 @@ export default function NodeInfoBody({ node, homeNode, traceRouteHops }: NodeInf
                 <span
                   className={
                     i === 0 || i === traceRouteHops.length - 1
-                      ? "text-green-400 font-medium"
-                      : "text-gray-200"
+                      ? 'text-green-400 font-medium'
+                      : 'text-gray-200'
                   }
                 >
                   {hop}
@@ -394,26 +417,27 @@ function RFDiagnosticsSection({ node, isOurNode }: { node: MeshNode; isOurNode: 
       <div className="flex items-center justify-between mb-2">
         <div className="text-xs text-gray-400">RF Diagnostics</div>
         {!noTelemetry && totalChecks !== null && (
-          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
-            flagged === 0
-              ? "bg-green-900/40 text-green-400"
-              : "bg-orange-900/40 text-orange-400"
-          }`}>
+          <span
+            className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+              flagged === 0 ? 'bg-green-900/40 text-green-400' : 'bg-orange-900/40 text-orange-400'
+            }`}
+          >
             {flagged}/{totalChecks} flagged
           </span>
         )}
       </div>
 
       {noTelemetry ? (
-        <div className="text-xs text-muted">
-          No node telemetry. Node diagnostics unavailable.
-        </div>
+        <div className="text-xs text-muted">No node telemetry. Node diagnostics unavailable.</div>
       ) : flagged === 0 ? (
         <div className="text-xs text-brand-green">All RF diagnostics OK</div>
       ) : (
         <div className="flex flex-col gap-1.5">
           {findings!.map((f, i) => (
-            <div key={i} className={`flex items-start gap-1.5 text-xs ${SEVERITY_STYLES[f.severity]}`}>
+            <div
+              key={i}
+              className={`flex items-start gap-1.5 text-xs ${SEVERITY_STYLES[f.severity]}`}
+            >
               <span className="shrink-0 mt-0.5">{SEVERITY_ICON[f.severity]}</span>
               <div>
                 <span className="font-semibold">{f.condition}</span>

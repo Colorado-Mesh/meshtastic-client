@@ -1,12 +1,12 @@
-import { app } from "electron";
-import path from "path";
-import fs from "fs";
-import Database from "better-sqlite3";
+import Database from 'better-sqlite3';
+import { app } from 'electron';
+import fs from 'fs';
+import path from 'path';
 
 let db: Database.Database | null = null;
 
 export function getDatabasePath(): string {
-  return path.join(app.getPath("userData"), "mesh-client.db");
+  return path.join(app.getPath('userData'), 'mesh-client.db');
 }
 
 export function initDatabase(): void {
@@ -19,37 +19,41 @@ export function initDatabase(): void {
   } catch {
     throw new Error(
       `Database directory is not writable: ${dbDir}\n` +
-      `Check folder permissions for your OS user account.`
+        `Check folder permissions for your OS user account.`,
     );
   }
 
   try {
     db = new Database(dbPath, { timeout: 5000 });
     // Restrict DB file to owner-only access (no-op on Windows)
-    try { fs.chmodSync(dbPath, 0o600); } catch { /* Windows */ }
-    db.pragma("journal_mode = WAL");
-    db.pragma("synchronous = NORMAL");
+    try {
+      fs.chmodSync(dbPath, 0o600);
+    } catch {
+      /* Windows */
+    }
+    db.pragma('journal_mode = WAL');
+    db.pragma('synchronous = NORMAL');
 
     // Detect fresh DB before running setup (user_version = 0, no tables yet)
     const isFreshDb =
-      (db.pragma("user_version", { simple: true }) as number) === 0 &&
+      (db.pragma('user_version', { simple: true }) as number) === 0 &&
       !db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='messages'").get();
 
     const setup = db.transaction(() => {
       createBaseTables();
       if (isFreshDb) {
         // Base DDL already includes all columns; stamp current schema version
-        db!.pragma("user_version = 9");
+        db!.pragma('user_version = 9');
       } else {
         runMigrations();
       }
     });
     setup();
 
-    const version = db.pragma("user_version", { simple: true });
+    const version = db.pragma('user_version', { simple: true });
     console.log(`Database initialized at ${dbPath} (user_version = ${version})`);
   } catch (error) {
-    console.error("Database init failed:", error);
+    console.error('Database init failed:', error);
     throw error;
   }
 }
@@ -110,45 +114,41 @@ function createBaseTables(): void {
     `);
   } catch (error) {
     throw new Error(
-      `Failed to create base tables: ${error instanceof Error ? error.message : String(error)}`
+      `Failed to create base tables: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 }
 
 function runMigrations(): void {
-  let userVersion = db!.pragma("user_version", { simple: true }) as number;
+  let userVersion = db!.pragma('user_version', { simple: true }) as number;
 
   if (userVersion < 1) {
     try {
-      db!.exec("ALTER TABLE messages ADD COLUMN packet_id INTEGER");
+      db!.exec('ALTER TABLE messages ADD COLUMN packet_id INTEGER');
       db!.exec("ALTER TABLE messages ADD COLUMN status TEXT DEFAULT 'acked'");
-      db!.exec("ALTER TABLE messages ADD COLUMN error TEXT");
-      db!.pragma("user_version = 1");
+      db!.exec('ALTER TABLE messages ADD COLUMN error TEXT');
+      db!.pragma('user_version = 1');
       userVersion = 1;
     } catch (e) {
-      throw new Error(
-        `Migration v1 failed: ${e instanceof Error ? e.message : String(e)}`
-      );
+      throw new Error(`Migration v1 failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
   if (userVersion < 2) {
     try {
-      db!.exec("ALTER TABLE messages ADD COLUMN emoji INTEGER");
-      db!.exec("ALTER TABLE messages ADD COLUMN reply_id INTEGER");
-      db!.pragma("user_version = 2");
+      db!.exec('ALTER TABLE messages ADD COLUMN emoji INTEGER');
+      db!.exec('ALTER TABLE messages ADD COLUMN reply_id INTEGER');
+      db!.pragma('user_version = 2');
       userVersion = 2;
     } catch (e) {
-      throw new Error(
-        `Migration v2 failed: ${e instanceof Error ? e.message : String(e)}`
-      );
+      throw new Error(`Migration v2 failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
   if (userVersion < 3) {
     try {
-      db!.exec("ALTER TABLE messages ADD COLUMN to_node INTEGER");
-      db!.pragma("user_version = 3");
+      db!.exec('ALTER TABLE messages ADD COLUMN to_node INTEGER');
+      db!.pragma('user_version = 3');
       userVersion = 3;
     } catch (e) {
       throw new Error(`Migration v3 failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -158,11 +158,11 @@ function runMigrations(): void {
   if (userVersion < 4) {
     try {
       db!.exec(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_reaction_dedup " +
-        "ON messages(sender_id, reply_id, emoji) " +
-        "WHERE emoji IS NOT NULL AND reply_id IS NOT NULL"
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_reaction_dedup ' +
+          'ON messages(sender_id, reply_id, emoji) ' +
+          'WHERE emoji IS NOT NULL AND reply_id IS NOT NULL',
       );
-      db!.pragma("user_version = 4");
+      db!.pragma('user_version = 4');
       userVersion = 4;
     } catch (e) {
       throw new Error(`Migration v4 failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -171,8 +171,8 @@ function runMigrations(): void {
 
   if (userVersion < 5) {
     try {
-      db!.prepare("ALTER TABLE nodes ADD COLUMN favorited INTEGER DEFAULT 0").run();
-      db!.pragma("user_version = 5");
+      db!.prepare('ALTER TABLE nodes ADD COLUMN favorited INTEGER DEFAULT 0').run();
+      db!.pragma('user_version = 5');
       userVersion = 5;
     } catch (e) {
       throw new Error(`Migration v5 failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -181,10 +181,12 @@ function runMigrations(): void {
 
   if (userVersion < 6) {
     try {
-      db!.prepare(
-        "CREATE INDEX IF NOT EXISTS idx_messages_channel_ts ON messages(channel, timestamp DESC)"
-      ).run();
-      db!.pragma("user_version = 6");
+      db!
+        .prepare(
+          'CREATE INDEX IF NOT EXISTS idx_messages_channel_ts ON messages(channel, timestamp DESC)',
+        )
+        .run();
+      db!.pragma('user_version = 6');
       userVersion = 6;
     } catch (e) {
       throw new Error(`Migration v6 failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -194,7 +196,7 @@ function runMigrations(): void {
   if (userVersion < 7) {
     try {
       db!.prepare("ALTER TABLE nodes ADD COLUMN source TEXT DEFAULT 'rf'").run();
-      db!.pragma("user_version = 7");
+      db!.pragma('user_version = 7');
       userVersion = 7;
     } catch (e) {
       throw new Error(`Migration v7 failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -203,8 +205,8 @@ function runMigrations(): void {
 
   if (userVersion < 8) {
     try {
-      db!.prepare("ALTER TABLE messages ADD COLUMN mqtt_status TEXT").run();
-      db!.pragma("user_version = 8");
+      db!.prepare('ALTER TABLE messages ADD COLUMN mqtt_status TEXT').run();
+      db!.pragma('user_version = 8');
       userVersion = 8;
     } catch (e) {
       throw new Error(`Migration v8 failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -213,11 +215,11 @@ function runMigrations(): void {
 
   if (userVersion < 9) {
     try {
-      db!.prepare("ALTER TABLE nodes ADD COLUMN num_packets_rx_bad INTEGER").run();
-      db!.prepare("ALTER TABLE nodes ADD COLUMN num_rx_dupe INTEGER").run();
-      db!.prepare("ALTER TABLE nodes ADD COLUMN num_packets_rx INTEGER").run();
-      db!.prepare("ALTER TABLE nodes ADD COLUMN num_packets_tx INTEGER").run();
-      db!.pragma("user_version = 9");
+      db!.prepare('ALTER TABLE nodes ADD COLUMN num_packets_rx_bad INTEGER').run();
+      db!.prepare('ALTER TABLE nodes ADD COLUMN num_rx_dupe INTEGER').run();
+      db!.prepare('ALTER TABLE nodes ADD COLUMN num_packets_rx INTEGER').run();
+      db!.prepare('ALTER TABLE nodes ADD COLUMN num_packets_tx INTEGER').run();
+      db!.pragma('user_version = 9');
     } catch (e) {
       throw new Error(`Migration v9 failed: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -235,11 +237,14 @@ export function mergeDatabase(sourcePath: string) {
   try {
     const stat = fs.statSync(sourcePath);
     if (!stat.isFile() || stat.size > MAX_MERGE_FILE_BYTES) {
-      throw new Error("Merge source must be a file under 500 MB");
+      throw new Error('Merge source must be a file under 500 MB');
     }
   } catch (err) {
-    if (err instanceof Error && err.message === "Merge source must be a file under 500 MB") throw err;
-    throw new Error(`Cannot read merge source: ${err instanceof Error ? err.message : String(err)}`);
+    if (err instanceof Error && err.message === 'Merge source must be a file under 500 MB')
+      throw err;
+    throw new Error(
+      `Cannot read merge source: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
   const targetDb = getDatabase();
@@ -248,8 +253,8 @@ export function mergeDatabase(sourcePath: string) {
   try {
     sourceDb = new Database(sourcePath, { readonly: true });
 
-    const sourceNodes = sourceDb.prepare("SELECT * FROM nodes").all() as any[];
-    const sourceMessages = sourceDb.prepare("SELECT * FROM messages").all() as any[];
+    const sourceNodes = sourceDb.prepare('SELECT * FROM nodes').all() as any[];
+    const sourceMessages = sourceDb.prepare('SELECT * FROM messages').all() as any[];
 
     const result = targetDb.transaction(() => {
       let nodesAdded = 0;
@@ -268,7 +273,7 @@ export function mergeDatabase(sourcePath: string) {
       `);
 
       const checkMessage = targetDb.prepare(
-        "SELECT 1 FROM messages WHERE sender_id = ? AND timestamp = ? AND payload = ? LIMIT 1"
+        'SELECT 1 FROM messages WHERE sender_id = ? AND timestamp = ? AND payload = ? LIMIT 1',
       );
       const insertMessage = targetDb.prepare(`
         INSERT INTO messages (
@@ -296,7 +301,7 @@ export function mergeDatabase(sourcePath: string) {
 
     return result;
   } catch (err) {
-    console.error("Merge failed:", err);
+    console.error('Merge failed:', err);
     throw err;
   } finally {
     if (sourceDb) sourceDb.close();
@@ -305,7 +310,7 @@ export function mergeDatabase(sourcePath: string) {
 
 export function deleteNodesBySource(source: string): number {
   const db = getDatabase();
-  const result = db.prepare("DELETE FROM nodes WHERE source = ?").run(source);
+  const result = db.prepare('DELETE FROM nodes WHERE source = ?').run(source);
   return result.changes;
 }
 
@@ -314,7 +319,7 @@ export function closeDatabase(): void {
     try {
       db.close();
     } catch (err) {
-      console.error("Error closing database:", err);
+      console.error('Error closing database:', err);
     } finally {
       db = null;
     }

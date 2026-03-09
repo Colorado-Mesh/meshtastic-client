@@ -1,4 +1,4 @@
-import { rssiToSignalLevel } from "../lib/signal";
+import { rssiToSignalLevel } from '../lib/signal';
 
 // Exported for reuse wherever a "directly connected" indicator is needed
 export function LinkIcon({ className }: { className?: string }) {
@@ -25,13 +25,13 @@ interface Props {
 }
 
 const BAR_HEIGHTS = [3, 6, 9, 12];
-const FILLED_COLOR = "#4ade80";
-const UNFILLED_COLOR = "#374151";
-const NO_DATA_COLOR = "#4b5563";
+const FILLED_COLOR = '#4ade80';
+const UNFILLED_COLOR = '#374151';
+const NO_DATA_COLOR = '#4b5563';
 
 export default function SignalBars({ rssi, isSelf, className }: Props) {
   if (isSelf) {
-    return <LinkIcon className={className ?? "w-4 h-4"} />;
+    return <LinkIcon className={className ?? 'w-4 h-4'} />;
   }
 
   const level = rssiToSignalLevel(rssi);

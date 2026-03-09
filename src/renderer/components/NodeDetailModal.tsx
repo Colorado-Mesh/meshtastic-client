@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
-import type { MeshNode } from "../lib/types";
-import NodeInfoBody from "./NodeInfoBody";
-import { useDiagnosticsStore } from "../stores/diagnosticsStore";
+import { useEffect, useRef, useState } from 'react';
+
+import type { MeshNode } from '../lib/types';
+import { useDiagnosticsStore } from '../stores/diagnosticsStore';
+import NodeInfoBody from './NodeInfoBody';
 
 interface NodeDetailModalProps {
   node: MeshNode | null;
@@ -15,7 +16,6 @@ interface NodeDetailModalProps {
   isConnected: boolean;
   homeNode?: MeshNode | null;
 }
-
 
 export default function NodeDetailModal({
   node,
@@ -46,15 +46,16 @@ export default function NodeDetailModal({
     return () => {
       previousFocusRef.current?.focus();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on node identity only, not every property change
   }, [node?.node_id]);
 
   // Close on Escape
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === 'Escape') onClose();
     };
-    document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
   }, [onClose]);
 
   // Reset all state when node changes
@@ -69,8 +70,9 @@ export default function NodeDetailModal({
   useEffect(() => {
     if (positionRequestedAt !== null) {
       setPositionRequestedAt(null);
-      setActionStatus("Position updated");
+      setActionStatus('Position updated');
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- positionRequestedAt omitted intentionally; effect must fire on position arrival, not on request initiation
   }, [node?.latitude, node?.longitude]);
 
   // 30-second timeout for position request
@@ -78,7 +80,7 @@ export default function NodeDetailModal({
     if (!positionRequestedAt) return;
     const timer = setTimeout(() => {
       setPositionRequestedAt(null);
-      setActionStatus("Position request timed out");
+      setActionStatus('Position request timed out');
     }, 30_000);
     return () => clearTimeout(timer);
   }, [positionRequestedAt]);
@@ -93,7 +95,7 @@ export default function NodeDetailModal({
     if (!traceRoutePending) return;
     const timer = setTimeout(() => {
       setTraceRoutePending(false);
-      setActionStatus("Trace route timed out");
+      setActionStatus('Trace route timed out');
     }, 60_000);
     return () => clearTimeout(timer);
   }, [traceRoutePending]);
@@ -105,23 +107,23 @@ export default function NodeDetailModal({
 
   const handleRequestPosition = async () => {
     setPositionRequestedAt(Date.now());
-    setActionStatus("Requesting position...");
+    setActionStatus('Requesting position...');
     try {
       await onRequestPosition(node.node_id);
     } catch {
       setPositionRequestedAt(null);
-      setActionStatus("Position request failed");
+      setActionStatus('Position request failed');
     }
   };
 
   const handleTraceRoute = async () => {
     setTraceRoutePending(true);
-    setActionStatus("Trace route requested...");
+    setActionStatus('Trace route requested...');
     try {
       await onTraceRoute(node.node_id);
     } catch {
       setTraceRoutePending(false);
-      setActionStatus("Trace route failed");
+      setActionStatus('Trace route failed');
     }
   };
 
@@ -152,21 +154,22 @@ export default function NodeDetailModal({
             </div>
             <div className="flex items-center gap-2 mt-0.5">
               <span className="text-xs text-muted font-mono">{hexId}</span>
-              {node.hw_model && node.hw_model !== "0" && (
-                <span className="text-xs text-muted">
-                  {node.hw_model}
-                </span>
+              {node.hw_model && node.hw_model !== '0' && (
+                <span className="text-xs text-muted">{node.hw_model}</span>
               )}
             </div>
           </div>
           <button
             onClick={() => onToggleFavorite(node.node_id, !node.favorited)}
             className="p-1.5 rounded-lg hover:bg-secondary-dark transition-colors shrink-0 mr-1"
-            aria-label={node.favorited ? "Remove from favorites" : "Add to favorites"}
+            aria-label={node.favorited ? 'Remove from favorites' : 'Add to favorites'}
             aria-pressed={node.favorited}
           >
-            <span className={`text-xl ${node.favorited ? "text-yellow-400" : "text-gray-500 hover:text-yellow-400"}`} aria-hidden="true">
-              {node.favorited ? "★" : "☆"}
+            <span
+              className={`text-xl ${node.favorited ? 'text-yellow-400' : 'text-gray-500 hover:text-yellow-400'}`}
+              aria-hidden="true"
+            >
+              {node.favorited ? '★' : '☆'}
             </span>
           </button>
           <button
@@ -182,11 +185,7 @@ export default function NodeDetailModal({
               stroke="currentColor"
               strokeWidth={2}
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M6 18L18 6M6 6l12 12"
-              />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
@@ -214,7 +213,10 @@ export default function NodeDetailModal({
           </button>
           {onMessageNode && (
             <button
-              onClick={() => { onMessageNode(node.node_id); onClose(); }}
+              onClick={() => {
+                onMessageNode(node.node_id);
+                onClose();
+              }}
               disabled={!isConnected}
               className="flex-1 px-3 py-2 text-sm font-medium bg-purple-700/50 hover:bg-purple-600/50 disabled:opacity-40 disabled:cursor-not-allowed text-purple-300 rounded-lg transition-colors"
             >
@@ -232,15 +234,19 @@ export default function NodeDetailModal({
           <button
             onClick={() => setNodeMqttIgnored(node.node_id, !mqttIgnoredNodes.has(node.node_id))}
             className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${
-              mqttIgnoredNodes.has(node.node_id) ? "bg-yellow-500" : "bg-gray-600"
+              mqttIgnoredNodes.has(node.node_id) ? 'bg-yellow-500' : 'bg-gray-600'
             }`}
             role="switch"
             aria-checked={mqttIgnoredNodes.has(node.node_id)}
-            title={mqttIgnoredNodes.has(node.node_id) ? "Stop ignoring MQTT for this node" : "Ignore MQTT for this node"}
+            title={
+              mqttIgnoredNodes.has(node.node_id)
+                ? 'Stop ignoring MQTT for this node'
+                : 'Ignore MQTT for this node'
+            }
           >
             <span
               className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
-                mqttIgnoredNodes.has(node.node_id) ? "translate-x-4" : "translate-x-0"
+                mqttIgnoredNodes.has(node.node_id) ? 'translate-x-4' : 'translate-x-0'
               }`}
             />
           </button>
@@ -249,9 +255,7 @@ export default function NodeDetailModal({
         {/* Action status */}
         {actionStatus && (
           <div className="px-5 pb-3">
-            <div className="text-xs text-muted text-center">
-              {actionStatus}
-            </div>
+            <div className="text-xs text-muted text-center">{actionStatus}</div>
           </div>
         )}
 

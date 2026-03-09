@@ -1,14 +1,15 @@
-import { useEffect, useRef, useState } from "react";
-import type { MeshNode } from "../lib/types";
-import { useDiagnosticsStore } from "../stores/diagnosticsStore";
-import { computeHealthScore } from "../lib/diagnostics/RoutingDiagnosticEngine";
-import { getRecommendedAction } from "../lib/diagnostics/RemediationEngine";
+import { useEffect, useRef, useState } from 'react';
+
+import { getRecommendedAction } from '../lib/diagnostics/RemediationEngine';
+import { computeHealthScore } from '../lib/diagnostics/RoutingDiagnosticEngine';
+import type { MeshNode } from '../lib/types';
+import { useDiagnosticsStore } from '../stores/diagnosticsStore';
 
 const CATEGORY_STYLES: Record<string, string> = {
-  Configuration: "bg-blue-500/20 text-blue-400 border border-blue-500/30",
-  Physical:      "bg-orange-500/20 text-orange-400 border border-orange-500/30",
-  Hardware:      "bg-purple-500/20 text-purple-400 border border-purple-500/30",
-  Software:      "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30",
+  Configuration: 'bg-blue-500/20 text-blue-400 border border-blue-500/30',
+  Physical: 'bg-orange-500/20 text-orange-400 border border-orange-500/30',
+  Hardware: 'bg-purple-500/20 text-purple-400 border border-purple-500/30',
+  Software: 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30',
 };
 
 const TRACE_TIMEOUT_MS = 30_000;
@@ -41,9 +42,9 @@ function AlertTriangleIcon({ className }: { className?: string }) {
 }
 
 function formatTime(ts: number): string {
-  if (!ts) return "—";
+  if (!ts) return '—';
   const diff = Date.now() - ts;
-  if (diff < 60_000) return "Just now";
+  if (diff < 60_000) return 'Just now';
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
   return new Date(ts).toLocaleDateString();
@@ -69,7 +70,7 @@ export default function DiagnosticsPanel({
   const mqttIgnoredNodes = useDiagnosticsStore((s) => s.mqttIgnoredNodes);
   const setNodeMqttIgnored = useDiagnosticsStore((s) => s.setNodeMqttIgnored);
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState('');
   const [tracePending, setTracePending] = useState<number | null>(null);
   const [traceFailed, setTraceFailed] = useState<Set<number>>(new Set());
   const traceStartTimes = useRef<Map<number, number>>(new Map());
@@ -90,8 +91,9 @@ export default function DiagnosticsPanel({
 
   // Cleanup timers on unmount
   useEffect(() => {
+    const timers = traceTimers.current;
     return () => {
-      for (const timer of traceTimers.current.values()) clearTimeout(timer);
+      for (const timer of timers.values()) clearTimeout(timer);
     };
   }, []);
 
@@ -99,18 +101,14 @@ export default function DiagnosticsPanel({
   const healthScore = computeHealthScore(totalNodes, anomalies);
 
   const scoreColor =
-    healthScore > 80
-      ? "text-brand-green"
-      : healthScore > 60
-      ? "text-yellow-400"
-      : "text-red-400";
+    healthScore > 80 ? 'text-brand-green' : healthScore > 60 ? 'text-yellow-400' : 'text-red-400';
 
   const scoreBg =
     healthScore > 80
-      ? "bg-brand-green/10 border-brand-green/30"
+      ? 'bg-brand-green/10 border-brand-green/30'
       : healthScore > 60
-      ? "bg-yellow-500/10 border-yellow-500/30"
-      : "bg-red-500/10 border-red-500/30";
+        ? 'bg-yellow-500/10 border-yellow-500/30'
+        : 'bg-red-500/10 border-red-500/30';
 
   const anomalyList = Array.from(anomalies.values()).filter((a) => {
     if (!search.trim()) return true;
@@ -124,16 +122,18 @@ export default function DiagnosticsPanel({
     );
   });
 
-  const errorCount = Array.from(anomalies.values()).filter(
-    (a) => a.severity === "error"
-  ).length;
+  const errorCount = Array.from(anomalies.values()).filter((a) => a.severity === 'error').length;
   const warningCount = Array.from(anomalies.values()).filter(
-    (a) => a.severity === "warning"
+    (a) => a.severity === 'warning',
   ).length;
 
   const handleTraceRoute = async (nodeId: number) => {
     // Clear any prior failure for this node
-    setTraceFailed((prev) => { const s = new Set(prev); s.delete(nodeId); return s; });
+    setTraceFailed((prev) => {
+      const s = new Set(prev);
+      s.delete(nodeId);
+      return s;
+    });
     setTracePending(nodeId);
     traceStartTimes.current.set(nodeId, Date.now());
 
@@ -172,12 +172,12 @@ export default function DiagnosticsPanel({
               <span>{totalNodes} nodes monitored</span>
               {errorCount > 0 && (
                 <span className="text-red-400">
-                  {errorCount} error{errorCount !== 1 ? "s" : ""}
+                  {errorCount} error{errorCount !== 1 ? 's' : ''}
                 </span>
               )}
               {warningCount > 0 && (
                 <span className="text-orange-400">
-                  {warningCount} warning{warningCount !== 1 ? "s" : ""}
+                  {warningCount} warning{warningCount !== 1 ? 's' : ''}
                 </span>
               )}
               {anomalies.size === 0 && totalNodes > 0 && (
@@ -188,7 +188,7 @@ export default function DiagnosticsPanel({
           {anomalies.size > 0 && (
             <AlertTriangleIcon
               className={`w-12 h-12 ${
-                errorCount > 0 ? "text-red-400" : "text-orange-400"
+                errorCount > 0 ? 'text-red-400' : 'text-orange-400'
               } opacity-60`}
             />
           )}
@@ -234,7 +234,9 @@ export default function DiagnosticsPanel({
             <label htmlFor="ignoreMqtt" className="text-sm text-gray-300 cursor-pointer">
               Ignore MQTT
             </label>
-            <span className="text-xs text-muted">Gray out MQTT-only nodes and exclude them from diagnostics</span>
+            <span className="text-xs text-muted">
+              Gray out MQTT-only nodes and exclude them from diagnostics
+            </span>
           </div>
         </div>
       </div>
@@ -270,9 +272,7 @@ export default function DiagnosticsPanel({
       {/* Anomaly Table */}
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-sm font-medium text-muted">
-            Routing Anomalies ({anomalies.size})
-          </h3>
+          <h3 className="text-sm font-medium text-muted">Routing Anomalies ({anomalies.size})</h3>
           <input
             type="text"
             value={search}
@@ -286,8 +286,8 @@ export default function DiagnosticsPanel({
         {anomalyList.length === 0 ? (
           <div className="bg-secondary-dark rounded-lg p-8 text-center text-muted text-sm">
             {anomalies.size === 0
-              ? "No routing anomalies detected. The mesh looks healthy!"
-              : "No anomalies match your search."}
+              ? 'No routing anomalies detected. The mesh looks healthy!'
+              : 'No anomalies match your search.'}
           </div>
         ) : (
           <div className="overflow-auto rounded-lg border border-gray-700">
@@ -306,8 +306,8 @@ export default function DiagnosticsPanel({
               <tbody className="divide-y divide-gray-700/50">
                 {anomalyList.map((anomaly) => {
                   const node = nodes.get(anomaly.nodeId);
-                  const isError = anomaly.severity === "error";
-                  const colorClass = isError ? "text-red-400" : "text-orange-400";
+                  const isError = anomaly.severity === 'error';
+                  const colorClass = isError ? 'text-red-400' : 'text-orange-400';
                   const hexId = `!${anomaly.nodeId.toString(16)}`;
                   const displayName = node?.long_name || node?.short_name || hexId;
 
@@ -315,10 +315,11 @@ export default function DiagnosticsPanel({
                   const isFailed = traceFailed.has(anomaly.nodeId);
                   const traceResult = traceRouteResults.get(anomaly.nodeId);
                   const startTime = traceStartTimes.current.get(anomaly.nodeId);
-                  const hasResult = traceResult && startTime !== undefined && traceResult.timestamp >= startTime;
+                  const hasResult =
+                    traceResult && startTime !== undefined && traceResult.timestamp >= startTime;
                   const traceHops = hasResult
                     ? [
-                        getFullNodeLabel(myNodeNum) || "Me",
+                        getFullNodeLabel(myNodeNum) || 'Me',
                         ...traceResult!.route.map((id) => getFullNodeLabel(id)),
                         getFullNodeLabel(traceResult!.from),
                       ]
@@ -331,39 +332,34 @@ export default function DiagnosticsPanel({
                     >
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-2">
-                          <AlertTriangleIcon
-                            className={`w-4 h-4 shrink-0 ${colorClass}`}
-                          />
+                          <AlertTriangleIcon className={`w-4 h-4 shrink-0 ${colorClass}`} />
                           <div>
-                            <div className="text-gray-200 font-medium">
-                              {displayName}
-                            </div>
-                            <div className="text-xs text-muted font-mono">
-                              {hexId}
-                            </div>
+                            <div className="text-gray-200 font-medium">{displayName}</div>
+                            <div className="text-xs text-muted font-mono">{hexId}</div>
                           </div>
                         </div>
                       </td>
                       <td className="px-4 py-2.5">
-                        <div className={`text-xs font-medium uppercase tracking-wide ${colorClass} mb-0.5`}>
-                          {anomaly.type.replace(/_/g, " ")}
+                        <div
+                          className={`text-xs font-medium uppercase tracking-wide ${colorClass} mb-0.5`}
+                        >
+                          {anomaly.type.replace(/_/g, ' ')}
                         </div>
-                        <div className="text-xs text-gray-400 max-w-xs">
-                          {anomaly.description}
-                        </div>
-                        {anomaly.type === "hop_goblin" &&
+                        <div className="text-xs text-gray-400 max-w-xs">{anomaly.description}</div>
+                        {anomaly.type === 'hop_goblin' &&
                           node?.heard_via_mqtt === true &&
                           !node?.heard_via_mqtt_only && (
-                          <div className="text-xs text-yellow-400/70 mt-1">
-                            Warning: Hybrid Node. MQTT latency may be skewing hop data. Suggest: Filter MQTT.
-                          </div>
-                        )}
+                            <div className="text-xs text-yellow-400/70 mt-1">
+                              Warning: Hybrid Node. MQTT latency may be skewing hop data. Suggest:
+                              Filter MQTT.
+                            </div>
+                          )}
                       </td>
                       <td className="px-4 py-2.5 text-right text-xs text-gray-300 font-mono">
-                        {anomaly.snr != null ? `${anomaly.snr.toFixed(1)} dB` : "—"}
+                        {anomaly.snr != null ? `${anomaly.snr.toFixed(1)} dB` : '—'}
                       </td>
                       <td className="px-4 py-2.5 text-right text-xs text-gray-300">
-                        {anomaly.hopsAway != null ? anomaly.hopsAway : "—"}
+                        {anomaly.hopsAway != null ? anomaly.hopsAway : '—'}
                       </td>
                       <td className="px-4 py-2.5 text-right text-xs text-muted">
                         {isPending ? (
@@ -374,7 +370,11 @@ export default function DiagnosticsPanel({
                       </td>
                       <td className="px-4 py-2.5">
                         {(() => {
-                          const remedy = getRecommendedAction(node!, homeNode, packetStats.get(anomaly.nodeId));
+                          const remedy = getRecommendedAction(
+                            node!,
+                            homeNode,
+                            packetStats.get(anomaly.nodeId),
+                          );
                           if (!remedy) return <span className="text-xs text-muted">—</span>;
                           return (
                             <span
@@ -391,9 +391,24 @@ export default function DiagnosticsPanel({
                           {/* Trace Route button */}
                           {isPending ? (
                             <span className="flex items-center justify-end gap-1.5 text-xs text-blue-400">
-                              <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                              <svg
+                                className="w-3.5 h-3.5 animate-spin"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                              >
+                                <circle
+                                  className="opacity-25"
+                                  cx="12"
+                                  cy="12"
+                                  r="10"
+                                  stroke="currentColor"
+                                  strokeWidth="4"
+                                />
+                                <path
+                                  className="opacity-75"
+                                  fill="currentColor"
+                                  d="M4 12a8 8 0 018-8v8z"
+                                />
                               </svg>
                               Tracing...
                             </span>
@@ -404,7 +419,15 @@ export default function DiagnosticsPanel({
                                 {traceHops.map((hop, i) => (
                                   <span key={i} className="flex items-center gap-0.5">
                                     {i > 0 && <span className="text-gray-600">›</span>}
-                                    <span className={i === 0 || i === traceHops.length - 1 ? "text-brand-green" : ""}>{hop}</span>
+                                    <span
+                                      className={
+                                        i === 0 || i === traceHops.length - 1
+                                          ? 'text-brand-green'
+                                          : ''
+                                      }
+                                    >
+                                      {hop}
+                                    </span>
                                   </span>
                                 ))}
                               </div>
@@ -420,14 +443,16 @@ export default function DiagnosticsPanel({
                             <button
                               onClick={() => handleTraceRoute(anomaly.nodeId)}
                               disabled={!isConnected || tracePending !== null}
-                              title={isFailed ? "Trace route timed out — click to retry" : undefined}
+                              title={
+                                isFailed ? 'Trace route timed out — click to retry' : undefined
+                              }
                               className={`px-2.5 py-1 text-xs rounded transition-colors whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed ${
                                 isFailed
-                                  ? "bg-red-900/40 hover:bg-red-900/60 text-red-300 border border-red-800/50"
-                                  : "bg-secondary-dark hover:bg-gray-600 text-gray-300"
+                                  ? 'bg-red-900/40 hover:bg-red-900/60 text-red-300 border border-red-800/50'
+                                  : 'bg-secondary-dark hover:bg-gray-600 text-gray-300'
                               }`}
                             >
-                              {isFailed ? "Retry Trace" : "Trace Route"}
+                              {isFailed ? 'Retry Trace' : 'Trace Route'}
                             </button>
                           )}
                           {/* Per-node MQTT ignore toggle */}

@@ -1,6 +1,7 @@
 import { render } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
-import { describe, it, expect, vi } from 'vitest';
+
 import ConfigPanel from './ConfigPanel';
 
 describe('ConfigPanel accessibility', () => {
@@ -13,7 +14,7 @@ describe('ConfigPanel accessibility', () => {
         onClearChannel={vi.fn().mockResolvedValue(undefined)}
         channelConfigs={[]}
         isConnected={false}
-      />
+      />,
     );
     const results = await axe(container);
     expect(results).toHaveNoViolations();

@@ -1,7 +1,8 @@
 import '@testing-library/jest-dom';
 import 'vitest-axe/extend-expect';
-import { expect, afterEach, vi } from 'vitest';
+
 import { cleanup } from '@testing-library/react';
+import { afterEach, expect, vi } from 'vitest';
 import * as matchers from 'vitest-axe/matchers';
 
 expect.extend(matchers);
@@ -13,10 +14,18 @@ afterEach(cleanup);
 const _localStorageStore: Record<string, string> = {};
 vi.stubGlobal('localStorage', {
   getItem: (k: string) => _localStorageStore[k] ?? null,
-  setItem: (k: string, v: string) => { _localStorageStore[k] = v; },
-  removeItem: (k: string) => { delete _localStorageStore[k]; },
-  clear: () => { Object.keys(_localStorageStore).forEach((k) => delete _localStorageStore[k]); },
-  get length() { return Object.keys(_localStorageStore).length; },
+  setItem: (k: string, v: string) => {
+    _localStorageStore[k] = v;
+  },
+  removeItem: (k: string) => {
+    delete _localStorageStore[k];
+  },
+  clear: () => {
+    Object.keys(_localStorageStore).forEach((k) => delete _localStorageStore[k]);
+  },
+  get length() {
+    return Object.keys(_localStorageStore).length;
+  },
   key: (i: number) => Object.keys(_localStorageStore)[i] ?? null,
 });
 
@@ -26,7 +35,6 @@ window.HTMLElement.prototype.scrollTo = vi.fn();
 
 // jsdom doesn't implement canvas
 HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue(null);
-
 
 // Mock window.electronAPI — all renderer components depend on this
 vi.stubGlobal('electronAPI', {

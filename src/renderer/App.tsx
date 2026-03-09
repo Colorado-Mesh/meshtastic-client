@@ -1,52 +1,53 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { useDevice } from "./hooks/useDevice";
-import { useDiagnosticsStore } from "./stores/diagnosticsStore";
-import { ToastProvider } from "./components/Toast";
-import type { MQTTSettings } from "./lib/types";
-import Tabs from "./components/Tabs";
-import ErrorBoundary from "./components/ErrorBoundary";
-import NodeDetailModal from "./components/NodeDetailModal";
-import KeyboardShortcutsModal from "./components/KeyboardShortcutsModal";
-import ConnectionPanel from "./components/ConnectionPanel";
-import ChatPanel from "./components/ChatPanel";
-import NodeListPanel from "./components/NodeListPanel";
-import RadioPanel from "./components/RadioPanel";
-import MapPanel from "./components/MapPanel";
-import TelemetryPanel from "./components/TelemetryPanel";
-import AppPanel from "./components/AppPanel";
-import DiagnosticsPanel from "./components/DiagnosticsPanel";
-import { LinkIcon } from "./components/SignalBars";
-import UpdateBanner from "./components/UpdateBanner";
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+import AppPanel from './components/AppPanel';
+import ChatPanel from './components/ChatPanel';
+import ConnectionPanel from './components/ConnectionPanel';
+import DiagnosticsPanel from './components/DiagnosticsPanel';
+import ErrorBoundary from './components/ErrorBoundary';
+import KeyboardShortcutsModal from './components/KeyboardShortcutsModal';
+import MapPanel from './components/MapPanel';
+import NodeDetailModal from './components/NodeDetailModal';
+import NodeListPanel from './components/NodeListPanel';
+import RadioPanel from './components/RadioPanel';
+import { LinkIcon } from './components/SignalBars';
+import Tabs from './components/Tabs';
+import TelemetryPanel from './components/TelemetryPanel';
+import { ToastProvider } from './components/Toast';
+import UpdateBanner from './components/UpdateBanner';
+import { useDevice } from './hooks/useDevice';
+import type { MQTTSettings } from './lib/types';
+import { useDiagnosticsStore } from './stores/diagnosticsStore';
 
 const STATUS_COLOR: Record<string, string> = {
-  disconnected: "bg-red-500",
-  connecting: "bg-yellow-500 animate-pulse",
-  connected: "bg-blue-500",
-  configured: "bg-green-500",
-  stale: "bg-yellow-500 animate-pulse",
-  reconnecting: "bg-orange-500 animate-pulse",
+  disconnected: 'bg-red-500',
+  connecting: 'bg-yellow-500 animate-pulse',
+  connected: 'bg-blue-500',
+  configured: 'bg-green-500',
+  stale: 'bg-yellow-500 animate-pulse',
+  reconnecting: 'bg-orange-500 animate-pulse',
 };
 
 const TAB_NAMES = [
-  "Connection",
-  "Chat",
-  "Nodes",
-  "Map",
-  "Telemetry",
-  "Radio",
-  "App",
-  "Diagnostics",
+  'Connection',
+  'Chat',
+  'Nodes',
+  'Map',
+  'Telemetry',
+  'Radio',
+  'App',
+  'Diagnostics',
 ];
 
 export interface LocationFilter {
   enabled: boolean;
   maxDistance: number;
-  unit: "miles" | "km";
+  unit: 'miles' | 'km';
   hideMqttOnly: boolean;
 }
 
 export interface UpdateState {
-  phase: "idle" | "available" | "downloading" | "ready" | "error";
+  phase: 'idle' | 'available' | 'downloading' | 'ready' | 'error';
   version?: string;
   releaseUrl?: string;
   isPackaged?: boolean;
@@ -56,18 +57,18 @@ export interface UpdateState {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  disconnected: "Disconnected",
-  connecting: "Connecting",
-  connected: "Connected",
-  configured: "Configured",
-  stale: "Connection stale",
-  reconnecting: "Reconnecting",
+  disconnected: 'Disconnected',
+  connecting: 'Connecting',
+  connected: 'Connected',
+  configured: 'Configured',
+  stale: 'Connection stale',
+  reconnecting: 'Reconnecting',
 };
 
 function MqttGlobeIcon({ connected }: { connected: boolean }) {
   return (
     <svg
-      className={`w-4 h-4 ${connected ? "text-brand-green" : "text-gray-400"}`}
+      className={`w-4 h-4 ${connected ? 'text-brand-green' : 'text-gray-400'}`}
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -87,23 +88,23 @@ export default function App() {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [locationFilter, setLocationFilter] = useState<LocationFilter>(() => {
     try {
-      const raw = localStorage.getItem("mesh-client:adminSettings");
+      const raw = localStorage.getItem('mesh-client:adminSettings');
       const s = raw ? JSON.parse(raw) : {};
       return {
         enabled: s.distanceFilterEnabled ?? false,
         maxDistance: s.distanceFilterMax ?? 500,
-        unit: s.distanceUnit ?? "miles",
+        unit: s.distanceUnit ?? 'miles',
         hideMqttOnly: s.filterMqttOnly ?? false,
       };
     } catch {
-      return { enabled: false, maxDistance: 500, unit: "miles", hideMqttOnly: false };
+      return { enabled: false, maxDistance: 500, unit: 'miles', hideMqttOnly: false };
     }
   });
   const [pendingDmTarget, setPendingDmTarget] = useState<number | null>(null);
   const [chatUnread, setChatUnread] = useState(0);
   const prevMsgCountRef = useRef(0);
   const isInitialLoadRef = useRef(true);
-  const [updateState, setUpdateState] = useState<UpdateState>({ phase: "idle", dismissed: false });
+  const [updateState, setUpdateState] = useState<UpdateState>({ phase: 'idle', dismissed: false });
 
   const device = useDevice();
   const runReanalysis = useDiagnosticsStore((s) => s.runReanalysis);
@@ -113,38 +114,38 @@ export default function App() {
     runReanalysis(device.getNodes, device.selfNodeId);
   }, [device.nodes, device.selfNodeId, device.getNodes, runReanalysis, ignoreMqttEnabled]);
 
-  const isConfigured = device.state.status === "configured";
-  const isOperational = isConfigured || device.state.status === "stale";
-  const isConnectedOrOperational = isOperational || device.state.status === "connected";
-  const selectedNode = selectedNodeId
-    ? device.nodes.get(selectedNodeId) ?? null
-    : null;
+  const isConfigured = device.state.status === 'configured';
+  const isOperational = isConfigured || device.state.status === 'stale';
+  const isConnectedOrOperational = isOperational || device.state.status === 'connected';
+  const selectedNode = selectedNodeId ? (device.nodes.get(selectedNodeId) ?? null) : null;
 
   const traceRouteHops = useMemo(() => {
     if (!selectedNode) return undefined;
     const result = device.traceRouteResults.get(selectedNode.node_id);
     if (!result) return undefined;
     return [
-      device.getFullNodeLabel(device.state.myNodeNum) || "Me",
+      device.getFullNodeLabel(device.state.myNodeNum) || 'Me',
       ...result.route.map((id) => device.getFullNodeLabel(id)),
       device.getFullNodeLabel(result.from),
     ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- device object ref excluded intentionally; specific stable properties listed instead
   }, [selectedNode, device.traceRouteResults, device.state.myNodeNum, device.getFullNodeLabel]);
 
   // ─── Startup node pruning based on persisted admin settings ─────
   useEffect(() => {
     try {
-      const raw = localStorage.getItem("mesh-client:adminSettings");
+      const raw = localStorage.getItem('mesh-client:adminSettings');
       const s = raw ? JSON.parse(raw) : {};
       if (s.autoPruneEnabled) window.electronAPI.db.deleteNodesByAge(s.autoPruneDays ?? 30);
-      if (s.nodeCapEnabled !== false) window.electronAPI.db.pruneNodesByCount(s.nodeCapCount ?? 10000);
+      if (s.nodeCapEnabled !== false)
+        window.electronAPI.db.pruneNodesByCount(s.nodeCapCount ?? 10000);
     } catch {}
   }, []);
 
   // ─── MQTT auto-launch on startup ─────────────────────────────────
   useEffect(() => {
     try {
-      const raw = localStorage.getItem("mesh-client:mqttSettings");
+      const raw = localStorage.getItem('mesh-client:mqttSettings');
       if (raw) {
         const settings = JSON.parse(raw) as MQTTSettings;
         if (settings.autoLaunch) window.electronAPI.mqtt.connect(settings);
@@ -156,7 +157,7 @@ export default function App() {
   useEffect(() => {
     const offAvailable = window.electronAPI.update.onAvailable((info) => {
       setUpdateState({
-        phase: "available",
+        phase: 'available',
         version: info.version,
         releaseUrl: info.releaseUrl,
         isPackaged: info.isPackaged,
@@ -165,16 +166,16 @@ export default function App() {
       });
     });
     const offNotAvailable = window.electronAPI.update.onNotAvailable(() => {
-      setUpdateState((s) => s.phase === "idle" ? s : { ...s, phase: "idle" });
+      setUpdateState((s) => (s.phase === 'idle' ? s : { ...s, phase: 'idle' }));
     });
     const offProgress = window.electronAPI.update.onProgress((info) => {
-      setUpdateState((s) => ({ ...s, phase: "downloading", percent: info.percent }));
+      setUpdateState((s) => ({ ...s, phase: 'downloading', percent: info.percent }));
     });
     const offDownloaded = window.electronAPI.update.onDownloaded(() => {
-      setUpdateState((s) => ({ ...s, phase: "ready" }));
+      setUpdateState((s) => ({ ...s, phase: 'ready' }));
     });
     const offError = window.electronAPI.update.onError(() => {
-      setUpdateState((s) => ({ ...s, phase: "error" }));
+      setUpdateState((s) => ({ ...s, phase: 'error' }));
     });
     return () => {
       offAvailable();
@@ -188,19 +189,19 @@ export default function App() {
   // ─── Keyboard shortcuts: Cmd/Ctrl+1-8 for tabs, ? for help ───────────────
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key >= "1" && e.key <= "8") {
+      if ((e.metaKey || e.ctrlKey) && e.key >= '1' && e.key <= '8') {
         e.preventDefault();
         setActiveTab(parseInt(e.key) - 1);
-      } else if (e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      } else if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         const tag = (e.target as HTMLElement).tagName;
-        if (tag !== "INPUT" && tag !== "TEXTAREA") {
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
           e.preventDefault();
           setShowShortcuts(true);
         }
       }
     };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   // ─── Track messages arriving while Chat tab is inactive ──────────
@@ -213,12 +214,11 @@ export default function App() {
     }
     if (count > prevMsgCountRef.current && activeTab !== 1) {
       const newMsgs = device.messages.slice(prevMsgCountRef.current);
-      const realNew = newMsgs.filter(
-        (m) => m.sender_id !== device.state.myNodeNum && !m.emoji
-      );
+      const realNew = newMsgs.filter((m) => m.sender_id !== device.state.myNodeNum && !m.emoji);
       if (realNew.length > 0) setChatUnread((prev) => prev + realNew.length);
     }
     prevMsgCountRef.current = count;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally triggered only on message count change; activeTab/myNodeNum read as current values at run time
   }, [device.messages.length]);
 
   // ─── Clear unread when Chat tab becomes active ────────────────────
@@ -236,7 +236,7 @@ export default function App() {
 
   // Manual reconnect from banner
   const handleReconnect = useCallback(() => {
-    const lastType = device.state.connectionType ?? "ble";
+    const lastType = device.state.connectionType ?? 'ble';
     device.disconnect().then(() => {
       // Small delay before reconnecting
       setTimeout(() => {
@@ -252,28 +252,21 @@ export default function App() {
 
   const handleLocationFilterChange = useCallback((f: LocationFilter) => setLocationFilter(f), []);
 
-  const statusColor = STATUS_COLOR[device.state.status] ?? "bg-gray-500";
+  const statusColor = STATUS_COLOR[device.state.status] ?? 'bg-gray-500';
 
   return (
     <ToastProvider>
       {/* Global assertive live region for critical announcements */}
-      <div
-        aria-live="assertive"
-        aria-atomic="true"
-        className="sr-only"
-        id="app-announcer"
-      />
+      <div aria-live="assertive" aria-atomic="true" className="sr-only" id="app-announcer" />
       <div className="flex flex-col h-screen">
         {/* Header */}
         <header
           className={`relative flex items-center justify-between px-4 py-2 bg-deep-black border-b ${
-            isConfigured ? "border-brand-green/20" : "border-gray-700"
+            isConfigured ? 'border-brand-green/20' : 'border-gray-700'
           }`}
         >
           <div className="flex items-center gap-3">
-            <h1 className="text-lg font-bold text-bright-green tracking-wide">
-              Colorado Mesh
-            </h1>
+            <h1 className="text-lg font-bold text-bright-green tracking-wide">Colorado Mesh</h1>
             <span className="text-xs text-muted">Meshtastic Client</span>
           </div>
           {/* Keyboard shortcuts — absolutely centered in header */}
@@ -284,22 +277,27 @@ export default function App() {
             className="absolute left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-slate-600 bg-slate-800/60 shadow-sm text-gray-400 hover:text-gray-200 hover:border-slate-500 hover:bg-slate-700/60 transition-colors text-sm font-medium"
             title="Keyboard shortcuts (?)"
           >
-            Shortcuts <kbd className="px-1.5 py-0.5 border border-slate-500 rounded bg-slate-700 text-slate-300 text-xs font-mono">?</kbd>
+            Shortcuts{' '}
+            <kbd className="px-1.5 py-0.5 border border-slate-500 rounded bg-slate-700 text-slate-300 text-xs font-mono">
+              ?
+            </kbd>
           </button>
           <div className="flex items-center gap-2">
             {/* MQTT status globe */}
             <div
               className="flex items-center gap-1.5 mr-3 pr-3 border-r border-gray-700"
-              aria-label={device.mqttStatus === "connected" ? "MQTT: connected" : "MQTT: disconnected"}
+              aria-label={
+                device.mqttStatus === 'connected' ? 'MQTT: connected' : 'MQTT: disconnected'
+              }
             >
-              <MqttGlobeIcon connected={device.mqttStatus === "connected"} />
-              <span className={`text-xs ${device.mqttStatus === "connected" ? "text-brand-green" : "text-gray-500"}`}>
+              <MqttGlobeIcon connected={device.mqttStatus === 'connected'} />
+              <span
+                className={`text-xs ${device.mqttStatus === 'connected' ? 'text-brand-green' : 'text-gray-500'}`}
+              >
                 MQTT
               </span>
             </div>
-            {isConnectedOrOperational && (
-              <LinkIcon className="w-4 h-4" aria-hidden="true" />
-            )}
+            {isConnectedOrOperational && <LinkIcon className="w-4 h-4" aria-hidden="true" />}
             <div
               className={`w-2.5 h-2.5 rounded-full ${statusColor}`}
               aria-label={STATUS_LABELS[device.state.status] ?? device.state.status}
@@ -309,7 +307,7 @@ export default function App() {
                 {device.state.status}
                 {device.state.connectionType
                   ? ` (${device.state.connectionType.toUpperCase()})`
-                  : ""}
+                  : ''}
               </span>
             </div>
             {device.state.myNodeNum > 0 && (
@@ -356,7 +354,7 @@ export default function App() {
                 }
               />
             )}
-            <div className={activeTab === 1 ? "contents" : "hidden"}>
+            <div className={activeTab === 1 ? 'contents' : 'hidden'}>
               <ChatPanel
                 messages={device.messages}
                 channels={device.channels}
@@ -364,8 +362,8 @@ export default function App() {
                 onSend={device.sendMessage}
                 onReact={device.sendReaction}
                 onNodeClick={setSelectedNodeId}
-                isConnected={isOperational || device.mqttStatus === "connected"}
-                isMqttOnly={!isOperational && device.mqttStatus === "connected"}
+                isConnected={isOperational || device.mqttStatus === 'connected'}
+                isMqttOnly={!isOperational && device.mqttStatus === 'connected'}
                 nodes={device.nodes}
                 initialDmTarget={pendingDmTarget}
                 onDmTargetConsumed={() => setPendingDmTarget(null)}
@@ -377,7 +375,7 @@ export default function App() {
                 nodes={device.nodes}
                 myNodeNum={device.selfNodeId}
                 onNodeClick={(node) => setSelectedNodeId(node.node_id)}
-                mqttConnected={device.mqttStatus === "connected"}
+                mqttConnected={device.mqttStatus === 'connected'}
                 locationFilter={locationFilter}
                 onToggleFavorite={device.setNodeFavorited}
               />
@@ -389,9 +387,7 @@ export default function App() {
                 locationFilter={locationFilter}
                 ourPosition={device.ourPosition}
                 onLocateMe={() =>
-                  device.refreshOurPosition().then((p) =>
-                    p ? { lat: p.lat, lon: p.lon } : null
-                  )
+                  device.refreshOurPosition().then((p) => (p ? { lat: p.lat, lon: p.lon } : null))
                 }
               />
             )}
@@ -450,7 +446,7 @@ export default function App() {
         {/* Footer */}
         <footer className="px-4 py-1.5 bg-deep-black border-t border-gray-700 text-[11px] text-muted flex justify-between">
           <span>
-            A Project by{" "}
+            A Project by{' '}
             <a
               href="https://coloradomesh.org/"
               title="Colorado Mesh"
@@ -460,7 +456,7 @@ export default function App() {
             >
               Colorado Mesh
             </a>
-            . Join us on{" "}
+            . Join us on{' '}
             <a
               href="https://discord.com/invite/McChKR5NpS"
               title="Colorado Mesh Discord"
@@ -470,7 +466,7 @@ export default function App() {
             >
               Discord
             </a>
-            . Code on{" "}
+            . Code on{' '}
             <a
               href="https://github.com/Colorado-Mesh/meshtastic-client"
               title="Colorado Mesh on GitHub"
@@ -488,9 +484,7 @@ export default function App() {
         </footer>
 
         {/* Keyboard Shortcuts Modal */}
-        {showShortcuts && (
-          <KeyboardShortcutsModal onClose={() => setShowShortcuts(false)} />
-        )}
+        {showShortcuts && <KeyboardShortcutsModal onClose={() => setShowShortcuts(false)} />}
 
         {/* Node Detail Modal — rendered outside main for proper z-indexing */}
         <NodeDetailModal
@@ -504,9 +498,7 @@ export default function App() {
             setSelectedNodeId(null);
           }}
           onMessageNode={
-            selectedNode?.node_id !== device.state.myNodeNum
-              ? handleMessageNode
-              : undefined
+            selectedNode?.node_id !== device.state.myNodeNum ? handleMessageNode : undefined
           }
           onToggleFavorite={device.setNodeFavorited}
           isConnected={isOperational}
@@ -527,7 +519,7 @@ function ConnectionBanner({
   reconnectAttempt?: number;
   onReconnect: () => void;
 }) {
-  if (status === "stale") {
+  if (status === 'stale') {
     return (
       <div className="bg-yellow-900/80 border-b border-yellow-700 px-4 py-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -546,7 +538,7 @@ function ConnectionBanner({
     );
   }
 
-  if (status === "reconnecting") {
+  if (status === 'reconnecting') {
     return (
       <div className="bg-orange-900/80 border-b border-orange-700 px-4 py-2 flex items-center gap-2">
         <span className="text-orange-400 animate-spin inline-block">⟳</span>

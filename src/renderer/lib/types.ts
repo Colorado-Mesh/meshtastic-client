@@ -1,4 +1,4 @@
-export type ConnectionType = "ble" | "serial" | "http";
+export type ConnectionType = 'ble' | 'serial' | 'http';
 
 export type AnomalyType = 'hop_goblin' | 'bad_route' | 'route_flapping' | 'impossible_hop';
 
@@ -38,8 +38,8 @@ export interface MeshNode {
   favorited?: boolean;
   // MQTT source tracking
   heard_via_mqtt_only?: boolean; // session-only: true if never heard via RF this session
-  heard_via_mqtt?: boolean;      // session-only: true if any MQTT update was received this session
-  source?: "rf" | "mqtt";       // persistent: written to DB
+  heard_via_mqtt?: boolean; // session-only: true if any MQTT update was received this session
+  source?: 'rf' | 'mqtt'; // persistent: written to DB
   lastPositionWarning?: string; // set when bad GPS data received; cleared on valid update
   // LocalStats telemetry (connected node only, from localStats variant)
   num_packets_rx_bad?: number;
@@ -67,7 +67,7 @@ export interface MQTTSettings {
   maxRetries?: number;
 }
 
-export type MQTTStatus = "disconnected" | "connecting" | "connected" | "error";
+export type MQTTStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
 export interface ChatMessage {
   id?: number;
@@ -78,8 +78,8 @@ export interface ChatMessage {
   timestamp: number;
   // Delivery status tracking
   packetId?: number;
-  status?: "sending" | "acked" | "failed";      // device (RF) transport
-  mqttStatus?: "sending" | "acked" | "failed";  // MQTT transport (hybrid/MQTT-only)
+  status?: 'sending' | 'acked' | 'failed'; // device (RF) transport
+  mqttStatus?: 'sending' | 'acked' | 'failed'; // MQTT transport (hybrid/MQTT-only)
   error?: string;
   // Emoji reactions / tapback
   emoji?: number;
@@ -97,7 +97,7 @@ export interface TelemetryPoint {
 }
 
 export interface DeviceState {
-  status: "disconnected" | "connecting" | "connected" | "configured" | "stale" | "reconnecting";
+  status: 'disconnected' | 'connecting' | 'connected' | 'configured' | 'stale' | 'reconnecting';
   myNodeNum: number;
   connectionType: ConnectionType | null;
   reconnectAttempt?: number;
@@ -124,10 +124,7 @@ declare global {
     electronAPI: {
       db: {
         saveMessage: (msg: ChatMessage) => Promise<unknown>;
-        getMessages: (
-          channel?: number,
-          limit?: number
-        ) => Promise<ChatMessage[]>;
+        getMessages: (channel?: number, limit?: number) => Promise<ChatMessage[]>;
         saveNode: (node: MeshNode) => Promise<unknown>;
         getNodes: () => Promise<MeshNode[]>;
         clearMessages: () => Promise<unknown>;
@@ -137,7 +134,7 @@ declare global {
           packetId: number,
           status: string,
           error?: string,
-          mqttStatus?: string
+          mqttStatus?: string,
         ) => Promise<unknown>;
         exportDb: () => Promise<string | null>;
         importDb: () => Promise<{ nodesAdded: number; messagesAdded: number } | null>;
@@ -155,19 +152,21 @@ declare global {
         onStatus: (cb: (status: MQTTStatus) => void) => () => void;
         onError: (cb: (message: string) => void) => () => void;
         onNodeUpdate: (cb: (node: Partial<MeshNode> & { node_id: number }) => void) => () => void;
-        onMessage: (cb: (msg: Omit<ChatMessage, "id">) => void) => () => void;
+        onMessage: (cb: (msg: Omit<ChatMessage, 'id'>) => void) => () => void;
         onClientId: (cb: (id: string) => void) => () => void;
         getClientId: () => Promise<string>;
-        publish: (args: { text: string; from: number; channel: number; destination?: number; channelName?: string }) => Promise<number>;
+        publish: (args: {
+          text: string;
+          from: number;
+          channel: number;
+          destination?: number;
+          channelName?: string;
+        }) => Promise<number>;
       };
-      onBluetoothDevicesDiscovered: (
-        cb: (devices: BluetoothDevice[]) => void
-      ) => () => void;
+      onBluetoothDevicesDiscovered: (cb: (devices: BluetoothDevice[]) => void) => () => void;
       selectBluetoothDevice: (deviceId: string) => void;
       cancelBluetoothSelection: () => void;
-      onSerialPortsDiscovered: (
-        cb: (ports: SerialPortInfo[]) => void
-      ) => () => void;
+      onSerialPortsDiscovered: (cb: (ports: SerialPortInfo[]) => void) => () => void;
       selectSerialPort: (portId: string) => void;
       cancelSerialSelection: () => void;
       clearSessionData: () => Promise<void>;

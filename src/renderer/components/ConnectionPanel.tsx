@@ -1,12 +1,13 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from 'react';
+
 import type {
+  BluetoothDevice,
   ConnectionType,
   DeviceState,
-  BluetoothDevice,
-  SerialPortInfo,
   MQTTSettings,
   MQTTStatus,
-} from "../lib/types";
+  SerialPortInfo,
+} from '../lib/types';
 // ─── Last Connection (localStorage) ───────────────────────────────
 interface LastConnection {
   type: ConnectionType;
@@ -16,44 +17,62 @@ interface LastConnection {
   serialPortId?: string;
 }
 
-const LAST_CONNECTION_KEY = "mesh-client:lastConnection";
-const LAST_BLE_DEVICE_KEY = "mesh-client:lastBleDevice";
-const LAST_SERIAL_PORT_KEY = "mesh-client:lastSerialPort";
+const LAST_CONNECTION_KEY = 'mesh-client:lastConnection';
+const LAST_BLE_DEVICE_KEY = 'mesh-client:lastBleDevice';
+const LAST_SERIAL_PORT_KEY = 'mesh-client:lastSerialPort';
 
 function loadLastConnection(): LastConnection | null {
   try {
     const raw = localStorage.getItem(LAST_CONNECTION_KEY);
     return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 function saveLastConnection(c: LastConnection) {
-  try { localStorage.setItem(LAST_CONNECTION_KEY, JSON.stringify(c)); } catch {}
+  try {
+    localStorage.setItem(LAST_CONNECTION_KEY, JSON.stringify(c));
+  } catch {}
 }
 
 function clearLastConnection() {
-  try { localStorage.removeItem(LAST_CONNECTION_KEY); } catch {}
+  try {
+    localStorage.removeItem(LAST_CONNECTION_KEY);
+  } catch {}
 }
 
 function loadLastBleDevice(): string | null {
-  try { return localStorage.getItem(LAST_BLE_DEVICE_KEY); } catch { return null; }
+  try {
+    return localStorage.getItem(LAST_BLE_DEVICE_KEY);
+  } catch {
+    return null;
+  }
 }
 
 function saveLastBleDevice(id: string) {
-  try { localStorage.setItem(LAST_BLE_DEVICE_KEY, id); } catch {}
+  try {
+    localStorage.setItem(LAST_BLE_DEVICE_KEY, id);
+  } catch {}
 }
 
 function loadLastSerialPort(): string | null {
-  try { return localStorage.getItem(LAST_SERIAL_PORT_KEY); } catch { return null; }
+  try {
+    return localStorage.getItem(LAST_SERIAL_PORT_KEY);
+  } catch {
+    return null;
+  }
 }
 
 function saveLastSerialPort(id: string) {
-  try { localStorage.setItem(LAST_SERIAL_PORT_KEY, id); } catch {}
+  try {
+    localStorage.setItem(LAST_SERIAL_PORT_KEY, id);
+  } catch {}
 }
 
 function getBleDeviceName(deviceId: string): string | null {
   try {
-    const raw = localStorage.getItem("mesh-client:bleDeviceNames");
+    const raw = localStorage.getItem('mesh-client:bleDeviceNames');
     const cache: Record<string, string> = raw ? JSON.parse(raw) : {};
     return cache[deviceId] ?? null;
   } catch {
@@ -63,45 +82,46 @@ function getBleDeviceName(deviceId: string): string | null {
 
 /** Inline SVG icon for each connection type */
 function ConnectionIcon({ type }: { type: ConnectionType }) {
-  const cls = "w-5 h-5 shrink-0";
+  const cls = 'w-5 h-5 shrink-0';
   switch (type) {
-    case "ble":
+    case 'ble':
       return (
         <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M6 7l6 5-6 5M12 2l5 5-5 5 5 5-5 5V2z" />
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M6 7l6 5-6 5M12 2l5 5-5 5 5 5-5 5V2z"
+          />
         </svg>
       );
-    case "serial":
+    case 'serial':
       return (
         <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"
+          />
         </svg>
       );
-    case "http":
+    case 'http':
       return (
         <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.858 15.355-5.858 21.213 0" />
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.858 15.355-5.858 21.213 0"
+          />
         </svg>
       );
   }
 }
 
 /** Animated spinner */
-function Spinner({ className = "" }: { className?: string }) {
+function Spinner({ className = '' }: { className?: string }) {
   return (
-    <svg
-      className={`animate-spin ${className}`}
-      fill="none"
-      viewBox="0 0 24 24"
-    >
-      <circle
-        className="opacity-25"
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeWidth="4"
-      />
+    <svg className={`animate-spin ${className}`} fill="none" viewBox="0 0 24 24">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
       <path
         className="opacity-75"
         fill="currentColor"
@@ -112,18 +132,18 @@ function Spinner({ className = "" }: { className?: string }) {
 }
 
 const MQTT_DEFAULTS: MQTTSettings = {
-  server: "mqtt.meshtastic.org",
+  server: 'mqtt.meshtastic.org',
   port: 1883,
-  username: "meshdev",
-  password: "large4cats",
-  topicPrefix: "msh/US/",
+  username: 'meshdev',
+  password: 'large4cats',
+  topicPrefix: 'msh/US/',
   autoLaunch: false,
   maxRetries: 5,
 };
 
 function loadMqttSettings(): MQTTSettings {
   try {
-    const raw = localStorage.getItem("mesh-client:mqttSettings");
+    const raw = localStorage.getItem('mesh-client:mqttSettings');
     return raw ? { ...MQTT_DEFAULTS, ...JSON.parse(raw) } : MQTT_DEFAULTS;
   } catch {
     return MQTT_DEFAULTS;
@@ -133,7 +153,7 @@ function loadMqttSettings(): MQTTSettings {
 function MqttGlobeIcon({ connected }: { connected: boolean }) {
   return (
     <svg
-      className={`w-5 h-5 ${connected ? "text-brand-green" : "text-gray-400"}`}
+      className={`w-5 h-5 ${connected ? 'text-brand-green' : 'text-gray-400'}`}
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -149,7 +169,11 @@ function MqttGlobeIcon({ connected }: { connected: boolean }) {
 interface Props {
   state: DeviceState;
   onConnect: (type: ConnectionType, httpAddress?: string) => Promise<void>;
-  onAutoConnect: (type: ConnectionType, httpAddress?: string, lastSerialPortId?: string | null) => Promise<void>;
+  onAutoConnect: (
+    type: ConnectionType,
+    httpAddress?: string,
+    lastSerialPortId?: string | null,
+  ) => Promise<void>;
   onDisconnect: () => Promise<void>;
   mqttStatus: MQTTStatus;
   myNodeLabel?: string;
@@ -163,43 +187,47 @@ export default function ConnectionPanel({
   mqttStatus,
   myNodeLabel,
 }: Props) {
-  const [connectionType, setConnectionType] = useState<ConnectionType>("ble");
+  const [connectionType, setConnectionType] = useState<ConnectionType>('ble');
   const [httpAddress, setHttpAddress] = useState(() => {
     const last = loadLastConnection();
-    return last?.type === "http" && last.httpAddress ? last.httpAddress : "meshtastic.local";
+    return last?.type === 'http' && last.httpAddress ? last.httpAddress : 'meshtastic.local';
   });
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
-  const [connectionStage, setConnectionStage] = useState("");
+  const [connectionStage, setConnectionStage] = useState('');
 
   // ─── MQTT settings state ───────────────────────────────────────
   const [mqttSettings, setMqttSettings] = useState<MQTTSettings>(loadMqttSettings);
   const [showMqttPassword, setShowMqttPassword] = useState(false);
   const [mqttError, setMqttError] = useState<string | null>(null);
-  const [mqttClientId, setMqttClientId] = useState("");
+  const [mqttClientId, setMqttClientId] = useState('');
   const mqttSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Persist MQTT settings with debounce
   useEffect(() => {
     if (mqttSaveTimerRef.current) clearTimeout(mqttSaveTimerRef.current);
     mqttSaveTimerRef.current = setTimeout(() => {
-      localStorage.setItem("mesh-client:mqttSettings", JSON.stringify(mqttSettings));
+      localStorage.setItem('mesh-client:mqttSettings', JSON.stringify(mqttSettings));
     }, 300);
-    return () => { if (mqttSaveTimerRef.current) clearTimeout(mqttSaveTimerRef.current); };
+    return () => {
+      if (mqttSaveTimerRef.current) clearTimeout(mqttSaveTimerRef.current);
+    };
   }, [mqttSettings]);
 
   // Listen for MQTT events from main process
   useEffect(() => window.electronAPI.mqtt.onError(setMqttError), []);
   useEffect(() => {
     // Restore clientId if already connected when this component mounts (e.g. after tab switch)
-    window.electronAPI.mqtt.getClientId().then((id) => { if (id) setMqttClientId(id); });
+    window.electronAPI.mqtt.getClientId().then((id) => {
+      if (id) setMqttClientId(id);
+    });
     return window.electronAPI.mqtt.onClientId(setMqttClientId);
   }, []);
 
   // Clear MQTT error/clientId when connection succeeds or is disconnected
   useEffect(() => {
-    if (mqttStatus === "connected" || mqttStatus === "disconnected") setMqttError(null);
-    if (mqttStatus === "disconnected") setMqttClientId("");
+    if (mqttStatus === 'connected' || mqttStatus === 'disconnected') setMqttError(null);
+    if (mqttStatus === 'disconnected') setMqttClientId('');
   }, [mqttStatus]);
 
   const updateMqtt = <K extends keyof MQTTSettings>(key: K, value: MQTTSettings[K]) =>
@@ -224,14 +252,14 @@ export default function ConnectionPanel({
 
   // Update connection stage based on state transitions, and save last connection on success
   useEffect(() => {
-    if (state.status === "connecting") {
-      if (showBlePicker) setConnectionStage("Select your device below");
-      else if (showSerialPicker) setConnectionStage("Select a serial port below");
-      else setConnectionStage("Please wait...");
-    } else if (state.status === "connected") {
-      setConnectionStage("Configuring device...");
-    } else if (state.status === "configured") {
-      setConnectionStage("");
+    if (state.status === 'connecting') {
+      if (showBlePicker) setConnectionStage('Select your device below');
+      else if (showSerialPicker) setConnectionStage('Select a serial port below');
+      else setConnectionStage('Please wait...');
+    } else if (state.status === 'connected') {
+      setConnectionStage('Configuring device...');
+    } else if (state.status === 'configured') {
+      setConnectionStage('');
       setConnecting(false);
       isAutoConnectingRef.current = false;
       setIsAutoConnecting(false);
@@ -242,55 +270,58 @@ export default function ConnectionPanel({
       // Persist connection details for next startup
       if (state.connectionType) {
         const conn: LastConnection = { type: state.connectionType };
-        if (state.connectionType === "http") {
+        if (state.connectionType === 'http') {
           conn.httpAddress = httpAddress;
-        } else if (state.connectionType === "ble") {
+        } else if (state.connectionType === 'ble') {
           const bleId = loadLastBleDevice();
           if (bleId) {
             conn.bleDeviceId = bleId;
-            conn.bleDeviceName = getBleDeviceName(bleId) ?? lastSelectedBleNameRef.current ?? lastConnection?.bleDeviceName ?? undefined;
+            conn.bleDeviceName =
+              getBleDeviceName(bleId) ??
+              lastSelectedBleNameRef.current ??
+              lastConnection?.bleDeviceName ??
+              undefined;
           }
-        } else if (state.connectionType === "serial") {
+        } else if (state.connectionType === 'serial') {
           const serialId = loadLastSerialPort();
           if (serialId) conn.serialPortId = serialId;
         }
         saveLastConnection(conn);
         setLastConnection(conn);
       }
-    } else if (state.status === "disconnected") {
-      setConnectionStage("");
+    } else if (state.status === 'disconnected') {
+      setConnectionStage('');
       setConnecting(false);
       isAutoConnectingRef.current = false;
       setIsAutoConnecting(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lastConnection.bleDeviceName read as fallback only; omitted to avoid retriggering on stale-name updates
   }, [state.status, state.connectionType, showBlePicker, showSerialPicker, httpAddress]);
 
   // Listen for BLE devices discovered by main process
   useEffect(() => {
-    const cleanup = window.electronAPI.onBluetoothDevicesDiscovered(
-      (devices) => {
-        setBleDevices(devices);
-        if (isAutoConnectingRef.current) {
-          const lastId = lastConnection?.bleDeviceId ?? loadLastBleDevice();
-          if (lastId) {
-            const match = devices.find((d) => d.deviceId === lastId);
-            if (match) {
-              if (autoConnectTimeoutRef.current) {
-                clearTimeout(autoConnectTimeoutRef.current);
-                autoConnectTimeoutRef.current = null;
-              }
-              saveLastBleDevice(match.deviceId);
-              lastSelectedBleNameRef.current = match.deviceName ?? null;
-              window.electronAPI.selectBluetoothDevice(match.deviceId);
-              setConnectionStage("Connecting to device...");
-              return;
+    const cleanup = window.electronAPI.onBluetoothDevicesDiscovered((devices) => {
+      setBleDevices(devices);
+      if (isAutoConnectingRef.current) {
+        const lastId = lastConnection?.bleDeviceId ?? loadLastBleDevice();
+        if (lastId) {
+          const match = devices.find((d) => d.deviceId === lastId);
+          if (match) {
+            if (autoConnectTimeoutRef.current) {
+              clearTimeout(autoConnectTimeoutRef.current);
+              autoConnectTimeoutRef.current = null;
             }
+            saveLastBleDevice(match.deviceId);
+            lastSelectedBleNameRef.current = match.deviceName ?? null;
+            window.electronAPI.selectBluetoothDevice(match.deviceId);
+            setConnectionStage('Connecting to device...');
+            return;
           }
         }
-        setShowBlePicker(true);
-        setConnectionStage("Select your device below");
       }
-    );
+      setShowBlePicker(true);
+      setConnectionStage('Select your device below');
+    });
     return cleanup;
   }, [lastConnection]); // isAutoConnecting intentionally omitted — ref handles it
 
@@ -308,13 +339,13 @@ export default function ConnectionPanel({
               autoConnectTimeoutRef.current = null;
             }
             window.electronAPI.selectSerialPort(match.portId);
-            setConnectionStage("Connecting to device...");
+            setConnectionStage('Connecting to device...');
             return;
           }
         }
       }
       setShowSerialPicker(true);
-      setConnectionStage("Select a serial port below");
+      setConnectionStage('Select a serial port below');
     });
     return cleanup;
   }, [isAutoConnecting, lastConnection]);
@@ -326,13 +357,13 @@ export default function ConnectionPanel({
     setSerialPorts([]);
     setShowBlePicker(false);
     setShowSerialPicker(false);
-    setConnectionStage("Please wait...");
+    setConnectionStage('Please wait...');
     try {
       await onConnect(connectionType, httpAddress);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Connection failed");
+      setError(err instanceof Error ? err.message : 'Connection failed');
       setConnecting(false);
-      setConnectionStage("");
+      setConnectionStage('');
     }
   }, [connectionType, httpAddress, onConnect]);
 
@@ -352,7 +383,7 @@ export default function ConnectionPanel({
     setShowBlePicker(false);
     setShowSerialPicker(false);
     setConnecting(false);
-    setConnectionStage("");
+    setConnectionStage('');
     // Ensure the underlying connection attempt is properly torn down
     try {
       await onDisconnect();
@@ -361,21 +392,24 @@ export default function ConnectionPanel({
     }
   }, [showBlePicker, showSerialPicker, onDisconnect]);
 
-  const handleSelectBleDevice = useCallback((deviceId: string) => {
-    saveLastBleDevice(deviceId);
-    // Save BLE advertisement name for use in LastConnection display
-    const found = bleDevices.find((d) => d.deviceId === deviceId);
-    lastSelectedBleNameRef.current = found?.deviceName ?? null;
-    window.electronAPI.selectBluetoothDevice(deviceId);
-    setShowBlePicker(false);
-    setConnectionStage("Connecting to device...");
-  }, [bleDevices]);
+  const handleSelectBleDevice = useCallback(
+    (deviceId: string) => {
+      saveLastBleDevice(deviceId);
+      // Save BLE advertisement name for use in LastConnection display
+      const found = bleDevices.find((d) => d.deviceId === deviceId);
+      lastSelectedBleNameRef.current = found?.deviceName ?? null;
+      window.electronAPI.selectBluetoothDevice(deviceId);
+      setShowBlePicker(false);
+      setConnectionStage('Connecting to device...');
+    },
+    [bleDevices],
+  );
 
   const handleSelectSerialPort = useCallback((portId: string) => {
     saveLastSerialPort(portId);
     window.electronAPI.selectSerialPort(portId);
     setShowSerialPicker(false);
-    setConnectionStage("Connecting to device...");
+    setConnectionStage('Connecting to device...');
   }, []);
 
   // Auto-connect on mount: fires once per session using saved last connection.
@@ -383,96 +417,99 @@ export default function ConnectionPanel({
   // BLE requires a user gesture — show reconnect button instead.
   useEffect(() => {
     if (autoConnectFiredRef.current) return;
-    if (state.status !== "disconnected") return;
+    if (state.status !== 'disconnected') return;
     if (!lastConnection) return;
 
     autoConnectFiredRef.current = true;
 
-    if (lastConnection.type === "serial") {
-      setConnectionType("serial");
+    if (lastConnection.type === 'serial') {
+      setConnectionType('serial');
       isAutoConnectingRef.current = true;
       setIsAutoConnecting(true);
       setConnecting(true);
-      setConnectionStage("Please wait...");
+      setConnectionStage('Please wait...');
       autoConnectTimeoutRef.current = setTimeout(() => {
         isAutoConnectingRef.current = false;
         setIsAutoConnecting(false);
-        setError("Auto-connect timed out.");
+        setError('Auto-connect timed out.');
         setConnecting(false);
-        setConnectionStage("");
+        setConnectionStage('');
       }, 30_000);
-      onAutoConnect("serial", undefined, lastConnection.serialPortId).catch((err) => {
+      onAutoConnect('serial', undefined, lastConnection.serialPortId).catch((err) => {
         isAutoConnectingRef.current = false;
         setIsAutoConnecting(false);
-        setError(err instanceof Error ? err.message : "Auto-connect failed");
+        setError(err instanceof Error ? err.message : 'Auto-connect failed');
         setConnecting(false);
-        setConnectionStage("");
+        setConnectionStage('');
       });
     }
     // HTTP + BLE: do not auto-trigger — show one-click reconnect card instead
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // intentionally empty — fires once on mount
 
   // Cleanup timeout on unmount
-  useEffect(() => () => {
-    if (autoConnectTimeoutRef.current) clearTimeout(autoConnectTimeoutRef.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (autoConnectTimeoutRef.current) clearTimeout(autoConnectTimeoutRef.current);
+    },
+    [],
+  );
 
   const handleReconnect = useCallback(() => {
     if (!lastConnection) return;
     setError(null);
 
-    if (lastConnection.type === "ble") {
+    if (lastConnection.type === 'ble') {
       isAutoConnectingRef.current = true;
       setIsAutoConnecting(true);
-      setConnectionType("ble");
+      setConnectionType('ble');
       setConnecting(true);
       setBleDevices([]);
       setShowBlePicker(false);
-      setConnectionStage("Please wait...");
-      onConnect("ble").catch((err) => {
+      setConnectionStage('Please wait...');
+      onConnect('ble').catch((err) => {
         isAutoConnectingRef.current = false;
         setIsAutoConnecting(false);
-        setError(err instanceof Error ? err.message : "Reconnect failed");
+        setError(err instanceof Error ? err.message : 'Reconnect failed');
         setConnecting(false);
-        setConnectionStage("");
+        setConnectionStage('');
       });
-    } else if (lastConnection.type === "http") {
+    } else if (lastConnection.type === 'http') {
       const addr = lastConnection.httpAddress ?? httpAddress;
       setHttpAddress(addr);
-      setConnectionType("http");
+      setConnectionType('http');
       setConnecting(true);
       setBleDevices([]);
       setSerialPorts([]);
       setShowBlePicker(false);
       setShowSerialPicker(false);
-      setConnectionStage("Please wait...");
-      onConnect("http", addr).catch((err) => {
-        setError(err instanceof Error ? err.message : "Reconnect failed");
+      setConnectionStage('Please wait...');
+      onConnect('http', addr).catch((err) => {
+        setError(err instanceof Error ? err.message : 'Reconnect failed');
         setConnecting(false);
-        setConnectionStage("");
+        setConnectionStage('');
       });
-    } else if (lastConnection.type === "serial") {
+    } else if (lastConnection.type === 'serial') {
       isAutoConnectingRef.current = true;
       setIsAutoConnecting(true);
-      setConnectionType("serial");
+      setConnectionType('serial');
       setConnecting(true);
-      setConnectionStage("Please wait...");
-      onAutoConnect("serial", undefined, lastConnection.serialPortId).catch((err) => {
+      setConnectionStage('Please wait...');
+      onAutoConnect('serial', undefined, lastConnection.serialPortId).catch((err) => {
         isAutoConnectingRef.current = false;
         setIsAutoConnecting(false);
-        setError(err instanceof Error ? err.message : "Reconnect failed");
+        setError(err instanceof Error ? err.message : 'Reconnect failed');
         setConnecting(false);
-        setConnectionStage("");
+        setConnectionStage('');
       });
     }
   }, [lastConnection, onConnect, onAutoConnect, httpAddress]);
 
   const isConnected =
-    state.status === "connected" ||
-    state.status === "configured" ||
-    state.status === "stale" ||
-    state.status === "reconnecting";
+    state.status === 'connected' ||
+    state.status === 'configured' ||
+    state.status === 'stale' ||
+    state.status === 'reconnecting';
 
   // ─── Connecting Progress View ───────────────────────────────────
   if (connecting && !isConnected) {
@@ -481,7 +518,7 @@ export default function ConnectionPanel({
         <Spinner className="w-12 h-12 text-bright-green" />
         <div className="text-center space-y-2">
           <h2 className="text-xl font-semibold text-gray-200">
-            {isAutoConnecting ? "Auto-connecting..." : "Connecting..."}
+            {isAutoConnecting ? 'Auto-connecting...' : 'Connecting...'}
           </h2>
           <div role="status" aria-live="polite" aria-atomic="true">
             <p className="text-sm text-muted">{connectionStage}</p>
@@ -492,12 +529,8 @@ export default function ConnectionPanel({
         {showBlePicker && (
           <div className="w-full max-w-md bg-deep-black rounded-lg border border-gray-600 overflow-hidden">
             <div className="px-4 py-2.5 bg-secondary-dark border-b border-gray-600 flex justify-between items-center">
-              <span className="text-sm font-medium text-gray-200">
-                Select Bluetooth Device
-              </span>
-              <span className="text-xs text-muted">
-                {bleDevices.length} found
-              </span>
+              <span className="text-sm font-medium text-gray-200">Select Bluetooth Device</span>
+              <span className="text-xs text-muted">{bleDevices.length} found</span>
             </div>
             <div className="max-h-60 overflow-y-auto">
               {bleDevices.length === 0 ? (
@@ -509,10 +542,14 @@ export default function ConnectionPanel({
                 bleDevices.map((device) => {
                   let displayName: string;
                   try {
-                    const raw = localStorage.getItem("mesh-client:bleDeviceNames");
+                    const raw = localStorage.getItem('mesh-client:bleDeviceNames');
                     const cache: Record<string, string> = raw ? JSON.parse(raw) : {};
                     const cached = cache[device.deviceId];
-                    displayName = cached ? (cached !== device.deviceName ? `${cached} (${device.deviceName})` : cached) : device.deviceName;
+                    displayName = cached
+                      ? cached !== device.deviceName
+                        ? `${cached} (${device.deviceName})`
+                        : cached
+                      : device.deviceName;
                   } catch {
                     displayName = device.deviceName;
                   }
@@ -526,17 +563,16 @@ export default function ConnectionPanel({
                         <ConnectionIcon type="ble" />
                         {displayName}
                       </div>
-                      <div className="text-xs text-muted font-mono ml-7">
-                        {device.deviceId}
-                      </div>
+                      <div className="text-xs text-muted font-mono ml-7">{device.deviceId}</div>
                     </button>
                   );
                 })
               )}
             </div>
-            {bleDevices.some((d) => d.deviceName === "AdaDFU") && (
+            {bleDevices.some((d) => d.deviceName === 'AdaDFU') && (
               <p className="px-4 py-2 text-xs text-muted border-t border-gray-700">
-                On macOS, if a device shows as &quot;AdaDFU&quot;, pair it first in System Settings → Bluetooth to see its Meshtastic name.
+                On macOS, if a device shows as &quot;AdaDFU&quot;, pair it first in System Settings
+                → Bluetooth to see its Meshtastic name.
               </p>
             )}
           </div>
@@ -546,12 +582,8 @@ export default function ConnectionPanel({
         {showSerialPicker && (
           <div className="w-full max-w-md bg-deep-black rounded-lg border border-gray-600 overflow-hidden">
             <div className="px-4 py-2.5 bg-secondary-dark border-b border-gray-600 flex justify-between items-center">
-              <span className="text-sm font-medium text-gray-200">
-                Select Serial Port
-              </span>
-              <span className="text-xs text-muted">
-                {serialPorts.length} found
-              </span>
+              <span className="text-sm font-medium text-gray-200">Select Serial Port</span>
+              <span className="text-xs text-muted">{serialPorts.length} found</span>
             </div>
             <div className="max-h-60 overflow-y-auto">
               {serialPorts.length === 0 ? (
@@ -600,168 +632,194 @@ export default function ConnectionPanel({
 
   // ─── Shared MQTT section ────────────────────────────────────────
   const mqttHeaderBar = (
-    <div className={`flex items-center justify-between px-4 py-3 bg-secondary-dark border-b ${mqttStatus === "connected" ? "border-brand-green/20" : "border-gray-700"}`}>
+    <div
+      className={`flex items-center justify-between px-4 py-3 bg-secondary-dark border-b ${mqttStatus === 'connected' ? 'border-brand-green/20' : 'border-gray-700'}`}
+    >
       <div className="flex items-center gap-2">
-        <MqttGlobeIcon connected={mqttStatus === "connected"} />
+        <MqttGlobeIcon connected={mqttStatus === 'connected'} />
         <span className="font-medium text-gray-200">MQTT Connection</span>
       </div>
-      <span className={`text-xs font-medium ${
-        mqttStatus === "connected" ? "text-brand-green" :
-        mqttStatus === "connecting" ? "text-yellow-400 animate-pulse" :
-        mqttStatus === "error" ? "text-red-400" : "text-gray-500"
-      }`}>
+      <span
+        className={`text-xs font-medium ${
+          mqttStatus === 'connected'
+            ? 'text-brand-green'
+            : mqttStatus === 'connecting'
+              ? 'text-yellow-400 animate-pulse'
+              : mqttStatus === 'error'
+                ? 'text-red-400'
+                : 'text-gray-500'
+        }`}
+      >
         ● {mqttStatus}
       </span>
     </div>
   );
 
-  const mqttSection = mqttStatus === "connected" ? (
-    <div className={`bg-deep-black rounded-lg border border-brand-green/20 overflow-hidden`}>
-      {mqttHeaderBar}
-      <div className="p-4 space-y-3">
-        <div className="flex justify-between text-sm">
-          <span className="text-muted">Server</span>
-          <span className="text-gray-200">{mqttSettings.server}:{mqttSettings.port}</span>
-        </div>
-        {mqttClientId && (
+  const mqttSection =
+    mqttStatus === 'connected' ? (
+      <div className={`bg-deep-black rounded-lg border border-brand-green/20 overflow-hidden`}>
+        {mqttHeaderBar}
+        <div className="p-4 space-y-3">
           <div className="flex justify-between text-sm">
-            <span className="text-muted">Client ID</span>
-            <span className="text-gray-200 font-mono text-xs">{mqttClientId}</span>
-          </div>
-        )}
-        <div className="flex justify-between text-sm">
-          <span className="text-muted">Topic</span>
-          <span className="text-gray-200 font-mono text-xs">
-            {mqttSettings.topicPrefix.endsWith("/") ? mqttSettings.topicPrefix : `${mqttSettings.topicPrefix}/`}#
-          </span>
-        </div>
-        <button
-          onClick={() => window.electronAPI.mqtt.disconnect()}
-          className="w-full px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white text-sm font-medium rounded-lg transition-colors"
-        >
-          Disconnect
-        </button>
-      </div>
-    </div>
-  ) : (
-    <div className="bg-deep-black rounded-lg border border-gray-700 overflow-hidden">
-      {mqttHeaderBar}
-      {mqttError && (
-        <div className="px-4 py-2 bg-red-900/50 border-b border-red-800 text-red-300 text-xs">
-          {mqttError}
-        </div>
-      )}
-      <div className="p-4 space-y-3">
-        <div className="grid grid-cols-3 gap-2">
-          <div className="col-span-2 space-y-1">
-            <label htmlFor="mqtt-server" className="text-xs text-muted">Server</label>
-            <input
-              id="mqtt-server"
-              type="text"
-              value={mqttSettings.server}
-              onChange={(e) => updateMqtt("server", e.target.value)}
-              className="w-full px-2 py-1.5 bg-secondary-dark rounded text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none text-sm"
-            />
-          </div>
-          <div className="space-y-1">
-            <label htmlFor="mqtt-port" className="text-xs text-muted">Port</label>
-            <input
-              id="mqtt-port"
-              type="number"
-              value={mqttSettings.port}
-              onChange={(e) => updateMqtt("port", parseInt(e.target.value) || 1883)}
-              className="w-full px-2 py-1.5 bg-secondary-dark rounded text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none text-sm"
-            />
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1">
-            <label htmlFor="mqtt-username" className="text-xs text-muted">Username</label>
-            <input
-              id="mqtt-username"
-              type="text"
-              value={mqttSettings.username}
-              onChange={(e) => updateMqtt("username", e.target.value)}
-              className="w-full px-2 py-1.5 bg-secondary-dark rounded text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none text-sm"
-            />
-          </div>
-          <div className="space-y-1">
-            <label htmlFor="mqtt-password" className="text-xs text-muted">Password</label>
-            <div className="relative">
-              <input
-                id="mqtt-password"
-                type={showMqttPassword ? "text" : "password"}
-                value={mqttSettings.password}
-                onChange={(e) => updateMqtt("password", e.target.value)}
-                className="w-full px-2 py-1.5 pr-8 bg-secondary-dark rounded text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none text-sm"
-              />
-              <button
-                type="button"
-                onClick={() => setShowMqttPassword((v) => !v)}
-                aria-label={showMqttPassword ? "Hide password" : "Show password"}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-xs"
-              >
-                {showMqttPassword ? "hide" : "show"}
-              </button>
-            </div>
-          </div>
-        </div>
-        <div className="space-y-1">
-          <div className="flex items-center gap-1.5">
-            <label htmlFor="mqtt-topic-prefix" className="text-xs text-muted">Topic Prefix</label>
-            <span
-              title="Each country/region has its own Topic setting; please research the correct hierarchy. Example: Colorado is msh/US/CO"
-              className="text-xs text-gray-500 cursor-help"
-            >
-              ⓘ
+            <span className="text-muted">Server</span>
+            <span className="text-gray-200">
+              {mqttSettings.server}:{mqttSettings.port}
             </span>
           </div>
-          <input
-            id="mqtt-topic-prefix"
-            type="text"
-            value={mqttSettings.topicPrefix}
-            onChange={(e) => updateMqtt("topicPrefix", e.target.value)}
-            className="w-full px-2 py-1.5 bg-secondary-dark rounded text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none text-sm"
-            placeholder="msh/US/"
-          />
-        </div>
-        <div className="space-y-1">
-          <label htmlFor="mqtt-max-retries" className="text-xs text-muted">Max Retries</label>
-          <input
-            id="mqtt-max-retries"
-            type="number"
-            min={1}
-            max={20}
-            value={mqttSettings.maxRetries ?? 5}
-            onChange={(e) => updateMqtt("maxRetries", parseInt(e.target.value) || 5)}
-            className="w-full px-2 py-1.5 bg-secondary-dark rounded text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none text-sm"
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            id="mqttAutoLaunch"
-            checked={mqttSettings.autoLaunch}
-            onChange={(e) => updateMqtt("autoLaunch", e.target.checked)}
-            className="accent-brand-green"
-          />
-          <label htmlFor="mqttAutoLaunch" className="text-sm text-gray-300 cursor-pointer">
-            Auto-connect on application start
-          </label>
-        </div>
-        <div className="pt-1">
+          {mqttClientId && (
+            <div className="flex justify-between text-sm">
+              <span className="text-muted">Client ID</span>
+              <span className="text-gray-200 font-mono text-xs">{mqttClientId}</span>
+            </div>
+          )}
+          <div className="flex justify-between text-sm">
+            <span className="text-muted">Topic</span>
+            <span className="text-gray-200 font-mono text-xs">
+              {mqttSettings.topicPrefix.endsWith('/')
+                ? mqttSettings.topicPrefix
+                : `${mqttSettings.topicPrefix}/`}
+              #
+            </span>
+          </div>
           <button
-            onClick={() => window.electronAPI.mqtt.connect(mqttSettings)}
-            disabled={mqttStatus === "connecting"}
-            className="w-full px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-40"
-            style={{ backgroundColor: "#4CAF50" }}
+            onClick={() => window.electronAPI.mqtt.disconnect()}
+            className="w-full px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white text-sm font-medium rounded-lg transition-colors"
           >
-            Connect
+            Disconnect
           </button>
         </div>
       </div>
-    </div>
-  );
+    ) : (
+      <div className="bg-deep-black rounded-lg border border-gray-700 overflow-hidden">
+        {mqttHeaderBar}
+        {mqttError && (
+          <div className="px-4 py-2 bg-red-900/50 border-b border-red-800 text-red-300 text-xs">
+            {mqttError}
+          </div>
+        )}
+        <div className="p-4 space-y-3">
+          <div className="grid grid-cols-3 gap-2">
+            <div className="col-span-2 space-y-1">
+              <label htmlFor="mqtt-server" className="text-xs text-muted">
+                Server
+              </label>
+              <input
+                id="mqtt-server"
+                type="text"
+                value={mqttSettings.server}
+                onChange={(e) => updateMqtt('server', e.target.value)}
+                className="w-full px-2 py-1.5 bg-secondary-dark rounded text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="mqtt-port" className="text-xs text-muted">
+                Port
+              </label>
+              <input
+                id="mqtt-port"
+                type="number"
+                value={mqttSettings.port}
+                onChange={(e) => updateMqtt('port', parseInt(e.target.value) || 1883)}
+                className="w-full px-2 py-1.5 bg-secondary-dark rounded text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none text-sm"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label htmlFor="mqtt-username" className="text-xs text-muted">
+                Username
+              </label>
+              <input
+                id="mqtt-username"
+                type="text"
+                value={mqttSettings.username}
+                onChange={(e) => updateMqtt('username', e.target.value)}
+                className="w-full px-2 py-1.5 bg-secondary-dark rounded text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="mqtt-password" className="text-xs text-muted">
+                Password
+              </label>
+              <div className="relative">
+                <input
+                  id="mqtt-password"
+                  type={showMqttPassword ? 'text' : 'password'}
+                  value={mqttSettings.password}
+                  onChange={(e) => updateMqtt('password', e.target.value)}
+                  className="w-full px-2 py-1.5 pr-8 bg-secondary-dark rounded text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowMqttPassword((v) => !v)}
+                  aria-label={showMqttPassword ? 'Hide password' : 'Show password'}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-xs"
+                >
+                  {showMqttPassword ? 'hide' : 'show'}
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center gap-1.5">
+              <label htmlFor="mqtt-topic-prefix" className="text-xs text-muted">
+                Topic Prefix
+              </label>
+              <span
+                title="Each country/region has its own Topic setting; please research the correct hierarchy. Example: Colorado is msh/US/CO"
+                className="text-xs text-gray-500 cursor-help"
+              >
+                ⓘ
+              </span>
+            </div>
+            <input
+              id="mqtt-topic-prefix"
+              type="text"
+              value={mqttSettings.topicPrefix}
+              onChange={(e) => updateMqtt('topicPrefix', e.target.value)}
+              className="w-full px-2 py-1.5 bg-secondary-dark rounded text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none text-sm"
+              placeholder="msh/US/"
+            />
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="mqtt-max-retries" className="text-xs text-muted">
+              Max Retries
+            </label>
+            <input
+              id="mqtt-max-retries"
+              type="number"
+              min={1}
+              max={20}
+              value={mqttSettings.maxRetries ?? 5}
+              onChange={(e) => updateMqtt('maxRetries', parseInt(e.target.value) || 5)}
+              className="w-full px-2 py-1.5 bg-secondary-dark rounded text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none text-sm"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="mqttAutoLaunch"
+              checked={mqttSettings.autoLaunch}
+              onChange={(e) => updateMqtt('autoLaunch', e.target.checked)}
+              className="accent-brand-green"
+            />
+            <label htmlFor="mqttAutoLaunch" className="text-sm text-gray-300 cursor-pointer">
+              Auto-connect on application start
+            </label>
+          </div>
+          <div className="pt-1">
+            <button
+              onClick={() => window.electronAPI.mqtt.connect(mqttSettings)}
+              disabled={mqttStatus === 'connecting'}
+              className="w-full px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-40"
+              style={{ backgroundColor: '#4CAF50' }}
+            >
+              Connect
+            </button>
+          </div>
+        </div>
+      </div>
+    );
 
   // ─── Connected View ────────────────────────────────────────────
   if (isConnected) {
@@ -778,19 +836,27 @@ export default function ConnectionPanel({
           Disconnect &amp; Quit
         </button>
 
-        <div className={`bg-deep-black rounded-lg border overflow-hidden ${
-          state.status === "reconnecting" ? "border-orange-500/30" : "border-brand-green/20"
-        }`}>
-          <div className={`flex items-center justify-between px-4 py-3 bg-secondary-dark border-b ${
-            state.status === "reconnecting" ? "border-orange-500/30" : "border-brand-green/20"
-          }`}>
+        <div
+          className={`bg-deep-black rounded-lg border overflow-hidden ${
+            state.status === 'reconnecting' ? 'border-orange-500/30' : 'border-brand-green/20'
+          }`}
+        >
+          <div
+            className={`flex items-center justify-between px-4 py-3 bg-secondary-dark border-b ${
+              state.status === 'reconnecting' ? 'border-orange-500/30' : 'border-brand-green/20'
+            }`}
+          >
             <div className="flex items-center gap-2">
               <ConnectionIcon type={state.connectionType!} />
               <span className="font-medium text-gray-200">Radio Connection</span>
             </div>
-            <span className={`text-xs font-medium ${
-              state.status === "reconnecting" ? "text-orange-400 animate-pulse" : "text-brand-green"
-            }`}>
+            <span
+              className={`text-xs font-medium ${
+                state.status === 'reconnecting'
+                  ? 'text-orange-400 animate-pulse'
+                  : 'text-brand-green'
+              }`}
+            >
               ● {state.status}
             </span>
           </div>
@@ -838,7 +904,7 @@ export default function ConnectionPanel({
   // ─── Disconnected View ─────────────────────────────────────────
   return (
     <div className="max-w-lg mx-auto space-y-6">
-      {mqttStatus === "connected" && (
+      {mqttStatus === 'connected' && (
         <button
           onClick={() => {
             window.electronAPI.mqtt.disconnect();
@@ -858,11 +924,11 @@ export default function ConnectionPanel({
               <ConnectionIcon type={lastConnection.type} />
               <div>
                 <p className="text-sm font-medium text-gray-200">
-                  {lastConnection.type === "ble"
-                    ? (lastConnection.bleDeviceName ?? "Bluetooth device")
-                    : lastConnection.type === "serial"
-                    ? "Serial device"
-                    : lastConnection.httpAddress ?? "WiFi device"}
+                  {lastConnection.type === 'ble'
+                    ? (lastConnection.bleDeviceName ?? 'Bluetooth device')
+                    : lastConnection.type === 'serial'
+                      ? 'Serial device'
+                      : (lastConnection.httpAddress ?? 'WiFi device')}
                 </p>
                 <p className="text-xs text-muted uppercase">{lastConnection.type}</p>
               </div>
@@ -870,7 +936,7 @@ export default function ConnectionPanel({
             <button
               onClick={handleReconnect}
               className="px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors"
-              style={{ backgroundColor: "#4CAF50" }}
+              style={{ backgroundColor: '#4CAF50' }}
             >
               Reconnect
             </button>
@@ -911,28 +977,28 @@ export default function ConnectionPanel({
           <div className="space-y-2">
             <label className="text-xs text-muted">Connection Type</label>
             <div className="grid grid-cols-3 gap-2">
-              {(["ble", "serial", "http"] as const).map((type) => (
+              {(['ble', 'serial', 'http'] as const).map((type) => (
                 <button
                   key={type}
                   onClick={() => setConnectionType(type)}
                   className={`flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
                     connectionType === type
-                      ? "text-white ring-2 ring-bright-green"
-                      : "bg-secondary-dark text-gray-300 hover:bg-gray-600"
+                      ? 'text-white ring-2 ring-bright-green'
+                      : 'bg-secondary-dark text-gray-300 hover:bg-gray-600'
                   }`}
-                  style={connectionType === type ? { backgroundColor: "#4CAF50" } : undefined}
+                  style={connectionType === type ? { backgroundColor: '#4CAF50' } : undefined}
                 >
                   <ConnectionIcon type={type} />
-                  {type === "ble" && "Bluetooth"}
-                  {type === "serial" && "USB Serial"}
-                  {type === "http" && "WiFi/HTTP"}
+                  {type === 'ble' && 'Bluetooth'}
+                  {type === 'serial' && 'USB Serial'}
+                  {type === 'http' && 'WiFi/HTTP'}
                 </button>
               ))}
             </div>
           </div>
 
           {/* HTTP address input */}
-          {connectionType === "http" && (
+          {connectionType === 'http' && (
             <div className="space-y-1">
               <label className="text-xs text-muted">Device Address</label>
               <input
@@ -942,28 +1008,32 @@ export default function ConnectionPanel({
                 placeholder="meshtastic.local or 192.168.1.x"
                 className="w-full px-2 py-1.5 bg-secondary-dark rounded text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none text-sm"
               />
-              <p className="text-xs text-muted">
-                Enter hostname or IP address (without http://)
-              </p>
+              <p className="text-xs text-muted">Enter hostname or IP address (without http://)</p>
             </div>
           )}
 
           {/* Connection hints */}
           <div className="text-xs text-muted bg-secondary-dark rounded-lg p-3 space-y-1">
-            {connectionType === "ble" && (
+            {connectionType === 'ble' && (
               <>
                 <p>Ensure your Meshtastic device has Bluetooth enabled and is in range.</p>
-                <p>Click Connect to scan — a device picker will appear with discovered Meshtastic devices.</p>
+                <p>
+                  Click Connect to scan — a device picker will appear with discovered Meshtastic
+                  devices.
+                </p>
               </>
             )}
-            {connectionType === "serial" && (
+            {connectionType === 'serial' && (
               <>
                 <p>Connect your Meshtastic device via USB cable.</p>
                 <p>Click Connect — a port picker will appear with available serial ports.</p>
               </>
             )}
-            {connectionType === "http" && (
-              <p>Enter the IP address or hostname of a WiFi-connected Meshtastic node. The device must have WiFi enabled in its config.</p>
+            {connectionType === 'http' && (
+              <p>
+                Enter the IP address or hostname of a WiFi-connected Meshtastic node. The device
+                must have WiFi enabled in its config.
+              </p>
             )}
           </div>
 
@@ -972,7 +1042,7 @@ export default function ConnectionPanel({
             <button
               onClick={handleConnect}
               className="w-full px-4 py-2.5 text-white text-sm font-medium rounded-lg transition-colors"
-              style={{ backgroundColor: "#4CAF50" }}
+              style={{ backgroundColor: '#4CAF50' }}
             >
               Connect
             </button>

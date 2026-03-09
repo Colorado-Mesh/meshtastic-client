@@ -35,40 +35,47 @@ The official Meshtastic apps cover the basics, but desktop power users need more
 ## Key Features
 
 **Connectivity**
+
 - **Bluetooth LE** — pair wirelessly; one-click reconnect card remembers your last device (name persists across sessions)
 - **USB Serial** — plug in via USB; auto-reconnects silently on startup
 - **WiFi/HTTP** — connect to network-enabled nodes; saves last address for quick reconnect
 - **MQTT** — subscribe to a broker to receive mesh traffic over the internet; AES-128-CTR decryption, automatic RF deduplication, exponential-backoff reconnect
 
 **Chat**
+
 - Send/receive messages across channels with ACK/NAK delivery indicators
 - Emoji reactions (11 emojis with compose picker) and reply-to-message (quoted preview in bubble)
 - Unread message divider that persists across restarts and auto-scrolls on tab switch
 - Direct messages (DMs) to individual nodes
 
 **Node Management**
+
 - Node list with SNR, RSSI, battery, GPS, last heard, and packet redundancy score
 - Distance filter, favorite/pin nodes, device role icons, signal strength bars
 - Node Detail Modal: DM, trace route with hop-path display, delete node, Routing Health section with 24-hour sparkline, Connection Health %, and collapsible Path History
 
 **Radio & Channel Configuration**
+
 - Edit channels: name, PSK, and role; 18 region presets and 7 modem presets
 - Device roles: Client, Router, Tracker, Sensor, TAK, and more
 - Per-channel MQTT gateway uplink/downlink; device reboot, shutdown, and factory reset
 
 **Diagnostics**
+
 - Network health score (0–100) and searchable anomaly table
 - Routing anomaly detection: hop_goblin (over-hopping), bad_route (high duplicates), route_flapping, impossible_hop — with remediation suggestions and severity levels
 - Anomaly badges inline in node list; status aura circles on the map
 - Congestion halos toggle; global and per-node MQTT ignore for fine-grained routing analysis
 
 **Map & Telemetry**
+
 - Interactive OpenStreetMap with node positions and your current location
   (device GPS → browser geolocation → IP-based city-level fallback)
   — auto-refresh at configurable intervals; send your position back to your device
 - Battery voltage and signal quality charts (Recharts)
 
 **Productivity**
+
 - Full keyboard navigation — press `?` for shortcut reference; `Cmd/Ctrl+1–8` switches tabs; `Cmd/Ctrl+F` searches chat
 - Automatic update checking — packaged builds download and install in-app; macOS opens the release page
 - System tray with live unread badge; app stays accessible when window is closed
@@ -79,6 +86,7 @@ The official Meshtastic apps cover the basics, but desktop power users need more
 ## Quick Start
 
 **Prerequisites:**
+
 - Node.js 20+ (LTS) and npm 9+
 - Native build tools (for SQLite) — see platform notes below
 - A Meshtastic device (any hardware running Meshtastic firmware)
@@ -96,17 +104,20 @@ npm start
 <summary>Mac — extra notes</summary>
 
 Install Xcode Command Line Tools if `npm install` fails:
+
 ```bash
 xcode-select --install
 ```
 
 On first Bluetooth connection, macOS shows a system popup requesting Bluetooth permission — you must accept. If you accidentally denied it, go to **System Settings > Privacy & Security > Bluetooth** and toggle Mesh-Client on.
+
 </details>
 
 <details>
 <summary>Linux — extra notes</summary>
 
 Install build tools:
+
 ```bash
 # Debian/Ubuntu
 sudo apt install build-essential python3
@@ -118,11 +129,13 @@ sudo dnf groupinstall "Development Tools" && sudo dnf install python3
 **Building distributables:**
 
 On Debian/Ubuntu, to also build `.rpm` packages you need the `rpm` package:
+
 ```bash
 sudo apt install rpm
 ```
 
 On Fedora/RedHat, building `.deb` packages is not easily supported. Use these targets instead:
+
 ```bash
 npm run dist:linux -- --linux rpm
 npm run dist:linux -- --linux appimage
@@ -133,12 +146,14 @@ BLE requires BlueZ (the standard Linux Bluetooth stack, included in most distros
 **Sandbox issues (dev mode or AppImage):**
 
 Some Linux configurations require disabling Electron's sandbox. If the app fails to launch, try:
+
 ```bash
 npm run dev -- --no-sandbox        # dev mode
 ./MeshClient.AppImage --no-sandbox # AppImage
 ```
 
 For serial access, add yourself to the `dialout` group (then log out and back in):
+
 ```bash
 sudo usermod -a -G dialout $USER
 ```
@@ -146,33 +161,39 @@ sudo usermod -a -G dialout $USER
 **ARM architecture (Raspberry Pi, etc.) — additional requirements:**
 
 Install these extra libraries before running in development mode:
+
 ```bash
 sudo apt install zlib1g-dev libfuse2
 ```
 
 Electron's sandbox requires elevated privileges on ARM. Either grant sandbox permissions:
+
 ```bash
 sudo sysctl -w kernel.unprivileged_userns_clone=1
 ```
 
 Or launch with the no-sandbox flag:
+
 ```bash
 npm run dev -- --no-sandbox
 # or
 electron . --no-sandbox
 ```
+
 </details>
 
 <details>
 <summary>Windows — extra notes</summary>
 
 **1. Install prerequisites** (if not already):
+
 ```powershell
 winget install git.git
 winget install openjs.nodejs
 ```
 
 **2. Allow npm scripts:**
+
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
@@ -180,6 +201,7 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 **3. Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)** with the "Desktop development with C++" workload (required for native SQLite).
 
 **4. Clone and run:**
+
 ```bash
 git clone https://github.com/Colorado-Mesh/meshtastic-client
 cd meshtastic-client
@@ -188,6 +210,7 @@ npm start
 ```
 
 If serial isn't detected, install the correct USB drivers for your device (CP210x or CH340).
+
 </details>
 
 ---
@@ -206,6 +229,7 @@ If serial isn't detected, install the correct USB drivers for your device (CP210
 ### Auto-Reconnect
 
 After a successful connection, Mesh-Client remembers your last device. On next launch:
+
 - **Serial** — auto-connects silently in the background
 - **Bluetooth / WiFi** — a one-click reconnect card appears; click **Reconnect** (BLE requires a user gesture)
 - **MQTT** — auto-reconnects using saved broker settings
@@ -221,23 +245,23 @@ Enter your broker URL, topic, and optional credentials in the MQTT section of th
 ### Connection Types
 
 | Platform | Bluetooth | Serial | HTTP | MQTT |
-|----------|-----------|--------|------|------|
+| -------- | --------- | ------ | ---- | ---- |
 | macOS    | Yes       | Yes    | Yes  | Yes  |
 | Windows  | Yes       | Yes    | Yes  | Yes  |
 | Linux    | Yes       | Yes    | Yes  | Yes  |
 
 ### Tech Stack
 
-| Component  | Technology                                |
-|------------|-------------------------------------------|
-| Desktop    | Electron                                  |
-| UI         | React 19 + TypeScript                     |
-| Styling    | Tailwind CSS v4                           |
-| Meshtastic | @meshtastic/core (JSR)                    |
-| Maps       | Leaflet + OpenStreetMap                   |
-| Charts     | Recharts                                  |
-| Database   | SQLite (better-sqlite3)                   |
-| Build      | esbuild + Vite + electron-builder         |
+| Component  | Technology                        |
+| ---------- | --------------------------------- |
+| Desktop    | Electron                          |
+| UI         | React 19 + TypeScript             |
+| Styling    | Tailwind CSS v4                   |
+| Meshtastic | @meshtastic/core (JSR)            |
+| Maps       | Leaflet + OpenStreetMap           |
+| Charts     | Recharts                          |
+| Database   | SQLite (better-sqlite3)           |
+| Build      | esbuild + Vite + electron-builder |
 
 ### Project Structure
 
@@ -348,6 +372,7 @@ Join the `#mesh-client-development` channel on Discord for help, feedback, and d
 ### `npm install` fails on native module compilation
 
 You're missing build tools for the native SQLite module:
+
 - **Mac**: `xcode-select --install`
 - **Linux**: `sudo apt install build-essential python3`
 - **Windows**: Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the "Desktop development with C++" workload
@@ -381,6 +406,7 @@ You're missing build tools for the native SQLite module:
 ### `[DEP0169]` / `url.parse()` deprecation warning
 
 The app uses npm package overrides to force `follow-redirects` and `cacheable-request` onto versions that use the WHATWG URL API, which removes this warning. To trace the source of any deprecation, run:
+
 ```bash
 npm run trace-deprecation
 ```
@@ -400,6 +426,7 @@ npm run trace-deprecation
 **Cause**: File permissions on the app's `userData` directory are too restrictive.
 
 **Fix**:
+
 - **Mac/Linux**: `chmod 755 ~/Library/Application\ Support/mesh-client` (or `~/.config/mesh-client` on Linux)
 - **Windows**: Right-click `%APPDATA%\mesh-client` → Properties → Security → grant your user Full Control
 
@@ -426,6 +453,7 @@ npm run trace-deprecation
 **Cause**: Browser geolocation was denied, or the device has no GPS fix yet.
 
 **Fix**:
+
 - Grant location permission when prompted by the app.
 - Or set coordinates manually via the **Radio** tab → Fixed Position.
 - Note: The IP-geolocation fallback provides city-level accuracy only — not suitable for position broadcasting.
@@ -435,6 +463,7 @@ npm run trace-deprecation
 **Cause**: An unhandled React render error, usually from a corrupt or unexpected database value.
 
 **Fix**: Open the **App** tab → **Clear Database**, then restart. If the window never loads at all, delete the SQLite file manually:
+
 - **Mac**: `~/Library/Application Support/mesh-client/`
 - **Windows**: `%APPDATA%\mesh-client\`
 - **Linux**: `~/.config/mesh-client/`

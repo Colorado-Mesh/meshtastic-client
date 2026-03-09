@@ -1,6 +1,7 @@
 import { render } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
-import { describe, it, expect, vi } from 'vitest';
+
 import MapPanel from './MapPanel';
 
 vi.mock('../stores/diagnosticsStore', () => ({
@@ -72,7 +73,7 @@ describe('MapPanel accessibility', () => {
         locationFilter={defaultFilter}
         ourPosition={null}
         onLocateMe={vi.fn().mockResolvedValue(null)}
-      />
+      />,
     );
     // Exclude the mocked leaflet map container from axe scope
     // (third-party DOM with potentially non-standard attributes)

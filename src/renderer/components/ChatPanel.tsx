@@ -1,23 +1,28 @@
-import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from "react";
-import type { ChatMessage, MeshNode } from "../lib/types";
-import { emojiDisplayChar, emojiDisplayLabel } from "../lib/reactions";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-function StatusBadge({ status, transport, error }: {
-  status: "sending" | "acked" | "failed";
-  transport: "device" | "mqtt";
+import { emojiDisplayChar, emojiDisplayLabel } from '../lib/reactions';
+import type { ChatMessage, MeshNode } from '../lib/types';
+
+function StatusBadge({
+  status,
+  transport,
+  error,
+}: {
+  status: 'sending' | 'acked' | 'failed';
+  transport: 'device' | 'mqtt';
   error?: string;
 }) {
-  const icon = status === "sending" ? "\u23F3" : status === "acked" ? "\u2713" : "\u2717";
-  const colorClass = status === "sending" ? "text-muted"
-    : status === "acked" ? "text-bright-green"
-    : "text-red-400";
-  const label = transport === "mqtt" ? "M" : "BT";
-  const tooltip = `${transport === "mqtt" ? "MQTT" : "Device"}: ${
-    status === "sending" ? "Sending..." : status === "acked" ? "Delivered" : error || "Failed"
+  const icon = status === 'sending' ? '\u23F3' : status === 'acked' ? '\u2713' : '\u2717';
+  const colorClass =
+    status === 'sending' ? 'text-muted' : status === 'acked' ? 'text-bright-green' : 'text-red-400';
+  const label = transport === 'mqtt' ? 'M' : 'BT';
+  const tooltip = `${transport === 'mqtt' ? 'MQTT' : 'Device'}: ${
+    status === 'sending' ? 'Sending...' : status === 'acked' ? 'Delivered' : error || 'Failed'
   }`;
   return (
     <span className={`text-[10px] ${colorClass} cursor-help`} title={tooltip}>
-      {label}{icon}
+      {label}
+      {icon}
     </span>
   );
 }
@@ -25,31 +30,20 @@ function StatusBadge({ status, transport, error }: {
 // Standard emoji reaction set — Row 1: iMessage Classic, Row 2: WhatsApp/RCS Extended
 const REACTION_EMOJIS = [
   // Row 1 (6)
-  { code: 128077, label: "\ud83d\udc4d", name: "Like"      },  // 👍
-  { code: 10084,  label: "\u2764\ufe0f", name: "Love"      },  // ❤️
-  { code: 128514, label: "\ud83d\ude02", name: "Laugh"     },  // 😂
-  { code: 128078, label: "\ud83d\udc4e", name: "Dislike"   },  // 👎
-  { code: 127881, label: "\ud83c\udf89", name: "Party"     },  // 🎉
-  { code: 128558, label: "\ud83d\ude2e", name: "Wow"       },  // 😮
+  { code: 128077, label: '\ud83d\udc4d', name: 'Like' }, // 👍
+  { code: 10084, label: '\u2764\ufe0f', name: 'Love' }, // ❤️
+  { code: 128514, label: '\ud83d\ude02', name: 'Laugh' }, // 😂
+  { code: 128078, label: '\ud83d\udc4e', name: 'Dislike' }, // 👎
+  { code: 127881, label: '\ud83c\udf89', name: 'Party' }, // 🎉
+  { code: 128558, label: '\ud83d\ude2e', name: 'Wow' }, // 😮
   // Row 2 (6)
-  { code: 128546, label: "\ud83d\ude22", name: "Sad"       },  // 😢
-  { code: 128075, label: "\ud83d\udc4b", name: "Wave"      },  // 👋
-  { code: 128591, label: "\ud83d\ude4f", name: "Thanks"    },  // 🙏
-  { code: 128293, label: "\ud83d\udd25", name: "Fire"      },  // 🔥
-  { code: 9989,   label: "\u2705",       name: "Check"     },  // ✅
-  { code: 129300, label: "\ud83e\udd14", name: "Thinking"  },  // 🤔
+  { code: 128546, label: '\ud83d\ude22', name: 'Sad' }, // 😢
+  { code: 128075, label: '\ud83d\udc4b', name: 'Wave' }, // 👋
+  { code: 128591, label: '\ud83d\ude4f', name: 'Thanks' }, // 🙏
+  { code: 128293, label: '\ud83d\udd25', name: 'Fire' }, // 🔥
+  { code: 9989, label: '\u2705', name: 'Check' }, // ✅
+  { code: 129300, label: '\ud83e\udd14', name: 'Thinking' }, // 🤔
 ];
-
-const REACTION_LABEL_MAP = new Map(REACTION_EMOJIS.map((e) => [e.code, e.name]));
-
-/** Convert a Unicode codepoint to an emoji string */
-function emojiFromCode(code: number): string {
-  try {
-    return String.fromCodePoint(code);
-  } catch {
-    return "\u2753";
-  }
-}
 
 /** Format a date for day separators */
 function formatDayLabel(ts: number): string {
@@ -58,12 +52,12 @@ function formatDayLabel(ts: number): string {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const msgDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   const diff = today.getTime() - msgDay.getTime();
-  if (diff === 0) return "Today";
-  if (diff === 86_400_000) return "Yesterday";
+  if (diff === 0) return 'Today';
+  if (diff === 86_400_000) return 'Yesterday';
   return date.toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
   });
 }
 
@@ -74,16 +68,10 @@ function getDayKey(ts: number): string {
 }
 
 /** Highlight search matches in text */
-function HighlightText({
-  text,
-  query,
-}: {
-  text: string;
-  query: string;
-}) {
+function HighlightText({ text, query }: { text: string; query: string }) {
   if (!query.trim()) return <>{text}</>;
-  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const splitRegex = new RegExp(`(${escaped})`, "gi");
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const splitRegex = new RegExp(`(${escaped})`, 'gi');
   const parts = text.split(splitRegex);
   const lowerQuery = query.toLowerCase();
   return (
@@ -95,7 +83,7 @@ function HighlightText({
           </mark>
         ) : (
           <span key={i}>{part}</span>
-        )
+        ),
       )}
     </>
   );
@@ -115,7 +103,7 @@ function UnreadDivider() {
 
 interface Props {
   messages: ChatMessage[];
-  channels: Array<{ index: number; name: string }>;
+  channels: { index: number; name: string }[];
   myNodeNum: number;
   onSend: (text: string, channel: number, destination?: number, replyId?: number) => Promise<void>;
   onReact: (emoji: number, replyId: number, channel: number) => Promise<void>;
@@ -142,13 +130,13 @@ export default function ChatPanel({
   onDmTargetConsumed,
   isActive = true,
 }: Props) {
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState('');
   const [channel, setChannel] = useState(0);
   const [sending, setSending] = useState(false);
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const [pickerOpenFor, setPickerOpenFor] = useState<number | null>(null);
   const [showComposePicker, setShowComposePicker] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -156,24 +144,26 @@ export default function ChatPanel({
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   // Two-section UI state — load DM tabs from localStorage for restart persistence
-  const [viewMode, setViewMode] = useState<"channels" | "dm">("channels");
+  const [viewMode, setViewMode] = useState<'channels' | 'dm'>('channels');
   const [openDmTabs, setOpenDmTabs] = useState<number[]>(() => {
     try {
-      const saved = localStorage.getItem("mesh-client:openDmTabs");
+      const saved = localStorage.getItem('mesh-client:openDmTabs');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.every((n: unknown) => typeof n === "number")) {
+        if (Array.isArray(parsed) && parsed.every((n: unknown) => typeof n === 'number')) {
           return parsed;
         }
       }
-    } catch { /* ignore corrupt data */ }
+    } catch {
+      /* ignore corrupt data */
+    }
     return [];
   });
   const [activeDmNode, setActiveDmNode] = useState<number | null>(null);
 
   // Persist openDmTabs to localStorage whenever it changes
   useEffect(() => {
-    localStorage.setItem("mesh-client:openDmTabs", JSON.stringify(openDmTabs));
+    localStorage.setItem('mesh-client:openDmTabs', JSON.stringify(openDmTabs));
   }, [openDmTabs]);
 
   // Track unread counts per channel
@@ -183,12 +173,14 @@ export default function ChatPanel({
   // Persisted lastRead: { "ch:0": timestamp, "ch:2": ..., "dm:12345678": ... }
   const [persistedLastRead, setPersistedLastRead] = useState<Record<string, number>>(() => {
     try {
-      const saved = localStorage.getItem("mesh-client:lastRead");
+      const saved = localStorage.getItem('mesh-client:lastRead');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
       }
-    } catch { /* ignore corrupt */ }
+    } catch {
+      /* ignore corrupt */
+    }
     return {};
   });
   // Ref mirror — lets view-switch effect read latest value without adding it to deps
@@ -206,22 +198,25 @@ export default function ChatPanel({
 
   // Persist lastRead timestamps to localStorage
   useEffect(() => {
-    localStorage.setItem("mesh-client:lastRead", JSON.stringify(persistedLastRead));
+    localStorage.setItem('mesh-client:lastRead', JSON.stringify(persistedLastRead));
   }, [persistedLastRead]);
 
-  const getDmLabel = useCallback((nodeNum: number) => {
-    const node = nodes.get(nodeNum);
-    return node?.short_name || node?.long_name || `!${nodeNum.toString(16)}`;
-  }, [nodes]);
+  const getDmLabel = useCallback(
+    (nodeNum: number) => {
+      const node = nodes.get(nodeNum);
+      return node?.short_name || node?.long_name || `!${nodeNum.toString(16)}`;
+    },
+    [nodes],
+  );
 
   // Handle initialDmTarget from Nodes tab
   useEffect(() => {
     if (initialDmTarget != null) {
       if (!openDmTabs.includes(initialDmTarget)) {
-        setOpenDmTabs(prev => [...prev, initialDmTarget]);
+        setOpenDmTabs((prev) => [...prev, initialDmTarget]);
       }
       setActiveDmNode(initialDmTarget);
-      setViewMode("dm");
+      setViewMode('dm');
       onDmTargetConsumed?.();
     }
   }, [initialDmTarget]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -229,10 +224,7 @@ export default function ChatPanel({
   // Separate regular messages from reaction messages
   const { regularMessages, reactionsByReplyId } = useMemo(() => {
     const regular: ChatMessage[] = [];
-    const reactions = new Map<
-      number,
-      Array<{ emoji: number; sender_name: string }>
-    >();
+    const reactions = new Map<number, { emoji: number; sender_name: string }[]>();
 
     for (const msg of messages) {
       if (msg.emoji && msg.replyId) {
@@ -271,7 +263,7 @@ export default function ChatPanel({
 
   // Mark current channel as read when switching or viewing
   useEffect(() => {
-    if (viewMode === "channels") {
+    if (viewMode === 'channels') {
       const now = Date.now();
       if (channel === -1) {
         // "All" view: mark every channel as read
@@ -288,38 +280,35 @@ export default function ChatPanel({
         });
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- channels ref read at run time; effect intentionally triggered by channel/message/viewMode changes only
   }, [channel, regularMessages.length, viewMode]);
 
   const filteredMessages = useMemo(() => {
     let msgs: ChatMessage[];
 
-    if (viewMode === "dm" && activeDmNode != null) {
+    if (viewMode === 'dm' && activeDmNode != null) {
       // DM mode: show conversation between self and active DM node
       msgs = regularMessages.filter(
         (m) =>
           (m.to === activeDmNode && m.sender_id === myNodeNum) ||
-          (m.sender_id === activeDmNode && m.to === myNodeNum)
+          (m.sender_id === activeDmNode && m.to === myNodeNum),
       );
     } else {
       // Channel mode: show only broadcast messages (no DMs)
-      msgs = regularMessages.filter(
-        (m) => !m.to && (channel === -1 || m.channel === channel)
-      );
+      msgs = regularMessages.filter((m) => !m.to && (channel === -1 || m.channel === channel));
     }
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       msgs = msgs.filter(
-        (m) =>
-          m.payload.toLowerCase().includes(q) ||
-          m.sender_name.toLowerCase().includes(q)
+        (m) => m.payload.toLowerCase().includes(q) || m.sender_name.toLowerCase().includes(q),
       );
     }
     return msgs;
   }, [regularMessages, channel, searchQuery, viewMode, activeDmNode, myNodeNum]);
 
   const viewKey = useMemo(() => {
-    if (viewMode === "dm" && activeDmNode != null) return `dm:${activeDmNode}`;
+    if (viewMode === 'dm' && activeDmNode != null) return `dm:${activeDmNode}`;
     return `ch:${channel}`;
   }, [viewMode, activeDmNode, channel]);
 
@@ -357,7 +346,7 @@ export default function ChatPanel({
     if (!el) return;
     const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     if (distFromBottom < 200) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [filteredMessages.length]);
 
@@ -365,51 +354,51 @@ export default function ChatPanel({
   // ensures DOM is committed before scrolling, preventing flash of wrong position.
   useLayoutEffect(() => {
     if (triggerScrollToUnread === 0) return; // skip initial mount
-    if (!isActive) return;                   // skip while hidden
+    if (!isActive) return; // skip while hidden
     if (unreadDividerRef.current) {
-      unreadDividerRef.current.scrollIntoView({ block: "center" });
+      unreadDividerRef.current.scrollIntoView({ block: 'center' });
     } else {
       messagesEndRef.current?.scrollIntoView();
     }
-  }, [triggerScrollToUnread, isActive]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [triggerScrollToUnread, isActive]);
 
   const scrollToUnreadOrBottom = useCallback(() => {
     if (unreadDividerRef.current) {
-      unreadDividerRef.current.scrollIntoView({ block: "start", behavior: "smooth" });
+      unreadDividerRef.current.scrollIntoView({ block: 'start', behavior: 'smooth' });
     } else {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, []);
 
   // Escape key handler
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (e.key === 'Escape') {
         setPickerOpenFor(null);
         setShowComposePicker(false);
         if (replyTo) {
           setReplyTo(null);
         } else if (showSearch) {
           setShowSearch(false);
-        } else if (viewMode === "dm") {
-          setViewMode("channels");
+        } else if (viewMode === 'dm') {
+          setViewMode('channels');
         }
       }
     };
-    document.addEventListener("keydown", handleEscape);
-    return () => document.removeEventListener("keydown", handleEscape);
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
   }, [showSearch, viewMode, replyTo]);
 
   // Toggle search with Cmd+F / Ctrl+F
   useEffect(() => {
     const handleKeys = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
         e.preventDefault();
         setShowSearch((prev) => !prev);
       }
     };
-    window.addEventListener("keydown", handleKeys);
-    return () => window.removeEventListener("keydown", handleKeys);
+    window.addEventListener('keydown', handleKeys);
+    return () => window.removeEventListener('keydown', handleKeys);
   }, []);
 
   const handleSend = async () => {
@@ -417,35 +406,31 @@ export default function ChatPanel({
     setSending(true);
     try {
       const sendChannel = channel === -1 ? 0 : channel;
-      const destination = viewMode === "dm" && activeDmNode != null ? activeDmNode : undefined;
+      const destination = viewMode === 'dm' && activeDmNode != null ? activeDmNode : undefined;
       await onSend(input.trim(), sendChannel, destination, replyTo?.packetId);
-      setInput("");
+      setInput('');
       setReplyTo(null);
       const now = Date.now();
       setPersistedLastRead((prev) => ({ ...prev, [viewKey]: now }));
       setUnreadDividerTimestamp(0);
     } catch (err) {
-      console.error("Send failed:", err);
+      console.error('Send failed:', err);
     } finally {
       setSending(false);
     }
   };
 
-  const handleReact = async (
-    emojiCode: number,
-    packetId: number,
-    msgChannel: number
-  ) => {
+  const handleReact = async (emojiCode: number, packetId: number, msgChannel: number) => {
     setPickerOpenFor(null);
     try {
       await onReact(emojiCode, packetId, msgChannel);
     } catch (err) {
-      console.error("React failed:", err);
+      console.error('React failed:', err);
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
@@ -470,30 +455,33 @@ export default function ChatPanel({
 
   // Open a DM tab for a node
   const openDmTo = useCallback((nodeNum: number) => {
-    setOpenDmTabs(prev => prev.includes(nodeNum) ? prev : [...prev, nodeNum]);
+    setOpenDmTabs((prev) => (prev.includes(nodeNum) ? prev : [...prev, nodeNum]));
     setActiveDmNode(nodeNum);
-    setViewMode("dm");
+    setViewMode('dm');
   }, []);
 
   // Close a DM tab
-  const closeDmTab = useCallback((nodeNum: number) => {
-    setOpenDmTabs(prev => prev.filter(n => n !== nodeNum));
-    if (activeDmNode === nodeNum) {
-      // Switch to next tab or back to channels
-      const remaining = openDmTabs.filter(n => n !== nodeNum);
-      if (remaining.length > 0) {
-        setActiveDmNode(remaining[remaining.length - 1]);
-      } else {
-        setActiveDmNode(null);
-        setViewMode("channels");
+  const closeDmTab = useCallback(
+    (nodeNum: number) => {
+      setOpenDmTabs((prev) => prev.filter((n) => n !== nodeNum));
+      if (activeDmNode === nodeNum) {
+        // Switch to next tab or back to channels
+        const remaining = openDmTabs.filter((n) => n !== nodeNum);
+        if (remaining.length > 0) {
+          setActiveDmNode(remaining[remaining.length - 1]);
+        } else {
+          setActiveDmNode(null);
+          setViewMode('channels');
+        }
       }
-    }
-  }, [activeDmNode, openDmTabs]);
+    },
+    [activeDmNode, openDmTabs],
+  );
 
   function formatTime(ts: number): string {
     return new Date(ts).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
+      hour: '2-digit',
+      minute: '2-digit',
     });
   }
 
@@ -512,14 +500,14 @@ export default function ChatPanel({
     return Array.from(grouped.entries()).map(([emoji, senders]) => ({
       emoji,
       count: senders.length,
-      tooltip: `${emojiDisplayLabel(emoji)}: ${senders.join(", ")}`,
+      tooltip: `${emojiDisplayLabel(emoji)}: ${senders.join(', ')}`,
     }));
   }
 
   // Pre-compute day separator indices (avoids mutable variable during render)
   const daySeparatorIndices = useMemo(() => {
     const indices = new Set<number>();
-    let prevDayKey = "";
+    let prevDayKey = '';
     for (let i = 0; i < filteredMessages.length; i++) {
       const dayKey = getDayKey(filteredMessages[i].timestamp);
       if (dayKey !== prevDayKey) {
@@ -541,24 +529,25 @@ export default function ChatPanel({
     return -1;
   }, [filteredMessages, myNodeNum, unreadDividerTimestamp, channel, searchQuery]);
 
-  const isDmMode = viewMode === "dm" && activeDmNode != null;
-  const dmNodeName = activeDmNode != null ? getDmLabel(activeDmNode) : "";
+  const isDmMode = viewMode === 'dm' && activeDmNode != null;
+  const dmNodeName = activeDmNode != null ? getDmLabel(activeDmNode) : '';
 
   return (
     <div className="flex flex-col h-full max-h-[calc(100vh-10rem)]">
       {/* Row 1 — Channel selector + Search toggle */}
-      <div
-        className={`flex items-center gap-2 mb-1 ${viewMode === "dm" ? "opacity-50" : ""}`}
-      >
+      <div className={`flex items-center gap-2 mb-1 ${viewMode === 'dm' ? 'opacity-50' : ''}`}>
         <span className="text-[10px] text-muted font-medium uppercase tracking-wider mr-1">
           Channels
         </span>
         <button
-          onClick={() => { setChannel(-1); setViewMode("channels"); }}
+          onClick={() => {
+            setChannel(-1);
+            setViewMode('channels');
+          }}
           className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
-            viewMode === "channels" && channel === -1
-              ? "bg-green-600 text-white"
-              : "bg-secondary-dark text-muted hover:text-gray-200"
+            viewMode === 'channels' && channel === -1
+              ? 'bg-green-600 text-white'
+              : 'bg-secondary-dark text-muted hover:text-gray-200'
           }`}
         >
           All
@@ -568,20 +557,23 @@ export default function ChatPanel({
           return (
             <button
               key={ch.index}
-              onClick={() => { setChannel(ch.index); setViewMode("channels"); }}
+              onClick={() => {
+                setChannel(ch.index);
+                setViewMode('channels');
+              }}
               className={`relative px-3 py-1 text-xs font-medium rounded-full transition-colors ${
-                viewMode === "channels" && channel === ch.index
-                  ? "bg-green-600 text-white"
-                  : "bg-secondary-dark text-muted hover:text-gray-200"
+                viewMode === 'channels' && channel === ch.index
+                  ? 'bg-green-600 text-white'
+                  : 'bg-secondary-dark text-muted hover:text-gray-200'
               }`}
             >
               {ch.name}
-              {unread > 0 && !(viewMode === "channels" && channel === ch.index) && (
+              {unread > 0 && !(viewMode === 'channels' && channel === ch.index) && (
                 <span
-                  aria-label={`${unread > 99 ? "99+" : unread} unread messages`}
+                  aria-label={`${unread > 99 ? '99+' : unread} unread messages`}
                   className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1"
                 >
-                  {unread > 99 ? "99+" : unread}
+                  {unread > 99 ? '99+' : unread}
                 </span>
               )}
             </button>
@@ -596,43 +588,56 @@ export default function ChatPanel({
           aria-pressed={showSearch}
           aria-label="Search messages"
           className={`p-1.5 rounded-lg transition-colors ${
-            showSearch
-              ? "bg-brand-green/20 text-bright-green"
-              : "text-muted hover:text-gray-300"
+            showSearch ? 'bg-brand-green/20 text-bright-green' : 'text-muted hover:text-gray-300'
           }`}
           title="Search messages (Cmd+F)"
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          <svg
+            className="w-4 h-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+            aria-hidden="true"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
           </svg>
         </button>
       </div>
 
       {/* Row 2 — DM tabs */}
       <div
-        className={`flex items-center gap-2 mb-2 min-h-[28px] ${viewMode === "channels" ? "opacity-50" : ""}`}
+        className={`flex items-center gap-2 mb-2 min-h-[28px] ${viewMode === 'channels' ? 'opacity-50' : ''}`}
       >
         <span className="text-[10px] text-muted font-medium uppercase tracking-wider mr-1">
           DMs
         </span>
         {openDmTabs.length === 0 ? (
-          <span className="text-[10px] text-gray-600 italic">
-            No conversations
-          </span>
+          <span className="text-[10px] text-gray-600 italic">No conversations</span>
         ) : (
           openDmTabs.map((nodeNum) => (
             <div
               key={nodeNum}
               className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full transition-colors cursor-pointer ${
-                viewMode === "dm" && activeDmNode === nodeNum
-                  ? "bg-purple-600 text-white"
-                  : "bg-secondary-dark text-muted hover:text-gray-200"
+                viewMode === 'dm' && activeDmNode === nodeNum
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-secondary-dark text-muted hover:text-gray-200'
               }`}
-              onClick={() => { setActiveDmNode(nodeNum); setViewMode("dm"); }}
+              onClick={() => {
+                setActiveDmNode(nodeNum);
+                setViewMode('dm');
+              }}
             >
               <span>{getDmLabel(nodeNum)}</span>
               <button
-                onClick={(e) => { e.stopPropagation(); closeDmTab(nodeNum); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  closeDmTab(nodeNum);
+                }}
                 className="ml-0.5 text-muted hover:text-white text-[10px] leading-none"
                 title="Close DM"
               >
@@ -657,7 +662,7 @@ export default function ChatPanel({
           />
           {searchQuery && (
             <div className="text-xs text-muted mt-1">
-              {filteredMessages.length} result{filteredMessages.length !== 1 ? "s" : ""}
+              {filteredMessages.length} result{filteredMessages.length !== 1 ? 's' : ''}
             </div>
           )}
         </div>
@@ -666,9 +671,7 @@ export default function ChatPanel({
       {/* Disconnected overlay */}
       {!isConnected && (
         <div className="bg-deep-black/60 border border-gray-700 rounded-xl p-4 mb-2 text-center">
-          <p className="text-muted text-sm">
-            Not connected — messages are read-only
-          </p>
+          <p className="text-muted text-sm">Not connected — messages are read-only</p>
         </div>
       )}
 
@@ -681,20 +684,19 @@ export default function ChatPanel({
         {filteredMessages.length === 0 ? (
           <div className="text-center text-muted py-12">
             {searchQuery
-              ? "No messages match your search."
+              ? 'No messages match your search.'
               : isDmMode
-              ? `No messages with ${dmNodeName} yet.`
-              : isConnected
-              ? "No messages yet. Send one or wait for incoming messages."
-              : "Connect to a device to start chatting."}
+                ? `No messages with ${dmNodeName} yet.`
+                : isConnected
+                  ? 'No messages yet. Send one or wait for incoming messages.'
+                  : 'Connect to a device to start chatting.'}
           </div>
         ) : (
           filteredMessages.map((msg, i) => {
             const isOwn = msg.sender_id === myNodeNum;
             const isDm = !!msg.to;
             const reactions = getGroupedReactions(msg.packetId);
-            const showPicker =
-              pickerOpenFor === (msg.packetId ?? -(i + 1));
+            const showPicker = pickerOpenFor === (msg.packetId ?? -(i + 1));
             const pickerOpensAbove = i >= filteredMessages.length - 3;
 
             // Day separator
@@ -718,15 +720,11 @@ export default function ChatPanel({
                     <UnreadDivider />
                   </div>
                 )}
-                <div
-                  className={`flex flex-col ${
-                    isOwn ? "items-end" : "items-start"
-                  }`}
-                >
+                <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'}`}>
                   {/* Bubble row */}
                   <div
                     className={`group/msg flex items-end gap-1 max-w-[80%] ${
-                      isOwn ? "flex-row-reverse" : "flex-row"
+                      isOwn ? 'flex-row-reverse' : 'flex-row'
                     }`}
                   >
                     {/* Message bubble */}
@@ -734,11 +732,11 @@ export default function ChatPanel({
                       className={`rounded-2xl px-3 py-2 min-w-0 ${
                         isDm
                           ? isOwn
-                            ? "rounded-br-sm bg-purple-600/20 border border-purple-500/30"
-                            : "rounded-bl-sm bg-purple-700/20 border border-purple-600/30"
+                            ? 'rounded-br-sm bg-purple-600/20 border border-purple-500/30'
+                            : 'rounded-bl-sm bg-purple-700/20 border border-purple-600/30'
                           : isOwn
-                          ? "rounded-br-sm bg-blue-600/20 border border-blue-500/30"
-                          : "rounded-bl-sm bg-secondary-dark/50 border border-gray-600/30"
+                            ? 'rounded-br-sm bg-blue-600/20 border border-blue-500/30'
+                            : 'rounded-bl-sm bg-secondary-dark/50 border border-gray-600/30'
                       }`}
                     >
                       {/* Header: sender name (clickable) + DM indicator + time */}
@@ -746,45 +744,44 @@ export default function ChatPanel({
                         <button
                           onClick={() => onNodeClick(msg.sender_id)}
                           className={`text-xs font-semibold cursor-pointer hover:underline ${
-                            isDm
-                              ? "text-purple-400"
-                              : isOwn
-                              ? "text-blue-400"
-                              : "text-bright-green"
+                            isDm ? 'text-purple-400' : isOwn ? 'text-blue-400' : 'text-bright-green'
                           }`}
                         >
                           {msg.sender_name}
                         </button>
                         {isDm && (
-                          <span className="text-[10px] text-purple-400/70 font-medium">
-                            DM
-                          </span>
+                          <span className="text-[10px] text-purple-400/70 font-medium">DM</span>
                         )}
                         <span className="text-[10px] text-muted/70">
                           {formatTime(msg.timestamp)}
                         </span>
                         {channels.length > 1 && !isDm && (
-                          <span className="text-[10px] text-gray-600">
-                            ch{msg.channel}
-                          </span>
+                          <span className="text-[10px] text-gray-600">ch{msg.channel}</span>
                         )}
                       </div>
 
                       {/* Quoted reply preview */}
-                      {msg.replyId && !msg.emoji && messageByPacketId.has(msg.replyId) && (() => {
-                        const orig = messageByPacketId.get(msg.replyId)!;
-                        return (
-                          <div className="flex gap-1.5 mb-1.5 opacity-80">
-                            <div className="w-0.5 rounded-full bg-gray-500 shrink-0" />
-                            <div className="min-w-0">
-                              <span className="text-[10px] font-semibold text-gray-400 block">{orig.sender_name}</span>
-                              <span className="text-[11px] text-gray-500 block truncate">
-                                {orig.payload.length > 80 ? orig.payload.slice(0, 80) + "…" : orig.payload}
-                              </span>
+                      {msg.replyId &&
+                        !msg.emoji &&
+                        messageByPacketId.has(msg.replyId) &&
+                        (() => {
+                          const orig = messageByPacketId.get(msg.replyId)!;
+                          return (
+                            <div className="flex gap-1.5 mb-1.5 opacity-80">
+                              <div className="w-0.5 rounded-full bg-gray-500 shrink-0" />
+                              <div className="min-w-0">
+                                <span className="text-[10px] font-semibold text-gray-400 block">
+                                  {orig.sender_name}
+                                </span>
+                                <span className="text-[11px] text-gray-500 block truncate">
+                                  {orig.payload.length > 80
+                                    ? orig.payload.slice(0, 80) + '…'
+                                    : orig.payload}
+                                </span>
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })()}
+                          );
+                        })()}
 
                       {/* Message text with optional search highlight */}
                       <p className="text-sm text-gray-200 break-words leading-relaxed">
@@ -797,17 +794,40 @@ export default function ChatPanel({
                           {msg.mqttStatus ? (
                             <>
                               {msg.status && (
-                                <StatusBadge status={msg.status} transport="device" error={msg.error} />
+                                <StatusBadge
+                                  status={msg.status}
+                                  transport="device"
+                                  error={msg.error}
+                                />
                               )}
                               <StatusBadge status={msg.mqttStatus} transport="mqtt" />
                             </>
-                          ) : msg.status === "sending" ? (
-                            <span role="img" aria-label="Sending" className="text-[10px] text-muted" title="Sending...">{"\u23F3"}</span>
-                          ) : msg.status === "acked" ? (
-                            <span role="img" aria-label="Delivered" className="text-[10px] text-bright-green" title="Delivered">{"\u2713"}</span>
-                          ) : msg.status === "failed" ? (
-                            <span role="img" aria-label="Failed to deliver" className="text-[10px] text-red-400 cursor-help" title={msg.error || "Failed to deliver"}>
-                              {"\u2717"} {msg.error || "Failed"}
+                          ) : msg.status === 'sending' ? (
+                            <span
+                              role="img"
+                              aria-label="Sending"
+                              className="text-[10px] text-muted"
+                              title="Sending..."
+                            >
+                              {'\u23F3'}
+                            </span>
+                          ) : msg.status === 'acked' ? (
+                            <span
+                              role="img"
+                              aria-label="Delivered"
+                              className="text-[10px] text-bright-green"
+                              title="Delivered"
+                            >
+                              {'\u2713'}
+                            </span>
+                          ) : msg.status === 'failed' ? (
+                            <span
+                              role="img"
+                              aria-label="Failed to deliver"
+                              className="text-[10px] text-red-400 cursor-help"
+                              title={msg.error || 'Failed to deliver'}
+                            >
+                              {'\u2717'} {msg.error || 'Failed'}
                             </span>
                           ) : null}
                         </div>
@@ -819,7 +839,10 @@ export default function ChatPanel({
                       <div className="opacity-0 group-hover/msg:opacity-100 group-focus-within/msg:opacity-100 flex gap-0.5 transition-all shrink-0">
                         {/* Reply */}
                         <button
-                          onClick={() => { setReplyTo(msg); inputRef.current?.focus(); }}
+                          onClick={() => {
+                            setReplyTo(msg);
+                            inputRef.current?.focus();
+                          }}
                           className="text-gray-600 hover:text-blue-400 text-xs p-1 rounded"
                           aria-label="Reply to message"
                           title="Reply"
@@ -841,11 +864,7 @@ export default function ChatPanel({
                         {/* React */}
                         <button
                           onClick={() =>
-                            setPickerOpenFor(
-                              showPicker
-                                ? null
-                                : (msg.packetId ?? -(i + 1))
-                            )
+                            setPickerOpenFor(showPicker ? null : (msg.packetId ?? -(i + 1)))
                           }
                           className="text-gray-600 hover:text-gray-300 text-xs p-1 rounded"
                           aria-label="Add reaction"
@@ -895,8 +914,8 @@ export default function ChatPanel({
                   {showPicker && (
                     <div
                       className={`flex flex-col gap-0.5 bg-secondary-dark border border-gray-600 rounded-xl px-2 py-1.5 shadow-lg ${
-                        pickerOpensAbove ? "mb-1 order-first" : "mt-1"
-                      } ${isOwn ? "self-end" : "self-start"}`}
+                        pickerOpensAbove ? 'mb-1 order-first' : 'mt-1'
+                      } ${isOwn ? 'self-end' : 'self-start'}`}
                     >
                       <div className="flex gap-1">
                         {REACTION_EMOJIS.slice(0, 6).map((re) => (
@@ -927,11 +946,7 @@ export default function ChatPanel({
 
                   {/* Reaction badges */}
                   {reactions.length > 0 && (
-                    <div
-                      className={`flex gap-1 mt-0.5 ${
-                        isOwn ? "justify-end" : "justify-start"
-                      }`}
-                    >
+                    <div className={`flex gap-1 mt-0.5 ${isOwn ? 'justify-end' : 'justify-start'}`}>
                       {reactions.map((r) => (
                         <span
                           key={r.emoji}
@@ -939,11 +954,7 @@ export default function ChatPanel({
                           title={r.tooltip}
                         >
                           {emojiDisplayChar(r.emoji)}
-                          {r.count > 1 && (
-                            <span className="text-muted text-[10px]">
-                              {r.count}
-                            </span>
-                          )}
+                          {r.count > 1 && <span className="text-muted text-[10px]">{r.count}</span>}
                         </span>
                       ))}
                     </div>
@@ -961,7 +972,13 @@ export default function ChatPanel({
             onClick={scrollToUnreadOrBottom}
             className="sticky bottom-2 left-1/2 -translate-x-1/2 bg-secondary-dark hover:bg-gray-600 text-gray-300 rounded-full px-3 py-1.5 text-xs font-medium shadow-lg border border-gray-600 transition-all flex items-center gap-1.5 z-10"
           >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <svg
+              className="w-3.5 h-3.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2.5}
+            >
               <path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
             </svg>
             Jump to Unread
@@ -1002,15 +1019,24 @@ export default function ChatPanel({
       {/* Reply preview bar */}
       {replyTo && (
         <div className="flex items-center gap-2 px-3 py-1.5 mb-1 bg-secondary-dark/80 border border-gray-600/50 rounded-xl text-xs">
-          <svg className="w-3 h-3 text-blue-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
+          <svg
+            className="w-3 h-3 text-blue-400 shrink-0"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"
+            />
           </svg>
           <span className="text-gray-400">
-            Replying to{" "}
-            <span className="text-gray-200 font-medium">{replyTo.sender_name}</span>:
+            Replying to <span className="text-gray-200 font-medium">{replyTo.sender_name}</span>:
           </span>
           <span className="flex-1 truncate text-gray-500">
-            {replyTo.payload.length > 60 ? replyTo.payload.slice(0, 60) + "…" : replyTo.payload}
+            {replyTo.payload.length > 60 ? replyTo.payload.slice(0, 60) + '…' : replyTo.payload}
           </span>
           <button
             onClick={() => setReplyTo(null)}
@@ -1035,15 +1061,15 @@ export default function ChatPanel({
             isDmMode
               ? `DM to ${dmNodeName}...`
               : !isConnected
-              ? "Connect to send messages"
-              : isMqttOnly
-              ? "Type a message (via MQTT)..."
-              : "Type a message..."
+                ? 'Connect to send messages'
+                : isMqttOnly
+                  ? 'Type a message (via MQTT)...'
+                  : 'Type a message...'
           }
           className={`flex-1 px-4 py-2.5 rounded-xl text-gray-200 border focus:outline-none disabled:opacity-50 transition-colors ${
             isDmMode
-              ? "bg-purple-900/20 border-purple-600/50 focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/30"
-              : "bg-secondary-dark/80 border-gray-600/50 focus:border-brand-green/50 focus:ring-1 focus:ring-brand-green/30"
+              ? 'bg-purple-900/20 border-purple-600/50 focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/30'
+              : 'bg-secondary-dark/80 border-gray-600/50 focus:border-brand-green/50 focus:ring-1 focus:ring-brand-green/30'
           }`}
           maxLength={228}
         />
@@ -1053,8 +1079,8 @@ export default function ChatPanel({
           disabled={!isConnected || sending}
           className={`px-2.5 py-2.5 rounded-xl transition-colors disabled:opacity-50 ${
             showComposePicker
-              ? "bg-brand-green/20 text-bright-green"
-              : "bg-secondary-dark/80 text-muted hover:text-gray-300 border border-gray-600/50"
+              ? 'bg-brand-green/20 text-bright-green'
+              : 'bg-secondary-dark/80 text-muted hover:text-gray-300 border border-gray-600/50'
           }`}
           title="Insert emoji"
         >
@@ -1065,18 +1091,16 @@ export default function ChatPanel({
           disabled={!isConnected || !input.trim() || sending}
           className={`px-5 py-2.5 font-medium rounded-xl transition-colors ${
             isDmMode
-              ? "bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 disabled:text-muted text-white"
-              : "bg-[#4CAF50] hover:bg-[#43A047] disabled:bg-gray-600 disabled:text-muted text-white"
+              ? 'bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 disabled:text-muted text-white'
+              : 'bg-[#4CAF50] hover:bg-[#43A047] disabled:bg-gray-600 disabled:text-muted text-white'
           }`}
         >
-          {sending ? "..." : isDmMode ? "DM" : "Send"}
+          {sending ? '...' : isDmMode ? 'DM' : 'Send'}
         </button>
       </div>
       {/* Character count — only show near limit */}
       {input.length > 180 && (
-        <div className="text-xs text-muted mt-1 text-right">
-          {input.length}/228
-        </div>
+        <div className="text-xs text-muted mt-1 text-right">{input.length}/228</div>
       )}
     </div>
   );

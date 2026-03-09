@@ -1,6 +1,7 @@
 import { render } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
-import { describe, it, expect, vi } from 'vitest';
+
 import DiagnosticsPanel from './DiagnosticsPanel';
 
 vi.mock('../stores/diagnosticsStore', () => ({
@@ -31,7 +32,7 @@ describe('DiagnosticsPanel accessibility', () => {
         isConnected={false}
         traceRouteResults={new Map()}
         getFullNodeLabel={vi.fn().mockReturnValue('Unknown')}
-      />
+      />,
     );
     const results = await axe(container);
     expect(results).toHaveNoViolations();

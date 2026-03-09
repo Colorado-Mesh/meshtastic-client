@@ -6,39 +6,74 @@ interface RoleInfo {
 }
 
 const ROLE_INFO: Record<number, RoleInfo> = {
-  0:  { label: "Client",        colorClass: "text-gray-400",   isBadge: false },
-  1:  { label: "Client Mute",   colorClass: "text-gray-500",   isBadge: false },
-  2:  { label: "Router",        colorClass: "text-blue-300",   isBadge: true,  badgeClass: "bg-blue-900/60 text-blue-300 border border-blue-700/40" },
-  3:  { label: "Router Client", colorClass: "text-blue-400",   isBadge: false },
-  4:  { label: "Repeater",      colorClass: "text-orange-400", isBadge: true,  badgeClass: "bg-orange-900/60 text-orange-300 border border-orange-700/40" },
-  5:  { label: "Tracker",       colorClass: "text-green-400",  isBadge: false },
-  6:  { label: "Sensor",        colorClass: "text-teal-400",   isBadge: false },
-  7:  { label: "TAK",           colorClass: "text-red-400",    isBadge: true,  badgeClass: "bg-red-900/60 text-red-300 border border-red-700/40" },
-  8:  { label: "Client Hidden", colorClass: "text-purple-400", isBadge: false },
-  9:  { label: "Lost & Found",  colorClass: "text-pink-300",   isBadge: true,  badgeClass: "bg-pink-900/60 text-pink-300 border border-pink-700/40" },
-  10: { label: "TAK Tracker",   colorClass: "text-red-300",    isBadge: true,  badgeClass: "bg-red-950/70 text-red-200 border border-red-800/50" },
-  11: { label: "Router Late",   colorClass: "text-sky-300",    isBadge: true,  badgeClass: "bg-sky-900/60 text-sky-300 border border-sky-700/40" },
-  12: { label: "Client Base",   colorClass: "text-yellow-300", isBadge: true,  badgeClass: "bg-indigo-900/60 text-yellow-300 border border-indigo-700/40" },
+  0: { label: 'Client', colorClass: 'text-gray-400', isBadge: false },
+  1: { label: 'Client Mute', colorClass: 'text-gray-500', isBadge: false },
+  2: {
+    label: 'Router',
+    colorClass: 'text-blue-300',
+    isBadge: true,
+    badgeClass: 'bg-blue-900/60 text-blue-300 border border-blue-700/40',
+  },
+  3: { label: 'Router Client', colorClass: 'text-blue-400', isBadge: false },
+  4: {
+    label: 'Repeater',
+    colorClass: 'text-orange-400',
+    isBadge: true,
+    badgeClass: 'bg-orange-900/60 text-orange-300 border border-orange-700/40',
+  },
+  5: { label: 'Tracker', colorClass: 'text-green-400', isBadge: false },
+  6: { label: 'Sensor', colorClass: 'text-teal-400', isBadge: false },
+  7: {
+    label: 'TAK',
+    colorClass: 'text-red-400',
+    isBadge: true,
+    badgeClass: 'bg-red-900/60 text-red-300 border border-red-700/40',
+  },
+  8: { label: 'Client Hidden', colorClass: 'text-purple-400', isBadge: false },
+  9: {
+    label: 'Lost & Found',
+    colorClass: 'text-pink-300',
+    isBadge: true,
+    badgeClass: 'bg-pink-900/60 text-pink-300 border border-pink-700/40',
+  },
+  10: {
+    label: 'TAK Tracker',
+    colorClass: 'text-red-300',
+    isBadge: true,
+    badgeClass: 'bg-red-950/70 text-red-200 border border-red-800/50',
+  },
+  11: {
+    label: 'Router Late',
+    colorClass: 'text-sky-300',
+    isBadge: true,
+    badgeClass: 'bg-sky-900/60 text-sky-300 border border-sky-700/40',
+  },
+  12: {
+    label: 'Client Base',
+    colorClass: 'text-yellow-300',
+    isBadge: true,
+    badgeClass: 'bg-indigo-900/60 text-yellow-300 border border-indigo-700/40',
+  },
 };
 
 export function getRoleInfo(role: number | undefined): RoleInfo {
   if (role !== undefined && role in ROLE_INFO) return ROLE_INFO[role];
   return {
-    label: role !== undefined ? `Unknown (${role})` : "-",
-    colorClass: "text-gray-500",
+    label: role !== undefined ? `Unknown (${role})` : '-',
+    colorClass: 'text-gray-500',
     isBadge: false,
   };
 }
 
 export function RoleIcon({ role }: { role: number | undefined }) {
   const p = {
-    className: "w-3.5 h-3.5",
-    fill: "none",
-    viewBox: "0 0 24 24",
-    stroke: "currentColor",
+    className: 'w-3.5 h-3.5',
+    fill: 'none',
+    viewBox: '0 0 24 24',
+    stroke: 'currentColor',
     strokeWidth: 2,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
   };
   switch (role) {
     case 0: // Client — User
@@ -164,7 +199,9 @@ export function RoleDisplay({ role }: { role: number | undefined }) {
   const info = getRoleInfo(role);
   if (info.isBadge && info.badgeClass) {
     return (
-      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium ${info.badgeClass}`}>
+      <span
+        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium ${info.badgeClass}`}
+      >
         <RoleIcon role={role} />
         {info.label}
       </span>

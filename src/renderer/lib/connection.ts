@@ -1,8 +1,9 @@
-import { MeshDevice } from "@meshtastic/core";
-import { TransportWebBluetooth } from "@meshtastic/transport-web-bluetooth";
-import { TransportWebSerial } from "@meshtastic/transport-web-serial";
-import { TransportHTTP } from "@meshtastic/transport-http";
-import type { ConnectionType } from "./types";
+import { MeshDevice } from '@meshtastic/core';
+import { TransportHTTP } from '@meshtastic/transport-http';
+import { TransportWebBluetooth } from '@meshtastic/transport-web-bluetooth';
+import { TransportWebSerial } from '@meshtastic/transport-web-serial';
+
+import type { ConnectionType } from './types';
 
 // Cached BluetoothDevice from the most recent successful BLE connection.
 // navigator.bluetooth.getDevices() is not available in all Electron builds,
@@ -27,12 +28,16 @@ export function clearCapturedBleDevice(): void {
  */
 export async function createConnection(
   type: ConnectionType,
-  httpAddress?: string
+  httpAddress?: string,
 ): Promise<MeshDevice> {
-  let transport: { toDevice: WritableStream; fromDevice: ReadableStream; disconnect?: () => Promise<void> };
+  let transport: {
+    toDevice: WritableStream;
+    fromDevice: ReadableStream;
+    disconnect?: () => Promise<void>;
+  };
 
   switch (type) {
-    case "ble": {
+    case 'ble': {
       // Intercept requestDevice to capture the BluetoothDevice reference
       // before the transport library discards it. This is more reliable than
       // navigator.bluetooth.getDevices() which isn't available in all builds.
@@ -53,20 +58,20 @@ export async function createConnection(
       break;
     }
 
-    case "serial":
+    case 'serial':
       transport = await TransportWebSerial.create(115200);
       break;
 
-    case "http": {
-      if (!httpAddress) throw new Error("HTTP address required");
+    case 'http': {
+      if (!httpAddress) throw new Error('HTTP address required');
       // TransportHTTP.create() expects a raw hostname/IP, not a full URL.
       // It constructs http:// or https:// internally based on the tls flag.
       // Strip protocol if the user provided one.
       let host = httpAddress.trim();
-      const useTls = host.startsWith("https://");
-      host = host.replace(/^https?:\/\//, "");
+      const useTls = host.startsWith('https://');
+      host = host.replace(/^https?:\/\//, '');
       // Strip trailing slashes
-      host = host.replace(/\/+$/, "");
+      host = host.replace(/\/+$/, '');
       transport = await TransportHTTP.create(host, useTls);
       break;
     }
@@ -92,32 +97,35 @@ export async function createConnection(
 export async function reconnectBle(): Promise<MeshDevice> {
   let target: BluetoothDevice | undefined;
 
-  if (typeof navigator.bluetooth.getDevices === "function") {
+  if (typeof navigator.bluetooth.getDevices === 'function') {
     const devices = await navigator.bluetooth.getDevices();
-    target = devices.find((d: any) => d.gatt && !d.gatt.connected)
-      ?? devices.find((d: any) => d.gatt != null);
+    target =
+      devices.find((d: any) => d.gatt && !d.gatt.connected) ??
+      devices.find((d: any) => d.gatt != null);
   } else {
     // getDevices() unavailable — fall back to the device captured at connect time
     target = capturedBleDevice ?? undefined;
   }
 
   if (!target) {
-    throw new Error("No previously connected BLE device found for reconnection");
+    throw new Error('No previously connected BLE device found for reconnection');
   }
 
   // Let the transport library handle GATT connection internally
   // (both createFromDevice and prepareConnection call gatt.connect())
   let transport: any;
-  if (typeof (TransportWebBluetooth as any).createFromDevice === "function") {
+  if (typeof (TransportWebBluetooth as any).createFromDevice === 'function') {
     transport = await (TransportWebBluetooth as any).createFromDevice(target);
-  } else if (typeof (TransportWebBluetooth as any).prepareConnection === "function") {
+  } else if (typeof (TransportWebBluetooth as any).prepareConnection === 'function') {
     transport = await (TransportWebBluetooth as any).prepareConnection(target);
   } else {
-    throw new Error("TransportWebBluetooth has no method to create a transport from an existing device");
+    throw new Error(
+      'TransportWebBluetooth has no method to create a transport from an existing device',
+    );
   }
 
   if (!transport) {
-    throw new Error("Failed to create BLE transport for reconnection");
+    throw new Error('Failed to create BLE transport for reconnection');
   }
 
   // Stash the BluetoothDevice reference for GATT monitoring
@@ -137,11 +145,11 @@ export async function reconnectBle(): Promise<MeshDevice> {
  */
 export async function reconnectSerial(lastPortId?: string | null): Promise<MeshDevice> {
   if (!navigator.serial?.getPorts) {
-    throw new Error("Web Serial API not available");
+    throw new Error('Web Serial API not available');
   }
   const ports = await navigator.serial.getPorts();
   if (ports.length === 0) {
-    throw new Error("No previously granted serial ports found");
+    throw new Error('No previously granted serial ports found');
   }
   // Try to match the previously-selected port by ID; fall back to first
   let port: SerialPort | undefined;
@@ -165,26 +173,36 @@ export async function safeDisconnect(device: MeshDevice): Promise<void> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (
-      msg.includes("not a function") ||
-      msg.includes("already been closed") ||
-      msg.includes("locked")
+      msg.includes('not a function') ||
+      msg.includes('already been closed') ||
+      msg.includes('locked')
     ) {
       // BLE and HTTP transports don't implement disconnect() —
       // manually close the writable stream and GATT connection
       try {
         await device.transport.toDevice.close();
-      } catch { /* already closed */ }
+      } catch {
+        /* already closed */
+      }
 
       // For BLE: disconnect the GATT server
       const btDevice = (device.transport as any)?.__bluetoothDevice;
       if (btDevice?.gatt?.connected) {
-        try { btDevice.gatt.disconnect(); } catch { /* ignore */ }
+        try {
+          btDevice.gatt.disconnect();
+        } catch {
+          /* ignore */
+        }
       }
     } else {
-      console.warn("Disconnect error:", err);
+      console.warn('Disconnect error:', err);
     }
   } finally {
     // Always complete device streams to prevent memory leaks
-    try { device.complete(); } catch { /* already completed */ }
+    try {
+      device.complete();
+    } catch {
+      /* already completed */
+    }
   }
 }

@@ -1,9 +1,10 @@
-import { useState, useCallback, useEffect, useRef } from "react";
-import type { MeshNode } from "../lib/types";
-import type { OurPosition } from "../lib/gpsSource";
-import { useToast } from "./Toast";
-import { haversineDistanceKm } from "../lib/nodeStatus";
-import type { LocationFilter } from "../App";
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+import type { LocationFilter } from '../App';
+import type { OurPosition } from '../lib/gpsSource';
+import { haversineDistanceKm } from '../lib/nodeStatus';
+import type { MeshNode } from '../lib/types';
+import { useToast } from './Toast';
 
 // ─── Confirmation Modal ─────────────────────────────────────────
 function ConfirmModal({
@@ -24,10 +25,7 @@ function ConfirmModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onCancel}
-      />
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onCancel} />
       {/* Modal */}
       <div className="relative bg-deep-black border border-gray-600 rounded-xl shadow-2xl max-w-sm w-full mx-4 p-6 space-y-4">
         <h3 className="text-lg font-semibold text-gray-200">{title}</h3>
@@ -42,9 +40,7 @@ function ConfirmModal({
           <button
             onClick={onConfirm}
             className={`flex-1 px-4 py-2.5 font-medium rounded-lg transition-colors text-sm text-white ${
-              danger
-                ? "bg-red-600 hover:bg-red-500"
-                : "bg-yellow-600 hover:bg-yellow-500"
+              danger ? 'bg-red-600 hover:bg-red-500' : 'bg-yellow-600 hover:bg-yellow-500'
             }`}
           >
             {confirmLabel}
@@ -63,7 +59,7 @@ interface AdminSettings {
   nodeCapCount: number;
   distanceFilterEnabled: boolean;
   distanceFilterMax: number;
-  distanceUnit: "miles" | "km";
+  distanceUnit: 'miles' | 'km';
   filterMqttOnly: boolean;
   messageLimitEnabled: boolean;
   messageLimitCount: number;
@@ -76,7 +72,7 @@ const DEFAULT_SETTINGS: AdminSettings = {
   nodeCapCount: 10000,
   distanceFilterEnabled: false,
   distanceFilterMax: 500,
-  distanceUnit: "miles",
+  distanceUnit: 'miles',
   filterMqttOnly: false,
   messageLimitEnabled: true,
   messageLimitCount: 1000,
@@ -84,7 +80,7 @@ const DEFAULT_SETTINGS: AdminSettings = {
 
 function loadSettings(): AdminSettings {
   try {
-    const raw = localStorage.getItem("mesh-client:adminSettings");
+    const raw = localStorage.getItem('mesh-client:adminSettings');
     return raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : DEFAULT_SETTINGS;
   } catch {
     return DEFAULT_SETTINGS;
@@ -94,7 +90,7 @@ function loadSettings(): AdminSettings {
 interface Props {
   nodes: Map<number, MeshNode>;
   messageCount: number;
-  channels: Array<{ index: number; name: string }>;
+  channels: { index: number; name: string }[];
   myNodeNum: number | null;
   onLocationFilterChange: (f: LocationFilter) => void;
   ourPosition?: OurPosition | null;
@@ -138,9 +134,11 @@ export default function AppPanel({
   useEffect(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      localStorage.setItem("mesh-client:adminSettings", JSON.stringify(settings));
+      localStorage.setItem('mesh-client:adminSettings', JSON.stringify(settings));
     }, 300);
-    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
   }, [settings]);
 
   useEffect(() => {
@@ -150,7 +148,13 @@ export default function AppPanel({
       unit: settings.distanceUnit,
       hideMqttOnly: settings.filterMqttOnly,
     });
-  }, [settings.distanceFilterEnabled, settings.distanceFilterMax, settings.distanceUnit, settings.filterMqttOnly, onLocationFilterChange]);
+  }, [
+    settings.distanceFilterEnabled,
+    settings.distanceFilterMax,
+    settings.distanceUnit,
+    settings.filterMqttOnly,
+    onLocationFilterChange,
+  ]);
 
   const updateSetting = <K extends keyof AdminSettings>(key: K, value: AdminSettings[K]) =>
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -166,28 +170,39 @@ export default function AppPanel({
     }
   });
 
-  const handleGpsIntervalChange = useCallback((val: number) => {
-    setGpsRefreshInterval(val);
-    try {
-      localStorage.setItem('mesh-client:gpsSettings', JSON.stringify({ refreshInterval: val }));
-    } catch { /* ignore */ }
-    onGpsIntervalChange?.(val);
-  }, [onGpsIntervalChange]);
+  const handleGpsIntervalChange = useCallback(
+    (val: number) => {
+      setGpsRefreshInterval(val);
+      try {
+        localStorage.setItem('mesh-client:gpsSettings', JSON.stringify({ refreshInterval: val }));
+      } catch {
+        /* ignore */
+      }
+      onGpsIntervalChange?.(val);
+    },
+    [onGpsIntervalChange],
+  );
 
   // ─── Message channel selection ──────────────────────────────
   const [msgChannels, setMsgChannels] = useState<number[]>([]);
   const [clearChannelTarget, setClearChannelTarget] = useState<number>(-1);
 
   useEffect(() => {
-    window.electronAPI.db.getMessageChannels().then((rows) => {
-      setMsgChannels(rows.map((r) => r.channel));
-    }).catch(() => {});
+    window.electronAPI.db
+      .getMessageChannels()
+      .then((rows) => {
+        setMsgChannels(rows.map((r) => r.channel));
+      })
+      .catch(() => {});
   }, []);
 
-  const getChannelLabel = useCallback((ch: number) => {
-    const named = channels.find((c) => c.index === ch);
-    return named ? `Channel ${ch} — ${named.name}` : `Channel ${ch}`;
-  }, [channels]);
+  const getChannelLabel = useCallback(
+    (ch: number) => {
+      const named = channels.find((c) => c.index === ch);
+      return named ? `Channel ${ch} — ${named.name}` : `Channel ${ch}`;
+    },
+    [channels],
+  );
 
   // ─── Confirmation flow ──────────────────────────────────────
   const executeWithConfirmation = useCallback((action: PendingAction) => {
@@ -201,22 +216,19 @@ export default function AppPanel({
     try {
       await pendingAction.action();
       const nodeActions = [
-        "Delete Old Nodes",
-        "Prune MQTT-only Nodes",
-        "Prune Zero Island Nodes",
-        "Prune Distant Nodes",
-        "Clear Nodes",
-        "Clear All Data",
+        'Delete Old Nodes',
+        'Prune MQTT-only Nodes',
+        'Prune Zero Island Nodes',
+        'Prune Distant Nodes',
+        'Clear Nodes',
+        'Clear All Data',
       ];
-      const messageActions = ["Clear Messages", "Clear All Data"];
+      const messageActions = ['Clear Messages', 'Clear All Data'];
       if (nodeActions.includes(actionName)) onNodesPruned?.();
       if (messageActions.includes(actionName)) onMessagesPruned?.();
-      addToast(`${actionName} completed successfully.`, "success");
+      addToast(`${actionName} completed successfully.`, 'success');
     } catch (err) {
-      addToast(
-        `Failed: ${err instanceof Error ? err.message : "Unknown error"}`,
-        "error"
-      );
+      addToast(`Failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
     }
   }, [pendingAction, addToast, onNodesPruned, onMessagesPruned]);
 
@@ -237,9 +249,7 @@ export default function AppPanel({
                   : `IP location (city-level): ${ourPosition.lat.toFixed(5)}, ${ourPosition.lon.toFixed(5)}`}
             </p>
           )}
-          {!ourPosition && (
-            <p className="text-xs text-muted">No GPS position resolved yet.</p>
-          )}
+          {!ourPosition && <p className="text-xs text-muted">No GPS position resolved yet.</p>}
           <div className="flex items-center gap-2">
             <label className="text-sm text-gray-300 flex-1">Auto-refresh interval:</label>
             <select
@@ -269,14 +279,15 @@ export default function AppPanel({
         <h3 className="text-sm font-medium text-muted">Map &amp; Node Filtering</h3>
         <div className="bg-secondary-dark rounded-lg p-4 space-y-4">
           <p className="text-xs text-muted leading-relaxed">
-            Hides nodes beyond a set distance from your device. Filtering is display-only — nodes remain in the database.
+            Hides nodes beyond a set distance from your device. Filtering is display-only — nodes
+            remain in the database.
           </p>
           <div className="flex items-center gap-2">
             <input
               type="checkbox"
               id="distanceFilter"
               checked={settings.distanceFilterEnabled}
-              onChange={(e) => updateSetting("distanceFilterEnabled", e.target.checked)}
+              onChange={(e) => updateSetting('distanceFilterEnabled', e.target.checked)}
               className="accent-brand-green"
             />
             <label htmlFor="distanceFilter" className="text-sm text-gray-300 cursor-pointer">
@@ -289,13 +300,15 @@ export default function AppPanel({
               type="number"
               min={1}
               value={settings.distanceFilterMax}
-              onChange={(e) => updateSetting("distanceFilterMax", Math.max(1, parseInt(e.target.value) || 1))}
+              onChange={(e) =>
+                updateSetting('distanceFilterMax', Math.max(1, parseInt(e.target.value) || 1))
+              }
               disabled={!settings.distanceFilterEnabled}
               className="w-24 px-2 py-1 bg-deep-black border border-gray-600 rounded text-gray-200 text-sm text-right focus:border-brand-green focus:outline-none disabled:opacity-40"
             />
             <select
               value={settings.distanceUnit}
-              onChange={(e) => updateSetting("distanceUnit", e.target.value as "miles" | "km")}
+              onChange={(e) => updateSetting('distanceUnit', e.target.value as 'miles' | 'km')}
               disabled={!settings.distanceFilterEnabled}
               className="px-2 py-1 bg-deep-black border border-gray-600 rounded text-gray-200 text-sm focus:border-brand-green focus:outline-none disabled:opacity-40"
             >
@@ -303,24 +316,28 @@ export default function AppPanel({
               <option value="km">km</option>
             </select>
           </div>
-          {settings.distanceFilterEnabled && (() => {
-            const homeNode = myNodeNum != null ? nodes.get(myNodeNum) : undefined;
-            const homeHasLocation = homeNode &&
-              homeNode.latitude != null && homeNode.latitude !== 0 &&
-              homeNode.longitude != null && homeNode.longitude !== 0;
-            return !homeHasLocation ? (
-              <p className="text-xs text-yellow-300 bg-yellow-900/30 border border-yellow-700 px-2 py-1.5 rounded">
-                Your device has no GPS fix — filter is enabled but all nodes are shown.
-              </p>
-            ) : null;
-          })()}
+          {settings.distanceFilterEnabled &&
+            (() => {
+              const homeNode = myNodeNum != null ? nodes.get(myNodeNum) : undefined;
+              const homeHasLocation =
+                homeNode &&
+                homeNode.latitude != null &&
+                homeNode.latitude !== 0 &&
+                homeNode.longitude != null &&
+                homeNode.longitude !== 0;
+              return !homeHasLocation ? (
+                <p className="text-xs text-yellow-300 bg-yellow-900/30 border border-yellow-700 px-2 py-1.5 rounded">
+                  Your device has no GPS fix — filter is enabled but all nodes are shown.
+                </p>
+              ) : null;
+            })()}
           <p className="text-xs text-muted">Note: Requires your device to have a valid GPS fix.</p>
           <div className="flex items-center gap-2">
             <input
               type="checkbox"
               id="filterMqttOnly"
               checked={settings.filterMqttOnly}
-              onChange={(e) => updateSetting("filterMqttOnly", e.target.checked)}
+              onChange={(e) => updateSetting('filterMqttOnly', e.target.checked)}
               className="accent-brand-green"
             />
             <label htmlFor="filterMqttOnly" className="text-sm text-gray-300 cursor-pointer">
@@ -348,10 +365,10 @@ export default function AppPanel({
             <button
               onClick={() =>
                 executeWithConfirmation({
-                  name: "Delete Old Nodes",
-                  title: "Delete Old Nodes",
-                  message: `This will permanently delete all nodes that haven't been heard in the last ${deleteAgeDays} day${deleteAgeDays !== 1 ? "s" : ""}. They will be re-discovered when they broadcast again.`,
-                  confirmLabel: "Delete Old Nodes",
+                  name: 'Delete Old Nodes',
+                  title: 'Delete Old Nodes',
+                  message: `This will permanently delete all nodes that haven't been heard in the last ${deleteAgeDays} day${deleteAgeDays !== 1 ? 's' : ''}. They will be re-discovered when they broadcast again.`,
+                  confirmLabel: 'Delete Old Nodes',
                   danger: true,
                   action: async () => {
                     await window.electronAPI.db.deleteNodesByAge(deleteAgeDays);
@@ -370,7 +387,7 @@ export default function AppPanel({
               type="checkbox"
               id="autoPrune"
               checked={settings.autoPruneEnabled}
-              onChange={(e) => updateSetting("autoPruneEnabled", e.target.checked)}
+              onChange={(e) => updateSetting('autoPruneEnabled', e.target.checked)}
               className="accent-brand-green"
             />
             <label htmlFor="autoPrune" className="text-sm text-gray-300 flex-1 cursor-pointer">
@@ -380,7 +397,9 @@ export default function AppPanel({
               type="number"
               min={1}
               value={settings.autoPruneDays}
-              onChange={(e) => updateSetting("autoPruneDays", Math.max(1, parseInt(e.target.value) || 1))}
+              onChange={(e) =>
+                updateSetting('autoPruneDays', Math.max(1, parseInt(e.target.value) || 1))
+              }
               disabled={!settings.autoPruneEnabled}
               className="w-20 px-2 py-1 bg-deep-black border border-gray-600 rounded text-gray-200 text-sm text-right focus:border-brand-green focus:outline-none disabled:opacity-40"
             />
@@ -393,7 +412,7 @@ export default function AppPanel({
               type="checkbox"
               id="nodeCap"
               checked={settings.nodeCapEnabled}
-              onChange={(e) => updateSetting("nodeCapEnabled", e.target.checked)}
+              onChange={(e) => updateSetting('nodeCapEnabled', e.target.checked)}
               className="accent-brand-green"
             />
             <label htmlFor="nodeCap" className="text-sm text-gray-300 flex-1 cursor-pointer">
@@ -403,7 +422,9 @@ export default function AppPanel({
               type="number"
               min={1}
               value={settings.nodeCapCount}
-              onChange={(e) => updateSetting("nodeCapCount", Math.max(1, parseInt(e.target.value) || 1))}
+              onChange={(e) =>
+                updateSetting('nodeCapCount', Math.max(1, parseInt(e.target.value) || 1))
+              }
               disabled={!settings.nodeCapEnabled}
               className="w-24 px-2 py-1 bg-deep-black border border-gray-600 rounded text-gray-200 text-sm text-right focus:border-brand-green focus:outline-none disabled:opacity-40"
             />
@@ -415,13 +436,14 @@ export default function AppPanel({
             <button
               onClick={() =>
                 executeWithConfirmation({
-                  name: "Prune MQTT-only Nodes",
-                  title: "Prune MQTT-only Nodes",
-                  message: "This will permanently delete all nodes discovered only via MQTT (never heard via RF). They will reappear if heard again via MQTT or RF.",
-                  confirmLabel: "Prune MQTT Nodes",
+                  name: 'Prune MQTT-only Nodes',
+                  title: 'Prune MQTT-only Nodes',
+                  message:
+                    'This will permanently delete all nodes discovered only via MQTT (never heard via RF). They will reappear if heard again via MQTT or RF.',
+                  confirmLabel: 'Prune MQTT Nodes',
                   danger: true,
                   action: async () => {
-                    await window.electronAPI.db.deleteNodesBySource("mqtt");
+                    await window.electronAPI.db.deleteNodesBySource('mqtt');
                   },
                 })
               }
@@ -436,8 +458,8 @@ export default function AppPanel({
             <button
               onClick={() =>
                 executeWithConfirmation({
-                  name: "Clear Nodes",
-                  title: "Clear Nodes",
+                  name: 'Clear Nodes',
+                  title: 'Clear Nodes',
                   message: `This will permanently delete all ${nodes.size} locally stored nodes. They will be re-discovered when connected.`,
                   confirmLabel: `Clear ${nodes.size} Nodes`,
                   danger: true,
@@ -465,20 +487,22 @@ export default function AppPanel({
             <button
               onClick={() => {
                 const zeroIslandNodes = Array.from(nodes.values()).filter(
-                  (n) => Math.abs(n.latitude) < 0.5 && Math.abs(n.longitude) < 0.5
+                  (n) => Math.abs(n.latitude) < 0.5 && Math.abs(n.longitude) < 0.5,
                 );
                 if (zeroIslandNodes.length === 0) {
-                  addToast("No zero/null island nodes found.", "success");
+                  addToast('No zero/null island nodes found.', 'success');
                   return;
                 }
                 executeWithConfirmation({
-                  name: "Prune Zero Island Nodes",
-                  title: "Prune Zero/Null Island Nodes",
-                  message: `This will permanently delete ${zeroIslandNodes.length} node${zeroIslandNodes.length !== 1 ? "s" : ""} with coordinates at or near 0°N, 0°E (invalid GPS). This cannot be undone.`,
-                  confirmLabel: `Delete ${zeroIslandNodes.length} Node${zeroIslandNodes.length !== 1 ? "s" : ""}`,
+                  name: 'Prune Zero Island Nodes',
+                  title: 'Prune Zero/Null Island Nodes',
+                  message: `This will permanently delete ${zeroIslandNodes.length} node${zeroIslandNodes.length !== 1 ? 's' : ''} with coordinates at or near 0°N, 0°E (invalid GPS). This cannot be undone.`,
+                  confirmLabel: `Delete ${zeroIslandNodes.length} Node${zeroIslandNodes.length !== 1 ? 's' : ''}`,
                   danger: true,
                   action: async () => {
-                    await window.electronAPI.db.deleteNodesBatch(zeroIslandNodes.map((n) => n.node_id));
+                    await window.electronAPI.db.deleteNodesBatch(
+                      zeroIslandNodes.map((n) => n.node_id),
+                    );
                   },
                 });
               }}
@@ -494,14 +518,19 @@ export default function AppPanel({
                 const homeNode = myNodeNum != null ? nodes.get(myNodeNum) : undefined;
                 const homeLat = homeNode?.latitude ?? ourPosition?.lat;
                 const homeLon = homeNode?.longitude ?? ourPosition?.lon;
-                const hasHome = homeLat != null && homeLon != null && (homeLat !== 0 || homeLon !== 0);
+                const hasHome =
+                  homeLat != null && homeLon != null && (homeLat !== 0 || homeLon !== 0);
                 if (!hasHome) {
-                  addToast("No GPS position available. Use device node coordinates or enable GPS in the app.", "error");
+                  addToast(
+                    'No GPS position available. Use device node coordinates or enable GPS in the app.',
+                    'error',
+                  );
                   return;
                 }
-                const maxKm = settings.distanceUnit === "miles"
-                  ? settings.distanceFilterMax * 1.60934
-                  : settings.distanceFilterMax;
+                const maxKm =
+                  settings.distanceUnit === 'miles'
+                    ? settings.distanceFilterMax * 1.60934
+                    : settings.distanceFilterMax;
                 const distantNodes = Array.from(nodes.values()).filter((n) => {
                   if (n.node_id === myNodeNum) return false;
                   if (!n.latitude && !n.longitude) return false; // no GPS — can't determine distance
@@ -509,17 +538,19 @@ export default function AppPanel({
                   return d > maxKm;
                 });
                 if (distantNodes.length === 0) {
-                  addToast("No nodes found beyond the distance threshold.", "success");
+                  addToast('No nodes found beyond the distance threshold.', 'success');
                   return;
                 }
                 executeWithConfirmation({
-                  name: "Prune Distant Nodes",
-                  title: "Prune Distant Nodes",
-                  message: `This will permanently delete ${distantNodes.length} node${distantNodes.length !== 1 ? "s" : ""} beyond ${settings.distanceFilterMax} ${settings.distanceUnit} from your device. This cannot be undone.`,
-                  confirmLabel: `Delete ${distantNodes.length} Node${distantNodes.length !== 1 ? "s" : ""}`,
+                  name: 'Prune Distant Nodes',
+                  title: 'Prune Distant Nodes',
+                  message: `This will permanently delete ${distantNodes.length} node${distantNodes.length !== 1 ? 's' : ''} beyond ${settings.distanceFilterMax} ${settings.distanceUnit} from your device. This cannot be undone.`,
+                  confirmLabel: `Delete ${distantNodes.length} Node${distantNodes.length !== 1 ? 's' : ''}`,
                   danger: true,
                   action: async () => {
-                    await window.electronAPI.db.deleteNodesBatch(distantNodes.map((n) => n.node_id));
+                    await window.electronAPI.db.deleteNodesBatch(
+                      distantNodes.map((n) => n.node_id),
+                    );
                   },
                 });
               }}
@@ -527,7 +558,8 @@ export default function AppPanel({
             >
               <div className="font-medium">Prune Distant Nodes</div>
               <div className="text-xs text-red-400/70 mt-0.5">
-                Removes nodes beyond the distance threshold above. Requires your device to have a valid GPS location.
+                Removes nodes beyond the distance threshold above. Requires your device to have a
+                valid GPS location.
               </div>
             </button>
           </div>
@@ -536,12 +568,10 @@ export default function AppPanel({
 
       {/* Data Management */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-muted">
-          Data Management
-        </h3>
+        <h3 className="text-sm font-medium text-muted">Data Management</h3>
         <p className="text-xs text-muted">
-          Export your local database (messages &amp; nodes) as a .db file, or
-          import/merge another user's database into yours.
+          Export your local database (messages &amp; nodes) as a .db file, or import/merge another
+          user's database into yours.
         </p>
         <div className="grid grid-cols-2 gap-2">
           <button
@@ -549,14 +579,12 @@ export default function AppPanel({
               try {
                 const path = await window.electronAPI.db.exportDb();
                 if (path) {
-                  addToast(`Exported to: ${path}`, "success");
+                  addToast(`Exported to: ${path}`, 'success');
                 }
               } catch (err) {
                 addToast(
-                  `Export failed: ${
-                    err instanceof Error ? err.message : "Unknown error"
-                  }`,
-                  "error"
+                  `Export failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
+                  'error',
                 );
               }
             }}
@@ -572,15 +600,13 @@ export default function AppPanel({
                 if (result) {
                   addToast(
                     `Merged: ${result.nodesAdded} new nodes, ${result.messagesAdded} new messages.`,
-                    "success"
+                    'success',
                   );
                 }
               } catch (err) {
                 addToast(
-                  `Import failed: ${
-                    err instanceof Error ? err.message : "Unknown error"
-                  }`,
-                  "error"
+                  `Import failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
+                  'error',
                 );
               }
             }}
@@ -593,21 +619,20 @@ export default function AppPanel({
 
       {/* Message Management */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-muted">
-          Message Management
-        </h3>
+        <h3 className="text-sm font-medium text-muted">Message Management</h3>
 
         {/* Message limit */}
         <div className="bg-secondary-dark rounded-lg p-4 space-y-3">
           <p className="text-xs text-muted leading-relaxed">
-            Limits how many messages are loaded from the database. Helps keep memory usage low on busy networks.
+            Limits how many messages are loaded from the database. Helps keep memory usage low on
+            busy networks.
           </p>
           <div className="flex items-center gap-2">
             <input
               type="checkbox"
               id="messageLimit"
               checked={settings.messageLimitEnabled}
-              onChange={(e) => updateSetting("messageLimitEnabled", e.target.checked)}
+              onChange={(e) => updateSetting('messageLimitEnabled', e.target.checked)}
               className="accent-brand-green"
             />
             <label htmlFor="messageLimit" className="text-sm text-gray-300 flex-1 cursor-pointer">
@@ -618,7 +643,12 @@ export default function AppPanel({
               min={1}
               max={10000}
               value={settings.messageLimitCount}
-              onChange={(e) => updateSetting("messageLimitCount", Math.max(1, Math.min(10000, parseInt(e.target.value) || 1000)))}
+              onChange={(e) =>
+                updateSetting(
+                  'messageLimitCount',
+                  Math.max(1, Math.min(10000, parseInt(e.target.value) || 1000)),
+                )
+              }
               disabled={!settings.messageLimitEnabled}
               className="w-24 px-2 py-1 bg-deep-black border border-gray-600 rounded text-gray-200 text-sm text-right focus:border-brand-green focus:outline-none disabled:opacity-40"
             />
@@ -648,10 +678,10 @@ export default function AppPanel({
         <button
           onClick={() => {
             const isAll = clearChannelTarget === -1;
-            const channelName = isAll ? "" : getChannelLabel(clearChannelTarget);
+            const channelName = isAll ? '' : getChannelLabel(clearChannelTarget);
             executeWithConfirmation({
-              name: "Clear Messages",
-              title: "Clear Messages",
+              name: 'Clear Messages',
+              title: 'Clear Messages',
               message: isAll
                 ? `This will permanently delete all ${messageCount} locally stored messages across all channels. This cannot be undone.`
                 : `This will permanently delete all messages from ${channelName}. This cannot be undone.`,
@@ -682,11 +712,11 @@ export default function AppPanel({
           <button
             onClick={() =>
               executeWithConfirmation({
-                name: "Clear All Data",
-                title: "⚠ Clear All Local Data",
+                name: 'Clear All Data',
+                title: '⚠ Clear All Local Data',
                 message:
-                  "This will permanently delete ALL local messages, nodes, and cached session data. This action CANNOT be undone.",
-                confirmLabel: "Clear Everything",
+                  'This will permanently delete ALL local messages, nodes, and cached session data. This action CANNOT be undone.',
+                confirmLabel: 'Clear Everything',
                 danger: true,
                 action: async () => {
                   await window.electronAPI.db.clearMessages();

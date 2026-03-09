@@ -1,6 +1,7 @@
-import { render, act } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
-import { describe, it, expect, vi } from 'vitest';
+
 import AdminPanel from './AdminPanel';
 import { ToastProvider } from './Toast';
 
@@ -22,7 +23,7 @@ describe('AdminPanel accessibility', () => {
     const { container } = render(
       <ToastProvider>
         <AdminPanel {...defaultProps} />
-      </ToastProvider>
+      </ToastProvider>,
     );
     // Flush async state updates (e.g. getMessageChannels promise)
     await act(async () => {});

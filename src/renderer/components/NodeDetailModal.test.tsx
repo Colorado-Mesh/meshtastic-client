@@ -1,8 +1,9 @@
 import { render } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
-import { describe, it, expect, vi } from 'vitest';
-import NodeDetailModal from './NodeDetailModal';
+
 import type { MeshNode } from '../lib/types';
+import NodeDetailModal from './NodeDetailModal';
 
 const mockNode: MeshNode = {
   node_id: 0xdeadbeef,
@@ -54,7 +55,7 @@ describe('NodeDetailModal accessibility', () => {
         onToggleFavorite={vi.fn()}
         isConnected={true}
         homeNode={null}
-      />
+      />,
     );
     const results = await axe(container);
     expect(results).toHaveNoViolations();
@@ -71,7 +72,7 @@ describe('NodeDetailModal accessibility', () => {
         onToggleFavorite={vi.fn()}
         isConnected={false}
         homeNode={null}
-      />
+      />,
     );
     expect(container.firstChild).toBeNull();
   });

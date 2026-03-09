@@ -1,8 +1,9 @@
 import { render } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
-import { describe, it, expect, vi } from 'vitest';
-import ConnectionPanel from './ConnectionPanel';
+
 import type { DeviceState } from '../lib/types';
+import ConnectionPanel from './ConnectionPanel';
 
 const disconnectedState: DeviceState = {
   status: 'disconnected',
@@ -20,7 +21,7 @@ describe('ConnectionPanel accessibility', () => {
         onAutoConnect={vi.fn().mockResolvedValue(undefined)}
         onDisconnect={vi.fn().mockResolvedValue(undefined)}
         mqttStatus="disconnected"
-      />
+      />,
     );
     const results = await axe(container);
     expect(results).toHaveNoViolations();

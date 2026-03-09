@@ -19,20 +19,20 @@ Every interactive element added or modified must have an accessible label. This 
 
 ### Required ARIA/HTML for common patterns
 
-| Element type | What to add |
-|---|---|
-| `<button>` with icon only (no text) | `aria-label="Descriptive action"` |
-| `<button>` that toggles state | `aria-pressed={boolean}` + `aria-label` |
-| `<input>` / `<select>` / `<textarea>` | `<label htmlFor="id">` + matching `id`, **or** `aria-label` |
-| Status that changes dynamically | Wrap in `<div role="status" aria-live="polite">` |
-| Error message | `role="alert"` on the element |
-| Modal / dialog | `role="dialog" aria-modal="true" aria-labelledby="heading-id"` |
-| Confirmation dialog | `role="alertdialog"` instead of `role="dialog"` |
-| Color-only indicator (status dot, badge) | `aria-label="Online"` / `"Offline"` etc. |
-| Decorative icon inside a labelled button | `aria-hidden="true"` on the `<svg>` |
-| Sortable `<th>` | `scope="col"` + `aria-sort="ascending"\|"descending"\|"none"` |
-| `<table>` | `<caption className="sr-only">Description</caption>` |
-| SVG icon used as an image | `role="img" aria-label="..."` |
+| Element type                             | What to add                                                    |
+| ---------------------------------------- | -------------------------------------------------------------- |
+| `<button>` with icon only (no text)      | `aria-label="Descriptive action"`                              |
+| `<button>` that toggles state            | `aria-pressed={boolean}` + `aria-label`                        |
+| `<input>` / `<select>` / `<textarea>`    | `<label htmlFor="id">` + matching `id`, **or** `aria-label`    |
+| Status that changes dynamically          | Wrap in `<div role="status" aria-live="polite">`               |
+| Error message                            | `role="alert"` on the element                                  |
+| Modal / dialog                           | `role="dialog" aria-modal="true" aria-labelledby="heading-id"` |
+| Confirmation dialog                      | `role="alertdialog"` instead of `role="dialog"`                |
+| Color-only indicator (status dot, badge) | `aria-label="Online"` / `"Offline"` etc.                       |
+| Decorative icon inside a labelled button | `aria-hidden="true"` on the `<svg>`                            |
+| Sortable `<th>`                          | `scope="col"` + `aria-sort="ascending"\|"descending"\|"none"`  |
+| `<table>`                                | `<caption className="sr-only">Description</caption>`           |
+| SVG icon used as an image                | `role="img" aria-label="..."`                                  |
 
 ### Rule: never add a new `<input>` without a label
 
@@ -74,14 +74,14 @@ Before submitting a PR that touches IPC or the preload layer:
 
 Use [Conventional Commits](https://www.conventionalcommits.org/):
 
-| Prefix | When to use |
-|--------|-------------|
-| `feat:` | New feature |
-| `fix:` | Bug fix |
-| `docs:` | Documentation only |
-| `chore:` | Maintenance, deps, config |
+| Prefix      | When to use                                     |
+| ----------- | ----------------------------------------------- |
+| `feat:`     | New feature                                     |
+| `fix:`      | Bug fix                                         |
+| `docs:`     | Documentation only                              |
+| `chore:`    | Maintenance, deps, config                       |
 | `refactor:` | Code change that is neither a fix nor a feature |
-| `test:` | Adding or updating tests |
+| `test:`     | Adding or updating tests                        |
 
 For `feat:` and `fix:` commits, include a footer referencing the issue if applicable:
 

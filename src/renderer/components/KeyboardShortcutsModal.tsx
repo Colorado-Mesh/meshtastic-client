@@ -1,19 +1,19 @@
-import { useEffect } from "react";
+import { useEffect } from 'react';
 
 const SHORTCUTS = [
-  { keys: "Cmd/Ctrl + 1", action: "Switch to Connection tab" },
-  { keys: "Cmd/Ctrl + 2", action: "Switch to Chat tab" },
-  { keys: "Cmd/Ctrl + 3", action: "Switch to Nodes tab" },
-  { keys: "Cmd/Ctrl + 4", action: "Switch to Map tab" },
-  { keys: "Cmd/Ctrl + 5", action: "Switch to Telemetry tab" },
-  { keys: "Cmd/Ctrl + 6", action: "Switch to Radio tab" },
-  { keys: "Cmd/Ctrl + 7", action: "Switch to App tab" },
-  { keys: "Cmd/Ctrl + 8", action: "Switch to Diagnostics tab" },
-  { keys: "Cmd/Ctrl + F", action: "Toggle message search (Chat tab)" },
-  { keys: "Escape", action: "Close search / close DM panel (Chat tab)" },
-  { keys: "Enter", action: "Send message" },
-  { keys: "Shift + Enter", action: "New line in message" },
-  { keys: "?", action: "Open this keyboard shortcuts help" },
+  { keys: 'Cmd/Ctrl + 1', action: 'Switch to Connection tab' },
+  { keys: 'Cmd/Ctrl + 2', action: 'Switch to Chat tab' },
+  { keys: 'Cmd/Ctrl + 3', action: 'Switch to Nodes tab' },
+  { keys: 'Cmd/Ctrl + 4', action: 'Switch to Map tab' },
+  { keys: 'Cmd/Ctrl + 5', action: 'Switch to Telemetry tab' },
+  { keys: 'Cmd/Ctrl + 6', action: 'Switch to Radio tab' },
+  { keys: 'Cmd/Ctrl + 7', action: 'Switch to App tab' },
+  { keys: 'Cmd/Ctrl + 8', action: 'Switch to Diagnostics tab' },
+  { keys: 'Cmd/Ctrl + F', action: 'Toggle message search (Chat tab)' },
+  { keys: 'Escape', action: 'Close search / close DM panel (Chat tab)' },
+  { keys: 'Enter', action: 'Send message' },
+  { keys: 'Shift + Enter', action: 'New line in message' },
+  { keys: '?', action: 'Open this keyboard shortcuts help' },
 ];
 
 interface KeyboardShortcutsModalProps {
@@ -23,10 +23,10 @@ interface KeyboardShortcutsModalProps {
 export default function KeyboardShortcutsModal({ onClose }: KeyboardShortcutsModalProps) {
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === 'Escape') onClose();
     };
-    document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
   }, [onClose]);
 
   return (
@@ -50,7 +50,13 @@ export default function KeyboardShortcutsModal({ onClose }: KeyboardShortcutsMod
             aria-label="Close dialog"
             className="p-1.5 rounded-lg hover:bg-secondary-dark text-muted hover:text-gray-200 transition-colors"
           >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
@@ -60,8 +66,12 @@ export default function KeyboardShortcutsModal({ onClose }: KeyboardShortcutsMod
             <caption className="sr-only">Application keyboard shortcuts</caption>
             <thead>
               <tr className="text-left text-muted text-xs uppercase tracking-wider border-b border-gray-700">
-                <th scope="col" className="pb-2 font-medium">Shortcut</th>
-                <th scope="col" className="pb-2 font-medium pl-4">Action</th>
+                <th scope="col" className="pb-2 font-medium">
+                  Shortcut
+                </th>
+                <th scope="col" className="pb-2 font-medium pl-4">
+                  Action
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700/50">

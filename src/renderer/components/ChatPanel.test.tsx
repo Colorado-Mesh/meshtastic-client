@@ -1,6 +1,7 @@
 import { render } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
-import { describe, it, expect, vi } from 'vitest';
+
 import ChatPanel from './ChatPanel';
 import { ToastProvider } from './Toast';
 
@@ -21,7 +22,7 @@ describe('ChatPanel accessibility', () => {
     const { container } = render(
       <ToastProvider>
         <ChatPanel {...defaultProps} />
-      </ToastProvider>
+      </ToastProvider>,
     );
     const results = await axe(container);
     expect(results).toHaveNoViolations();

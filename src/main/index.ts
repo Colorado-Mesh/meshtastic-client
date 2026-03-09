@@ -1,9 +1,17 @@
-import { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage } from "electron";
-import path from "path";
-import { initDatabase, getDatabase, exportDatabase, mergeDatabase, closeDatabase, deleteNodesBySource } from "./database";
-import { MQTTManager } from "./mqtt-manager";
-import { getGpsFix } from "./gps";
-import { initUpdater } from "./updater";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Tray } from 'electron';
+import path from 'path';
+
+import {
+  closeDatabase,
+  deleteNodesBySource,
+  exportDatabase,
+  getDatabase,
+  initDatabase,
+  mergeDatabase,
+} from './database';
+import { getGpsFix } from './gps';
+import { MQTTManager } from './mqtt-manager';
+import { initUpdater } from './updater';
 
 const mqttManager = new MQTTManager();
 
@@ -18,18 +26,20 @@ let pendingBluetoothCallback: ((deviceId: string) => void) | null = null;
 let pendingSerialCallback: ((portId: string) => void) | null = null;
 
 // ─── Global error handlers (prevent silent crashes in packaged app) ──
-process.on("uncaughtException", (error) => {
-  console.error("Uncaught exception:", error);
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught exception:', error);
   try {
     dialog.showErrorBox(
-      "Mesh-Client — Unexpected Error",
-      `${error.message}\n\n${error.stack ?? ""}`
+      'Mesh-Client — Unexpected Error',
+      `${error.message}\n\n${error.stack ?? ''}`,
     );
-  } catch { /* dialog may not be available during early startup */ }
+  } catch {
+    /* dialog may not be available during early startup */
+  }
 });
 
-process.on("unhandledRejection", (reason) => {
-  console.error("Unhandled rejection:", reason);
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled rejection:', reason);
 });
 
 // ─── IPC validation helpers (main process boundary) ───────────────────
@@ -37,100 +47,127 @@ const MAX_PAYLOAD_LENGTH = 1024 * 1024; // 1MB cap for message payload
 
 function safeNonNegativeInt(value: unknown): number {
   const n = Number(value);
-  if (!Number.isFinite(n) || n < 0) throw new Error("Invalid non-negative integer");
+  if (!Number.isFinite(n) || n < 0) throw new Error('Invalid non-negative integer');
   return n >>> 0;
 }
 
 function validateSaveMessage(message: unknown): asserts message is Record<string, unknown> & {
-  sender_id: number; sender_name: string; payload: string; channel: number; timestamp: number;
-  packetId?: number; status?: string; error?: string; emoji?: number; replyId?: number; to?: number; mqttStatus?: string;
+  sender_id: number;
+  sender_name: string;
+  payload: string;
+  channel: number;
+  timestamp: number;
+  packetId?: number;
+  status?: string;
+  error?: string;
+  emoji?: number;
+  replyId?: number;
+  to?: number;
+  mqttStatus?: string;
 } {
-  if (!message || typeof message !== "object") throw new Error("db:saveMessage: message must be an object");
+  if (!message || typeof message !== 'object')
+    throw new Error('db:saveMessage: message must be an object');
   const m = message as Record<string, unknown>;
-  if (typeof m.payload !== "string") throw new Error("db:saveMessage: payload must be a string");
-  if (m.payload.length > MAX_PAYLOAD_LENGTH) throw new Error("db:saveMessage: payload too long");
+  if (typeof m.payload !== 'string') throw new Error('db:saveMessage: payload must be a string');
+  if (m.payload.length > MAX_PAYLOAD_LENGTH) throw new Error('db:saveMessage: payload too long');
   safeNonNegativeInt(m.sender_id);
-  if (typeof m.sender_name !== "string") throw new Error("db:saveMessage: sender_name must be a string");
+  if (typeof m.sender_name !== 'string')
+    throw new Error('db:saveMessage: sender_name must be a string');
   safeNonNegativeInt(m.channel);
-  if (typeof m.timestamp !== "number" && typeof m.timestamp !== "undefined") throw new Error("db:saveMessage: timestamp must be a number");
-  if (m.timestamp != null && !Number.isFinite(m.timestamp)) throw new Error("db:saveMessage: invalid timestamp");
+  if (typeof m.timestamp !== 'number' && typeof m.timestamp !== 'undefined')
+    throw new Error('db:saveMessage: timestamp must be a number');
+  if (m.timestamp != null && !Number.isFinite(m.timestamp))
+    throw new Error('db:saveMessage: invalid timestamp');
 }
 
-function validateSaveNode(node: unknown): asserts node is Record<string, unknown> & { node_id: number } {
-  if (!node || typeof node !== "object") throw new Error("db:saveNode: node must be an object");
+function validateSaveNode(
+  node: unknown,
+): asserts node is Record<string, unknown> & { node_id: number } {
+  if (!node || typeof node !== 'object') throw new Error('db:saveNode: node must be an object');
   const n = node as Record<string, unknown>;
   const nodeId = Number(n.node_id);
-  if (!Number.isFinite(nodeId) || nodeId < 0) throw new Error("db:saveNode: node_id must be a finite non-negative number");
+  if (!Number.isFinite(nodeId) || nodeId < 0)
+    throw new Error('db:saveNode: node_id must be a finite non-negative number');
 }
 
 function validateMqttSettings(settings: unknown): void {
-  if (!settings || typeof settings !== "object") throw new Error("mqtt:connect: settings must be an object");
+  if (!settings || typeof settings !== 'object')
+    throw new Error('mqtt:connect: settings must be an object');
   const s = settings as Record<string, unknown>;
-  if (typeof s.server !== "string" || !s.server.trim()) throw new Error("mqtt:connect: server must be a non-empty string");
+  if (typeof s.server !== 'string' || !s.server.trim())
+    throw new Error('mqtt:connect: server must be a non-empty string');
   const port = Number(s.port);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("mqtt:connect: port must be 1–65535");
-  if (s.topicPrefix != null && typeof s.topicPrefix !== "string") throw new Error("mqtt:connect: topicPrefix must be a string");
-  if (s.username != null && typeof s.username !== "string") throw new Error("mqtt:connect: username must be a string");
-  if (s.password != null && typeof s.password !== "string") throw new Error("mqtt:connect: password must be a string");
+  if (!Number.isInteger(port) || port < 1 || port > 65535)
+    throw new Error('mqtt:connect: port must be 1–65535');
+  if (s.topicPrefix != null && typeof s.topicPrefix !== 'string')
+    throw new Error('mqtt:connect: topicPrefix must be a string');
+  if (s.username != null && typeof s.username !== 'string')
+    throw new Error('mqtt:connect: username must be a string');
+  if (s.password != null && typeof s.password !== 'string')
+    throw new Error('mqtt:connect: password must be a string');
 }
 
 function validateMqttPublishArgs(args: unknown): void {
-  if (!args || typeof args !== "object") throw new Error("mqtt:publish: args must be an object");
+  if (!args || typeof args !== 'object') throw new Error('mqtt:publish: args must be an object');
   const a = args as Record<string, unknown>;
-  if (typeof a.text !== "string") throw new Error("mqtt:publish: text must be a string");
-  if (a.text.length > MAX_PAYLOAD_LENGTH) throw new Error("mqtt:publish: text too long");
+  if (typeof a.text !== 'string') throw new Error('mqtt:publish: text must be a string');
+  if (a.text.length > MAX_PAYLOAD_LENGTH) throw new Error('mqtt:publish: text too long');
   const from = Number(a.from);
-  if (!Number.isFinite(from) || from < 0) throw new Error("mqtt:publish: from must be a non-negative integer");
+  if (!Number.isFinite(from) || from < 0)
+    throw new Error('mqtt:publish: from must be a non-negative integer');
   const channel = Number(a.channel);
-  if (!Number.isFinite(channel) || channel < 0) throw new Error("mqtt:publish: channel must be a non-negative integer");
+  if (!Number.isFinite(channel) || channel < 0)
+    throw new Error('mqtt:publish: channel must be a non-negative integer');
   if (a.destination != null) {
     const dest = Number(a.destination);
-    if (!Number.isFinite(dest) || dest < 0) throw new Error("mqtt:publish: destination must be a non-negative integer");
+    if (!Number.isFinite(dest) || dest < 0)
+      throw new Error('mqtt:publish: destination must be a non-negative integer');
   }
-  if (a.channelName != null && typeof a.channelName !== "string") throw new Error("mqtt:publish: channelName must be a string");
+  if (a.channelName != null && typeof a.channelName !== 'string')
+    throw new Error('mqtt:publish: channelName must be a string');
 }
 
 // Enable Web Bluetooth feature flag
-app.commandLine.appendSwitch("enable-features", "WebBluetooth");
+app.commandLine.appendSwitch('enable-features', 'WebBluetooth');
 // Enable Web Serial (experimental)
-app.commandLine.appendSwitch(
-  "enable-blink-features",
-  "Serial"
-);
+app.commandLine.appendSwitch('enable-blink-features', 'Serial');
 
 // ─── Icon Path Helper ──────────────────────────────────────────────
 /**
  * Resolves the correct icon file based on the platform and package status.
  */
 function getAppIconPath() {
-  if (process.platform === "win32") {
+  if (process.platform === 'win32') {
     return app.isPackaged
-      ? path.join(process.resourcesPath, "colorado-mesh.ico")
-      : path.join(__dirname, "../../resources/icons/win/colorado-mesh.ico");
+      ? path.join(process.resourcesPath, 'colorado-mesh.ico')
+      : path.join(__dirname, '../../resources/icons/win/colorado-mesh.ico');
   }
-  if (process.platform === "darwin") {
+  if (process.platform === 'darwin') {
     return app.isPackaged
-      ? path.join(process.resourcesPath, "icon.icns")
-      : path.join(__dirname, "../../resources/icons/mac/icon.icns");
+      ? path.join(process.resourcesPath, 'icon.icns')
+      : path.join(__dirname, '../../resources/icons/mac/icon.icns');
   }
   // Linux
   return app.isPackaged
-    ? path.join(process.resourcesPath, "256x256.png")
-    : path.join(__dirname, "../../resources/icons/linux/256x256.png");
+    ? path.join(process.resourcesPath, '256x256.png')
+    : path.join(__dirname, '../../resources/icons/linux/256x256.png');
 }
 
 function buildTrayIcon(hasUnread: boolean): Electron.NativeImage {
   let base: Electron.NativeImage;
   if (process.platform === 'darwin') {
     const trayIconPath = app.isPackaged
-      ? path.join(process.resourcesPath, "macos-menubar-icon-Template.png")
-      : path.join(__dirname, "../../resources/icons/mac/macos-menubar-icon-Template/macos-menubar-icon-Template.png");
+      ? path.join(process.resourcesPath, 'macos-menubar-icon-Template.png')
+      : path.join(
+          __dirname,
+          '../../resources/icons/mac/macos-menubar-icon-Template/macos-menubar-icon-Template.png',
+        );
     base = nativeImage.createFromPath(trayIconPath);
     base.setTemplateImage(true);
   } else {
     const trayIconPath = app.isPackaged
-      ? path.join(process.resourcesPath, "256x256.png")
-      : path.join(__dirname, "../../resources/icons/linux/256x256.png");
+      ? path.join(process.resourcesPath, '256x256.png')
+      : path.join(__dirname, '../../resources/icons/linux/256x256.png');
     base = nativeImage.createFromPath(trayIconPath).resize({ width: 22, height: 22 });
   }
 
@@ -156,9 +193,9 @@ function buildTrayIcon(hasUnread: boolean): Electron.NativeImage {
       const dy = py - dotCy;
       if (dx * dx + dy * dy <= dotR * dotR) {
         const idx = (py * actualW + px) * 4;
-        bitmap[idx]     = 239; // R
-        bitmap[idx + 1] = 68;  // G
-        bitmap[idx + 2] = 68;  // B
+        bitmap[idx] = 239; // R
+        bitmap[idx + 1] = 68; // G
+        bitmap[idx + 2] = 68; // B
         bitmap[idx + 3] = 255; // A
       }
     }
@@ -169,17 +206,23 @@ function buildTrayIcon(hasUnread: boolean): Electron.NativeImage {
 
 function setupTray(window: BrowserWindow) {
   tray = new Tray(buildTrayIcon(false));
-  tray.setToolTip("Mesh-Client");
-  tray.on("click", () => {
+  tray.setToolTip('Mesh-Client');
+  tray.on('click', () => {
     window.show();
     window.focus();
   });
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: "Show Mesh-Client", click: () => { window.show(); window.focus(); } },
-      { type: "separator" },
       {
-        label: "Quit",
+        label: 'Show Mesh-Client',
+        click: () => {
+          window.show();
+          window.focus();
+        },
+      },
+      { type: 'separator' },
+      {
+        label: 'Quit',
         click: () => {
           isQuitting = true;
           mqttManager.disconnect();
@@ -188,7 +231,7 @@ function setupTray(window: BrowserWindow) {
           app.quit();
         },
       },
-    ])
+    ]),
   );
 }
 
@@ -198,11 +241,11 @@ function createWindow() {
     height: 800,
     minWidth: 900,
     minHeight: 600,
-    title: "Meshtastic Client",
+    title: 'Meshtastic Client',
     // Use the helper to select .ico, .icns, or .png automatically
     icon: getAppIconPath(),
     webPreferences: {
-      preload: path.join(__dirname, "../preload/index.js"),
+      preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -212,36 +255,30 @@ function createWindow() {
   // When the renderer calls navigator.bluetooth.requestDevice(),
   // Chromium fires this event. We intercept it to build our own picker
   // in the renderer instead of the (missing) native Chromium dialog.
-  mainWindow.webContents.on(
-    "select-bluetooth-device",
-    (event, devices, callback) => {
-      event.preventDefault();
+  mainWindow.webContents.on('select-bluetooth-device', (event, devices, callback) => {
+    event.preventDefault();
 
-      // Chromium fires this event repeatedly during discovery with an
-      // updated device list and a NEW callback each time. Simply overwrite
-      // the reference — Chromium manages the lifecycle of old callbacks.
-      pendingBluetoothCallback = callback;
+    // Chromium fires this event repeatedly during discovery with an
+    // updated device list and a NEW callback each time. Simply overwrite
+    // the reference — Chromium manages the lifecycle of old callbacks.
+    pendingBluetoothCallback = callback;
 
-      // Deduplicate devices by ID before sending to renderer
-      const seen = new Map<string, { deviceId: string; deviceName: string }>();
-      for (const d of devices) {
-        seen.set(d.deviceId, {
-          deviceId: d.deviceId,
-          deviceName: d.deviceName || "Unknown Device",
-        });
-      }
-      mainWindow?.webContents.send(
-        "bluetooth-devices-discovered",
-        Array.from(seen.values())
-      );
+    // Deduplicate devices by ID before sending to renderer
+    const seen = new Map<string, { deviceId: string; deviceName: string }>();
+    for (const d of devices) {
+      seen.set(d.deviceId, {
+        deviceId: d.deviceId,
+        deviceName: d.deviceName || 'Unknown Device',
+      });
     }
-  );
+    mainWindow?.webContents.send('bluetooth-devices-discovered', Array.from(seen.values()));
+  });
 
   // ─── Web Serial: Port Selection ────────────────────────────────────
   // Electron requires this handler for navigator.serial.requestPort()
   // to work. Without it, the Web Serial API throws.
   mainWindow.webContents.session.on(
-    "select-serial-port",
+    'select-serial-port',
     (event, portList, _webContents, callback) => {
       event.preventDefault();
 
@@ -250,66 +287,61 @@ function createWindow() {
 
       // Send port list to renderer for selection
       mainWindow?.webContents.send(
-        "serial-ports-discovered",
+        'serial-ports-discovered',
         portList.map((p) => ({
           portId: p.portId,
-          displayName:
-            p.displayName || p.portName || `Port ${p.portId}`,
-          portName: p.portName || "",
+          displayName: p.displayName || p.portName || `Port ${p.portId}`,
+          portName: p.portName || '',
           vendorId: p.vendorId,
           productId: p.productId,
-        }))
+        })),
       );
-    }
+    },
   );
 
   // Allow serial and geolocation only; media and web-app-installation are not used
-  mainWindow.webContents.session.setPermissionCheckHandler(
-    (_webContents, permission) => {
-      const granted = permission === "serial" || permission === "geolocation";
-      if (granted) {
-        console.log(`[permissions] checkHandler: ${permission} → granted`);
-      }
-      return granted;
+  mainWindow.webContents.session.setPermissionCheckHandler((_webContents, permission) => {
+    const granted = permission === 'serial' || permission === 'geolocation';
+    if (granted) {
+      console.log(`[permissions] checkHandler: ${permission} → granted`);
     }
-  );
+    return granted;
+  });
 
   // Grant geolocation permission requests (for browser GPS fallback)
   mainWindow.webContents.session.setPermissionRequestHandler(
     (_webContents, permission, callback) => {
-      const grant = permission === "geolocation";
+      const grant = permission === 'geolocation';
       if (grant) {
         console.log(`[permissions] requestHandler: ${permission} → granted`);
       }
       callback(grant);
-    }
+    },
   );
 
   // ─── Bluetooth Device Permission ───────────────────────────────────
   // Required in Electron 20+ — without this, Chromium shows a blank/black
   // permission overlay when navigator.bluetooth.requestDevice() is called.
   mainWindow.webContents.session.setDevicePermissionHandler((details) => {
-    if (details.deviceType === "bluetooth" || details.deviceType === "serial") {
+    if (details.deviceType === 'bluetooth' || details.deviceType === 'serial') {
       return true;
     }
     return false;
   });
 
   // ─── Bluetooth Pairing ─────────────────────────────────────────────
-  mainWindow.webContents.session.setBluetoothPairingHandler(
-    (details, callback) => {
-      // Auto-confirm pairing (Meshtastic doesn't use PIN)
-      callback({ confirmed: true });
-    }
-  );
-
-  // ─── Renderer crash / load failure detection ──────────────────────
-  mainWindow.webContents.on("render-process-gone", (_event, details) => {
-    console.error("Renderer process gone:", details.reason, details.exitCode);
+  mainWindow.webContents.session.setBluetoothPairingHandler((details, callback) => {
+    // Auto-confirm pairing (Meshtastic doesn't use PIN)
+    callback({ confirmed: true });
   });
 
-  mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDesc, url) => {
-    console.error("Failed to load:", errorCode, errorDesc, url);
+  // ─── Renderer crash / load failure detection ──────────────────────
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error('Renderer process gone:', details.reason, details.exitCode);
+  });
+
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDesc, url) => {
+    console.error('Failed to load:', errorCode, errorDesc, url);
   });
 
   // Load the app
@@ -317,23 +349,23 @@ function createWindow() {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
     mainWindow.webContents.openDevTools();
   } else {
-    const indexPath = path.join(__dirname, "../../dist/renderer/index.html");
+    const indexPath = path.join(__dirname, '../../dist/renderer/index.html');
     // Startup diagnostics for troubleshooting packaged app issues
-    console.log("[Startup] app.isPackaged:", app.isPackaged);
-    console.log("[Startup] __dirname:", __dirname);
-    console.log("[Startup] Renderer path:", indexPath);
-    console.log("[Startup] process.resourcesPath:", process.resourcesPath);
-    console.log("[Startup] userData:", app.getPath("userData"));
+    console.log('[Startup] app.isPackaged:', app.isPackaged);
+    console.log('[Startup] __dirname:', __dirname);
+    console.log('[Startup] Renderer path:', indexPath);
+    console.log('[Startup] process.resourcesPath:', process.resourcesPath);
+    console.log('[Startup] userData:', app.getPath('userData'));
     mainWindow.loadFile(indexPath);
   }
 
-  mainWindow.on("closed", () => {
+  mainWindow.on('closed', () => {
     mainWindow = null;
   });
 
   // Handle window close event
   mainWindow.on('close', (event) => {
-    if (!isQuitting && (isConnected || mqttManager.getStatus() === "connected")) {
+    if (!isQuitting && (isConnected || mqttManager.getStatus() === 'connected')) {
       event.preventDefault();
       if (process.platform === 'darwin') {
         mainWindow.hide();
@@ -348,16 +380,16 @@ function createWindow() {
 }
 
 // ─── Tray unread badge ──────────────────────────────────────────────
-ipcMain.on("set-tray-unread", (_event, count: number) => {
+ipcMain.on('set-tray-unread', (_event, count: number) => {
   tray?.setImage(buildTrayIcon(count > 0));
-  tray?.setToolTip(count > 0 ? `Mesh-Client (${count} unread)` : "Mesh-Client");
-  if (process.platform === "darwin") {
-    app.dock.setBadge(count > 0 ? String(count) : "");
+  tray?.setToolTip(count > 0 ? `Mesh-Client (${count} unread)` : 'Mesh-Client');
+  if (process.platform === 'darwin') {
+    app.dock.setBadge(count > 0 ? String(count) : '');
   }
 });
 
 // ─── IPC: Bluetooth device selected by user ────────────────────────
-ipcMain.on("bluetooth-device-selected", (_event, deviceId: string) => {
+ipcMain.on('bluetooth-device-selected', (_event, deviceId: string) => {
   if (pendingBluetoothCallback) {
     pendingBluetoothCallback(deviceId);
     pendingBluetoothCallback = null;
@@ -365,15 +397,15 @@ ipcMain.on("bluetooth-device-selected", (_event, deviceId: string) => {
 });
 
 // ─── IPC: Cancel Bluetooth selection ────────────────────────────────
-ipcMain.on("bluetooth-device-cancelled", () => {
+ipcMain.on('bluetooth-device-cancelled', () => {
   if (pendingBluetoothCallback) {
-    pendingBluetoothCallback(""); // Empty string cancels the request
+    pendingBluetoothCallback(''); // Empty string cancels the request
     pendingBluetoothCallback = null;
   }
 });
 
 // ─── IPC: Serial port selected by user ──────────────────────────────
-ipcMain.on("serial-port-selected", (_event, portId: string) => {
+ipcMain.on('serial-port-selected', (_event, portId: string) => {
   if (pendingSerialCallback) {
     pendingSerialCallback(portId);
     pendingSerialCallback = null;
@@ -381,61 +413,71 @@ ipcMain.on("serial-port-selected", (_event, portId: string) => {
 });
 
 // ─── IPC: Cancel Serial selection ───────────────────────────────────
-ipcMain.on("serial-port-cancelled", () => {
+ipcMain.on('serial-port-cancelled', () => {
   if (pendingSerialCallback) {
-    pendingSerialCallback(""); // Empty string cancels the request
+    pendingSerialCallback(''); // Empty string cancels the request
     pendingSerialCallback = null;
   }
 });
 
 // ─── IPC: Connection status tracking (module-scope, not per-window) ─
-ipcMain.on('device-connected', () => { isConnected = true; });
-ipcMain.on('device-disconnected', () => { isConnected = false; });
+ipcMain.on('device-connected', () => {
+  isConnected = true;
+});
+ipcMain.on('device-disconnected', () => {
+  isConnected = false;
+});
 
 // ─── MQTT: Forward manager events to renderer ───────────────────────
-mqttManager.on("status", (s) => mainWindow?.webContents.send("mqtt:status", s));
-mqttManager.on("error", (msg) => mainWindow?.webContents.send("mqtt:error", msg));
-mqttManager.on("clientId", (id) => mainWindow?.webContents.send("mqtt:clientId", id));
-mqttManager.on("nodeUpdate", (n) => mainWindow?.webContents.send("mqtt:node-update", n));
-mqttManager.on("message", (m) => mainWindow?.webContents.send("mqtt:message", m));
+mqttManager.on('status', (s) => mainWindow?.webContents.send('mqtt:status', s));
+mqttManager.on('error', (msg) => mainWindow?.webContents.send('mqtt:error', msg));
+mqttManager.on('clientId', (id) => mainWindow?.webContents.send('mqtt:clientId', id));
+mqttManager.on('nodeUpdate', (n) => mainWindow?.webContents.send('mqtt:node-update', n));
+mqttManager.on('message', (m) => mainWindow?.webContents.send('mqtt:message', m));
 
 // ─── IPC: MQTT connect/disconnect ───────────────────────────────────
-ipcMain.handle("mqtt:connect", async (_event, settings) => {
+ipcMain.handle('mqtt:connect', async (_event, settings) => {
   validateMqttSettings(settings);
   mqttManager.connect(settings);
 });
-ipcMain.handle("mqtt:disconnect", async () => {
+ipcMain.handle('mqtt:disconnect', async () => {
   mqttManager.disconnect();
 });
-ipcMain.handle("mqtt:getClientId", async () => mqttManager.getClientId());
-ipcMain.handle("mqtt:publish", async (_event, args) => {
+ipcMain.handle('mqtt:getClientId', async () => mqttManager.getClientId());
+ipcMain.handle('mqtt:publish', async (_event, args) => {
   validateMqttPublishArgs(args);
-  const a = args as { text: string; from: number; channel: number; destination?: number; channelName?: string };
+  const a = args as {
+    text: string;
+    from: number;
+    channel: number;
+    destination?: number;
+    channelName?: string;
+  };
   return mqttManager.publish(
     a.text,
     a.from,
     a.channel,
     a.destination ?? 0xffffffff,
-    a.channelName ?? "LongFast"
+    a.channelName ?? 'LongFast',
   );
 });
 
 // ─── IPC: GPS fix via main process ──────────────────────────────────
-ipcMain.handle("gps:getFix", async () => {
+ipcMain.handle('gps:getFix', async () => {
   try {
     return await getGpsFix();
   } catch (err) {
-    console.error("[gps] getGpsFix threw:", err);
+    console.error('[gps] getGpsFix threw:', err);
     return {
-      status: "error",
-      message: "Location unavailable (network or service error).",
-      code: "UNKNOWN",
+      status: 'error',
+      message: 'Location unavailable (network or service error).',
+      code: 'UNKNOWN',
     };
   }
 });
 
 // ─── IPC: Force quit (disconnect all, then quit) ────────────────────
-ipcMain.handle("app:quit", async () => {
+ipcMain.handle('app:quit', async () => {
   isQuitting = true;
   mqttManager.disconnect();
   isConnected = false;
@@ -443,7 +485,7 @@ ipcMain.handle("app:quit", async () => {
 });
 
 // ─── IPC: Database operations ──────────────────────────────────────
-ipcMain.handle("db:saveMessage", (_event, message) => {
+ipcMain.handle('db:saveMessage', (_event, message) => {
   try {
     validateSaveMessage(message);
     const db = getDatabase();
@@ -466,12 +508,12 @@ ipcMain.handle("db:saveMessage", (_event, message) => {
       mqtt_status: message.mqttStatus ?? null,
     });
   } catch (err) {
-    console.error("[IPC] db:saveMessage failed:", err);
+    console.error('[IPC] db:saveMessage failed:', err);
     throw err;
   }
 });
 
-ipcMain.handle("db:getMessages", (_event, channel?: number, limit = 200) => {
+ipcMain.handle('db:getMessages', (_event, channel?: number, limit = 200) => {
   try {
     const safeLimit = Math.min(Math.max(1, Number(limit) || 1000), 10000);
     const db = getDatabase();
@@ -482,7 +524,7 @@ ipcMain.handle("db:getMessages", (_event, channel?: number, limit = 200) => {
     if (channel !== undefined && channel !== null) {
       rows = db
         .prepare(
-          `SELECT ${columns} FROM messages WHERE channel = ? ORDER BY timestamp DESC LIMIT ?`
+          `SELECT ${columns} FROM messages WHERE channel = ? ORDER BY timestamp DESC LIMIT ?`,
         )
         .all(channel, safeLimit);
     } else {
@@ -496,12 +538,12 @@ ipcMain.handle("db:getMessages", (_event, channel?: number, limit = 200) => {
       return { ...rest, to: to_node ?? undefined };
     });
   } catch (err) {
-    console.error("[IPC] db:getMessages failed:", err);
+    console.error('[IPC] db:getMessages failed:', err);
     throw err;
   }
 });
 
-ipcMain.handle("db:saveNode", (_event, node) => {
+ipcMain.handle('db:saveNode', (_event, node) => {
   try {
     validateSaveNode(node);
     const db = getDatabase();
@@ -541,7 +583,7 @@ ipcMain.handle("db:saveNode", (_event, node) => {
       channel_utilization: null,
       air_util_tx: null,
       altitude: null,
-      source: "rf",
+      source: 'rf',
       num_packets_rx_bad: null,
       num_rx_dupe: null,
       num_packets_rx: null,
@@ -550,166 +592,175 @@ ipcMain.handle("db:saveNode", (_event, node) => {
       via_mqtt: node.via_mqtt != null ? (node.via_mqtt ? 1 : 0) : null,
     });
   } catch (err) {
-    console.error("[IPC] db:saveNode failed:", err);
+    console.error('[IPC] db:saveNode failed:', err);
     throw err;
   }
 });
 
-ipcMain.handle("db:setNodeFavorited", (_event, nodeId: number, favorited: boolean) => {
+ipcMain.handle('db:setNodeFavorited', (_event, nodeId: number, favorited: boolean) => {
   try {
     const id = safeNonNegativeInt(nodeId);
-    if (typeof favorited !== "boolean") throw new Error("db:setNodeFavorited: favorited must be a boolean");
+    if (typeof favorited !== 'boolean')
+      throw new Error('db:setNodeFavorited: favorited must be a boolean');
     const db = getDatabase();
-    return db.prepare("UPDATE nodes SET favorited = ? WHERE node_id = ?")
+    return db
+      .prepare('UPDATE nodes SET favorited = ? WHERE node_id = ?')
       .run(favorited ? 1 : 0, id);
   } catch (err) {
-    console.error("[IPC] db:setNodeFavorited failed:", err);
+    console.error('[IPC] db:setNodeFavorited failed:', err);
     throw err;
   }
 });
 
-ipcMain.handle("db:getNodes", () => {
+ipcMain.handle('db:getNodes', () => {
   try {
     const db = getDatabase();
-    return db.prepare("SELECT * FROM nodes ORDER BY last_heard DESC").all();
+    return db.prepare('SELECT * FROM nodes ORDER BY last_heard DESC').all();
   } catch (err) {
-    console.error("[IPC] db:getNodes failed:", err);
+    console.error('[IPC] db:getNodes failed:', err);
     throw err;
   }
 });
 
-ipcMain.handle("db:clearMessages", () => {
+ipcMain.handle('db:clearMessages', () => {
   try {
     const db = getDatabase();
-    return db.prepare("DELETE FROM messages").run();
+    return db.prepare('DELETE FROM messages').run();
   } catch (err) {
-    console.error("[IPC] db:clearMessages failed:", err);
+    console.error('[IPC] db:clearMessages failed:', err);
     throw err;
   }
 });
 
-ipcMain.handle("db:clearNodes", () => {
+ipcMain.handle('db:clearNodes', () => {
   try {
     const db = getDatabase();
-    return db.prepare("DELETE FROM nodes").run();
+    return db.prepare('DELETE FROM nodes').run();
   } catch (err) {
-    console.error("[IPC] db:clearNodes failed:", err);
+    console.error('[IPC] db:clearNodes failed:', err);
     throw err;
   }
 });
 
-ipcMain.handle("db:deleteNode", (_event, nodeId: number) => {
+ipcMain.handle('db:deleteNode', (_event, nodeId: number) => {
   try {
     const id = safeNonNegativeInt(nodeId);
     const db = getDatabase();
-    return db.prepare("DELETE FROM nodes WHERE node_id = ?").run(id);
+    return db.prepare('DELETE FROM nodes WHERE node_id = ?').run(id);
   } catch (err) {
-    console.error("[IPC] db:deleteNode failed:", err);
+    console.error('[IPC] db:deleteNode failed:', err);
     throw err;
   }
 });
 
-ipcMain.handle("db:deleteNodesByAge", (_event, days: number) => {
+ipcMain.handle('db:deleteNodesByAge', (_event, days: number) => {
   try {
-    if (typeof days !== "number" || days < 1 || !isFinite(days)) return { changes: 0 };
+    if (typeof days !== 'number' || days < 1 || !isFinite(days)) return { changes: 0 };
     const cutoff = Math.floor(Date.now() / 1000) - days * 86400;
-    return getDatabase().prepare("DELETE FROM nodes WHERE last_heard < ?").run(cutoff);
+    return getDatabase().prepare('DELETE FROM nodes WHERE last_heard < ?').run(cutoff);
   } catch (err) {
-    console.error("[IPC] db:deleteNodesByAge failed:", err);
+    console.error('[IPC] db:deleteNodesByAge failed:', err);
     throw err;
   }
 });
 
-ipcMain.handle("db:pruneNodesByCount", (_event, maxCount: number) => {
+ipcMain.handle('db:pruneNodesByCount', (_event, maxCount: number) => {
   try {
-    if (typeof maxCount !== "number" || maxCount < 1 || !isFinite(maxCount)) return { changes: 0 };
-    return getDatabase().prepare(
-      "DELETE FROM nodes WHERE node_id NOT IN (SELECT node_id FROM nodes ORDER BY last_heard DESC LIMIT ?)"
-    ).run(maxCount);
+    if (typeof maxCount !== 'number' || maxCount < 1 || !isFinite(maxCount)) return { changes: 0 };
+    return getDatabase()
+      .prepare(
+        'DELETE FROM nodes WHERE node_id NOT IN (SELECT node_id FROM nodes ORDER BY last_heard DESC LIMIT ?)',
+      )
+      .run(maxCount);
   } catch (err) {
-    console.error("[IPC] db:pruneNodesByCount failed:", err);
+    console.error('[IPC] db:pruneNodesByCount failed:', err);
     throw err;
   }
 });
 
-ipcMain.handle("db:deleteNodesBatch", (_event, nodeIds: number[]) => {
+ipcMain.handle('db:deleteNodesBatch', (_event, nodeIds: number[]) => {
   try {
     if (!Array.isArray(nodeIds) || nodeIds.length === 0) return 0;
     const safe = nodeIds
-      .filter((id) => typeof id === "number" && Number.isInteger(id) && id > 0)
+      .filter((id) => typeof id === 'number' && Number.isInteger(id) && id > 0)
       .slice(0, 10_000);
     if (safe.length === 0) return 0;
-    const placeholders = safe.map(() => "?").join(", ");
-    const result = getDatabase().prepare(`DELETE FROM nodes WHERE node_id IN (${placeholders})`).run(...safe);
+    const placeholders = safe.map(() => '?').join(', ');
+    const result = getDatabase()
+      .prepare(`DELETE FROM nodes WHERE node_id IN (${placeholders})`)
+      .run(...safe);
     return result.changes;
   } catch (err) {
-    console.error("[IPC] db:deleteNodesBatch failed:", err);
+    console.error('[IPC] db:deleteNodesBatch failed:', err);
     throw err;
   }
 });
 
-ipcMain.handle("db:clearMessagesByChannel", (_event, channel: number) => {
+ipcMain.handle('db:clearMessagesByChannel', (_event, channel: number) => {
   try {
     const ch = safeNonNegativeInt(channel);
-    return getDatabase().prepare("DELETE FROM messages WHERE channel = ?").run(ch);
+    return getDatabase().prepare('DELETE FROM messages WHERE channel = ?').run(ch);
   } catch (err) {
-    console.error("[IPC] db:clearMessagesByChannel failed:", err);
+    console.error('[IPC] db:clearMessagesByChannel failed:', err);
     throw err;
   }
 });
 
-ipcMain.handle("db:getMessageChannels", () => {
+ipcMain.handle('db:getMessageChannels', () => {
   try {
-    return getDatabase().prepare("SELECT DISTINCT channel FROM messages ORDER BY channel").all();
+    return getDatabase().prepare('SELECT DISTINCT channel FROM messages ORDER BY channel').all();
   } catch (err) {
-    console.error("[IPC] db:getMessageChannels failed:", err);
+    console.error('[IPC] db:getMessageChannels failed:', err);
     throw err;
   }
 });
 
-ipcMain.handle("db:deleteNodesBySource", (_event, source: string) => {
+ipcMain.handle('db:deleteNodesBySource', (_event, source: string) => {
   try {
-    if (typeof source !== "string") throw new Error("db:deleteNodesBySource: source must be a string");
-    if (source.length > 64) throw new Error("db:deleteNodesBySource: source string too long");
+    if (typeof source !== 'string')
+      throw new Error('db:deleteNodesBySource: source must be a string');
+    if (source.length > 64) throw new Error('db:deleteNodesBySource: source string too long');
     return deleteNodesBySource(source);
   } catch (err) {
-    console.error("[IPC] db:deleteNodesBySource failed:", err);
+    console.error('[IPC] db:deleteNodesBySource failed:', err);
     throw err;
   }
 });
 
 // ─── IPC: Update message delivery status ────────────────────────────
 ipcMain.handle(
-  "db:updateMessageStatus",
+  'db:updateMessageStatus',
   (_event, packetId: number, status: string, error?: string, mqttStatus?: string) => {
     try {
       const pid = safeNonNegativeInt(packetId);
-      if (typeof status !== "string") throw new Error("db:updateMessageStatus: status must be a string");
+      if (typeof status !== 'string')
+        throw new Error('db:updateMessageStatus: status must be a string');
       const db = getDatabase();
       if (mqttStatus !== undefined) {
-        if (typeof mqttStatus !== "string") throw new Error("db:updateMessageStatus: mqttStatus must be a string");
+        if (typeof mqttStatus !== 'string')
+          throw new Error('db:updateMessageStatus: mqttStatus must be a string');
         return db
-          .prepare("UPDATE messages SET status = ?, error = ?, mqtt_status = ? WHERE packet_id = ?")
+          .prepare('UPDATE messages SET status = ?, error = ?, mqtt_status = ? WHERE packet_id = ?')
           .run(status, error ?? null, mqttStatus, pid);
       }
       return db
-        .prepare("UPDATE messages SET status = ?, error = ? WHERE packet_id = ?")
+        .prepare('UPDATE messages SET status = ?, error = ? WHERE packet_id = ?')
         .run(status, error ?? null, pid);
     } catch (err) {
-      console.error("[IPC] db:updateMessageStatus failed:", err);
+      console.error('[IPC] db:updateMessageStatus failed:', err);
       throw err;
     }
-  }
+  },
 );
 
 // ─── IPC: Export database ───────────────────────────────────────────
-ipcMain.handle("db:export", async () => {
+ipcMain.handle('db:export', async () => {
   try {
     if (!mainWindow) return null;
     const result = await dialog.showSaveDialog(mainWindow, {
-      title: "Export Database",
+      title: 'Export Database',
       defaultPath: `mesh-client-backup-${new Date().toISOString().slice(0, 10)}.db`,
-      filters: [{ name: "SQLite Database", extensions: ["db"] }],
+      filters: [{ name: 'SQLite Database', extensions: ['db'] }],
     });
     if (!result.canceled && result.filePath) {
       await exportDatabase(result.filePath);
@@ -717,19 +768,19 @@ ipcMain.handle("db:export", async () => {
     }
     return null;
   } catch (err) {
-    console.error("[IPC] db:export failed:", err);
+    console.error('[IPC] db:export failed:', err);
     throw err;
   }
 });
 
 // ─── IPC: Import / merge database ───────────────────────────────────
-ipcMain.handle("db:import", async () => {
+ipcMain.handle('db:import', async () => {
   try {
     if (!mainWindow) return null;
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: "Import Database",
-      filters: [{ name: "SQLite Database", extensions: ["db"] }],
-      properties: ["openFile"],
+      title: 'Import Database',
+      filters: [{ name: 'SQLite Database', extensions: ['db'] }],
+      properties: ['openFile'],
     });
     if (!result.canceled && result.filePaths.length > 0) {
       const summary = mergeDatabase(result.filePaths[0]);
@@ -737,28 +788,22 @@ ipcMain.handle("db:import", async () => {
     }
     return null;
   } catch (err) {
-    console.error("[IPC] db:import failed:", err);
+    console.error('[IPC] db:import failed:', err);
     throw err;
   }
 });
 
 // ─── IPC: Clear Chromium session data (BLE cache, cookies, etc.) ──
-ipcMain.handle("session:clearData", async () => {
+ipcMain.handle('session:clearData', async () => {
   try {
     const win = BrowserWindow.getAllWindows()[0];
     if (!win) return;
     await win.webContents.session.clearStorageData({
-      storages: [
-        "cookies",
-        "localstorage",
-        "cachestorage",
-        "shadercache",
-        "serviceworkers",
-      ],
+      storages: ['cookies', 'localstorage', 'cachestorage', 'shadercache', 'serviceworkers'],
     });
     await win.webContents.session.clearCache();
   } catch (err) {
-    console.error("[IPC] session:clearData failed:", err);
+    console.error('[IPC] session:clearData failed:', err);
     throw err;
   }
 });
@@ -769,28 +814,31 @@ app.whenReady().then(() => {
     initDatabase();
     // Force the dock icon n development on macOS
     if (!app.isPackaged && process.platform === 'darwin') {
-      const iconPath = path.join(__dirname, "../../resources/icons/mac/iconset/icon_256x256@1x.png");
+      const iconPath = path.join(
+        __dirname,
+        '../../resources/icons/mac/iconset/icon_256x256@1x.png',
+      );
       app.dock.setIcon(iconPath);
     }
     createWindow();
   } catch (error) {
-    console.error("Fatal startup error:", error);
+    console.error('Fatal startup error:', error);
     const isNativeModuleError =
-      error instanceof Error && (error as NodeJS.ErrnoException).code === "ERR_DLOPEN_FAILED";
+      error instanceof Error && (error as NodeJS.ErrnoException).code === 'ERR_DLOPEN_FAILED';
     const message = isNativeModuleError
       ? `A native module failed to load. This usually means the app needs to be rebuilt for this version of Electron.\n\nFix: run "npm install" in the project directory, then restart.\n\nDetails: ${error.message}`
       : `The application failed to start:\n\n${error instanceof Error ? error.message : String(error)}\n\nPlease report this issue.`;
-    dialog.showErrorBox("Mesh-Client — Startup Error", message);
+    dialog.showErrorBox('Mesh-Client — Startup Error', message);
     app.quit();
     return;
   }
 
-  app.on("activate", () => {
+  app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       try {
         createWindow();
       } catch (error) {
-        console.error("Window creation error:", error);
+        console.error('Window creation error:', error);
       }
     } else {
       mainWindow?.show(); // Restore hidden window on dock click
@@ -798,15 +846,15 @@ app.whenReady().then(() => {
   });
 });
 
-app.on("before-quit", () => {
+app.on('before-quit', () => {
   isQuitting = true;
   closeDatabase();
 });
 
-app.on("window-all-closed", () => {
-  const hasConnection = isConnected || mqttManager.getStatus() === "connected";
+app.on('window-all-closed', () => {
+  const hasConnection = isConnected || mqttManager.getStatus() === 'connected';
   // On macOS: quit when user chose Quit, or when there's no connection (window closed with nothing to keep running for)
-  if (process.platform !== "darwin" || isQuitting || !hasConnection) {
+  if (process.platform !== 'darwin' || isQuitting || !hasConnection) {
     app.quit();
   }
 });

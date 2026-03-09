@@ -1,9 +1,10 @@
-import { EventEmitter } from "events";
-import * as mqtt from "mqtt";
-import { createDecipheriv, createCipheriv } from "crypto";
-import { fromBinary, toBinary, create } from "@bufbuild/protobuf";
-import { Mqtt as MqttProto, Mesh, Portnums } from "@meshtastic/protobufs";
-import type { MeshNode, ChatMessage, MQTTSettings, MQTTStatus } from "../renderer/lib/types";
+import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
+import { Mesh, Mqtt as MqttProto, Portnums } from '@meshtastic/protobufs';
+import { createCipheriv, createDecipheriv } from 'crypto';
+import { EventEmitter } from 'events';
+import * as mqtt from 'mqtt';
+
+import type { ChatMessage, MeshNode, MQTTSettings, MQTTStatus } from '../renderer/lib/types';
 
 const { ServiceEnvelopeSchema } = MqttProto;
 const { UserSchema, PositionSchema, DataSchema, MeshPacketSchema } = Mesh;
@@ -11,29 +12,28 @@ const { PortNum } = Portnums;
 
 // Default PSK for meshtastic: 0x01 followed by 15 zero bytes
 const DEFAULT_PSK = Buffer.from([
-  0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ]);
 
 // Dedup window: 10 minutes
 const DEDUP_TTL_MS = 10 * 60 * 1000;
 
 function coordWarning(lat: number, lon: number): string | null {
-  if (lat === 0 && lon === 0) return "No GPS fix (0°, 0°)";
+  if (lat === 0 && lon === 0) return 'No GPS fix (0°, 0°)';
   if (lat < -90 || lat > 90) return `Latitude out of range: ${lat.toFixed(4)}°`;
   if (lon < -180 || lon > 180) return `Longitude out of range: ${lon.toFixed(4)}°`;
-  if (lat === 90 && lon === 0) return "GPS no fix (reports North Pole)";
+  if (lat === 90 && lon === 0) return 'GPS no fix (reports North Pole)';
   return null;
 }
 
 export class MQTTManager extends EventEmitter {
   private client: mqtt.MqttClient | null = null;
-  private status: MQTTStatus = "disconnected";
+  private status: MQTTStatus = 'disconnected';
   private seenPacketIds = new Map<number, number>(); // packetId → expiry timestamp
   private retryCount = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private currentSettings: MQTTSettings | null = null;
-  private clientId = "";
+  private clientId = '';
 
   connect(settings: MQTTSettings): void {
     // Disconnect any existing connection first
@@ -41,7 +41,7 @@ export class MQTTManager extends EventEmitter {
 
     this.currentSettings = settings;
     this.retryCount = 0;
-    this.setStatus("connecting");
+    this.setStatus('connecting');
     this._doConnect(settings);
   }
 
@@ -52,28 +52,28 @@ export class MQTTManager extends EventEmitter {
     this.client = mqtt.connect({
       host: settings.server,
       port: settings.port,
-      protocol: "mqtt",
-      protocolVersion: 4,          // force MQTT 3.1.1; avoids v5 negotiation issues
-      clientId,                    // stable unique ID; prevents broker session collision
+      protocol: 'mqtt',
+      protocolVersion: 4, // force MQTT 3.1.1; avoids v5 negotiation issues
+      clientId, // stable unique ID; prevents broker session collision
       username: settings.username || undefined,
       password: settings.password || undefined,
       clean: true,
       keepalive: 60,
       connectTimeout: 30_000,
-      reconnectPeriod: 0,          // we manage reconnects manually
+      reconnectPeriod: 0, // we manage reconnects manually
       // Intentional for mqtts: many brokers use self-signed or non-public CA; strict verification would break common setups.
       rejectUnauthorized: false,
     });
 
-    this.client.on("connect", () => {
-      this.setStatus("connected");
-      this.emit("clientId", this.clientId);
+    this.client.on('connect', () => {
+      this.setStatus('connected');
+      this.emit('clientId', this.clientId);
 
       // Guard: only subscribe if still connected
       if (!this.client?.connected) return;
 
       // Normalize prefix: ensure it ends with "/" before appending the wildcard
-      const prefix = settings.topicPrefix.endsWith("/")
+      const prefix = settings.topicPrefix.endsWith('/')
         ? settings.topicPrefix
         : `${settings.topicPrefix}/`;
       const topic = `${prefix}#`;
@@ -81,74 +81,86 @@ export class MQTTManager extends EventEmitter {
         if (err) {
           // "Connection closed" is a cascade from a network reset — not fatal,
           // the client will reconnect and resubscribe automatically.
-          const isCascade = err.message.toLowerCase().includes("connection closed") ||
-            err.message.toLowerCase().includes("connection reset");
+          const isCascade =
+            err.message.toLowerCase().includes('connection closed') ||
+            err.message.toLowerCase().includes('connection reset');
           if (isCascade) {
-            console.warn("[MQTT] Subscribe interrupted (will retry on reconnect):", err.message);
+            console.warn('[MQTT] Subscribe interrupted (will retry on reconnect):', err.message);
           } else {
-            console.error("[MQTT] Subscribe failed:", err);
+            console.error('[MQTT] Subscribe failed:', err);
             this.setError(`Subscribe failed: ${err.message}`);
           }
         } else {
           // Only reset retry count after a fully stable connection + subscribe
           this.retryCount = 0;
-          console.log("[MQTT] Subscribed to", topic);
+          console.log('[MQTT] Subscribed to', topic);
         }
       });
     });
 
-    this.client.on("message", (_topic: string, payload: Buffer) => {
+    this.client.on('message', (_topic: string, payload: Buffer) => {
       this.onMessage(payload);
     });
 
-    this.client.on("error", (err: NodeJS.ErrnoException) => {
+    this.client.on('error', (err: NodeJS.ErrnoException) => {
       // Transient network errors will trigger 'close' → our backoff handler; don't
       // flip status to "error" for them — that would hide the "connecting" state.
-      const isTransient = err.code === "ECONNRESET" || err.code === "ECONNREFUSED" ||
-        err.code === "ETIMEDOUT" || err.code === "ENOTFOUND";
+      const isTransient =
+        err.code === 'ECONNRESET' ||
+        err.code === 'ECONNREFUSED' ||
+        err.code === 'ETIMEDOUT' ||
+        err.code === 'ENOTFOUND';
       if (isTransient) {
-        console.warn("[MQTT] Network error (will reconnect):", err.message);
+        console.warn('[MQTT] Network error (will reconnect):', err.message);
       } else {
-        console.error("[MQTT] Fatal connection error:", err);
+        console.error('[MQTT] Fatal connection error:', err);
         this.setError(err.message);
       }
     });
 
-    this.client.on("close", () => {
-      if (this.status === "disconnected" || !this.currentSettings) return;
+    this.client.on('close', () => {
+      if (this.status === 'disconnected' || !this.currentSettings) return;
 
       const maxRetries = this.currentSettings.maxRetries ?? 5;
       if (this.retryCount >= maxRetries) {
-        this.setError(`Connection lost after ${maxRetries} reconnect attempt${maxRetries === 1 ? "" : "s"}`);
+        this.setError(
+          `Connection lost after ${maxRetries} reconnect attempt${maxRetries === 1 ? '' : 's'}`,
+        );
         return;
       }
 
       this.retryCount++;
       const delay = Math.min(2000 * Math.pow(2, this.retryCount - 1), 60_000);
       console.warn(`[MQTT] Reconnecting in ${delay}ms (attempt ${this.retryCount}/${maxRetries})`);
-      this.setStatus("connecting");
+      this.setStatus('connecting');
 
       this.reconnectTimer = setTimeout(() => {
         this.reconnectTimer = null;
-        if (this.status !== "disconnected" && this.currentSettings) {
+        if (this.status !== 'disconnected' && this.currentSettings) {
           this._doConnect(this.currentSettings);
         }
       }, delay);
     });
 
-    this.client.on("offline", () => {
-      if (this.status !== "disconnected") {
-        this.setStatus("connecting");
+    this.client.on('offline', () => {
+      if (this.status !== 'disconnected') {
+        this.setStatus('connecting');
       }
     });
   }
 
-  publish(text: string, from: number, channel: number, destination: number, channelName: string): number {
+  publish(
+    text: string,
+    from: number,
+    channel: number,
+    destination: number,
+    channelName: string,
+  ): number {
     if (!this.client?.connected || !this.currentSettings) {
-      throw new Error("MQTT not connected");
+      throw new Error('MQTT not connected');
     }
 
-    const packetId = (Math.random() * 0xFFFFFFFF) >>> 0;
+    const packetId = (Math.random() * 0xffffffff) >>> 0;
 
     // Build Data protobuf
     const data = create(DataSchema, {
@@ -161,7 +173,7 @@ export class MQTTManager extends EventEmitter {
     const nonce = Buffer.alloc(16, 0);
     nonce.writeUInt32LE(packetId >>> 0, 0);
     nonce.writeUInt32LE(from >>> 0, 4);
-    const cipher = createCipheriv("aes-128-ctr", DEFAULT_PSK, nonce);
+    const cipher = createCipheriv('aes-128-ctr', DEFAULT_PSK, nonce);
     const encrypted = Buffer.concat([cipher.update(Buffer.from(dataBytes)), cipher.final()]);
 
     // Build MeshPacket
@@ -171,22 +183,22 @@ export class MQTTManager extends EventEmitter {
       id: packetId,
       channel,
       hopLimit: 3,
-      payloadVariant: { case: "encrypted", value: encrypted },
+      payloadVariant: { case: 'encrypted', value: encrypted },
     });
 
     // Build ServiceEnvelope and publish
-    const gatewayId = `!${from.toString(16).padStart(8, "0")}`;
+    const gatewayId = `!${from.toString(16).padStart(8, '0')}`;
     const envelope = create(ServiceEnvelopeSchema, {
       packet,
       channelId: channelName,
       gatewayId,
     });
-    const prefix = this.currentSettings.topicPrefix.endsWith("/")
+    const prefix = this.currentSettings.topicPrefix.endsWith('/')
       ? this.currentSettings.topicPrefix
       : `${this.currentSettings.topicPrefix}/`;
     this.client.publish(
       `${prefix}2/e/${channelName}/${gatewayId}`,
-      Buffer.from(toBinary(ServiceEnvelopeSchema, envelope))
+      Buffer.from(toBinary(ServiceEnvelopeSchema, envelope)),
     );
 
     return packetId;
@@ -204,7 +216,7 @@ export class MQTTManager extends EventEmitter {
       this.client.end(true);
       this.client = null;
     }
-    this.setStatus("disconnected");
+    this.setStatus('disconnected');
   }
 
   getStatus(): MQTTStatus {
@@ -217,13 +229,13 @@ export class MQTTManager extends EventEmitter {
 
   private setStatus(s: MQTTStatus): void {
     this.status = s;
-    this.emit("status", s);
+    this.emit('status', s);
   }
 
   private setError(message: string): void {
-    this.status = "error";
-    this.emit("status", "error");
-    this.emit("error", message);
+    this.status = 'error';
+    this.emit('status', 'error');
+    this.emit('error', message);
   }
 
   private isDuplicate(packetId: number): boolean {
@@ -255,16 +267,20 @@ export class MQTTManager extends EventEmitter {
 
       const payloadCase = packet.payloadVariant?.case;
 
-      if (payloadCase === "decoded") {
+      if (payloadCase === 'decoded') {
         const decoded = packet.payloadVariant!.value as { portnum?: number; payload?: Uint8Array };
         this.handleDecoded(nodeId, packetId, decoded);
-      } else if (payloadCase === "encrypted") {
+      } else if (payloadCase === 'encrypted') {
         const encrypted = packet.payloadVariant!.value as Uint8Array;
         const decrypted = this.tryDecrypt(encrypted, packetId, nodeId);
         if (decrypted) {
           try {
             const data = fromBinary(DataSchema, decrypted);
-            this.handleDecoded(nodeId, packetId, data as { portnum?: number; payload?: Uint8Array });
+            this.handleDecoded(
+              nodeId,
+              packetId,
+              data as { portnum?: number; payload?: Uint8Array },
+            );
           } catch {
             this.emitMinimalNodeUpdate(nodeId);
           }
@@ -274,11 +290,18 @@ export class MQTTManager extends EventEmitter {
       }
     } catch (e) {
       // Not all MQTT messages are ServiceEnvelopes; ignore but log for operator diagnosis
-      console.debug("[MQTT] Ignored non–ServiceEnvelope or parse error:", e instanceof Error ? e.message : String(e));
+      console.debug(
+        '[MQTT] Ignored non–ServiceEnvelope or parse error:',
+        e instanceof Error ? e.message : String(e),
+      );
     }
   }
 
-  private handleDecoded(nodeId: number, packetId: number, data: { portnum?: number; payload?: Uint8Array; emoji?: number; replyId?: number }): void {
+  private handleDecoded(
+    nodeId: number,
+    packetId: number,
+    data: { portnum?: number; payload?: Uint8Array; emoji?: number; replyId?: number },
+  ): void {
     const portnum = data.portnum ?? 0;
     const payload = data.payload;
 
@@ -287,15 +310,19 @@ export class MQTTManager extends EventEmitter {
         const user = fromBinary(UserSchema, payload);
         const nodeUpdate: Partial<MeshNode> & { node_id: number; from_mqtt: boolean } = {
           node_id: nodeId,
-          long_name: user.longName || "",
-          short_name: user.shortName || "",
-          hw_model: String(user.hwModel ?? ""),
+          long_name: user.longName || '',
+          short_name: user.shortName || '',
+          hw_model: String(user.hwModel ?? ''),
           last_heard: Date.now(),
           from_mqtt: true,
         };
-        this.emit("nodeUpdate", nodeUpdate);
+        this.emit('nodeUpdate', nodeUpdate);
       } catch (e) {
-        console.debug("[MQTT] NodeInfo parse failed for node", nodeId, e instanceof Error ? e.message : String(e));
+        console.debug(
+          '[MQTT] NodeInfo parse failed for node',
+          nodeId,
+          e instanceof Error ? e.message : String(e),
+        );
         this.emitMinimalNodeUpdate(nodeId);
       }
     } else if (portnum === PortNum.POSITION_APP && payload) {
@@ -306,9 +333,18 @@ export class MQTTManager extends EventEmitter {
         const warning = coordWarning(lat, lon);
 
         if (warning) {
-          this.emit("nodeUpdate", { node_id: nodeId, positionWarning: warning, last_heard: Date.now(), from_mqtt: true });
+          this.emit('nodeUpdate', {
+            node_id: nodeId,
+            positionWarning: warning,
+            last_heard: Date.now(),
+            from_mqtt: true,
+          });
         } else if (pos.latitudeI || pos.longitudeI) {
-          const nodeUpdate: Partial<MeshNode> & { node_id: number; from_mqtt: boolean; positionWarning: null } = {
+          const nodeUpdate: Partial<MeshNode> & {
+            node_id: number;
+            from_mqtt: boolean;
+            positionWarning: null;
+          } = {
             node_id: nodeId,
             latitude: lat,
             longitude: lon,
@@ -317,12 +353,16 @@ export class MQTTManager extends EventEmitter {
             from_mqtt: true,
             positionWarning: null,
           };
-          this.emit("nodeUpdate", nodeUpdate);
+          this.emit('nodeUpdate', nodeUpdate);
         } else {
           this.emitMinimalNodeUpdate(nodeId);
         }
       } catch (e) {
-        console.debug("[MQTT] Position parse failed for node", nodeId, e instanceof Error ? e.message : String(e));
+        console.debug(
+          '[MQTT] Position parse failed for node',
+          nodeId,
+          e instanceof Error ? e.message : String(e),
+        );
         this.emitMinimalNodeUpdate(nodeId);
       }
     } else if (portnum === PortNum.TEXT_MESSAGE_APP && (payload?.length || data.emoji)) {
@@ -330,7 +370,7 @@ export class MQTTManager extends EventEmitter {
         const text = new TextDecoder().decode(payload ?? new Uint8Array());
         const emoji = data.emoji || undefined;
         const replyId = data.replyId || undefined;
-        const msg: Omit<ChatMessage, "id"> & { from_mqtt: boolean } = {
+        const msg: Omit<ChatMessage, 'id'> & { from_mqtt: boolean } = {
           sender_id: nodeId,
           sender_name: `!${nodeId.toString(16)}`,
           payload: text,
@@ -341,10 +381,14 @@ export class MQTTManager extends EventEmitter {
           emoji,
           replyId,
         };
-        this.emit("message", msg);
+        this.emit('message', msg);
         this.emitMinimalNodeUpdate(nodeId);
       } catch (e) {
-        console.debug("[MQTT] TextMessage parse failed for node", nodeId, e instanceof Error ? e.message : String(e));
+        console.debug(
+          '[MQTT] TextMessage parse failed for node',
+          nodeId,
+          e instanceof Error ? e.message : String(e),
+        );
         this.emitMinimalNodeUpdate(nodeId);
       }
     } else {
@@ -354,7 +398,7 @@ export class MQTTManager extends EventEmitter {
   }
 
   private emitMinimalNodeUpdate(nodeId: number): void {
-    this.emit("nodeUpdate", {
+    this.emit('nodeUpdate', {
       node_id: nodeId,
       last_heard: Date.now(),
       from_mqtt: true,
@@ -369,11 +413,8 @@ export class MQTTManager extends EventEmitter {
       nonce.writeUInt32LE(packetId >>> 0, 0);
       nonce.writeUInt32LE(from >>> 0, 4);
 
-      const decipher = createDecipheriv("aes-128-ctr", DEFAULT_PSK, nonce);
-      return Buffer.concat([
-        decipher.update(Buffer.from(encrypted)),
-        decipher.final(),
-      ]);
+      const decipher = createDecipheriv('aes-128-ctr', DEFAULT_PSK, nonce);
+      return Buffer.concat([decipher.update(Buffer.from(encrypted)), decipher.final()]);
     } catch {
       return null;
     }

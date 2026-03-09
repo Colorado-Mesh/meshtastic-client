@@ -1,6 +1,6 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 
-type ToastType = "success" | "error" | "warning" | "info";
+type ToastType = 'success' | 'error' | 'warning' | 'info';
 
 interface Toast {
   id: number;
@@ -25,13 +25,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextIdRef = useRef(0);
 
-  const addToast = useCallback(
-    (message: string, type: ToastType = "info", duration = 4000) => {
-      const id = nextIdRef.current++;
-      setToasts((prev) => [...prev, { id, message, type, duration }]);
-    },
-    []
-  );
+  const addToast = useCallback((message: string, type: ToastType = 'info', duration = 4000) => {
+    const id = nextIdRef.current++;
+    setToasts((prev) => [...prev, { id, message, type, duration }]);
+  }, []);
 
   const removeToast = useCallback((id: number) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -50,13 +47,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ToastItem({
-  toast,
-  onDismiss,
-}: {
-  toast: Toast;
-  onDismiss: (id: number) => void;
-}) {
+function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number) => void }) {
   const [visible, setVisible] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -76,23 +67,23 @@ function ToastItem({
   }, [toast, onDismiss]);
 
   const icon = {
-    success: "✓",
-    error: "✗",
-    warning: "⚠",
-    info: "ℹ",
+    success: '✓',
+    error: '✗',
+    warning: '⚠',
+    info: 'ℹ',
   }[toast.type];
 
   const colors = {
-    success: "bg-brand-green/15 border-brand-green text-bright-green",
-    error: "bg-red-900/90 border-red-600 text-red-200",
-    warning: "bg-yellow-900/90 border-yellow-600 text-yellow-200",
-    info: "bg-deep-black/90 border-gray-600 text-gray-200",
+    success: 'bg-brand-green/15 border-brand-green text-bright-green',
+    error: 'bg-red-900/90 border-red-600 text-red-200',
+    warning: 'bg-yellow-900/90 border-yellow-600 text-yellow-200',
+    info: 'bg-deep-black/90 border-gray-600 text-gray-200',
   }[toast.type];
 
   return (
     <div
       className={`pointer-events-auto flex items-center gap-2 px-4 py-2.5 rounded-lg border shadow-lg backdrop-blur-sm text-sm transition-all duration-300 ${colors} ${
-        visible ? "translate-x-0 opacity-100" : "translate-x-8 opacity-0"
+        visible ? 'translate-x-0 opacity-100' : 'translate-x-8 opacity-0'
       }`}
     >
       <span className="text-base shrink-0">{icon}</span>

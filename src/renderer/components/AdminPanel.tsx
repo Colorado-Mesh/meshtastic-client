@@ -1,8 +1,9 @@
-import { useState, useCallback, useEffect, useRef } from "react";
-import type { MeshNode } from "../lib/types";
-import { useToast } from "./Toast";
-import { haversineDistanceKm } from "../lib/nodeStatus";
-import type { LocationFilter } from "../App";
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+import type { LocationFilter } from '../App';
+import { haversineDistanceKm } from '../lib/nodeStatus';
+import type { MeshNode } from '../lib/types';
+import { useToast } from './Toast';
 
 // ─── Confirmation Modal ─────────────────────────────────────────
 function ConfirmModal({
@@ -23,10 +24,7 @@ function ConfirmModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onCancel}
-      />
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onCancel} />
       {/* Modal */}
       <div
         role="alertdialog"
@@ -35,8 +33,12 @@ function ConfirmModal({
         aria-describedby="confirm-desc"
         className="relative bg-deep-black border border-gray-600 rounded-xl shadow-2xl max-w-sm w-full mx-4 p-6 space-y-4"
       >
-        <h3 id="confirm-title" className="text-lg font-semibold text-gray-200">{title}</h3>
-        <p id="confirm-desc" className="text-sm text-muted leading-relaxed">{message}</p>
+        <h3 id="confirm-title" className="text-lg font-semibold text-gray-200">
+          {title}
+        </h3>
+        <p id="confirm-desc" className="text-sm text-muted leading-relaxed">
+          {message}
+        </p>
         <div className="flex gap-3 pt-2">
           <button
             onClick={onCancel}
@@ -49,9 +51,7 @@ function ConfirmModal({
             onClick={onConfirm}
             aria-label={confirmLabel}
             className={`flex-1 px-4 py-2.5 font-medium rounded-lg transition-colors text-sm text-white ${
-              danger
-                ? "bg-red-600 hover:bg-red-500"
-                : "bg-yellow-600 hover:bg-yellow-500"
+              danger ? 'bg-red-600 hover:bg-red-500' : 'bg-yellow-600 hover:bg-yellow-500'
             }`}
           >
             {confirmLabel}
@@ -70,7 +70,7 @@ interface AdminSettings {
   nodeCapCount: number;
   distanceFilterEnabled: boolean;
   distanceFilterMax: number;
-  distanceUnit: "miles" | "km";
+  distanceUnit: 'miles' | 'km';
 }
 
 const DEFAULT_SETTINGS: AdminSettings = {
@@ -80,12 +80,12 @@ const DEFAULT_SETTINGS: AdminSettings = {
   nodeCapCount: 10000,
   distanceFilterEnabled: false,
   distanceFilterMax: 500,
-  distanceUnit: "miles",
+  distanceUnit: 'miles',
 };
 
 function loadSettings(): AdminSettings {
   try {
-    const raw = localStorage.getItem("mesh-client:adminSettings");
+    const raw = localStorage.getItem('mesh-client:adminSettings');
     return raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : DEFAULT_SETTINGS;
   } catch {
     return DEFAULT_SETTINGS;
@@ -95,7 +95,7 @@ function loadSettings(): AdminSettings {
 interface Props {
   nodes: Map<number, MeshNode>;
   messageCount: number;
-  channels: Array<{ index: number; name: string }>;
+  channels: { index: number; name: string }[];
   onReboot: (seconds: number) => Promise<void>;
   onShutdown: (seconds: number) => Promise<void>;
   onFactoryReset: () => Promise<void>;
@@ -137,24 +137,33 @@ export default function AdminPanel({
   useEffect(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      localStorage.setItem("mesh-client:adminSettings", JSON.stringify(settings));
+      localStorage.setItem('mesh-client:adminSettings', JSON.stringify(settings));
     }, 300);
-    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
   }, [settings]);
 
   useEffect(() => {
     let hideMqttOnly = false;
     try {
-      const raw = localStorage.getItem("mesh-client:adminSettings");
+      const raw = localStorage.getItem('mesh-client:adminSettings');
       if (raw) hideMqttOnly = JSON.parse(raw).filterMqttOnly ?? false;
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     onLocationFilterChange({
       enabled: settings.distanceFilterEnabled,
       maxDistance: settings.distanceFilterMax,
       unit: settings.distanceUnit,
       hideMqttOnly,
     });
-  }, [settings.distanceFilterEnabled, settings.distanceFilterMax, settings.distanceUnit, onLocationFilterChange]);
+  }, [
+    settings.distanceFilterEnabled,
+    settings.distanceFilterMax,
+    settings.distanceUnit,
+    onLocationFilterChange,
+  ]);
 
   const updateSetting = <K extends keyof AdminSettings>(key: K, value: AdminSettings[K]) =>
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -164,15 +173,21 @@ export default function AdminPanel({
   const [clearChannelTarget, setClearChannelTarget] = useState<number>(-1);
 
   useEffect(() => {
-    window.electronAPI.db.getMessageChannels().then((rows) => {
-      setMsgChannels(rows.map((r) => r.channel));
-    }).catch(() => {});
+    window.electronAPI.db
+      .getMessageChannels()
+      .then((rows) => {
+        setMsgChannels(rows.map((r) => r.channel));
+      })
+      .catch(() => {});
   }, []);
 
-  const getChannelLabel = useCallback((ch: number) => {
-    const named = channels.find((c) => c.index === ch);
-    return named ? `Channel ${ch} — ${named.name}` : `Channel ${ch}`;
-  }, [channels]);
+  const getChannelLabel = useCallback(
+    (ch: number) => {
+      const named = channels.find((c) => c.index === ch);
+      return named ? `Channel ${ch} — ${named.name}` : `Channel ${ch}`;
+    },
+    [channels],
+  );
 
   // ─── Confirmation flow ──────────────────────────────────────
   const executeWithConfirmation = useCallback((action: PendingAction) => {
@@ -184,12 +199,9 @@ export default function AdminPanel({
     setPendingAction(null);
     try {
       await pendingAction.action();
-      addToast(`${pendingAction.name} completed successfully.`, "success");
+      addToast(`${pendingAction.name} completed successfully.`, 'success');
     } catch (err) {
-      addToast(
-        `Failed: ${err instanceof Error ? err.message : "Unknown error"}`,
-        "error"
-      );
+      addToast(`Failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
     }
   }, [pendingAction, addToast]);
 
@@ -205,16 +217,18 @@ export default function AdminPanel({
 
       {/* Device Commands */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-muted">Device Commands (affects connected device)</h3>
+        <h3 className="text-sm font-medium text-muted">
+          Device Commands (affects connected device)
+        </h3>
         <div className="grid grid-cols-2 gap-2">
           <button
             onClick={() =>
               executeWithConfirmation({
-                name: "Reboot",
-                title: "Reboot Device",
+                name: 'Reboot',
+                title: 'Reboot Device',
                 message:
-                  "This will reboot the connected Meshtastic device. It will briefly go offline during restart.",
-                confirmLabel: "Reboot",
+                  'This will reboot the connected Meshtastic device. It will briefly go offline during restart.',
+                confirmLabel: 'Reboot',
                 action: () => onReboot(2),
               })
             }
@@ -227,11 +241,11 @@ export default function AdminPanel({
           <button
             onClick={() =>
               executeWithConfirmation({
-                name: "Shutdown",
-                title: "Shutdown Device",
+                name: 'Shutdown',
+                title: 'Shutdown Device',
                 message:
-                  "This will power off the connected device. You will need to physically power it back on.",
-                confirmLabel: "Shutdown",
+                  'This will power off the connected device. You will need to physically power it back on.',
+                confirmLabel: 'Shutdown',
                 action: () => onShutdown(2),
               })
             }
@@ -244,11 +258,11 @@ export default function AdminPanel({
           <button
             onClick={() =>
               executeWithConfirmation({
-                name: "Reset NodeDB",
-                title: "Reset Node Database",
+                name: 'Reset NodeDB',
+                title: 'Reset Node Database',
                 message:
                   "This will clear the device's internal node database. The device will re-discover nodes over time.",
-                confirmLabel: "Reset NodeDB",
+                confirmLabel: 'Reset NodeDB',
                 action: () => onResetNodeDb(),
               })
             }
@@ -257,7 +271,6 @@ export default function AdminPanel({
           >
             Reset NodeDB
           </button>
-
         </div>
       </div>
 
@@ -266,14 +279,15 @@ export default function AdminPanel({
         <h3 className="text-sm font-medium text-muted">Map &amp; Node Filtering</h3>
         <div className="bg-secondary-dark rounded-lg p-4 space-y-4">
           <p className="text-xs text-muted leading-relaxed">
-            Hides nodes beyond a set distance from your device. Filtering is display-only — nodes remain in the database.
+            Hides nodes beyond a set distance from your device. Filtering is display-only — nodes
+            remain in the database.
           </p>
           <div className="flex items-center gap-2">
             <input
               type="checkbox"
               id="distanceFilter"
               checked={settings.distanceFilterEnabled}
-              onChange={(e) => updateSetting("distanceFilterEnabled", e.target.checked)}
+              onChange={(e) => updateSetting('distanceFilterEnabled', e.target.checked)}
               className="accent-brand-green"
             />
             <label htmlFor="distanceFilter" className="text-sm text-gray-300 cursor-pointer">
@@ -286,14 +300,16 @@ export default function AdminPanel({
               type="number"
               min={1}
               value={settings.distanceFilterMax}
-              onChange={(e) => updateSetting("distanceFilterMax", Math.max(1, parseInt(e.target.value) || 1))}
+              onChange={(e) =>
+                updateSetting('distanceFilterMax', Math.max(1, parseInt(e.target.value) || 1))
+              }
               disabled={!settings.distanceFilterEnabled}
               aria-label="Max distance"
               className="w-24 px-2 py-1 bg-deep-black border border-gray-600 rounded text-gray-200 text-sm text-right focus:border-brand-green focus:outline-none disabled:opacity-40"
             />
             <select
               value={settings.distanceUnit}
-              onChange={(e) => updateSetting("distanceUnit", e.target.value as "miles" | "km")}
+              onChange={(e) => updateSetting('distanceUnit', e.target.value as 'miles' | 'km')}
               disabled={!settings.distanceFilterEnabled}
               aria-label="Distance unit"
               className="px-2 py-1 bg-deep-black border border-gray-600 rounded text-gray-200 text-sm focus:border-brand-green focus:outline-none disabled:opacity-40"
@@ -302,17 +318,21 @@ export default function AdminPanel({
               <option value="km">km</option>
             </select>
           </div>
-          {settings.distanceFilterEnabled && (() => {
-            const homeNode = myNodeNum != null ? nodes.get(myNodeNum) : undefined;
-            const homeHasLocation = homeNode &&
-              homeNode.latitude != null && homeNode.latitude !== 0 &&
-              homeNode.longitude != null && homeNode.longitude !== 0;
-            return !homeHasLocation ? (
-              <p className="text-xs text-yellow-300 bg-yellow-900/30 border border-yellow-700 px-2 py-1.5 rounded">
-                Your device has no GPS fix — filter is enabled but all nodes are shown.
-              </p>
-            ) : null;
-          })()}
+          {settings.distanceFilterEnabled &&
+            (() => {
+              const homeNode = myNodeNum != null ? nodes.get(myNodeNum) : undefined;
+              const homeHasLocation =
+                homeNode &&
+                homeNode.latitude != null &&
+                homeNode.latitude !== 0 &&
+                homeNode.longitude != null &&
+                homeNode.longitude !== 0;
+              return !homeHasLocation ? (
+                <p className="text-xs text-yellow-300 bg-yellow-900/30 border border-yellow-700 px-2 py-1.5 rounded">
+                  Your device has no GPS fix — filter is enabled but all nodes are shown.
+                </p>
+              ) : null;
+            })()}
           <p className="text-xs text-muted">Note: Requires your device to have a valid GPS fix.</p>
         </div>
       </div>
@@ -336,10 +356,10 @@ export default function AdminPanel({
             <button
               onClick={() =>
                 executeWithConfirmation({
-                  name: "Delete Old Nodes",
-                  title: "Delete Old Nodes",
-                  message: `This will permanently delete all nodes that haven't been heard in the last ${deleteAgeDays} day${deleteAgeDays !== 1 ? "s" : ""}. They will be re-discovered when they broadcast again.`,
-                  confirmLabel: "Delete Old Nodes",
+                  name: 'Delete Old Nodes',
+                  title: 'Delete Old Nodes',
+                  message: `This will permanently delete all nodes that haven't been heard in the last ${deleteAgeDays} day${deleteAgeDays !== 1 ? 's' : ''}. They will be re-discovered when they broadcast again.`,
+                  confirmLabel: 'Delete Old Nodes',
                   danger: true,
                   action: async () => {
                     await window.electronAPI.db.deleteNodesByAge(deleteAgeDays);
@@ -358,7 +378,7 @@ export default function AdminPanel({
               type="checkbox"
               id="autoPrune"
               checked={settings.autoPruneEnabled}
-              onChange={(e) => updateSetting("autoPruneEnabled", e.target.checked)}
+              onChange={(e) => updateSetting('autoPruneEnabled', e.target.checked)}
               className="accent-brand-green"
             />
             <label htmlFor="autoPrune" className="text-sm text-gray-300 flex-1 cursor-pointer">
@@ -368,7 +388,9 @@ export default function AdminPanel({
               type="number"
               min={1}
               value={settings.autoPruneDays}
-              onChange={(e) => updateSetting("autoPruneDays", Math.max(1, parseInt(e.target.value) || 1))}
+              onChange={(e) =>
+                updateSetting('autoPruneDays', Math.max(1, parseInt(e.target.value) || 1))
+              }
               disabled={!settings.autoPruneEnabled}
               aria-label="Auto-prune age (days)"
               className="w-20 px-2 py-1 bg-deep-black border border-gray-600 rounded text-gray-200 text-sm text-right focus:border-brand-green focus:outline-none disabled:opacity-40"
@@ -382,7 +404,7 @@ export default function AdminPanel({
               type="checkbox"
               id="nodeCap"
               checked={settings.nodeCapEnabled}
-              onChange={(e) => updateSetting("nodeCapEnabled", e.target.checked)}
+              onChange={(e) => updateSetting('nodeCapEnabled', e.target.checked)}
               className="accent-brand-green"
             />
             <label htmlFor="nodeCap" className="text-sm text-gray-300 flex-1 cursor-pointer">
@@ -392,7 +414,9 @@ export default function AdminPanel({
               type="number"
               min={1}
               value={settings.nodeCapCount}
-              onChange={(e) => updateSetting("nodeCapCount", Math.max(1, parseInt(e.target.value) || 1))}
+              onChange={(e) =>
+                updateSetting('nodeCapCount', Math.max(1, parseInt(e.target.value) || 1))
+              }
               disabled={!settings.nodeCapEnabled}
               aria-label="Maximum node count"
               className="w-24 px-2 py-1 bg-deep-black border border-gray-600 rounded text-gray-200 text-sm text-right focus:border-brand-green focus:outline-none disabled:opacity-40"
@@ -405,8 +429,8 @@ export default function AdminPanel({
             <button
               onClick={() =>
                 executeWithConfirmation({
-                  name: "Clear Nodes",
-                  title: "Clear Nodes",
+                  name: 'Clear Nodes',
+                  title: 'Clear Nodes',
                   message: `This will permanently delete all ${nodes.size} locally stored nodes. They will be re-discovered when connected.`,
                   confirmLabel: `Clear ${nodes.size} Nodes`,
                   danger: true,
@@ -434,20 +458,22 @@ export default function AdminPanel({
             <button
               onClick={() => {
                 const zeroIslandNodes = Array.from(nodes.values()).filter(
-                  (n) => Math.abs(n.latitude) < 0.5 && Math.abs(n.longitude) < 0.5
+                  (n) => Math.abs(n.latitude) < 0.5 && Math.abs(n.longitude) < 0.5,
                 );
                 if (zeroIslandNodes.length === 0) {
-                  addToast("No zero/null island nodes found.", "success");
+                  addToast('No zero/null island nodes found.', 'success');
                   return;
                 }
                 executeWithConfirmation({
-                  name: "Prune Zero Island Nodes",
-                  title: "Prune Zero/Null Island Nodes",
-                  message: `This will permanently delete ${zeroIslandNodes.length} node${zeroIslandNodes.length !== 1 ? "s" : ""} with coordinates at or near 0°N, 0°E (invalid GPS). This cannot be undone.`,
-                  confirmLabel: `Delete ${zeroIslandNodes.length} Node${zeroIslandNodes.length !== 1 ? "s" : ""}`,
+                  name: 'Prune Zero Island Nodes',
+                  title: 'Prune Zero/Null Island Nodes',
+                  message: `This will permanently delete ${zeroIslandNodes.length} node${zeroIslandNodes.length !== 1 ? 's' : ''} with coordinates at or near 0°N, 0°E (invalid GPS). This cannot be undone.`,
+                  confirmLabel: `Delete ${zeroIslandNodes.length} Node${zeroIslandNodes.length !== 1 ? 's' : ''}`,
                   danger: true,
                   action: async () => {
-                    await window.electronAPI.db.deleteNodesBatch(zeroIslandNodes.map((n) => n.node_id));
+                    await window.electronAPI.db.deleteNodesBatch(
+                      zeroIslandNodes.map((n) => n.node_id),
+                    );
                   },
                 });
               }}
@@ -462,30 +488,38 @@ export default function AdminPanel({
               onClick={() => {
                 const homeNode = myNodeNum != null ? nodes.get(myNodeNum) : undefined;
                 if (!homeNode || !homeNode.latitude || !homeNode.longitude) {
-                  addToast("Your device has no GPS coordinates.", "error");
+                  addToast('Your device has no GPS coordinates.', 'error');
                   return;
                 }
-                const maxKm = settings.distanceUnit === "miles"
-                  ? settings.distanceFilterMax * 1.60934
-                  : settings.distanceFilterMax;
+                const maxKm =
+                  settings.distanceUnit === 'miles'
+                    ? settings.distanceFilterMax * 1.60934
+                    : settings.distanceFilterMax;
                 const distantNodes = Array.from(nodes.values()).filter((n) => {
                   if (n.node_id === myNodeNum) return false;
                   if (!n.latitude && !n.longitude) return false; // no GPS — can't determine distance
-                  const d = haversineDistanceKm(homeNode.latitude, homeNode.longitude, n.latitude, n.longitude);
+                  const d = haversineDistanceKm(
+                    homeNode.latitude,
+                    homeNode.longitude,
+                    n.latitude,
+                    n.longitude,
+                  );
                   return d > maxKm;
                 });
                 if (distantNodes.length === 0) {
-                  addToast("No nodes found beyond the distance threshold.", "success");
+                  addToast('No nodes found beyond the distance threshold.', 'success');
                   return;
                 }
                 executeWithConfirmation({
-                  name: "Prune Distant Nodes",
-                  title: "Prune Distant Nodes",
-                  message: `This will permanently delete ${distantNodes.length} node${distantNodes.length !== 1 ? "s" : ""} beyond ${settings.distanceFilterMax} ${settings.distanceUnit} from your device. This cannot be undone.`,
-                  confirmLabel: `Delete ${distantNodes.length} Node${distantNodes.length !== 1 ? "s" : ""}`,
+                  name: 'Prune Distant Nodes',
+                  title: 'Prune Distant Nodes',
+                  message: `This will permanently delete ${distantNodes.length} node${distantNodes.length !== 1 ? 's' : ''} beyond ${settings.distanceFilterMax} ${settings.distanceUnit} from your device. This cannot be undone.`,
+                  confirmLabel: `Delete ${distantNodes.length} Node${distantNodes.length !== 1 ? 's' : ''}`,
                   danger: true,
                   action: async () => {
-                    await window.electronAPI.db.deleteNodesBatch(distantNodes.map((n) => n.node_id));
+                    await window.electronAPI.db.deleteNodesBatch(
+                      distantNodes.map((n) => n.node_id),
+                    );
                   },
                 });
               }}
@@ -493,7 +527,8 @@ export default function AdminPanel({
             >
               <div className="font-medium">Prune Distant Nodes</div>
               <div className="text-xs text-red-400/70 mt-0.5">
-                Removes nodes beyond the distance threshold above. Requires your device to have a valid GPS location.
+                Removes nodes beyond the distance threshold above. Requires your device to have a
+                valid GPS location.
               </div>
             </button>
           </div>
@@ -502,12 +537,10 @@ export default function AdminPanel({
 
       {/* Data Management */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-muted">
-          Data Management
-        </h3>
+        <h3 className="text-sm font-medium text-muted">Data Management</h3>
         <p className="text-xs text-muted">
-          Export your local database (messages &amp; nodes) as a .db file, or
-          import/merge another user's database into yours.
+          Export your local database (messages &amp; nodes) as a .db file, or import/merge another
+          user's database into yours.
         </p>
         <div className="grid grid-cols-2 gap-2">
           <button
@@ -515,14 +548,12 @@ export default function AdminPanel({
               try {
                 const path = await window.electronAPI.db.exportDb();
                 if (path) {
-                  addToast(`Exported to: ${path}`, "success");
+                  addToast(`Exported to: ${path}`, 'success');
                 }
               } catch (err) {
                 addToast(
-                  `Export failed: ${
-                    err instanceof Error ? err.message : "Unknown error"
-                  }`,
-                  "error"
+                  `Export failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
+                  'error',
                 );
               }
             }}
@@ -538,15 +569,13 @@ export default function AdminPanel({
                 if (result) {
                   addToast(
                     `Merged: ${result.nodesAdded} new nodes, ${result.messagesAdded} new messages.`,
-                    "success"
+                    'success',
                   );
                 }
               } catch (err) {
                 addToast(
-                  `Import failed: ${
-                    err instanceof Error ? err.message : "Unknown error"
-                  }`,
-                  "error"
+                  `Import failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
+                  'error',
                 );
               }
             }}
@@ -559,9 +588,7 @@ export default function AdminPanel({
 
       {/* Message Management */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-muted">
-          Message Management
-        </h3>
+        <h3 className="text-sm font-medium text-muted">Message Management</h3>
 
         {/* Channel-scoped message deletion */}
         <div className="space-y-2">
@@ -586,10 +613,10 @@ export default function AdminPanel({
         <button
           onClick={() => {
             const isAll = clearChannelTarget === -1;
-            const channelName = isAll ? "" : getChannelLabel(clearChannelTarget);
+            const channelName = isAll ? '' : getChannelLabel(clearChannelTarget);
             executeWithConfirmation({
-              name: "Clear Messages",
-              title: "Clear Messages",
+              name: 'Clear Messages',
+              title: 'Clear Messages',
               message: isAll
                 ? `This will permanently delete all ${messageCount} locally stored messages across all channels. This cannot be undone.`
                 : `This will permanently delete all messages from ${channelName}. This cannot be undone.`,
@@ -620,11 +647,11 @@ export default function AdminPanel({
           <button
             onClick={() =>
               executeWithConfirmation({
-                name: "Clear All Data",
-                title: "⚠ Clear All Local Data",
+                name: 'Clear All Data',
+                title: '⚠ Clear All Local Data',
                 message:
-                  "This will permanently delete ALL local messages, nodes, and cached session data. This action CANNOT be undone.",
-                confirmLabel: "Clear Everything",
+                  'This will permanently delete ALL local messages, nodes, and cached session data. This action CANNOT be undone.',
+                confirmLabel: 'Clear Everything',
                 danger: true,
                 action: async () => {
                   await window.electronAPI.db.clearMessages();
@@ -640,11 +667,11 @@ export default function AdminPanel({
           <button
             onClick={() =>
               executeWithConfirmation({
-                name: "Factory Reset",
-                title: "⚠ Factory Reset",
+                name: 'Factory Reset',
+                title: '⚠ Factory Reset',
                 message:
-                  "This will erase ALL device settings and restore factory defaults. All channels, configuration, and stored data on the device will be permanently lost. This action CANNOT be undone.",
-                confirmLabel: "Factory Reset",
+                  'This will erase ALL device settings and restore factory defaults. All channels, configuration, and stored data on the device will be permanently lost. This action CANNOT be undone.',
+                confirmLabel: 'Factory Reset',
                 danger: true,
                 action: () => onFactoryReset(),
               })
