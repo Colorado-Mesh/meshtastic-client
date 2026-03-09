@@ -70,7 +70,9 @@ function fetchIpEndpoint(url: string, extract: (data: unknown) => GpsFix | null)
           if (fix) resolve(fix);
           else reject(new Error('no lat/lon in response'));
         } catch (e) {
-          reject(new Error(`parse error: ${e}`));
+          const rawMessage = e instanceof Error ? e.message : String(e);
+          const safeMessage = sanitizeLogMessage(rawMessage);
+          reject(new Error('parse error: ' + safeMessage));
         }
       });
       response.on('error', (e: Error) => {
