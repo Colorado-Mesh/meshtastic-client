@@ -72,10 +72,8 @@ export default function DiagnosticsPanel({
   const setIgnoreMqttEnabled = useDiagnosticsStore((s) => s.setIgnoreMqttEnabled);
   const mqttIgnoredNodes = useDiagnosticsStore((s) => s.mqttIgnoredNodes);
   const setNodeMqttIgnored = useDiagnosticsStore((s) => s.setNodeMqttIgnored);
-  const canyonModeEnabled = useDiagnosticsStore((s) => s.canyonModeEnabled);
-  const setCanyonModeEnabled = useDiagnosticsStore((s) => s.setCanyonModeEnabled);
-  const cityModeEnabled = useDiagnosticsStore((s) => s.cityModeEnabled);
-  const setCityModeEnabled = useDiagnosticsStore((s) => s.setCityModeEnabled);
+  const envMode = useDiagnosticsStore((s) => s.envMode);
+  const setEnvMode = useDiagnosticsStore((s) => s.setEnvMode);
 
   const [search, setSearch] = useState('');
   const [tracePending, setTracePending] = useState<number | null>(null);
@@ -238,34 +236,33 @@ export default function DiagnosticsPanel({
               Gray out MQTT-only nodes and exclude them from diagnostics
             </span>
           </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="canyonMode"
-              checked={canyonModeEnabled}
-              onChange={(e) => setCanyonModeEnabled(e.target.checked)}
-              className="accent-brand-green"
-            />
-            <label htmlFor="canyonMode" className="text-sm text-gray-300 cursor-pointer">
-              Canyon Mode
-            </label>
+          <div className="flex flex-col gap-1.5">
+            <div className="text-sm text-gray-300">Environment Profile</div>
+            <div className="flex rounded-lg overflow-hidden border border-gray-600/50 w-fit">
+              {(
+                [
+                  { mode: 'standard', label: 'Standard' },
+                  { mode: 'city', label: 'City' },
+                  { mode: 'canyon', label: 'Canyon' },
+                ] as const
+              ).map(({ mode, label }, i) => (
+                <button
+                  key={mode}
+                  onClick={() => setEnvMode(mode)}
+                  className={`px-4 py-1.5 text-sm transition-colors ${i > 0 ? 'border-l border-gray-600/50' : ''} ${
+                    envMode === mode
+                      ? 'bg-brand-green/20 text-brand-green border-brand-green/50'
+                      : 'bg-secondary-dark text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <span className="text-xs text-muted">
-              Double distance thresholds for mountainous terrain where line-of-sight is blocked
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="cityMode"
-              checked={cityModeEnabled}
-              onChange={(e) => setCityModeEnabled(e.target.checked)}
-              className="accent-brand-green"
-            />
-            <label htmlFor="cityMode" className="text-sm text-gray-300 cursor-pointer">
-              City Mode
-            </label>
-            <span className="text-xs text-muted">
-              Add 1.5 km to distance thresholds for dense urban areas with RF interference
+              {envMode === 'standard' && 'Default 3 km threshold'}
+              {envMode === 'city' && 'Dense urban RF interference — 1.6× threshold, allow 1 extra hop'}
+              {envMode === 'canyon' && 'Mountainous terrain — 2.6× threshold, allow 2 extra hops'}
             </span>
           </div>
         </div>

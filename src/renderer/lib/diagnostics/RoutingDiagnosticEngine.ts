@@ -7,6 +7,7 @@ export function detectHopGoblin(
   ignoreMqtt = false,
   distanceMultiplier = 1,
   distanceOffsetKm = 0,
+  hopsThreshold = 2,
 ): NodeAnomaly | null {
   if (ignoreMqtt && node.heard_via_mqtt_only) return null;
 
@@ -18,7 +19,7 @@ export function detectHopGoblin(
       node.latitude,
       node.longitude,
     );
-    if (distKm < 3 * distanceMultiplier + distanceOffsetKm && (node.hops_away ?? 0) > 2) {
+    if (distKm < 3 * distanceMultiplier + distanceOffsetKm && (node.hops_away ?? 0) > hopsThreshold) {
       return {
         nodeId: node.node_id,
         type: 'hop_goblin',
@@ -30,7 +31,7 @@ export function detectHopGoblin(
       };
     }
     // Coords present but node isn't critically close — still check SNR
-    if ((node.hops_away ?? 0) > 2 && node.snr > 5) {
+    if ((node.hops_away ?? 0) > hopsThreshold && node.snr > 5) {
       return {
         nodeId: node.node_id,
         type: 'hop_goblin',
@@ -45,7 +46,7 @@ export function detectHopGoblin(
   }
 
   // Fallback: SNR-only when coordinates are missing
-  if ((node.hops_away ?? 0) > 2 && node.snr > 5) {
+  if ((node.hops_away ?? 0) > hopsThreshold && node.snr > 5) {
     return {
       nodeId: node.node_id,
       type: 'hop_goblin',
@@ -175,18 +176,33 @@ export function analyzeNode(
   ignoreMqtt = false,
   distanceMultiplier = 1,
   distanceOffsetKm = 0,
+  hopsThreshold = 2,
 ): NodeAnomaly | null {
   // Priority: errors first, then warnings
   const impossibleHop = detectImpossibleHop(node, homeNode, ignoreMqtt);
   if (impossibleHop) return impossibleHop;
 
-  const badRoute = detectBadRoute(node, stats, homeNode, ignoreMqtt, distanceMultiplier, distanceOffsetKm);
+  const badRoute = detectBadRoute(
+    node,
+    stats,
+    homeNode,
+    ignoreMqtt,
+    distanceMultiplier,
+    distanceOffsetKm,
+  );
   if (badRoute?.severity === 'error') return badRoute;
 
   const flapping = detectRouteFlapping(node.node_id, hopHistory);
   if (flapping) return flapping;
 
-  const hopGoblin = detectHopGoblin(node, homeNode, ignoreMqtt, distanceMultiplier, distanceOffsetKm);
+  const hopGoblin = detectHopGoblin(
+    node,
+    homeNode,
+    ignoreMqtt,
+    distanceMultiplier,
+    distanceOffsetKm,
+    hopsThreshold,
+  );
   if (hopGoblin) return hopGoblin;
 
   if (badRoute?.severity === 'warning') return badRoute;

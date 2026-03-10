@@ -29,6 +29,25 @@ export interface NodeRedundancy {
   recentPackets: PacketRecord[]; // last 20 packets
 }
 
+export type EnvMode = 'standard' | 'city' | 'canyon';
+
+const ENV_PARAMS: Record<EnvMode, { mult: number; hops: number }> = {
+  standard: { mult: 1.0, hops: 2 },
+  city:     { mult: 1.6, hops: 3 },
+  canyon:   { mult: 2.6, hops: 4 },
+};
+
+function getEnvParams(
+  envMode: EnvMode,
+  isLowAccuracy: boolean,
+): { distanceMultiplier: number; hopsThreshold: number } {
+  const { mult, hops } = ENV_PARAMS[envMode];
+  return {
+    distanceMultiplier: isLowAccuracy ? mult * 2 : mult,
+    hopsThreshold: hops,
+  };
+}
+
 interface DiagnosticsState {
   anomalies: Map<number, NodeAnomaly>;
   hopHistory: Map<number, HopHistoryPoint[]>;
@@ -40,8 +59,7 @@ interface DiagnosticsState {
   ignoreMqttEnabled: boolean;
   mqttIgnoredNodes: Set<number>;
   ourPositionSource: GpsSource | null;
-  canyonModeEnabled: boolean;
-  cityModeEnabled: boolean;
+  envMode: EnvMode;
   processNodeUpdate(node: MeshNode, homeNode: MeshNode | null): void;
   recordDuplicate(fromNodeId: number): void;
   recordPacketPath(packetId: number, fromNodeId: number, path: PacketPath): void;
@@ -51,8 +69,7 @@ interface DiagnosticsState {
   setIgnoreMqttEnabled(enabled: boolean): void;
   setNodeMqttIgnored(nodeId: number, ignored: boolean): void;
   setOurPositionSource(source: GpsSource | null): void;
-  setCanyonModeEnabled(enabled: boolean): void;
-  setCityModeEnabled(enabled: boolean): void;
+  setEnvMode(mode: EnvMode): void;
   clearDiagnostics(): void;
 }
 
@@ -69,7 +86,18 @@ function loadAdminBool(key: string): boolean {
   }
 }
 
-function saveAdminKey(key: string, value: boolean): void {
+function loadEnvMode(): EnvMode {
+  try {
+    const raw = localStorage.getItem('mesh-client:adminSettings');
+    const val = raw ? JSON.parse(raw).envMode : undefined;
+    if (val === 'city' || val === 'canyon') return val;
+    return 'standard';
+  } catch {
+    return 'standard';
+  }
+}
+
+function saveAdminKey(key: string, value: unknown): void {
   try {
     const raw = localStorage.getItem('mesh-client:adminSettings');
     const s = raw ? JSON.parse(raw) : {};
@@ -103,8 +131,7 @@ export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
   ignoreMqttEnabled: loadAdminBool('ignoreMqttEnabled'),
   mqttIgnoredNodes: loadMqttIgnoredNodes(),
   ourPositionSource: null,
-  canyonModeEnabled: loadAdminBool('canyonModeEnabled'),
-  cityModeEnabled: loadAdminBool('cityModeEnabled'),
+  envMode: loadEnvMode(),
 
   processNodeUpdate(node: MeshNode, homeNode: MeshNode | null) {
     const now = Date.now();
@@ -134,15 +161,22 @@ export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
       const state = get();
       set((s) => {
         const newAnomalies = new Map(s.anomalies);
-        const baseMultiplier =
-          s.ourPositionSource && isLowAccuracyPosition(s.ourPositionSource) ? 2 : 1;
-        const distanceMultiplier = s.canyonModeEnabled ? baseMultiplier * 2 : baseMultiplier;
-        const distanceOffsetKm = s.cityModeEnabled ? 1.5 : 0;
+        const isLowAccuracy = !!(s.ourPositionSource && isLowAccuracyPosition(s.ourPositionSource));
+        const { distanceMultiplier, hopsThreshold } = getEnvParams(s.envMode, isLowAccuracy);
         for (const [nodeId, { node: n, homeNode: hn }] of pendingAnalyses) {
           const history = state.hopHistory.get(nodeId) ?? [];
           const stats = state.packetStats.get(nodeId);
           const ignoreMqtt = state.ignoreMqttEnabled || state.mqttIgnoredNodes.has(nodeId);
-          const anomaly = analyzeNode(n, stats, hn, history, ignoreMqtt, distanceMultiplier, distanceOffsetKm);
+          const anomaly = analyzeNode(
+            n,
+            stats,
+            hn,
+            history,
+            ignoreMqtt,
+            distanceMultiplier,
+            0,
+            hopsThreshold,
+          );
           if (anomaly) newAnomalies.set(nodeId, anomaly);
           else newAnomalies.delete(nodeId);
         }
@@ -208,17 +242,24 @@ export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
       const state = get();
       const nodes = getNodes();
       const homeNode = nodes.get(myNodeNum) ?? null;
-      const baseMultiplier =
-        state.ourPositionSource && isLowAccuracyPosition(state.ourPositionSource) ? 2 : 1;
-      const distanceMultiplier = state.canyonModeEnabled ? baseMultiplier * 2 : baseMultiplier;
-      const distanceOffsetKm = state.cityModeEnabled ? 1.5 : 0;
+      const isLowAccuracy = !!(state.ourPositionSource && isLowAccuracyPosition(state.ourPositionSource));
+      const { distanceMultiplier, hopsThreshold } = getEnvParams(state.envMode, isLowAccuracy);
       const newAnomalies = new Map<number, NodeAnomaly>();
       for (const [nodeId, node] of nodes) {
         if (nodeId === myNodeNum) continue;
         const history = state.hopHistory.get(nodeId) ?? [];
         const stats = state.packetStats.get(nodeId);
         const ignoreMqtt = state.ignoreMqttEnabled || state.mqttIgnoredNodes.has(nodeId);
-        const anomaly = analyzeNode(node, stats, homeNode, history, ignoreMqtt, distanceMultiplier, distanceOffsetKm);
+        const anomaly = analyzeNode(
+          node,
+          stats,
+          homeNode,
+          history,
+          ignoreMqtt,
+          distanceMultiplier,
+          0,
+          hopsThreshold,
+        );
         if (anomaly) newAnomalies.set(nodeId, anomaly);
       }
       set({ anomalies: newAnomalies });
@@ -254,14 +295,9 @@ export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
     set({ ourPositionSource: source });
   },
 
-  setCanyonModeEnabled(enabled: boolean) {
-    saveAdminKey('canyonModeEnabled', enabled);
-    set({ canyonModeEnabled: enabled });
-  },
-
-  setCityModeEnabled(enabled: boolean) {
-    saveAdminKey('cityModeEnabled', enabled);
-    set({ cityModeEnabled: enabled });
+  setEnvMode(mode: EnvMode) {
+    saveAdminKey('envMode', mode);
+    set({ envMode: mode });
   },
 
   clearDiagnostics() {
