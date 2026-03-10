@@ -1382,6 +1382,22 @@ export function useDevice() {
         return;
       }
 
+      // Check MQTT uplink conditions before entering try/catch so promise is accessible in catch
+      const chCfg = channelConfigsRef.current.find((c) => c.index === channel);
+      const shouldUplink =
+        chCfg?.uplinkEnabled && mqttStatusRef.current === 'connected' && myNodeNumRef.current;
+
+      // Fire MQTT FIRST (before device send) — store promise, don't await yet
+      const mqttPromise: Promise<number> | null = shouldUplink
+        ? window.electronAPI.mqtt.publish({
+            text,
+            from: myNodeNumRef.current!,
+            channel,
+            destination: destination ?? BROADCAST_ADDR,
+            channelName: 'LongFast',
+          })
+        : null;
+
       try {
         pendingReplyIdRef.current = replyId;
         const dest: number | 'broadcast' = destination ?? 'broadcast';
@@ -1392,23 +1408,15 @@ export function useDevice() {
         );
         window.electronAPI.db.updateMessageStatus(packetId, 'acked');
 
-        // Hybrid mode: if uplinkEnabled for this channel, also publish to MQTT
-        const chCfg = channelConfigsRef.current.find((c) => c.index === channel);
-        if (chCfg?.uplinkEnabled && mqttStatusRef.current === 'connected' && myNodeNumRef.current) {
+        // Wire up MQTT result now that we have the packetId
+        if (mqttPromise) {
           setMessages((prev) =>
             prev.map((m) =>
               m.packetId === packetId ? { ...m, mqttStatus: 'sending' as const } : m,
             ),
           );
           window.electronAPI.db.updateMessageStatus(packetId, 'acked', undefined, 'sending');
-          window.electronAPI.mqtt
-            .publish({
-              text,
-              from: myNodeNumRef.current,
-              channel,
-              destination: destination ?? BROADCAST_ADDR,
-              channelName: 'LongFast',
-            })
+          mqttPromise
             .then((mqttPacketId) => {
               isDuplicate(mqttPacketId);
               setMessages((prev) =>
@@ -1437,30 +1445,28 @@ export function useDevice() {
             prev.map((m) => (m.packetId === packetId ? { ...m, status: 'failed', error } : m)),
           );
           window.electronAPI.db.updateMessageStatus(packetId, 'failed', error);
-          // Hybrid: still attempt MQTT even though BT failed
-          const chCfg = channelConfigsRef.current.find((c) => c.index === channel);
-          if (chCfg?.uplinkEnabled && mqttStatusRef.current === 'connected' && myNodeNumRef.current) {
+          // Wire up MQTT result to this packetId (MQTT was already fired before sendText)
+          if (mqttPromise) {
             setMessages((prev) =>
-              prev.map((m) => (m.packetId === packetId ? { ...m, mqttStatus: 'sending' as const } : m)),
+              prev.map((m) =>
+                m.packetId === packetId ? { ...m, mqttStatus: 'sending' as const } : m,
+              ),
             );
-            window.electronAPI.mqtt
-              .publish({
-                text,
-                from: myNodeNumRef.current,
-                channel,
-                destination: destination ?? BROADCAST_ADDR,
-                channelName: 'LongFast',
-              })
+            mqttPromise
               .then((mqttPacketId) => {
                 isDuplicate(mqttPacketId);
                 setMessages((prev) =>
-                  prev.map((m) => (m.packetId === packetId ? { ...m, mqttStatus: 'acked' as const } : m)),
+                  prev.map((m) =>
+                    m.packetId === packetId ? { ...m, mqttStatus: 'acked' as const } : m,
+                  ),
                 );
                 window.electronAPI.db.updateMessageStatus(packetId, 'failed', error, 'acked');
               })
               .catch(() => {
                 setMessages((prev) =>
-                  prev.map((m) => (m.packetId === packetId ? { ...m, mqttStatus: 'failed' as const } : m)),
+                  prev.map((m) =>
+                    m.packetId === packetId ? { ...m, mqttStatus: 'failed' as const } : m,
+                  ),
                 );
               });
           }

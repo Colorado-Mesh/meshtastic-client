@@ -372,6 +372,7 @@ export default function App() {
                 onNodeClick={setSelectedNodeId}
                 isConnected={isOperational || device.mqttStatus === 'connected'}
                 isMqttOnly={!isOperational && device.mqttStatus === 'connected'}
+                connectionType={device.state.connectionType}
                 nodes={device.nodes}
                 initialDmTarget={pendingDmTarget}
                 onDmTargetConsumed={() => setPendingDmTarget(null)}

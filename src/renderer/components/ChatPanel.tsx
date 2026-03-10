@@ -6,28 +6,46 @@ import type { ChatMessage, MeshNode } from '../lib/types';
 function StatusBadge({
   status,
   transport,
+  connectionType,
   error,
 }: {
   status: 'sending' | 'acked' | 'failed';
   transport: 'device' | 'mqtt';
+  connectionType?: 'ble' | 'serial' | 'http' | null;
   error?: string;
 }) {
   const icon =
-    status === 'sending' ? '\u23F3'
-    : status === 'acked' ? '\u2713'
-    : transport === 'device' ? 'no ACK'
-    : '\u2717';
+    status === 'sending'
+      ? '\u23F3'
+      : status === 'acked'
+        ? '\u2713'
+        : transport === 'device'
+          ? 'no ACK'
+          : '\u2717';
   const colorClass =
-    status === 'sending' ? 'text-muted'
-    : status === 'acked' ? 'text-bright-green'
-    : transport === 'device' ? 'text-yellow-400'
-    : 'text-red-400';
-  const label = transport === 'mqtt' ? 'M' : 'BT';
+    status === 'sending'
+      ? 'text-muted'
+      : status === 'acked'
+        ? 'text-bright-green'
+        : transport === 'device'
+          ? 'text-yellow-400'
+          : 'text-red-400';
+  const label =
+    transport === 'mqtt'
+      ? 'MQTT'
+      : connectionType === 'serial'
+        ? 'USB'
+        : connectionType === 'http'
+          ? 'WiFi'
+          : 'BT';
   const tooltip = `${transport === 'mqtt' ? 'MQTT' : 'Device'}: ${
-    status === 'sending' ? 'Sending...'
-    : status === 'acked' ? 'Delivered'
-    : transport === 'device' ? 'No ACK received'
-    : error || 'Failed'
+    status === 'sending'
+      ? 'Sending...'
+      : status === 'acked'
+        ? 'Delivered'
+        : transport === 'device'
+          ? 'No ACK received'
+          : error || 'Failed'
   }`;
   return (
     <span className={`text-[10px] ${colorClass} cursor-help`} title={tooltip}>
@@ -120,6 +138,7 @@ interface Props {
   onNodeClick: (nodeNum: number) => void;
   isConnected: boolean;
   isMqttOnly?: boolean;
+  connectionType?: 'ble' | 'serial' | 'http' | null;
   nodes: Map<number, MeshNode>;
   initialDmTarget?: number | null;
   onDmTargetConsumed?: () => void;
@@ -135,6 +154,7 @@ export default function ChatPanel({
   onNodeClick,
   isConnected,
   isMqttOnly,
+  connectionType,
   nodes,
   initialDmTarget,
   onDmTargetConsumed,
@@ -807,6 +827,7 @@ export default function ChatPanel({
                                 <StatusBadge
                                   status={msg.status}
                                   transport="device"
+                                  connectionType={connectionType}
                                   error={msg.error}
                                 />
                               )}
@@ -816,6 +837,7 @@ export default function ChatPanel({
                             <StatusBadge
                               status={msg.status}
                               transport={isMqttOnly ? 'mqtt' : 'device'}
+                              connectionType={connectionType}
                               error={msg.error}
                             />
                           ) : null}
