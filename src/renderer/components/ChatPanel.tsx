@@ -12,12 +12,22 @@ function StatusBadge({
   transport: 'device' | 'mqtt';
   error?: string;
 }) {
-  const icon = status === 'sending' ? '\u23F3' : status === 'acked' ? '\u2713' : '\u2717';
+  const icon =
+    status === 'sending' ? '\u23F3'
+    : status === 'acked' ? '\u2713'
+    : transport === 'device' ? 'no ACK'
+    : '\u2717';
   const colorClass =
-    status === 'sending' ? 'text-muted' : status === 'acked' ? 'text-bright-green' : 'text-red-400';
+    status === 'sending' ? 'text-muted'
+    : status === 'acked' ? 'text-bright-green'
+    : transport === 'device' ? 'text-yellow-400'
+    : 'text-red-400';
   const label = transport === 'mqtt' ? 'M' : 'BT';
   const tooltip = `${transport === 'mqtt' ? 'MQTT' : 'Device'}: ${
-    status === 'sending' ? 'Sending...' : status === 'acked' ? 'Delivered' : error || 'Failed'
+    status === 'sending' ? 'Sending...'
+    : status === 'acked' ? 'Delivered'
+    : transport === 'device' ? 'No ACK received'
+    : error || 'Failed'
   }`;
   return (
     <span className={`text-[10px] ${colorClass} cursor-help`} title={tooltip}>
@@ -802,33 +812,12 @@ export default function ChatPanel({
                               )}
                               <StatusBadge status={msg.mqttStatus} transport="mqtt" />
                             </>
-                          ) : msg.status === 'sending' ? (
-                            <span
-                              role="img"
-                              aria-label="Sending"
-                              className="text-[10px] text-muted"
-                              title="Sending..."
-                            >
-                              {'\u23F3'}
-                            </span>
-                          ) : msg.status === 'acked' ? (
-                            <span
-                              role="img"
-                              aria-label="Delivered"
-                              className="text-[10px] text-bright-green"
-                              title="Delivered"
-                            >
-                              {'\u2713'}
-                            </span>
-                          ) : msg.status === 'failed' ? (
-                            <span
-                              role="img"
-                              aria-label="Failed to deliver"
-                              className="text-[10px] text-red-400 cursor-help"
-                              title={msg.error || 'Failed to deliver'}
-                            >
-                              {'\u2717'} {msg.error || 'Failed'}
-                            </span>
+                          ) : msg.status ? (
+                            <StatusBadge
+                              status={msg.status}
+                              transport={isMqttOnly ? 'mqtt' : 'device'}
+                              error={msg.error}
+                            />
                           ) : null}
                         </div>
                       )}

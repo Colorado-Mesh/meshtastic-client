@@ -368,6 +368,13 @@ export function useDevice() {
     const unsubStatus = window.electronAPI.mqtt.onStatus((s) => {
       mqttStatusRef.current = s as MQTTStatus;
       setMqttStatus(s as MQTTStatus);
+      if (s !== 'connected') {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.mqttStatus === 'sending' ? { ...m, mqttStatus: 'failed' as const } : m,
+          ),
+        );
+      }
       if (s === 'connected' && !deviceRef.current) {
         startGpsInterval();
         const virtualId = getOrCreateVirtualNodeId();
@@ -1424,12 +1431,44 @@ export function useDevice() {
         // NAK or timeout — extract packet ID and error from rejection
         const pe = err as any;
         const packetId = pe.packetId;
-        const error = pe.error;
-        setMessages((prev) =>
-          prev.map((m) => (m.packetId === packetId ? { ...m, status: 'failed', error } : m)),
-        );
+        const error = pe.error || String(err);
         if (typeof packetId === 'number' && Number.isFinite(packetId) && packetId >= 0) {
+          setMessages((prev) =>
+            prev.map((m) => (m.packetId === packetId ? { ...m, status: 'failed', error } : m)),
+          );
           window.electronAPI.db.updateMessageStatus(packetId, 'failed', error);
+          // Hybrid: still attempt MQTT even though BT failed
+          const chCfg = channelConfigsRef.current.find((c) => c.index === channel);
+          if (chCfg?.uplinkEnabled && mqttStatusRef.current === 'connected' && myNodeNumRef.current) {
+            setMessages((prev) =>
+              prev.map((m) => (m.packetId === packetId ? { ...m, mqttStatus: 'sending' as const } : m)),
+            );
+            window.electronAPI.mqtt
+              .publish({
+                text,
+                from: myNodeNumRef.current,
+                channel,
+                destination: destination ?? BROADCAST_ADDR,
+                channelName: 'LongFast',
+              })
+              .then((mqttPacketId) => {
+                isDuplicate(mqttPacketId);
+                setMessages((prev) =>
+                  prev.map((m) => (m.packetId === packetId ? { ...m, mqttStatus: 'acked' as const } : m)),
+                );
+                window.electronAPI.db.updateMessageStatus(packetId, 'failed', error, 'acked');
+              })
+              .catch(() => {
+                setMessages((prev) =>
+                  prev.map((m) => (m.packetId === packetId ? { ...m, mqttStatus: 'failed' as const } : m)),
+                );
+              });
+          }
+        } else {
+          // No packetId — fall back to clearing any message stuck at 'sending'
+          setMessages((prev) =>
+            prev.map((m) => (m.status === 'sending' ? { ...m, status: 'failed', error } : m)),
+          );
         }
       }
     },
