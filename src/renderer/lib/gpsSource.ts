@@ -1,5 +1,12 @@
 export type GpsSource = 'device' | 'browser' | 'ip' | 'static';
 
+/** Sources that provide only city-level (~10–50 km) accuracy (browser WiFi/IP positioning included) */
+export const LOW_ACCURACY_SOURCES: ReadonlySet<GpsSource> = new Set(['ip', 'browser']);
+
+export function isLowAccuracyPosition(source: GpsSource): boolean {
+  return LOW_ACCURACY_SOURCES.has(source);
+}
+
 export interface OurPosition {
   lat: number;
   lon: number;
@@ -46,7 +53,8 @@ export async function resolveOurPosition(
         Number.isFinite(result.lat) &&
         Number.isFinite(result.lon)
       ) {
-        return { lat: result.lat, lon: result.lon, source: 'browser' };
+        const mappedSource: GpsSource = result.source === 'ip' ? 'ip' : 'browser';
+        return { lat: result.lat, lon: result.lon, source: mappedSource };
       }
     } catch {
       /* fall through */

@@ -1591,6 +1591,7 @@ export function useDevice() {
       const devLon = staticLon != null ? undefined : myNode?.longitude;
       const pos = await resolveOurPosition(devLat, devLon, staticLat, staticLon);
       setOurPosition(pos);
+      useDiagnosticsStore.getState().setOurPositionSource(pos?.source ?? null);
 
       if (pos) {
         const hasDevice = !!deviceRef.current;

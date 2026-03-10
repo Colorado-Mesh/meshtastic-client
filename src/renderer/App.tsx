@@ -438,6 +438,7 @@ export default function App() {
                 isConnected={isOperational}
                 traceRouteResults={device.traceRouteResults}
                 getFullNodeLabel={device.getFullNodeLabel}
+                ourPosition={device.ourPosition}
               />
             )}
           </ErrorBoundary>

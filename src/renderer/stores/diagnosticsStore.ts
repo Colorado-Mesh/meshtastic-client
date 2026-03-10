@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 
 import { analyzeNode } from '../lib/diagnostics/RoutingDiagnosticEngine';
+import type { GpsSource } from '../lib/gpsSource';
+import { isLowAccuracyPosition } from '../lib/gpsSource';
 import type { HopHistoryPoint, MeshNode, NodeAnomaly } from '../lib/types';
 
 const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
@@ -37,6 +39,7 @@ interface DiagnosticsState {
   anomalyHalosEnabled: boolean;
   ignoreMqttEnabled: boolean;
   mqttIgnoredNodes: Set<number>;
+  ourPositionSource: GpsSource | null;
   processNodeUpdate(node: MeshNode, homeNode: MeshNode | null): void;
   recordDuplicate(fromNodeId: number): void;
   recordPacketPath(packetId: number, fromNodeId: number, path: PacketPath): void;
@@ -45,6 +48,7 @@ interface DiagnosticsState {
   setAnomalyHalosEnabled(enabled: boolean): void;
   setIgnoreMqttEnabled(enabled: boolean): void;
   setNodeMqttIgnored(nodeId: number, ignored: boolean): void;
+  setOurPositionSource(source: GpsSource | null): void;
 }
 
 // Module-level debounce timer and pending analysis buffer
@@ -93,6 +97,7 @@ export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
   anomalyHalosEnabled: loadAdminBool('anomalyHalosEnabled'),
   ignoreMqttEnabled: loadAdminBool('ignoreMqttEnabled'),
   mqttIgnoredNodes: loadMqttIgnoredNodes(),
+  ourPositionSource: null,
 
   processNodeUpdate(node: MeshNode, homeNode: MeshNode | null) {
     const now = Date.now();
@@ -122,11 +127,13 @@ export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
       const state = get();
       set((s) => {
         const newAnomalies = new Map(s.anomalies);
+        const distanceMultiplier =
+          s.ourPositionSource && isLowAccuracyPosition(s.ourPositionSource) ? 2 : 1;
         for (const [nodeId, { node: n, homeNode: hn }] of pendingAnalyses) {
           const history = state.hopHistory.get(nodeId) ?? [];
           const stats = state.packetStats.get(nodeId);
           const ignoreMqtt = state.ignoreMqttEnabled || state.mqttIgnoredNodes.has(nodeId);
-          const anomaly = analyzeNode(n, stats, hn, history, ignoreMqtt);
+          const anomaly = analyzeNode(n, stats, hn, history, ignoreMqtt, distanceMultiplier);
           if (anomaly) newAnomalies.set(nodeId, anomaly);
           else newAnomalies.delete(nodeId);
         }
@@ -177,7 +184,7 @@ export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
       nodePackets.sort((a, b) => b.lastSeen - a.lastSeen);
       const recentPackets = nodePackets.slice(0, 20);
       const maxPaths = recentPackets.reduce((m, r) => Math.max(m, r.paths.length), 0);
-      const score = Math.min(Math.round(((maxPaths - 1) / 3) * 100), 100);
+      const score = Math.max(0, Math.min(Math.round(((maxPaths - 1) / 3) * 100), 100));
 
       const newNodeRedundancy = new Map(state.nodeRedundancy);
       newNodeRedundancy.set(fromNodeId, { maxPaths, score, recentPackets });
@@ -192,13 +199,15 @@ export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
       const state = get();
       const nodes = getNodes();
       const homeNode = nodes.get(myNodeNum) ?? null;
+      const distanceMultiplier =
+        state.ourPositionSource && isLowAccuracyPosition(state.ourPositionSource) ? 2 : 1;
       const newAnomalies = new Map<number, NodeAnomaly>();
       for (const [nodeId, node] of nodes) {
         if (nodeId === myNodeNum) continue;
         const history = state.hopHistory.get(nodeId) ?? [];
         const stats = state.packetStats.get(nodeId);
         const ignoreMqtt = state.ignoreMqttEnabled || state.mqttIgnoredNodes.has(nodeId);
-        const anomaly = analyzeNode(node, stats, homeNode, history, ignoreMqtt);
+        const anomaly = analyzeNode(node, stats, homeNode, history, ignoreMqtt, distanceMultiplier);
         if (anomaly) newAnomalies.set(nodeId, anomaly);
       }
       set({ anomalies: newAnomalies });
@@ -228,5 +237,9 @@ export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
       saveMqttIgnoredNodes(next);
       return { mqttIgnoredNodes: next };
     });
+  },
+
+  setOurPositionSource(source: GpsSource | null) {
+    set({ ourPositionSource: source });
   },
 }));

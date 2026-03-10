@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { getRecommendedAction } from '../lib/diagnostics/RemediationEngine';
 import { computeHealthScore } from '../lib/diagnostics/RoutingDiagnosticEngine';
+import type { OurPosition } from '../lib/gpsSource';
 import type { MeshNode } from '../lib/types';
 import { useDiagnosticsStore } from '../stores/diagnosticsStore';
 
@@ -21,6 +22,7 @@ interface Props {
   isConnected: boolean;
   traceRouteResults: Map<number, { route: number[]; from: number; timestamp: number }>;
   getFullNodeLabel: (nodeNum: number) => string;
+  ourPosition?: OurPosition | null;
 }
 
 function AlertTriangleIcon({ className }: { className?: string }) {
@@ -57,6 +59,7 @@ export default function DiagnosticsPanel({
   isConnected,
   traceRouteResults,
   getFullNodeLabel,
+  ourPosition,
 }: Props) {
   const anomalies = useDiagnosticsStore((s) => s.anomalies);
   const packetStats = useDiagnosticsStore((s) => s.packetStats);
@@ -185,13 +188,6 @@ export default function DiagnosticsPanel({
               )}
             </div>
           </div>
-          {anomalies.size > 0 && (
-            <AlertTriangleIcon
-              className={`w-12 h-12 ${
-                errorCount > 0 ? 'text-red-400' : 'text-orange-400'
-              } opacity-60`}
-            />
-          )}
         </div>
       </div>
 
@@ -266,6 +262,18 @@ export default function DiagnosticsPanel({
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* IP Geolocation Accuracy Warning */}
+      {ourPosition?.source === 'ip' && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-300">
+          <AlertTriangleIcon className="w-4 h-4 mt-0.5 shrink-0 text-yellow-400" />
+          <span>
+            Using city-level IP geolocation — distance-based thresholds are doubled to reduce false
+            positives. For accurate routing analysis, connect a device with GPS or set a static
+            position.
+          </span>
         </div>
       )}
 
