@@ -174,7 +174,12 @@ export default function AppPanel({
     (val: number) => {
       setGpsRefreshInterval(val);
       try {
-        localStorage.setItem('mesh-client:gpsSettings', JSON.stringify({ refreshInterval: val }));
+        const raw = localStorage.getItem('mesh-client:gpsSettings');
+        const existing = raw ? JSON.parse(raw) : {};
+        localStorage.setItem(
+          'mesh-client:gpsSettings',
+          JSON.stringify({ ...existing, refreshInterval: val }),
+        );
       } catch {
         /* ignore */
       }
@@ -182,6 +187,81 @@ export default function AppPanel({
     },
     [onGpsIntervalChange],
   );
+
+  // ─── Static GPS position ─────────────────────────────────────
+  const [staticLatInput, setStaticLatInput] = useState<string>(() => {
+    try {
+      const raw = localStorage.getItem('mesh-client:gpsSettings');
+      const s = raw ? JSON.parse(raw) : {};
+      return typeof s.staticLat === 'number' ? s.staticLat.toFixed(5) : '';
+    } catch {
+      return '';
+    }
+  });
+  const [staticLonInput, setStaticLonInput] = useState<string>(() => {
+    try {
+      const raw = localStorage.getItem('mesh-client:gpsSettings');
+      const s = raw ? JSON.parse(raw) : {};
+      return typeof s.staticLon === 'number' ? s.staticLon.toFixed(5) : '';
+    } catch {
+      return '';
+    }
+  });
+  const [hasStaticPosition, setHasStaticPosition] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem('mesh-client:gpsSettings');
+      const s = raw ? JSON.parse(raw) : {};
+      return typeof s.staticLat === 'number' && typeof s.staticLon === 'number';
+    } catch {
+      return false;
+    }
+  });
+
+  const saveStaticPosition = useCallback(() => {
+    const lat = parseFloat(staticLatInput);
+    const lon = parseFloat(staticLonInput);
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+      addToast('Invalid latitude. Must be between -90 and 90.', 'error');
+      return;
+    }
+    if (!Number.isFinite(lon) || lon < -180 || lon > 180) {
+      addToast('Invalid longitude. Must be between -180 and 180.', 'error');
+      return;
+    }
+    try {
+      const raw = localStorage.getItem('mesh-client:gpsSettings');
+      const existing = raw ? JSON.parse(raw) : {};
+      localStorage.setItem(
+        'mesh-client:gpsSettings',
+        JSON.stringify({ ...existing, staticLat: lat, staticLon: lon, refreshInterval: 0 }),
+      );
+      setHasStaticPosition(true);
+      setGpsRefreshInterval(0);
+      onGpsIntervalChange?.(0);
+      onRefreshGps?.();
+      addToast('Static position saved.', 'success');
+    } catch {
+      addToast('Failed to save static position.', 'error');
+    }
+  }, [staticLatInput, staticLonInput, addToast, onRefreshGps, onGpsIntervalChange]);
+
+  const clearStaticPosition = useCallback(() => {
+    try {
+      const raw = localStorage.getItem('mesh-client:gpsSettings');
+      const existing = raw ? JSON.parse(raw) : {};
+      delete existing.staticLat;
+      delete existing.staticLon;
+      const rest = existing;
+      localStorage.setItem('mesh-client:gpsSettings', JSON.stringify(rest));
+      setStaticLatInput('');
+      setStaticLonInput('');
+      setHasStaticPosition(false);
+      onRefreshGps?.();
+      addToast('Static position cleared.', 'success');
+    } catch {
+      addToast('Failed to clear static position.', 'error');
+    }
+  }, [addToast, onRefreshGps]);
 
   // ─── Message channel selection ──────────────────────────────
   const [msgChannels, setMsgChannels] = useState<number[]>([]);
@@ -244,18 +324,70 @@ export default function AppPanel({
             <p className="text-xs text-brand-green">
               {ourPosition.source === 'device'
                 ? `Device GPS: ${ourPosition.lat.toFixed(5)}, ${ourPosition.lon.toFixed(5)}`
-                : ourPosition.source === 'browser'
-                  ? `Browser location: ${ourPosition.lat.toFixed(5)}, ${ourPosition.lon.toFixed(5)}`
-                  : `IP location (city-level): ${ourPosition.lat.toFixed(5)}, ${ourPosition.lon.toFixed(5)}`}
+                : ourPosition.source === 'static'
+                  ? `Static position: ${ourPosition.lat.toFixed(5)}, ${ourPosition.lon.toFixed(5)}`
+                  : ourPosition.source === 'browser'
+                    ? `Browser location: ${ourPosition.lat.toFixed(5)}, ${ourPosition.lon.toFixed(5)}`
+                    : `IP location (city-level): ${ourPosition.lat.toFixed(5)}, ${ourPosition.lon.toFixed(5)}`}
             </p>
           )}
           {!ourPosition && <p className="text-xs text-muted">No GPS position resolved yet.</p>}
+
+          {/* Static position override */}
+          <div className="space-y-2 pt-1 border-t border-gray-700">
+            <p className="text-xs text-muted leading-relaxed">
+              Set a precise static position. When saved, this overrides browser and IP-based
+              location.
+            </p>
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-300 w-8">Lat:</label>
+              <input
+                type="number"
+                step="0.00001"
+                min={-90}
+                max={90}
+                value={staticLatInput}
+                onChange={(e) => setStaticLatInput(e.target.value)}
+                placeholder="e.g. 40.12345"
+                className="flex-1 px-2 py-1 bg-deep-black border border-gray-600 rounded text-gray-200 text-sm focus:border-brand-green focus:outline-none"
+              />
+              <label className="text-sm text-gray-300 w-8">Lon:</label>
+              <input
+                type="number"
+                step="0.00001"
+                min={-180}
+                max={180}
+                value={staticLonInput}
+                onChange={(e) => setStaticLonInput(e.target.value)}
+                placeholder="e.g. -105.12345"
+                className="flex-1 px-2 py-1 bg-deep-black border border-gray-600 rounded text-gray-200 text-sm focus:border-brand-green focus:outline-none"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={saveStaticPosition}
+                className="flex-1 px-3 py-1.5 bg-brand-green/20 text-brand-green hover:bg-brand-green/30 border border-brand-green/40 rounded text-sm font-medium transition-colors"
+              >
+                Save Static Position
+              </button>
+              {hasStaticPosition && (
+                <button
+                  onClick={clearStaticPosition}
+                  className="px-3 py-1.5 bg-secondary-dark text-gray-400 hover:bg-gray-600 rounded text-sm font-medium transition-colors"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+
           <div className="flex items-center gap-2">
             <label className="text-sm text-gray-300 flex-1">Auto-refresh interval:</label>
             <select
               value={gpsRefreshInterval}
               onChange={(e) => handleGpsIntervalChange(Number(e.target.value))}
-              className="px-2 py-1 bg-deep-black border border-gray-600 rounded text-gray-200 text-sm focus:border-brand-green focus:outline-none"
+              disabled={hasStaticPosition}
+              className={`px-2 py-1 bg-deep-black border border-gray-600 rounded text-gray-200 text-sm focus:border-brand-green focus:outline-none ${hasStaticPosition ? 'opacity-40 cursor-not-allowed' : ''}`}
             >
               <option value={0}>Manual only</option>
               <option value={900}>Every 15 min</option>
@@ -264,6 +396,11 @@ export default function AppPanel({
               <option value={7200}>Every 2 hours</option>
             </select>
           </div>
+          {hasStaticPosition && (
+            <p className="text-xs text-muted">
+              Auto-refresh is disabled while a static position is active.
+            </p>
+          )}
           <button
             onClick={() => onRefreshGps?.()}
             disabled={gpsLoading}

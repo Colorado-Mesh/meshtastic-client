@@ -298,8 +298,7 @@ export function useDevice() {
     stopGpsInterval();
     try {
       const raw = localStorage.getItem('mesh-client:gpsSettings');
-      let intervalSecs = raw ? (JSON.parse(raw).refreshInterval ?? 0) : 0;
-      if (intervalSecs <= 0) intervalSecs = 3600; // default 1 hour
+      const intervalSecs = raw ? (JSON.parse(raw).refreshInterval ?? 0) : 0;
       if (intervalSecs > 0) {
         gpsIntervalRef.current = setInterval(() => {
           refreshOurPositionRef.current();
@@ -1563,7 +1562,22 @@ export function useDevice() {
     setGpsLoading(true);
     try {
       const myNode = nodesRef.current.get(myNodeNumRef.current);
-      const pos = await resolveOurPosition(myNode?.latitude, myNode?.longitude);
+      let staticLat: number | undefined;
+      let staticLon: number | undefined;
+      try {
+        const raw = localStorage.getItem('mesh-client:gpsSettings');
+        const s = raw ? JSON.parse(raw) : {};
+        if (typeof s.staticLat === 'number' && typeof s.staticLon === 'number') {
+          staticLat = s.staticLat;
+          staticLon = s.staticLon;
+        }
+      } catch {
+        /* ignore */
+      }
+      // When a static position is set, don't let device coords override it
+      const devLat = staticLat != null ? undefined : myNode?.latitude;
+      const devLon = staticLon != null ? undefined : myNode?.longitude;
+      const pos = await resolveOurPosition(devLat, devLon, staticLat, staticLon);
       setOurPosition(pos);
 
       if (pos) {
@@ -1596,7 +1610,12 @@ export function useDevice() {
           });
         }
 
-        if (pos.source === 'browser' && deviceGpsModeRef.current === 2 && deviceRef.current) {
+        const shouldSendToDevice =
+          deviceRef.current &&
+          ((pos.source === 'static' && deviceGpsModeRef.current !== 1) ||
+            (pos.source === 'browser' && deviceGpsModeRef.current === 2));
+
+        if (shouldSendToDevice) {
           deviceRef.current
             .setPosition(
               create(Mesh.PositionSchema, {
