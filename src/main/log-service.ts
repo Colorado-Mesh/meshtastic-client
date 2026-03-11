@@ -8,6 +8,15 @@ const MAX_LINE_LENGTH = 8192;
 const MAX_IPC_MESSAGE_LENGTH = 4096;
 const RECENT_MAX = 1500;
 
+function sanitizeLogMessage(message: unknown): string {
+  // Remove control characters (including newlines and carriage returns) and normalize whitespace
+  // to keep each log entry on a single line and prevent log injection.
+  return String(message)
+    .replace(/[\x00-\x1F\x7F\u2028\u2029]+/g, ' ') // eslint-disable-line no-control-regex
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 interface LogEntry {
   ts: number;
   level: LogLevel;
@@ -183,23 +192,23 @@ export function patchMainConsole(): void {
   consolePatched = true;
 
   console.log = (...args: unknown[]) => {
-    appendLine('log', 'main', stringifyArgs(args));
+    appendLine('log', 'main', sanitizeLogMessage(stringifyArgs(args)));
     original.log(...args);
   };
   console.info = (...args: unknown[]) => {
-    appendLine('info', 'main', stringifyArgs(args));
+    appendLine('info', 'main', sanitizeLogMessage(stringifyArgs(args)));
     original.info(...args);
   };
   console.warn = (...args: unknown[]) => {
-    appendLine('warn', 'main', stringifyArgs(args));
+    appendLine('warn', 'main', sanitizeLogMessage(stringifyArgs(args)));
     original.warn(...args);
   };
   console.error = (...args: unknown[]) => {
-    appendLine('error', 'main', stringifyArgs(args));
+    appendLine('error', 'main', sanitizeLogMessage(stringifyArgs(args)));
     original.error(...args);
   };
   console.debug = (...args: unknown[]) => {
-    appendLine('debug', 'main', stringifyArgs(args));
+    appendLine('debug', 'main', sanitizeLogMessage(stringifyArgs(args)));
     original.debug(...args);
   };
 
