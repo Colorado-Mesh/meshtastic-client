@@ -411,6 +411,18 @@ You're missing build tools for the native SQLite module:
 
 `[permissions] checkHandler: media → denied` and `web-app-installation → denied` are expected. The app only uses **serial** and **geolocation** — media and web-app-installation are intentionally denied.
 
+### `npm run dist:mac` fails with `GH_TOKEN` / "Cannot cleanup"
+
+electron-builder publishes to GitHub when it thinks it’s in CI. Local builds use `--publish never` so artifacts land in `release/` without a token. Tag releases use `npm run dist:mac:publish` (and `:linux:publish` / `:win:publish`) with `GH_TOKEN` set — see `.github/workflows/release.yaml`.
+
+### `[DEP0190]` when running electron-builder
+
+Node deprecates `spawn(..., { shell: true })` with an args array. This project patches `app-builder-lib` via `patch-package` so macOS/Linux use `shell: false` for the npm dependency collector. Re-run `npm install` if you upgrade electron-builder and the warning returns.
+
+### `duplicate dependency references` during dist
+
+npm’s JSON tree lists hoisted packages with many duplicate refs (one per edge). That’s expected and not something you need to fix. The **app-builder-lib** patch logs that summary at **debug** only so normal `dist:*` runs stay quiet. To see it: `DEBUG=electron-builder npx electron-builder --mac` (or your usual dist command).
+
 ### `[DEP0169]` / `url.parse()` deprecation warning
 
 The app uses npm package overrides to force `follow-redirects` and `cacheable-request` onto versions that use the WHATWG URL API, which removes this warning. To trace the source of any deprecation, run:
