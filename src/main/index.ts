@@ -786,8 +786,8 @@ ipcMain.handle('db:deleteNodesBySource', (_event, source: string) => {
   }
 });
 
-function capStatusString(label: string, value: string | undefined): string | null {
-  if (value === undefined) return null;
+function capStatusString(label: string, value: string | undefined | null): string | null {
+  if (value == null) return null;
   if (value.length > MAX_STATUS_STRING)
     throw new Error(`${label} exceeds maximum length (${MAX_STATUS_STRING})`);
   return value;
