@@ -106,10 +106,10 @@ export default function NodeListPanel({
         list = list.filter((n) => {
           if (n.node_id === myNodeNum) return true;
           // Nodes without GPS can't be distance-filtered — keep them visible
-          if (!n.latitude && !n.longitude) return true;
+          if (n.latitude == null || n.longitude == null) return true;
           const d = haversineDistanceKm(
-            homeNode!.latitude,
-            homeNode!.longitude,
+            homeNode!.latitude!,
+            homeNode!.longitude!,
             n.latitude,
             n.longitude,
           );
@@ -219,8 +219,9 @@ export default function NodeListPanel({
     return new Date(ts).toLocaleDateString();
   }
 
-  function formatCoord(val: number): string {
-    return val === 0 ? '-' : val.toFixed(4);
+  function formatCoord(val: number | null | undefined): string {
+    if (val == null || val === 0) return '-';
+    return val.toFixed(4);
   }
 
   const SortIcon = ({ field }: { field: SortField }) => {

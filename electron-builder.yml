@@ -29,8 +29,9 @@ extraResources:
 mac:
   identity: "-"
   category: public.app-category.utilities
-  hardenedRuntime: false
-  preAutoEntitlements: false
+  # Hardened runtime improves tamper resistance; required for notarized distribution.
+  hardenedRuntime: true
+  preAutoEntitlements: true
   helperBundleId: com.mesh-client.app.helper
   extendInfo:
     NSBluetoothAlwaysUsageDescription: "Mesh-client needs Bluetooth to communicate with Meshtastic devices."

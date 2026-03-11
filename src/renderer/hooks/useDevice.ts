@@ -1681,7 +1681,7 @@ export function useDevice() {
           ((pos.source === 'static' && deviceGpsModeRef.current !== 1) ||
             (pos.source === 'browser' && deviceGpsModeRef.current === 2));
 
-        if (shouldSendToDevice) {
+        if (shouldSendToDevice && deviceRef.current) {
           deviceRef.current
             .setPosition(
               create(Mesh.PositionSchema, {

@@ -627,7 +627,7 @@ export default function AppPanel({
             <button
               onClick={() => {
                 const zeroIslandNodes = Array.from(nodes.values()).filter(
-                  (n) => Math.abs(n.latitude) < 0.5 && Math.abs(n.longitude) < 0.5,
+                  (n) => Math.abs(n.latitude ?? 0) < 0.5 && Math.abs(n.longitude ?? 0) < 0.5,
                 );
                 if (zeroIslandNodes.length === 0) {
                   addToast('No zero/null island nodes found.', 'success');
@@ -673,7 +673,7 @@ export default function AppPanel({
                     : settings.distanceFilterMax;
                 const distantNodes = Array.from(nodes.values()).filter((n) => {
                   if (n.node_id === myNodeNum) return false;
-                  if (!n.latitude && !n.longitude) return false; // no GPS — can't determine distance
+                  if (n.latitude == null || n.longitude == null) return false;
                   const d = haversineDistanceKm(homeLat, homeLon, n.latitude, n.longitude);
                   return d > maxKm;
                 });

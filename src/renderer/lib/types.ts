@@ -26,8 +26,8 @@ export interface MeshNode {
   rssi?: number;
   battery: number;
   last_heard: number;
-  latitude: number;
-  longitude: number;
+  latitude: number | null;
+  longitude: number | null;
   role?: number;
   hops_away?: number;
   via_mqtt?: boolean | number;
@@ -65,6 +65,8 @@ export interface MQTTSettings {
   topicPrefix: string;
   autoLaunch: boolean;
   maxRetries?: number;
+  /** When using TLS (port 8883), set true to skip certificate verification (self-signed brokers). Default false = verify. */
+  tlsInsecure?: boolean;
 }
 
 export type MQTTStatus = 'disconnected' | 'connecting' | 'connected' | 'error';

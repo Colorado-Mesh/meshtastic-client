@@ -724,6 +724,24 @@ export default function ConnectionPanel({
               />
             </div>
           </div>
+          {mqttSettings.port === 8883 && (
+            <div className="flex items-center gap-2 rounded border border-amber-700/50 bg-amber-900/20 px-2 py-2">
+              <input
+                type="checkbox"
+                id="mqtt-tls-insecure"
+                checked={mqttSettings.tlsInsecure ?? false}
+                onChange={(e) => updateMqtt('tlsInsecure', e.target.checked)}
+                className="accent-brand-green"
+              />
+              <label
+                htmlFor="mqtt-tls-insecure"
+                className="text-xs text-amber-200/90 cursor-pointer"
+              >
+                Allow insecure TLS (self-signed certificate). Off by default — only enable if your
+                broker uses a non-public CA.
+              </label>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
               <label htmlFor="mqtt-username" className="text-xs text-muted">

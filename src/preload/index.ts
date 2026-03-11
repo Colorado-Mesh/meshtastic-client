@@ -37,8 +37,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       rssi?: number;
       battery: number;
       last_heard: number;
-      latitude: number;
-      longitude: number;
+      latitude: number | null;
+      longitude: number | null;
     }) => ipcRenderer.invoke('db:saveNode', node),
 
     getNodes: () => ipcRenderer.invoke('db:getNodes'),

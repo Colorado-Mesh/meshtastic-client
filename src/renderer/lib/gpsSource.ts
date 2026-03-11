@@ -17,8 +17,8 @@ export interface OurPosition {
  * GPS waterfall: device coords → static override → browser geolocation → IP geolocation → null.
  */
 export async function resolveOurPosition(
-  deviceLat?: number,
-  deviceLon?: number,
+  deviceLat?: number | null,
+  deviceLon?: number | null,
   staticLat?: number,
   staticLon?: number,
 ): Promise<OurPosition | null> {

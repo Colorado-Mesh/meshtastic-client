@@ -213,7 +213,7 @@ const MapMarker = memo(
         {shouldShowHalo && (
           <Circle
             key={`anomaly-${node.node_id}`}
-            center={[node.latitude + haloCenterOffset[0], node.longitude + haloCenterOffset[1]]}
+            center={[node.latitude! + haloCenterOffset[0], node.longitude! + haloCenterOffset[1]]}
             radius={500}
             pane="diagnosticPane"
             interactive={false}
@@ -230,7 +230,7 @@ const MapMarker = memo(
         )}
         {congestionHalosEnabled && node.channel_utilization != null && (
           <Circle
-            center={[node.latitude, node.longitude]}
+            center={[node.latitude!, node.longitude!]}
             radius={300}
             interactive={false}
             pathOptions={{
@@ -243,7 +243,7 @@ const MapMarker = memo(
           />
         )}
         <Marker
-          position={[node.latitude, node.longitude]}
+          position={[node.latitude!, node.longitude!]}
           icon={icon}
           zIndexOffset={isSelf ? 1000 : 0}
         >
@@ -493,10 +493,10 @@ export default function MapPanel({
       if (locationFilter.hideMqttOnly && n.heard_via_mqtt_only) return false;
       if (locationFilter.enabled && homeHasLocation) {
         const d = haversineDistanceKm(
-          homeNode!.latitude,
-          homeNode!.longitude,
-          n.latitude,
-          n.longitude,
+          homeNode!.latitude!,
+          homeNode!.longitude!,
+          n.latitude!,
+          n.longitude!,
         );
         if (d > maxKm) return false;
       }
@@ -564,14 +564,14 @@ export default function MapPanel({
   }, [nodesWithStatus]);
 
   const positions = useMemo<[number, number][]>(
-    () => nodesToRender.map((n) => [n.latitude, n.longitude]),
+    () => nodesToRender.map((n) => [n.latitude!, n.longitude!]),
     [nodesToRender],
   );
 
   const savedViewport = useMapViewportStore((s) => s.viewport);
   const computedCenter: [number, number] =
     nodesToRender.length > 0
-      ? [nodesToRender[0].latitude, nodesToRender[0].longitude]
+      ? [nodesToRender[0].latitude!, nodesToRender[0].longitude!]
       : ourPosition
         ? [ourPosition.lat, ourPosition.lon]
         : DEFAULT_CENTER;

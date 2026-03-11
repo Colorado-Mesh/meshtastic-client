@@ -24,6 +24,10 @@ let isQuitting = false;
 let pendingBluetoothCallback: ((deviceId: string) => void) | null = null;
 // Pending Serial callback (mirrors the BLE pattern)
 let pendingSerialCallback: ((portId: string) => void) | null = null;
+// Last discovery sets: only allow selection IPC to resolve callbacks with ids from these sets
+// (empty string always allowed = cancel). Prevents arbitrary id injection from a compromised renderer.
+let lastBluetoothDeviceIds = new Set<string>();
+let lastSerialPortIds = new Set<string>();
 
 // ─── Global error handlers (prevent silent crashes in packaged app) ──
 process.on('uncaughtException', (error) => {
@@ -44,6 +48,10 @@ process.on('unhandledRejection', (reason) => {
 
 // ─── IPC validation helpers (main process boundary) ───────────────────
 const MAX_PAYLOAD_LENGTH = 1024 * 1024; // 1MB cap for message payload
+const MAX_STATUS_STRING = 1024;
+// Align with reasonable Meshtastic/DB bounds to prevent unbounded string allocation
+const MAX_NODE_STRING = 512;
+const MAX_HW_MODEL = 128;
 
 function safeNonNegativeInt(value: unknown): number {
   const n = Number(value);
@@ -73,6 +81,18 @@ function validateSaveMessage(message: unknown): asserts message is Record<string
   safeNonNegativeInt(m.sender_id);
   if (typeof m.sender_name !== 'string')
     throw new Error('db:saveMessage: sender_name must be a string');
+  if (m.sender_name.length > MAX_NODE_STRING)
+    throw new Error('db:saveMessage: sender_name too long');
+  if (m.status != null && typeof m.status === 'string' && m.status.length > MAX_STATUS_STRING)
+    throw new Error('db:saveMessage: status too long');
+  if (m.error != null && typeof m.error === 'string' && m.error.length > MAX_STATUS_STRING)
+    throw new Error('db:saveMessage: error too long');
+  if (
+    m.mqttStatus != null &&
+    typeof m.mqttStatus === 'string' &&
+    m.mqttStatus.length > MAX_STATUS_STRING
+  )
+    throw new Error('db:saveMessage: mqttStatus too long');
   safeNonNegativeInt(m.channel);
   if (typeof m.timestamp !== 'number' && typeof m.timestamp !== 'undefined')
     throw new Error('db:saveMessage: timestamp must be a number');
@@ -88,6 +108,15 @@ function validateSaveNode(
   const nodeId = Number(n.node_id);
   if (!Number.isFinite(nodeId) || nodeId < 0)
     throw new Error('db:saveNode: node_id must be a finite non-negative number');
+  const checkStr = (key: string, max: number) => {
+    const v = n[key];
+    if (v != null && typeof v === 'string' && v.length > max)
+      throw new Error(`db:saveNode: ${key} exceeds maximum length`);
+  };
+  checkStr('long_name', MAX_NODE_STRING);
+  checkStr('short_name', 64);
+  checkStr('hw_model', MAX_HW_MODEL);
+  checkStr('source', 64);
 }
 
 function validateMqttSettings(settings: unknown): void {
@@ -105,6 +134,8 @@ function validateMqttSettings(settings: unknown): void {
     throw new Error('mqtt:connect: username must be a string');
   if (s.password != null && typeof s.password !== 'string')
     throw new Error('mqtt:connect: password must be a string');
+  if (s.tlsInsecure != null && typeof s.tlsInsecure !== 'boolean')
+    throw new Error('mqtt:connect: tlsInsecure must be a boolean');
 }
 
 function validateMqttPublishArgs(args: unknown): void {
@@ -271,6 +302,7 @@ function createWindow() {
         deviceName: d.deviceName || 'Unknown Device',
       });
     }
+    lastBluetoothDeviceIds = new Set(seen.keys());
     mainWindow?.webContents.send('bluetooth-devices-discovered', Array.from(seen.values()));
   });
 
@@ -285,6 +317,7 @@ function createWindow() {
       // Store callback so we can resolve it when the user picks a port
       pendingSerialCallback = callback;
 
+      lastSerialPortIds = new Set(portList.map((p) => p.portId));
       // Send port list to renderer for selection
       mainWindow?.webContents.send(
         'serial-ports-discovered',
@@ -380,20 +413,28 @@ function createWindow() {
 }
 
 // ─── Tray unread badge ──────────────────────────────────────────────
-ipcMain.on('set-tray-unread', (_event, count: number) => {
-  tray?.setImage(buildTrayIcon(count > 0));
-  tray?.setToolTip(count > 0 ? `Mesh-Client (${count} unread)` : 'Mesh-Client');
+ipcMain.on('set-tray-unread', (_event, count: unknown) => {
+  const n = Math.max(0, Math.min(Math.floor(Number(count)) || 0, 99999));
+  const hasUnread = n > 0;
+  tray?.setImage(buildTrayIcon(hasUnread));
+  tray?.setToolTip(hasUnread ? `Mesh-Client (${n} unread)` : 'Mesh-Client');
   if (process.platform === 'darwin') {
-    app.dock.setBadge(count > 0 ? String(count) : '');
+    app.dock.setBadge(hasUnread ? String(n) : '');
   }
 });
 
 // ─── IPC: Bluetooth device selected by user ────────────────────────
-ipcMain.on('bluetooth-device-selected', (_event, deviceId: string) => {
-  if (pendingBluetoothCallback) {
-    pendingBluetoothCallback(deviceId);
-    pendingBluetoothCallback = null;
+ipcMain.on('bluetooth-device-selected', (_event, deviceId: unknown) => {
+  if (!pendingBluetoothCallback) return;
+  const id = typeof deviceId === 'string' ? deviceId : '';
+  // Cancel is empty string; otherwise id must have been in the last discovery list
+  if (id !== '' && !lastBluetoothDeviceIds.has(id)) {
+    console.warn('[IPC] bluetooth-device-selected: ignoring unknown deviceId');
+    return;
   }
+  pendingBluetoothCallback(id);
+  pendingBluetoothCallback = null;
+  lastBluetoothDeviceIds.clear();
 });
 
 // ─── IPC: Cancel Bluetooth selection ────────────────────────────────
@@ -402,14 +443,20 @@ ipcMain.on('bluetooth-device-cancelled', () => {
     pendingBluetoothCallback(''); // Empty string cancels the request
     pendingBluetoothCallback = null;
   }
+  lastBluetoothDeviceIds.clear();
 });
 
 // ─── IPC: Serial port selected by user ──────────────────────────────
-ipcMain.on('serial-port-selected', (_event, portId: string) => {
-  if (pendingSerialCallback) {
-    pendingSerialCallback(portId);
-    pendingSerialCallback = null;
+ipcMain.on('serial-port-selected', (_event, portId: unknown) => {
+  if (!pendingSerialCallback) return;
+  const id = typeof portId === 'string' ? portId : '';
+  if (id !== '' && !lastSerialPortIds.has(id)) {
+    console.warn('[IPC] serial-port-selected: ignoring unknown portId');
+    return;
   }
+  pendingSerialCallback(id);
+  pendingSerialCallback = null;
+  lastSerialPortIds.clear();
 });
 
 // ─── IPC: Cancel Serial selection ───────────────────────────────────
@@ -418,6 +465,7 @@ ipcMain.on('serial-port-cancelled', () => {
     pendingSerialCallback(''); // Empty string cancels the request
     pendingSerialCallback = null;
   }
+  lastSerialPortIds.clear();
 });
 
 // ─── IPC: Connection status tracking (module-scope, not per-window) ─
@@ -522,11 +570,12 @@ ipcMain.handle('db:getMessages', (_event, channel?: number, limit = 200) => {
          mqtt_status AS mqttStatus`;
     let rows: any[];
     if (channel !== undefined && channel !== null) {
+      const ch = safeNonNegativeInt(channel);
       rows = db
         .prepare(
           `SELECT ${columns} FROM messages WHERE channel = ? ORDER BY timestamp DESC LIMIT ?`,
         )
-        .all(channel, safeLimit);
+        .all(ch, safeLimit);
     } else {
       rows = db
         .prepare(`SELECT ${columns} FROM messages ORDER BY timestamp DESC LIMIT ?`)
@@ -737,6 +786,13 @@ ipcMain.handle('db:deleteNodesBySource', (_event, source: string) => {
   }
 });
 
+function capStatusString(label: string, value: string | undefined): string | null {
+  if (value === undefined) return null;
+  if (value.length > MAX_STATUS_STRING)
+    throw new Error(`${label} exceeds maximum length (${MAX_STATUS_STRING})`);
+  return value;
+}
+
 // ─── IPC: Update message delivery status ────────────────────────────
 ipcMain.handle(
   'db:updateMessageStatus',
@@ -745,17 +801,20 @@ ipcMain.handle(
       const pid = safeNonNegativeInt(packetId);
       if (typeof status !== 'string')
         throw new Error('db:updateMessageStatus: status must be a string');
+      const statusSafe = capStatusString('db:updateMessageStatus: status', status)!;
+      const errorSafe = capStatusString('db:updateMessageStatus: error', error);
       const db = getDatabase();
       if (mqttStatus !== undefined) {
         if (typeof mqttStatus !== 'string')
           throw new Error('db:updateMessageStatus: mqttStatus must be a string');
+        const mqttSafe = capStatusString('db:updateMessageStatus: mqttStatus', mqttStatus)!;
         return db
           .prepare('UPDATE messages SET status = ?, error = ?, mqtt_status = ? WHERE packet_id = ?')
-          .run(status, error ?? null, mqttStatus, pid);
+          .run(statusSafe, errorSafe, mqttSafe, pid);
       }
       return db
         .prepare('UPDATE messages SET status = ?, error = ? WHERE packet_id = ?')
-        .run(status, error ?? null, pid);
+        .run(statusSafe, errorSafe, pid);
     } catch (err) {
       console.error('[IPC] db:updateMessageStatus failed:', err);
       throw err;
