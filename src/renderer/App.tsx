@@ -17,6 +17,7 @@ import TelemetryPanel from './components/TelemetryPanel';
 import { ToastProvider } from './components/Toast';
 import UpdateBanner from './components/UpdateBanner';
 import { useDevice } from './hooks/useDevice';
+import { parseStoredJson } from './lib/parseStoredJson';
 import type { MQTTSettings } from './lib/types';
 import { useDiagnosticsStore } from './stores/diagnosticsStore';
 
@@ -122,19 +123,17 @@ export default function App() {
   const [selectedNodeId, setSelectedNodeId] = useState<number | null>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [locationFilter, setLocationFilter] = useState<LocationFilter>(() => {
-    try {
-      const raw = localStorage.getItem('mesh-client:adminSettings');
-      const s = raw ? JSON.parse(raw) : {};
-      return {
-        enabled: s.distanceFilterEnabled ?? false,
-        maxDistance: s.distanceFilterMax ?? 500,
-        unit: s.distanceUnit ?? 'miles',
-        hideMqttOnly: s.filterMqttOnly ?? false,
-      };
-    } catch (e) {
-      console.debug('[App] locationFilter initial state', e);
-      return { enabled: false, maxDistance: 500, unit: 'miles', hideMqttOnly: false };
-    }
+    const s =
+      parseStoredJson<Record<string, unknown>>(
+        localStorage.getItem('mesh-client:adminSettings'),
+        'App locationFilter initial state',
+      ) ?? {};
+    return {
+      enabled: Boolean(s.distanceFilterEnabled),
+      maxDistance: Number(s.distanceFilterMax) || 500,
+      unit: s.distanceUnit === 'km' ? 'km' : 'miles',
+      hideMqttOnly: Boolean(s.filterMqttOnly),
+    };
   });
   const [pendingDmTarget, setPendingDmTarget] = useState<number | null>(null);
   const [chatUnread, setChatUnread] = useState(readPersistedChatUnread);
@@ -172,11 +171,21 @@ export default function App() {
   // ─── Startup node pruning based on persisted admin settings ─────
   useEffect(() => {
     try {
-      const raw = localStorage.getItem('mesh-client:adminSettings');
-      const s = raw ? JSON.parse(raw) : {};
-      if (s.autoPruneEnabled) window.electronAPI.db.deleteNodesByAge(s.autoPruneDays ?? 30);
-      if (s.nodeCapEnabled !== false)
-        window.electronAPI.db.pruneNodesByCount(s.nodeCapCount ?? 10000);
+      const s =
+        parseStoredJson<Record<string, unknown>>(
+          localStorage.getItem('mesh-client:adminSettings'),
+          'App startup node pruning',
+        ) ?? {};
+      if (s.autoPruneEnabled) {
+        void window.electronAPI.db
+          .deleteNodesByAge(s.autoPruneDays ?? 30)
+          .catch((e) => console.warn('[App] startup deleteNodesByAge failed', e));
+      }
+      if (s.nodeCapEnabled !== false) {
+        void window.electronAPI.db
+          .pruneNodesByCount(s.nodeCapCount ?? 10000)
+          .catch((e) => console.warn('[App] startup pruneNodesByCount failed', e));
+      }
     } catch (e) {
       console.debug('[App] startup node pruning', e);
     }
@@ -185,10 +194,14 @@ export default function App() {
   // ─── MQTT auto-launch on startup ─────────────────────────────────
   useEffect(() => {
     try {
-      const raw = localStorage.getItem('mesh-client:mqttSettings');
-      if (raw) {
-        const settings = JSON.parse(raw) as MQTTSettings;
-        if (settings.autoLaunch) window.electronAPI.mqtt.connect(settings);
+      const settings = parseStoredJson<MQTTSettings>(
+        localStorage.getItem('mesh-client:mqttSettings'),
+        'App MQTT auto-launch',
+      );
+      if (settings?.autoLaunch) {
+        void window.electronAPI.mqtt
+          .connect(settings)
+          .catch((e) => console.warn('[App] MQTT auto-launch connect failed', e));
       }
     } catch (e) {
       console.debug('[App] MQTT auto-launch startup', e);

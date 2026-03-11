@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LocationFilter } from '../App';
 import type { OurPosition } from '../lib/gpsSource';
 import { haversineDistanceKm } from '../lib/nodeStatus';
+import { parseStoredJson } from '../lib/parseStoredJson';
 import type { MeshNode } from '../lib/types';
 import { useDiagnosticsStore } from '../stores/diagnosticsStore';
 import { useToast } from './Toast';
@@ -80,13 +81,11 @@ const DEFAULT_SETTINGS: AdminSettings = {
 };
 
 function loadSettings(): AdminSettings {
-  try {
-    const raw = localStorage.getItem('mesh-client:adminSettings');
-    return raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : DEFAULT_SETTINGS;
-  } catch (e) {
-    console.debug('[AppPanel] loadSettings', e);
-    return DEFAULT_SETTINGS;
-  }
+  const parsed = parseStoredJson<Partial<AdminSettings>>(
+    localStorage.getItem('mesh-client:adminSettings'),
+    'AppPanel loadSettings',
+  );
+  return parsed ? { ...DEFAULT_SETTINGS, ...parsed } : DEFAULT_SETTINGS;
 }
 
 interface Props {
@@ -168,22 +167,23 @@ export default function AppPanel({
 
   // ─── GPS refresh settings ────────────────────────────────────
   const [gpsRefreshInterval, setGpsRefreshInterval] = useState<number>(() => {
-    try {
-      const raw = localStorage.getItem('mesh-client:gpsSettings');
-      const val = raw ? (JSON.parse(raw).refreshInterval ?? 0) : 0;
-      return val > 0 ? val : 3600; // default 1 hour
-    } catch (e) {
-      console.debug('[AppPanel] gps refresh interval state', e);
-      return 3600;
-    }
+    const gpsParsed = parseStoredJson<{ refreshInterval?: number }>(
+      localStorage.getItem('mesh-client:gpsSettings'),
+      'AppPanel gps refresh interval state',
+    );
+    const val = gpsParsed?.refreshInterval ?? 0;
+    return val > 0 ? val : 3600; // default 1 hour
   });
 
   const handleGpsIntervalChange = useCallback(
     (val: number) => {
       setGpsRefreshInterval(val);
       try {
-        const raw = localStorage.getItem('mesh-client:gpsSettings');
-        const existing = raw ? JSON.parse(raw) : {};
+        const existing =
+          parseStoredJson<Record<string, unknown>>(
+            localStorage.getItem('mesh-client:gpsSettings'),
+            'AppPanel persist gps interval',
+          ) ?? {};
         localStorage.setItem(
           'mesh-client:gpsSettings',
           JSON.stringify({ ...existing, refreshInterval: val }),
@@ -198,34 +198,28 @@ export default function AppPanel({
 
   // ─── Static GPS position ─────────────────────────────────────
   const [staticLatInput, setStaticLatInput] = useState<string>(() => {
-    try {
-      const raw = localStorage.getItem('mesh-client:gpsSettings');
-      const s = raw ? JSON.parse(raw) : {};
-      return typeof s.staticLat === 'number' ? s.staticLat.toFixed(5) : '';
-    } catch (e) {
-      console.debug('[AppPanel] staticLat state', e);
-      return '';
-    }
+    const s =
+      parseStoredJson<{ staticLat?: number }>(
+        localStorage.getItem('mesh-client:gpsSettings'),
+        'AppPanel staticLat state',
+      ) ?? {};
+    return typeof s.staticLat === 'number' ? s.staticLat.toFixed(5) : '';
   });
   const [staticLonInput, setStaticLonInput] = useState<string>(() => {
-    try {
-      const raw = localStorage.getItem('mesh-client:gpsSettings');
-      const s = raw ? JSON.parse(raw) : {};
-      return typeof s.staticLon === 'number' ? s.staticLon.toFixed(5) : '';
-    } catch (e) {
-      console.debug('[AppPanel] staticLon state', e);
-      return '';
-    }
+    const s =
+      parseStoredJson<{ staticLon?: number }>(
+        localStorage.getItem('mesh-client:gpsSettings'),
+        'AppPanel staticLon state',
+      ) ?? {};
+    return typeof s.staticLon === 'number' ? s.staticLon.toFixed(5) : '';
   });
   const [hasStaticPosition, setHasStaticPosition] = useState<boolean>(() => {
-    try {
-      const raw = localStorage.getItem('mesh-client:gpsSettings');
-      const s = raw ? JSON.parse(raw) : {};
-      return typeof s.staticLat === 'number' && typeof s.staticLon === 'number';
-    } catch (e) {
-      console.debug('[AppPanel] hasStaticPosition state', e);
-      return false;
-    }
+    const s =
+      parseStoredJson<{ staticLat?: number; staticLon?: number }>(
+        localStorage.getItem('mesh-client:gpsSettings'),
+        'AppPanel hasStaticPosition state',
+      ) ?? {};
+    return typeof s.staticLat === 'number' && typeof s.staticLon === 'number';
   });
 
   const saveStaticPosition = useCallback(() => {
@@ -240,8 +234,11 @@ export default function AppPanel({
       return;
     }
     try {
-      const raw = localStorage.getItem('mesh-client:gpsSettings');
-      const existing = raw ? JSON.parse(raw) : {};
+      const existing =
+        parseStoredJson<Record<string, unknown>>(
+          localStorage.getItem('mesh-client:gpsSettings'),
+          'AppPanel save static position',
+        ) ?? {};
       localStorage.setItem(
         'mesh-client:gpsSettings',
         JSON.stringify({ ...existing, staticLat: lat, staticLon: lon, refreshInterval: 0 }),
@@ -259,8 +256,11 @@ export default function AppPanel({
 
   const clearStaticPosition = useCallback(() => {
     try {
-      const raw = localStorage.getItem('mesh-client:gpsSettings');
-      const existing = raw ? JSON.parse(raw) : {};
+      const existing =
+        parseStoredJson<Record<string, unknown>>(
+          localStorage.getItem('mesh-client:gpsSettings'),
+          'AppPanel clear static position',
+        ) ?? {};
       delete existing.staticLat;
       delete existing.staticLon;
       const rest = existing;

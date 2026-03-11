@@ -56,8 +56,25 @@ process.on('uncaughtException', (error) => {
   }
 });
 
+// Throttle user-visible dialog so a tight loop of rejections does not spam the user
+let lastUnhandledRejectionDialogAt = 0;
+const UNHANDLED_REJECTION_DIALOG_COOLDOWN_MS = 60_000;
+
 process.on('unhandledRejection', (reason) => {
   console.error('Unhandled rejection:', reason);
+  const now = Date.now();
+  if (now - lastUnhandledRejectionDialogAt < UNHANDLED_REJECTION_DIALOG_COOLDOWN_MS) return;
+  lastUnhandledRejectionDialogAt = now;
+  const message =
+    reason instanceof Error ? `${reason.message}\n\n${reason.stack ?? ''}` : String(reason);
+  try {
+    dialog.showErrorBox(
+      'Mesh-Client — Unhandled Promise Rejection',
+      `A promise rejected without a handler. Check the main process terminal for full details.\n\n${message.slice(0, 1500)}${message.length > 1500 ? '…' : ''}`,
+    );
+  } catch {
+    /* dialog may not be available during early startup */
+  }
 });
 
 // ─── IPC validation helpers (main process boundary) ───────────────────
@@ -389,10 +406,32 @@ function createWindow() {
   // ─── Renderer crash / load failure detection ──────────────────────
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     console.error('Renderer process gone:', details.reason, details.exitCode);
+    try {
+      dialog.showErrorBox(
+        'Mesh-Client — Renderer Stopped',
+        `The renderer process ended unexpectedly (${details.reason}, exit ${details.exitCode ?? 'n/a'}).\n\nRestart the application. If this keeps happening, export the log from the app (if still usable) or check the log file in your userData folder.`,
+      );
+    } catch {
+      /* dialog unavailable */
+    }
   });
 
-  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDesc, url) => {
-    console.error('Failed to load:', errorCode, errorDesc, url);
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDesc, validatedURL) => {
+    console.error('Failed to load:', errorCode, errorDesc, validatedURL);
+    // ERR_ABORTED (-3) often means navigation was cancelled; avoid noisy dialog
+    if (errorCode === -3) return;
+    try {
+      const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
+      const hint = isDev
+        ? 'Ensure the dev server is running (npm run dev) and the URL is reachable.'
+        : 'The app bundle may be missing or damaged. Try reinstalling or run from source with npm run build && npm start.';
+      dialog.showErrorBox(
+        'Mesh-Client — Failed to Load',
+        `Could not load the application UI (code ${errorCode}: ${errorDesc}).\n\n${hint}\n\nURL: ${validatedURL}`,
+      );
+    } catch {
+      /* dialog unavailable */
+    }
   });
 
   setMainWindow(mainWindow);
@@ -582,9 +621,14 @@ ipcMain.handle('gps:getFix', async () => {
 // ─── IPC: Force quit (disconnect all, then quit) ────────────────────
 ipcMain.handle('app:quit', async () => {
   isQuitting = true;
-  mqttManager.disconnect();
   isConnected = false;
-  app.quit();
+  try {
+    mqttManager.disconnect();
+  } catch (err) {
+    console.error('[IPC] app:quit disconnect failed:', err);
+  } finally {
+    app.quit();
+  }
 });
 
 // ─── IPC: Database operations ──────────────────────────────────────
@@ -933,12 +977,31 @@ ipcMain.handle('session:clearData', async () => {
 });
 
 // ─── IPC: Log panel ─────────────────────────────────────────────────
-ipcMain.handle('log:getPath', () => getLogPath());
+ipcMain.handle('log:getPath', () => {
+  try {
+    return getLogPath();
+  } catch (err) {
+    console.error('[IPC] log:getPath failed:', err);
+    throw err;
+  }
+});
 
-ipcMain.handle('log:getRecentLines', () => getRecentLines());
+ipcMain.handle('log:getRecentLines', () => {
+  try {
+    return getRecentLines();
+  } catch (err) {
+    console.error('[IPC] log:getRecentLines failed:', err);
+    throw err;
+  }
+});
 
 ipcMain.handle('log:clear', () => {
-  clearLogFile();
+  try {
+    clearLogFile();
+  } catch (err) {
+    console.error('[IPC] log:clear failed:', err);
+    throw err;
+  }
 });
 
 ipcMain.handle('log:export', async () => {

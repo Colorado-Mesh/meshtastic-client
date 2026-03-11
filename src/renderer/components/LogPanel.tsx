@@ -6,6 +6,8 @@ import {
   useState,
 } from 'react';
 
+import { parseStoredJson } from '../lib/parseStoredJson';
+
 const LOG_LEVEL_FILTERS_KEY = 'mesh-client:logLevelFilters';
 const LOG_MAIN_ONLY_KEY = 'mesh-client:logMainOnly';
 const LOG_PANEL_WIDTH_KEY = 'mesh-client:logPanelWidth';
@@ -35,24 +37,21 @@ const DEFAULT_LEVEL_FILTERS: LevelFilters = {
 };
 
 function readLevelFilters(): LevelFilters {
-  try {
-    const raw = localStorage.getItem(LOG_LEVEL_FILTERS_KEY);
-    if (!raw) {
-      // Migrate old single debug toggle
-      if (localStorage.getItem('mesh-client:logDebugEnabled') === 'true') {
-        return { logInfo: true, warnError: true, debug: true };
-      }
-      return { ...DEFAULT_LEVEL_FILTERS };
+  const raw = localStorage.getItem(LOG_LEVEL_FILTERS_KEY);
+  if (!raw) {
+    // Migrate old single debug toggle
+    if (localStorage.getItem('mesh-client:logDebugEnabled') === 'true') {
+      return { logInfo: true, warnError: true, debug: true };
     }
-    const o = JSON.parse(raw) as Record<string, boolean>;
-    return {
-      logInfo: o.logInfo !== false,
-      warnError: o.warnError !== false,
-      debug: o.debug === true,
-    };
-  } catch {
     return { ...DEFAULT_LEVEL_FILTERS };
   }
+  const o = parseStoredJson<Record<string, boolean>>(raw, 'LogPanel readLevelFilters');
+  if (!o) return { ...DEFAULT_LEVEL_FILTERS };
+  return {
+    logInfo: o.logInfo !== false,
+    warnError: o.warnError !== false,
+    debug: o.debug === true,
+  };
 }
 
 function persistLevelFilters(f: LevelFilters): void {

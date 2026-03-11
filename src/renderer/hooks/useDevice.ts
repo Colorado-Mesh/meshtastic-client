@@ -13,6 +13,7 @@ import {
 import { validateCoords } from '../lib/coordUtils';
 import type { OurPosition } from '../lib/gpsSource';
 import { resolveOurPosition } from '../lib/gpsSource';
+import { parseStoredJson } from '../lib/parseStoredJson';
 import { normalizeReactionEmoji } from '../lib/reactions';
 import type {
   ChatMessage,
@@ -25,17 +26,13 @@ import type {
 import { useDiagnosticsStore } from '../stores/diagnosticsStore';
 
 function getMessageLoadLimit(): number {
-  try {
-    console.debug('[useDevice] getMessageLoadLimit');
-    const raw = localStorage.getItem('mesh-client:adminSettings');
-    if (!raw) return 1000;
-    const s = JSON.parse(raw);
-    if (s.messageLimitEnabled === false) return 10000;
-    return Math.max(1, s.messageLimitCount ?? 1000);
-  } catch (e) {
-    console.warn('[useDevice] getMessageLoadLimit parse failed, using 1000', e);
-    return 1000;
-  }
+  const s = parseStoredJson<{
+    messageLimitEnabled?: boolean;
+    messageLimitCount?: number;
+  }>(localStorage.getItem('mesh-client:adminSettings'), 'useDevice getMessageLoadLimit');
+  if (!s) return 1000;
+  if (s.messageLimitEnabled === false) return 10000;
+  return Math.max(1, s.messageLimitCount ?? 1000);
 }
 
 const MAX_TELEMETRY_POINTS = 50;
@@ -303,8 +300,11 @@ export function useDevice() {
   const startGpsInterval = useCallback(() => {
     stopGpsInterval();
     try {
-      const raw = localStorage.getItem('mesh-client:gpsSettings');
-      const intervalSecs = raw ? (JSON.parse(raw).refreshInterval ?? 0) : 0;
+      const gpsParsed = parseStoredJson<{ refreshInterval?: number }>(
+        localStorage.getItem('mesh-client:gpsSettings'),
+        'useDevice startGpsInterval',
+      );
+      const intervalSecs = gpsParsed?.refreshInterval ?? 0;
       if (intervalSecs > 0) {
         gpsIntervalRef.current = setInterval(() => {
           refreshOurPositionRef.current();
@@ -835,8 +835,11 @@ export function useDevice() {
           if (btDevice?.id && shortName) {
             try {
               const key = 'mesh-client:bleDeviceNames';
-              const raw = localStorage.getItem(key);
-              const cache: Record<string, string> = raw ? JSON.parse(raw) : {};
+              const cache =
+                parseStoredJson<Record<string, string>>(
+                  localStorage.getItem(key),
+                  'useDevice bleDeviceNames cache',
+                ) ?? {};
               cache[btDevice.id] = shortName;
               localStorage.setItem(key, JSON.stringify(cache));
             } catch {
@@ -1671,8 +1674,11 @@ export function useDevice() {
       let staticLat: number | undefined;
       let staticLon: number | undefined;
       try {
-        const raw = localStorage.getItem('mesh-client:gpsSettings');
-        const s = raw ? JSON.parse(raw) : {};
+        const s =
+          parseStoredJson<{ staticLat?: number; staticLon?: number }>(
+            localStorage.getItem('mesh-client:gpsSettings'),
+            'useDevice refreshOurPosition gpsSettings',
+          ) ?? {};
         if (typeof s.staticLat === 'number' && typeof s.staticLon === 'number') {
           staticLat = s.staticLat;
           staticLon = s.staticLon;

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { parseStoredJson } from '../lib/parseStoredJson';
 import type {
   BluetoothDevice,
   ConnectionType,
@@ -22,13 +23,10 @@ const LAST_BLE_DEVICE_KEY = 'mesh-client:lastBleDevice';
 const LAST_SERIAL_PORT_KEY = 'mesh-client:lastSerialPort';
 
 function loadLastConnection(): LastConnection | null {
-  try {
-    const raw = localStorage.getItem(LAST_CONNECTION_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch (e) {
-    console.debug('[ConnectionPanel] loadLastConnection', e);
-    return null;
-  }
+  return parseStoredJson<LastConnection>(
+    localStorage.getItem(LAST_CONNECTION_KEY),
+    'ConnectionPanel loadLastConnection',
+  );
 }
 
 function saveLastConnection(c: LastConnection) {
@@ -82,14 +80,12 @@ function saveLastSerialPort(id: string) {
 }
 
 function getBleDeviceName(deviceId: string): string | null {
-  try {
-    const raw = localStorage.getItem('mesh-client:bleDeviceNames');
-    const cache: Record<string, string> = raw ? JSON.parse(raw) : {};
-    return cache[deviceId] ?? null;
-  } catch (e) {
-    console.debug('[ConnectionPanel] getBleDeviceName', e);
-    return null;
-  }
+  const cache =
+    parseStoredJson<Record<string, string>>(
+      localStorage.getItem('mesh-client:bleDeviceNames'),
+      'ConnectionPanel bleDeviceNames',
+    ) ?? {};
+  return cache[deviceId] ?? null;
 }
 
 /** Inline SVG icon for each connection type */
@@ -154,13 +150,9 @@ const MQTT_DEFAULTS: MQTTSettings = {
 };
 
 function loadMqttSettings(): MQTTSettings {
-  try {
-    const raw = localStorage.getItem('mesh-client:mqttSettings');
-    return raw ? { ...MQTT_DEFAULTS, ...JSON.parse(raw) } : MQTT_DEFAULTS;
-  } catch (e) {
-    console.debug('[ConnectionPanel] loadMqttSettings', e);
-    return MQTT_DEFAULTS;
-  }
+  const raw = localStorage.getItem('mesh-client:mqttSettings');
+  const parsed = parseStoredJson<Partial<MQTTSettings>>(raw, 'ConnectionPanel loadMqttSettings');
+  return parsed ? { ...MQTT_DEFAULTS, ...parsed } : MQTT_DEFAULTS;
 }
 
 function MqttGlobeIcon({ connected }: { connected: boolean }) {
@@ -599,20 +591,17 @@ export default function ConnectionPanel({
                 </div>
               ) : (
                 bleDevices.map((device) => {
-                  let displayName: string;
-                  try {
-                    const raw = localStorage.getItem('mesh-client:bleDeviceNames');
-                    const cache: Record<string, string> = raw ? JSON.parse(raw) : {};
-                    const cached = cache[device.deviceId];
-                    displayName = cached
-                      ? cached !== device.deviceName
-                        ? `${cached} (${device.deviceName})`
-                        : cached
-                      : device.deviceName;
-                  } catch (e) {
-                    console.warn('[ConnectionPanel] BLE device name cache parse failed', e);
-                    displayName = device.deviceName;
-                  }
+                  const cache =
+                    parseStoredJson<Record<string, string>>(
+                      localStorage.getItem('mesh-client:bleDeviceNames'),
+                      'ConnectionPanel bleDeviceNames list',
+                    ) ?? {};
+                  const cached = cache[device.deviceId];
+                  const displayName = cached
+                    ? cached !== device.deviceName
+                      ? `${cached} (${device.deviceName})`
+                      : cached
+                    : device.deviceName;
                   return (
                     <button
                       key={device.deviceId}

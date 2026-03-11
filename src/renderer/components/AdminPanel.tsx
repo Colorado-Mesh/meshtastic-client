@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { LocationFilter } from '../App';
 import { haversineDistanceKm } from '../lib/nodeStatus';
+import { parseStoredJson } from '../lib/parseStoredJson';
 import type { MeshNode } from '../lib/types';
 import { useToast } from './Toast';
 
@@ -84,13 +85,11 @@ const DEFAULT_SETTINGS: AdminSettings = {
 };
 
 function loadSettings(): AdminSettings {
-  try {
-    const raw = localStorage.getItem('mesh-client:adminSettings');
-    return raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : DEFAULT_SETTINGS;
-  } catch (e) {
-    console.debug('[AdminPanel] loadSettings', e);
-    return DEFAULT_SETTINGS;
-  }
+  const parsed = parseStoredJson<Partial<AdminSettings>>(
+    localStorage.getItem('mesh-client:adminSettings'),
+    'AdminPanel loadSettings',
+  );
+  return parsed ? { ...DEFAULT_SETTINGS, ...parsed } : DEFAULT_SETTINGS;
 }
 
 interface Props {
@@ -146,13 +145,11 @@ export default function AdminPanel({
   }, [settings]);
 
   useEffect(() => {
-    let hideMqttOnly = false;
-    try {
-      const raw = localStorage.getItem('mesh-client:adminSettings');
-      if (raw) hideMqttOnly = JSON.parse(raw).filterMqttOnly ?? false;
-    } catch (e) {
-      console.debug('[AdminPanel] hideMqttOnly from adminSettings', e);
-    }
+    const adminParsed = parseStoredJson<{ filterMqttOnly?: boolean }>(
+      localStorage.getItem('mesh-client:adminSettings'),
+      'AdminPanel hideMqttOnly from adminSettings',
+    );
+    const hideMqttOnly = adminParsed?.filterMqttOnly ?? false;
     onLocationFilterChange({
       enabled: settings.distanceFilterEnabled,
       maxDistance: settings.distanceFilterMax,
