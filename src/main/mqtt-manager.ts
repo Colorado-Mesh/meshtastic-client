@@ -164,6 +164,9 @@ export class MQTTManager extends EventEmitter {
     }
 
     const packetId = (Math.random() * 0xffffffff) >>> 0;
+    // Broker echoes our uplink back to the same client; mark seen now so onMessage
+    // drops it before emit + gateway downlink sendText (avoids duplicate chat rows).
+    this.seenPacketIds.set(packetId, Date.now() + DEDUP_TTL_MS);
 
     // Build Data protobuf
     const data = create(DataSchema, {
