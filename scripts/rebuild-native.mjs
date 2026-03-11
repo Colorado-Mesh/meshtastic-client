@@ -5,6 +5,7 @@ import { rebuild } from "@electron/rebuild";
 import { createRequire } from "module";
 import { fileURLToPath } from "url";
 import path from "path";
+import fs from "fs";
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -13,6 +14,17 @@ const projectRoot = path.resolve(__dirname, "..");
 const electronVersion = require(path.join(projectRoot, "node_modules/electron/package.json")).version;
 
 console.log(`Rebuilding native modules for Electron ${electronVersion}…`);
+
+// Drop stale better-sqlite3/build so a wrong-platform .node (e.g. Linux on macOS) cannot persist.
+const betterSqlite3Build = path.join(
+  projectRoot,
+  "node_modules",
+  "better-sqlite3",
+  "build",
+);
+if (fs.existsSync(betterSqlite3Build)) {
+  fs.rmSync(betterSqlite3Build, { recursive: true, force: true });
+}
 
 await rebuild({
   buildPath: projectRoot,
