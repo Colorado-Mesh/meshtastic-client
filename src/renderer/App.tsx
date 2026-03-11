@@ -56,6 +56,29 @@ export interface UpdateState {
   dismissed: boolean;
 }
 
+const CHAT_UNREAD_STORAGE_KEY = 'mesh-client:chatUnread';
+
+function readPersistedChatUnread(): number {
+  try {
+    const raw = localStorage.getItem(CHAT_UNREAD_STORAGE_KEY);
+    if (raw == null) return 0;
+    const n = Math.floor(Number(raw));
+    if (!Number.isFinite(n) || n < 0) return 0;
+    return Math.min(n, 99999);
+  } catch {
+    return 0;
+  }
+}
+
+function persistChatUnread(count: number): void {
+  try {
+    const n = Math.max(0, Math.min(Math.floor(count) || 0, 99999));
+    localStorage.setItem(CHAT_UNREAD_STORAGE_KEY, String(n));
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
 const STATUS_LABELS: Record<string, string> = {
   disconnected: 'Disconnected',
   connecting: 'Connecting',
@@ -101,7 +124,7 @@ export default function App() {
     }
   });
   const [pendingDmTarget, setPendingDmTarget] = useState<number | null>(null);
-  const [chatUnread, setChatUnread] = useState(0);
+  const [chatUnread, setChatUnread] = useState(readPersistedChatUnread);
   const prevMsgCountRef = useRef(0);
   const isInitialLoadRef = useRef(true);
   const [updateState, setUpdateState] = useState<UpdateState>({ phase: 'idle', dismissed: false });
@@ -224,15 +247,13 @@ export default function App() {
 
   // ─── Clear unread when Chat tab becomes active ────────────────────
   useEffect(() => {
-    if (activeTab === 1) {
-      setChatUnread(0);
-      window.electronAPI.setTrayUnread(0);
-    }
+    if (activeTab === 1) setChatUnread(0);
   }, [activeTab]);
 
-  // ─── Sync non-zero unread count to tray ──────────────────────────
+  // ─── Persist unread + sync to tray ───────────────────────────────
   useEffect(() => {
-    if (chatUnread > 0) window.electronAPI.setTrayUnread(chatUnread);
+    persistChatUnread(chatUnread);
+    window.electronAPI.setTrayUnread(chatUnread);
   }, [chatUnread]);
 
   // Manual reconnect from banner
@@ -336,7 +357,7 @@ export default function App() {
         />
 
         {/* Tabs */}
-        <Tabs tabs={TAB_NAMES} active={activeTab} onChange={setActiveTab} />
+        <Tabs tabs={TAB_NAMES} active={activeTab} onChange={setActiveTab} chatUnread={chatUnread} />
 
         {/* Content */}
         <main className="flex-1 overflow-auto p-4">

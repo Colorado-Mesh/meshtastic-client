@@ -2,6 +2,8 @@ interface TabsProps {
   tabs: string[];
   active: number;
   onChange: (index: number) => void;
+  /** Unread message count for Chat tab badge; 0 hides badge */
+  chatUnread?: number;
 }
 
 /** Small inline SVG icon for each tab */
@@ -100,32 +102,48 @@ function TabIcon({ name }: { name: string }) {
   }
 }
 
-export default function Tabs({ tabs, active, onChange }: TabsProps) {
+export default function Tabs({ tabs, active, onChange, chatUnread = 0 }: TabsProps) {
   return (
     <nav
       role="tablist"
       aria-label="Application panels"
       className="flex bg-deep-black border-b border-gray-700 px-2 gap-1"
     >
-      {tabs.map((name, i) => (
-        <button
-          key={name}
-          role="tab"
-          aria-selected={active === i}
-          aria-controls={`panel-${i}`}
-          id={`tab-${i}`}
-          accessKey={String(i + 1)}
-          onClick={() => onChange(i)}
-          className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium transition-colors rounded-t-md ${
-            active === i
-              ? 'bg-gray-900 text-bright-green border-b-2 border-bright-green'
-              : 'text-muted hover:text-gray-200 hover:bg-secondary-dark'
-          }`}
-        >
-          <TabIcon name={name} />
-          {name}
-        </button>
-      ))}
+      {tabs.map((name, i) => {
+        const showChatBadge = name === 'Chat' && chatUnread > 0;
+        const badgeLabel =
+          chatUnread > 99
+            ? '99+ unread messages'
+            : `${chatUnread} unread message${chatUnread === 1 ? '' : 's'}`;
+        return (
+          <button
+            key={name}
+            role="tab"
+            aria-selected={active === i}
+            aria-controls={`panel-${i}`}
+            id={`tab-${i}`}
+            accessKey={String(i + 1)}
+            onClick={() => onChange(i)}
+            aria-label={showChatBadge ? `Chat, ${badgeLabel}` : undefined}
+            className={`relative flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium transition-colors rounded-t-md ${
+              active === i
+                ? 'bg-gray-900 text-bright-green border-b-2 border-bright-green'
+                : 'text-muted hover:text-gray-200 hover:bg-secondary-dark'
+            }`}
+          >
+            <TabIcon name={name} />
+            {name}
+            {showChatBadge && (
+              <span
+                aria-hidden="true"
+                className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1"
+              >
+                {chatUnread > 99 ? '99+' : chatUnread}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </nav>
   );
 }
