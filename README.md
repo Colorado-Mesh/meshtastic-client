@@ -294,7 +294,7 @@ meshtastic-client/
 │       │   ├── DiagnosticsPanel.tsx  # Network health score, anomaly table, halo toggles
 │       │   ├── LogPanel.tsx          # Live app log, debug toggle, export/delete log file
 │       │   ├── RadioPanel.tsx        # Radio settings, fixed position, GPS send
-│       │   ├── AppPanel.tsx          # App settings, GPS interval, database management
+│       │   ├── AppPanel.tsx          # App settings, appearance (theme presets), GPS interval, database management
 │       │   ├── NodeDetailModal.tsx   # Detailed node info overlay
 │       │   ├── NodeInfoBody.tsx      # Shared node info content (modal + map popup)
 │       │   ├── KeyboardShortcutsModal.tsx

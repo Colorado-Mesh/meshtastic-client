@@ -4,6 +4,16 @@ import type { LocationFilter } from '../App';
 import type { OurPosition } from '../lib/gpsSource';
 import { haversineDistanceKm } from '../lib/nodeStatus';
 import { parseStoredJson } from '../lib/parseStoredJson';
+import {
+  applyThemeColors,
+  DEFAULT_THEME_COLORS,
+  loadThemeColors,
+  persistThemeColors,
+  resetThemeColors,
+  THEME_COLOR_PRESETS,
+  THEME_TOKEN_META,
+  type ThemeColorKey,
+} from '../lib/themeColors';
 import type { MeshNode } from '../lib/types';
 import { useDiagnosticsStore } from '../stores/diagnosticsStore';
 import { useToast } from './Toast';
@@ -134,7 +144,18 @@ export default function AppPanel({
 
   // ─── Node retention settings ────────────────────────────────
   const [settings, setSettings] = useState<AdminSettings>(loadSettings);
+  const [themeColors, setThemeColors] = useState<Record<ThemeColorKey, string>>(loadThemeColors);
   const [deleteAgeDays, setDeleteAgeDays] = useState(90);
+
+  const commitThemeColor = useCallback((key: ThemeColorKey, hex: string) => {
+    setThemeColors((prev) => {
+      if (prev[key] === hex) return prev;
+      const next = { ...prev, [key]: hex };
+      applyThemeColors(next);
+      persistThemeColors(next);
+      return next;
+    });
+  }, []);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -360,6 +381,76 @@ export default function AppPanel({
           </div>
         </div>
       )}
+
+      {/* Appearance / color scheme */}
+      <div className="space-y-2">
+        <h3 className="text-sm font-medium text-muted">Appearance</h3>
+        <div className="bg-secondary-dark rounded-lg p-4 space-y-4">
+          <p className="text-xs text-muted leading-relaxed">
+            Override the app color scheme with hex values. Changes apply immediately and persist
+            across restarts. Invalid hex is not saved.
+          </p>
+          {THEME_TOKEN_META.map((meta) => {
+            const hex = themeColors[meta.key];
+            return (
+              <div
+                key={meta.key}
+                className="space-y-2 pb-3 border-b border-gray-700 last:border-0 last:pb-0"
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className="w-8 h-8 rounded border border-gray-600 shrink-0"
+                    style={{ backgroundColor: hex }}
+                    aria-hidden="true"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-gray-200">{meta.label}</div>
+                    <p className="text-xs text-muted">{meta.description}</p>
+                    <p className="text-xs font-mono text-gray-400 mt-1">Current: {hex}</p>
+                  </div>
+                </div>
+                {/* Preset buttons only — no text input (Electron macOS representedObject warnings). */}
+                <div
+                  className="flex flex-wrap gap-1.5 pl-10"
+                  role="group"
+                  aria-label={`${meta.label} color presets`}
+                >
+                  {THEME_COLOR_PRESETS.map((p) => {
+                    const selected = p.hex === hex;
+                    return (
+                      <button
+                        key={`${meta.key}-${p.hex}`}
+                        type="button"
+                        title={p.label}
+                        aria-label={`${p.label} ${p.hex}`}
+                        aria-pressed={selected}
+                        onClick={() => commitThemeColor(meta.key, p.hex)}
+                        className={`w-7 h-7 rounded border shrink-0 transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-brand-green/50 ${
+                          selected
+                            ? 'ring-2 ring-brand-green ring-offset-1 ring-offset-secondary-dark'
+                            : 'border-gray-600'
+                        }`}
+                        style={{ backgroundColor: p.hex }}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => {
+              resetThemeColors();
+              setThemeColors({ ...DEFAULT_THEME_COLORS });
+              addToast('Colors reset to app defaults.', 'success');
+            }}
+            className="w-full px-3 py-2 bg-secondary-dark hover:bg-gray-600 text-gray-300 rounded-lg text-sm font-medium transition-colors"
+          >
+            Reset all colors to defaults
+          </button>
+        </div>
+      </div>
 
       {/* GPS / Location */}
       <div className="space-y-3">
