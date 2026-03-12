@@ -9,29 +9,15 @@
  *
  * Failure point: rmSync can still throw EPERM if something holds the DLL.
  * Fallbacks on Windows after EPERM/EBUSY: rename build → build.stale.<time> so
- * node-gyp can create a fresh build dir; if still blocked, try cmd rd /s /q.
- * Last resort: dist with npmRebuild disabled (package.json dist:win:skip-rebuild).
+ * node-gyp can create a fresh build dir; if still blocked, do one last rmSync
+ * attempt with the same options. Last resort: dist with npmRebuild disabled
+ * (package.json dist:win:skip-rebuild).
  */
 const fs = require("fs");
 const path = require("path");
-const { execFileSync } = require("child_process");
 
 const RETRIES = 5;
 const DELAY_MS = 800;
-
-/**
- * Basic safety check to ensure the build directory is an expected, benign path
- * and not an injected command payload for cmd.exe.
- */
-function isSafeBuildDir(appDir, buildDir) {
-  if (typeof buildDir !== "string" || buildDir.length === 0) return false;
-  const unsafePattern = /[&|><^"%\r\n]/;
-  if (unsafePattern.test(buildDir)) return false;
-  const normalizedBuildDir = path.resolve(buildDir);
-  const normalizedAppDir = path.resolve(appDir);
-  if (!normalizedBuildDir.startsWith(normalizedAppDir + path.sep)) return false;
-  return path.isAbsolute(normalizedBuildDir);
-}
 
 function sleep(ms) {
   const end = Date.now() + ms;
@@ -77,19 +63,20 @@ function tryRenameStaleBuild(buildDir) {
 }
 
 /**
- * rd /s /q runs outside Node's file handles; sometimes clears a tree rmSync cannot.
+ * Final attempt to remove a locked build tree using Node's fs APIs only.
  */
 function tryRdSlashQ(buildDir) {
-  // Best-effort guard against cmd.exe command injection via a malicious path.
-  const appDir = process.cwd();
-  if (!isSafeBuildDir(appDir, buildDir)) {
-    return false;
-  }
   try {
-    execFileSync("cmd.exe", ["/c", "rd", "/s", "/q", buildDir], {
-      stdio: "pipe",
-      windowsHide: true,
-    });
+    if (fs.existsSync(buildDir)) {
+      const opts = { recursive: true, force: true, maxRetries: 3, retryDelay: 200 };
+      try {
+        fs.rmSync(buildDir, opts);
+      } catch (e) {
+        // Node without maxRetries on rmSync throws; EPERM should propagate
+        if (e && (e.code === "EPERM" || e.code === "EBUSY")) throw e;
+        fs.rmSync(buildDir, { recursive: true, force: true });
+      }
+    }
     return fs.existsSync(buildDir) === false;
   } catch {
     return false;
