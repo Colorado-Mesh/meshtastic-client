@@ -22,6 +22,7 @@
     "dist:linux": "npm dedupe && npm run build && electron-builder --linux --x64 --arm64 --publish never",
     "dist:linux:publish": "npm dedupe && npm run build && electron-builder --linux --x64 --arm64 --publish always",
     "dist:win": "npm dedupe && npm run build && electron-builder --win --publish never",
+    "dist:win:skip-rebuild": "npm dedupe && npm run build && electron-builder --win --publish never --config.npmRebuild=false",
     "dist:win:publish": "npm dedupe && npm run build && electron-builder --win --publish always",
     "test": "vitest",
     "test:run": "vitest run",

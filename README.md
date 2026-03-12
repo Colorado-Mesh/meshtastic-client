@@ -453,6 +453,43 @@ npm run trace-deprecation
 - If you still see dlopen errors after switching machines or OSes, delete `node_modules` and run a clean `npm install`.
 - **Windows**: Also ensure the [Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist) is installed.
 
+### `dist:win` fails: "space in the path" or `EPERM` unlink on `better_sqlite3.node`
+
+**Symptoms**
+
+- `Attempting to build a module with a space in the path` during `npm run dist:win` (or `npm run rebuild`).
+- `EPERM: operation not permitted, unlink '...\better-sqlite3\build\Release\better_sqlite3.node'`.
+
+**Cause**
+
+1. **Spaces in the project path** — node-gyp and the native rebuild step are unreliable when the repo lives under a path with spaces (e.g. `C:\Users\Joey Stanford\meshtastic-client`). See [node-gyp#65](https://github.com/nodejs/node-gyp/issues/65#issuecomment-368820565).
+2. **EPERM on unlink** — Something on Windows still has the `.node` file open (another `node`/`electron` process, antivirus/Windows Defender scanning the file, or a stuck handle), so the rebuild cannot replace it.
+
+3. **Why it used to work** — electron-builder **always runs a second native rebuild** during `dist:win` (after `postinstall` already built `better-sqlite3`). Recent **@electron/rebuild** / node-gyp behavior can hit EPERM when replacing the existing `.node`. The repo now runs a **beforeBuild** hook that deletes `node_modules/better-sqlite3/build` first (with retries) so the packaging rebuild compiles into a clean folder instead of unlinking a locked file.
+
+**Fix**
+
+1. **Try a normal dist again** — `npm run dist:win`. The **beforeBuild** hook removes `better-sqlite3/build` before electron-builder’s rebuild so node-gyp often avoids EPERM unlink.
+2. **Skip the packaging rebuild** — If `npm install` / `npm run rebuild` already produced a good `better_sqlite3.node` for this Electron version:
+
+   ```bash
+   npm run dist:win:skip-rebuild
+   ```
+
+   Use when EPERM persists or you only build **x64 on an x64 machine**. Building **arm64** on an x64 host still needs a successful rebuild for that arch.
+
+3. **Use a path without spaces** (strongly recommended):
+   - Clone or copy the repo to e.g. `C:\dev\meshtastic-client` or `C:\src\meshtastic-client`, then `npm install` and `npm run dist:win` from there.
+   - Alternatively, use a directory junction so the “short” path is what tools see, e.g. `mklink /J C:\dev\mesh C:\Users\YourName\meshtastic-client` and work from `C:\dev\mesh`.
+4. **Clear the lock before rebuild**:
+   - Quit any running Mesh-client/Electron dev instances and close other terminals that might be using the repo.
+   - Manually delete `node_modules\better-sqlite3\build` (whole folder). If delete fails, something is still holding the file — use Task Manager to end stray `node.exe` / `electron.exe`, then retry.
+   - Optionally add the project folder to Windows Defender exclusions temporarily while building.
+5. **Rebuild then dist**:
+   - From the no-space path: `npm run rebuild` — if that succeeds, run `npm run dist:win`.
+
+CI builds avoid both issues by using short paths and clean agents; local Windows builds need the same constraints.
+
 ### Database directory is not writable
 
 **Error**: `"Database directory is not writable: <path>"`

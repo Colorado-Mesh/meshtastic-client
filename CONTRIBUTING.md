@@ -27,6 +27,8 @@ To skip the hook in an emergency: `git commit --no-verify`.
 
 If `better-sqlite3` or other native addons fail after changing Node or Electron versions, run `npm run rebuild` (same script as `postinstall`).
 
+**Windows**: If `dist:win` or `rebuild` fails with “space in the path” or `EPERM` unlink on `better_sqlite3.node`, try `npm run dist:win` again (beforeBuild clears `better-sqlite3/build` before the packaging rebuild), or `npm run dist:win:skip-rebuild` if postinstall already built the native module. If it still fails, use a path **without spaces**, close Electron/Node processes, and see README troubleshooting.
+
 ## Code style
 
 Run `npm run lint` before pushing. ESLint is configured with:
