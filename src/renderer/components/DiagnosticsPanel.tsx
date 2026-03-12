@@ -23,6 +23,8 @@ interface Props {
   traceRouteResults: Map<number, { route: number[]; from: number; timestamp: number }>;
   getFullNodeLabel: (nodeNum: number) => string;
   ourPosition?: OurPosition | null;
+  /** When set, clicking an anomaly row opens the node detail modal (same as NodeListPanel). */
+  onNodeClick?: (node: MeshNode) => void;
 }
 
 function AlertTriangleIcon({ className }: { className?: string }) {
@@ -60,6 +62,7 @@ export default function DiagnosticsPanel({
   traceRouteResults,
   getFullNodeLabel,
   ourPosition,
+  onNodeClick,
 }: Props) {
   const anomalies = useDiagnosticsStore((s) => s.anomalies);
   const packetStats = useDiagnosticsStore((s) => s.packetStats);
@@ -369,7 +372,12 @@ export default function DiagnosticsPanel({
                   return (
                     <tr
                       key={anomaly.nodeId}
-                      className="hover:bg-secondary-dark/50 transition-colors"
+                      onClick={() => {
+                        if (node && onNodeClick) onNodeClick(node);
+                      }}
+                      className={`hover:bg-secondary-dark/50 transition-colors ${
+                        onNodeClick && node ? 'cursor-pointer' : ''
+                      }`}
                     >
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-2">
@@ -411,8 +419,9 @@ export default function DiagnosticsPanel({
                       </td>
                       <td className="px-4 py-2.5">
                         {(() => {
+                          if (!node) return <span className="text-xs text-muted">—</span>;
                           const remedy = getRecommendedAction(
-                            node!,
+                            node,
                             homeNode,
                             packetStats.get(anomaly.nodeId),
                           );
@@ -427,7 +436,7 @@ export default function DiagnosticsPanel({
                           );
                         })()}
                       </td>
-                      <td className="px-4 py-2.5 text-right">
+                      <td className="px-4 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex flex-col items-end gap-1.5">
                           {/* Trace Route button */}
                           {isPending ? (

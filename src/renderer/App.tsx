@@ -420,7 +420,7 @@ export default function App() {
                   <ChatPanel
                     messages={device.messages}
                     channels={device.channels}
-                    myNodeNum={device.state.myNodeNum}
+                    myNodeNum={device.selfNodeId}
                     onSend={device.sendMessage}
                     onReact={device.sendReaction}
                     onNodeClick={setSelectedNodeId}
@@ -513,6 +513,7 @@ export default function App() {
                     traceRouteResults={device.traceRouteResults}
                     getFullNodeLabel={device.getFullNodeLabel}
                     ourPosition={device.ourPosition}
+                    onNodeClick={(node) => setSelectedNodeId(node.node_id)}
                   />
                 )}
               </ErrorBoundary>
