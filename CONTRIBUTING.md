@@ -21,13 +21,17 @@ npm run rebuild   # Rebuild native modules (better-sqlite3) for current Electron
 
 **Running CI locally:** With [act](https://github.com/nektos/act) installed, run `act --container-architecture linux/amd64` so Linux jobs use the correct architecture. The test-results artifact upload step is skipped when running under act (actor `nektos/act`); all other steps run as on GitHub.
 
+**actionlint:** Install [actionlint](https://github.com/rhysd/actionlint) so the pre-commit hook can lint GitHub Actions workflows (e.g. `brew install actionlint` on macOS; see [releases](https://github.com/rhysd/actionlint/releases) for Windows/Linux binaries).
+
 After `npm install`, the repo’s git hooks are enabled (`core.hooksPath` → `.githooks`). On every commit, the **pre-commit** hook runs in order:
 
 1. **`npm run format`** — Prettier **writes** to matching files (not `format:check`).
 2. **Re-stage** — Only files that were already staged are re-added, so unstaged WIP is not swept in.
 3. **`npm run lint`**
 4. **`npm run typecheck`** — TypeScript check for renderer and main/preload.
-5. **`npm run test:run`** — Fails the commit if tests fail.
+5. **`npm audit`** — Fails the commit if npm reports vulnerabilities.
+6. **`actionlint`** — Lints `.github/workflows/*.yml`; must be installed (see above).
+7. **`npm run test:run`** — Fails the commit if tests fail.
 
 To skip the hook in an emergency: `git commit --no-verify`.
 

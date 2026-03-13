@@ -426,7 +426,9 @@ act --container-architecture linux/amd64
 
 Under act, artifact upload is skipped automatically; the rest of the pipeline runs as on GitHub.
 
-The pre-commit hook runs format, lint, typecheck, and tests. See [CONTRIBUTING.md](CONTRIBUTING.md) for coding conventions, branch workflow, and PR guidelines.
+Install **[actionlint](https://github.com/rhysd/actionlint)** so the pre-commit hook can validate GitHub Actions workflows (e.g. `brew install actionlint` on macOS; see [actionlint releases](https://github.com/rhysd/actionlint/releases) for other platforms).
+
+The pre-commit hook runs format, lint, typecheck, **npm audit**, **actionlint** (workflow lint), and tests. See [CONTRIBUTING.md](CONTRIBUTING.md) for coding conventions, branch workflow, and PR guidelines.
 
 ---
 

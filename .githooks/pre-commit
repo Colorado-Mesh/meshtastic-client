@@ -20,4 +20,6 @@ fi
 
 npm run lint || exit 1
 npm run typecheck || exit 1
-npm run test:run || exit 1 || exit 1
+npm audit || exit 1
+actionlint || exit 1
+npm run test:run || exit 1
