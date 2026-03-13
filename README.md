@@ -50,7 +50,7 @@ The official Meshtastic apps cover the basics, but desktop power users need more
 
 **Node Management**
 
-- Node list with SNR, battery, GPS, last heard, and packet redundancy score — **signal bars** (RSSI-based) appear **only for direct (0-hop) RF neighbors**; multi-hop and MQTT-only paths have no RSSI at the client, so bars are omitted there — **last heard** and **hops** stay accurate on BLE connect (replayed device-DB payloads no longer mark long-offline nodes as “just heard” or show stale hop counts; stale entries show **–** for hops where appropriate)
+- Node list with SNR, battery, GPS, last heard, and packet redundancy score — **signal bars** appear **only for direct (0-hop) RF neighbors**; multi-hop and MQTT-only paths have no client-side signal strength, so bars are omitted there — **last heard** and **hops** stay accurate on BLE connect (replayed device-DB payloads no longer mark long-offline nodes as “just heard” or show stale hop counts; stale entries show **–** for hops where appropriate)
 - Distance filter, favorite/pin nodes, device role icons, signal strength bars where direct RF applies
 - Node Detail Modal: DM, trace route with hop-path display, delete node, Routing Health section with 24-hour sparkline, Connection Health %, and collapsible Path History
 
@@ -97,11 +97,13 @@ The official Meshtastic apps cover the basics, but desktop power users need more
 
 ## Quick Start
 
-**Prerequisites:**
+**Pre-built binaries** for **macOS**, **Linux**, and **Windows** are available in the [GitHub Releases](https://github.com/Colorado-Mesh/meshtastic-client/releases) area. Download the installer or archive for your platform — no Node.js or build tools required.
 
-- Node.js 22.12.0+ (matches `@electron/rebuild` / `node-abi` engine requirement) and npm 9+
-- Native build tools (for SQLite) — see platform notes below
-- A Meshtastic device (any hardware running Meshtastic firmware)
+**To build from source**, you need:
+
+- **Node.js** 22.12.0+ (matches `@electron/rebuild` / `node-abi`) and **npm** 9+
+- **Native build tools** (for SQLite) — see platform notes below
+- A **Meshtastic device** (any hardware running Meshtastic firmware)
 
 ### Mac & Linux
 
@@ -320,6 +322,11 @@ Enter your broker URL, topic, and optional credentials in the MQTT section of th
 
 ```
 meshtastic-client/
+├── .github/
+│   ├── workflows/                # CI and release (ci.yaml, release.yaml, tests.yaml)
+│   ├── ISSUE_TEMPLATE/           # Bug report and feature request templates
+│   ├── codeql/                   # CodeQL config
+│   └── dependabot.yml
 ├── src/
 │   ├── main/
 │   │   ├── index.ts              # Window creation, BLE/Serial intercept, all IPC handlers
@@ -331,6 +338,7 @@ meshtastic-client/
 │   ├── preload/
 │   │   └── index.ts              # contextBridge: electronAPI (db, mqtt, log, BLE, serial, session)
 │   └── renderer/
+│       ├── index.html            # HTML entry
 │       ├── App.tsx               # Shell: 8 tabs, Log panel (right rail), keyboard shortcuts, status header
 │       ├── main.tsx              # React entry point
 │       ├── components/
@@ -351,7 +359,7 @@ meshtastic-client/
 │       │   ├── KeyboardShortcutsModal.tsx
 │       │   ├── UpdateBanner.tsx      # In-app update notification
 │       │   ├── ErrorBoundary.tsx     # Top-level React error boundary
-│       │   ├── SignalBars.tsx        # RSSI→bars for direct (0-hop) RF only; null rssi → no bars
+│       │   ├── SignalBars.tsx        # Signal strength → bars for direct (0-hop) RF only; no data → no bars
 │       │   ├── RefreshButton.tsx
 │       │   ├── Toast.tsx
 │       │   └── Tabs.tsx
@@ -360,37 +368,45 @@ meshtastic-client/
 │       ├── stores/
 │       │   ├── diagnosticsStore.ts   # Zustand: anomalies, packet stats, halo flags, MQTT ignore
 │       │   └── mapViewportStore.ts   # Zustand: persisted map center/zoom
-│       └── lib/
-│           ├── types.ts              # TypeScript interfaces: MeshNode, ChatMessage, DeviceState…
-│           ├── connection.ts         # Connection factory: BLE/Serial/HTTP transport creation
-│           ├── gpsSource.ts          # GPS waterfall: device coords → browser geolocation → null
-│           ├── nodeStatus.ts         # Node freshness: online <30 min, stale <2 h, offline 2 h+
-│           ├── coordUtils.ts         # Coordinate conversion helpers
-│           ├── reactions.ts          # Emoji reaction helpers
-│           ├── roleInfo.tsx          # Node role display metadata
-│           ├── signal.ts             # RSSI → signal level for SignalBars (direct RF only)
-│           ├── parseStoredJson.ts    # Safe JSON parse for persisted values
-│           └── diagnostics/
-│               ├── RoutingDiagnosticEngine.ts  # Hop anomaly detectors (hop_goblin, bad_route, etc.)
-│               ├── RFDiagnosticEngine.ts        # RF-layer signal diagnostics (CU spike, hidden terminal, etc.)
-│               ├── diagnosticRows.ts            # Row merge/prune, routing map helper, default ages
-│               ├── meshCongestionAttribution.ts # Path mix + RF originator ranking for congestion copy
-│               └── RemediationEngine.ts         # Suggested fixes for routing + RF rows
+│       ├── lib/
+│       │   ├── types.ts              # TypeScript interfaces: MeshNode, ChatMessage, DeviceState…
+│       │   ├── connection.ts         # Connection factory: BLE/Serial/HTTP transport creation
+│       │   ├── gpsSource.ts          # GPS waterfall: device coords → browser geolocation → null
+│       │   ├── nodeStatus.ts         # Node freshness: online <30 min, stale <2 h, offline 2 h+
+│       │   ├── coordUtils.ts         # Coordinate conversion helpers
+│       │   ├── reactions.ts          # Emoji reaction helpers
+│       │   ├── roleInfo.tsx          # Node role display metadata
+│       │   ├── signal.ts             # Signal strength → level for SignalBars (direct RF only)
+│       │   ├── themeColors.ts        # Theme color helpers
+│       │   ├── parseStoredJson.ts    # Safe JSON parse for persisted values
+│       │   └── diagnostics/
+│       │       ├── RoutingDiagnosticEngine.ts  # Hop anomaly detectors (hop_goblin, bad_route, etc.)
+│       │       ├── RFDiagnosticEngine.ts       # RF-layer signal diagnostics (CU spike, hidden terminal, etc.)
+│       │       ├── diagnosticRows.ts           # Row merge/prune, routing map helper, default ages
+│       │       ├── meshCongestionAttribution.ts # Path mix + RF originator ranking for congestion copy
+│       │       ├── snrMeaningfulForNodeDiagnostics.ts  # SNR relevance for node diagnostics
+│       │       └── RemediationEngine.ts        # Suggested fixes for routing + RF rows
+│       └── types/                  # Type declarations (e.g. web-serial.d.ts)
 ├── resources/
 │   ├── icons/                    # App icons (linux/, mac/, win/)
 │   ├── entitlements.mac.plist    # macOS signing entitlements (main)
 │   └── entitlements.mac.inherit.plist  # macOS child-process entitlements
 ├── scripts/
-│   ├── rebuild-native.mjs        # Rebuilds better-sqlite3 for Electron ABI (postinstall); removes stale build/ first to avoid wrong-platform .node after copying node_modules across OSes
-│   └── wait-for-dev.mjs          # Waits for Vite dev server before launching Electron
+│   ├── before-build-native.cjs   # Cleans better-sqlite3 build before dist (Windows EPERM workaround)
+│   ├── rebuild-native.mjs        # Rebuilds better-sqlite3 for Electron ABI (postinstall)
+│   └── wait-for-dev.mjs         # Waits for Vite dev server before launching Electron
+├── patches/                     # patch-package patches (e.g. electron-builder)
 ├── docs/
 │   ├── accessibility-checklist.md
-│   └── images/                   # README screenshots (node-list, map, diagnostics, node-detail)
-├── electron-builder.yml          # Distributable config (targets, icons, signing)
-├── vite.config.ts                # Renderer build (Vite)
-├── vitest.config.ts              # Test runner config
-├── tsconfig.json                 # Base TypeScript config (renderer)
-├── tsconfig.main.json            # TypeScript config for main/preload
+│   └── images/                  # README screenshots (node-list, map, diagnostics, node-detail)
+├── release.sh                   # Release automation script
+├── electron-builder.yml         # Distributable config (targets, icons, signing)
+├── vite.config.ts               # Renderer build (Vite)
+├── vitest.config.ts             # Test runner config
+├── tsconfig.json                # Base TypeScript config (renderer)
+├── tsconfig.main.json           # TypeScript config for main/preload
+├── eslint.config.mjs
+├── postcss.config.cjs
 └── package.json
 ```
 
@@ -614,7 +630,7 @@ The app functions fully offline — this is not a critical error. If "Update che
 
 ### No signal bars on some nodes
 
-**Cause**: RSSI is only meaningful for **direct (0-hop) RF** neighbors. Multi-hop and MQTT-heard nodes have no client-side RSSI.
+**Cause**: Signal strength is only available for **direct (0-hop) RF** neighbors. Multi-hop and MQTT-heard nodes have no client-side signal strength.
 
 **Fix**: Not a bug — use SNR/last heard and routing diagnostics instead for those paths.
 
