@@ -1764,10 +1764,49 @@ export function useDevice() {
     await deviceRef.current.configure();
   }, []);
 
-  const sendReaction = useCallback(async (emoji: number, replyId: number, channel: number) => {
-    if (!deviceRef.current) throw new Error('Not connected');
-    await deviceRef.current.sendText('', 'broadcast', true, channel, replyId, emoji);
-  }, []);
+  const sendReaction = useCallback(
+    async (emoji: number, replyId: number, channel: number) => {
+      const hasMqtt = mqttStatusRef.current === 'connected';
+      if (!deviceRef.current && !hasMqtt) throw new Error('Not connected');
+
+      const from = myNodeNumRef.current || 0;
+      const msg: ChatMessage = {
+        sender_id: from,
+        sender_name: getNodeName(from),
+        payload: '',
+        channel,
+        timestamp: Date.now(),
+        emoji,
+        replyId,
+      };
+
+      // Optimistic update — dedup guard in echo handler prevents duplicate when echo arrives
+      setMessages((prev) => {
+        const isDup = prev.some(
+          (m) => m.emoji === emoji && m.replyId === replyId && m.sender_id === from,
+        );
+        if (isDup) return prev;
+        return [...prev, msg];
+      });
+      window.electronAPI.db.saveMessage(msg);
+
+      // Device transport
+      if (deviceRef.current) {
+        await deviceRef.current.sendText('', 'broadcast', true, channel, replyId, emoji);
+      }
+
+      // MQTT transport (MQTT-only connections or uplink-enabled gateway)
+      if (hasMqtt) {
+        const chCfg = channelConfigsRef.current.find((c) => c.index === channel);
+        if (chCfg?.uplinkEnabled || !deviceRef.current) {
+          window.electronAPI.mqtt
+            .publish({ text: '', from, channel, emoji, replyId })
+            .catch((e: unknown) => console.warn('[useDevice] sendReaction MQTT failed', e));
+        }
+      }
+    },
+    [getNodeName],
+  );
 
   const sendStatusEvents = useCallback(() => {
     const activeStatuses = ['connected', 'configured', 'stale', 'reconnecting'];

@@ -97,6 +97,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       channel: number;
       destination?: number;
       channelName?: string;
+      emoji?: number;
+      replyId?: number;
     }) => ipcRenderer.invoke('mqtt:publish', args),
   },
 

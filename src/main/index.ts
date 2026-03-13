@@ -197,6 +197,16 @@ function validateMqttPublishArgs(args: unknown): void {
   }
   if (a.channelName != null && typeof a.channelName !== 'string')
     throw new Error('mqtt:publish: channelName must be a string');
+  if (a.emoji != null) {
+    const emoji = Number(a.emoji);
+    if (!Number.isFinite(emoji) || emoji < 0)
+      throw new Error('mqtt:publish: emoji must be a non-negative integer');
+  }
+  if (a.replyId != null) {
+    const replyId = Number(a.replyId);
+    if (!Number.isFinite(replyId) || replyId < 0)
+      throw new Error('mqtt:publish: replyId must be a non-negative integer');
+  }
 }
 
 // Enable Web Bluetooth feature flag
@@ -623,6 +633,8 @@ ipcMain.handle('mqtt:publish', async (_event, args) => {
       channel: number;
       destination?: number;
       channelName?: string;
+      emoji?: number;
+      replyId?: number;
     };
     return mqttManager.publish(
       a.text,
@@ -630,6 +642,8 @@ ipcMain.handle('mqtt:publish', async (_event, args) => {
       a.channel,
       a.destination ?? 0xffffffff,
       a.channelName ?? 'LongFast',
+      a.emoji,
+      a.replyId,
     );
   } catch (err) {
     console.error('[IPC] mqtt:publish failed:', err);

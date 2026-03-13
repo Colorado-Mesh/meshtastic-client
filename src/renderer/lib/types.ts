@@ -234,6 +234,8 @@ declare global {
           channel: number;
           destination?: number;
           channelName?: string;
+          emoji?: number;
+          replyId?: number;
         }) => Promise<number>;
       };
       onBluetoothDevicesDiscovered: (cb: (devices: BluetoothDevice[]) => void) => () => void;

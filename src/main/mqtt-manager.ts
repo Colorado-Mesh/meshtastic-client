@@ -159,6 +159,8 @@ export class MQTTManager extends EventEmitter {
     channel: number,
     destination: number,
     channelName: string,
+    emoji?: number,
+    replyId?: number,
   ): number {
     if (!this.client?.connected || !this.currentSettings) {
       throw new Error('MQTT not connected');
@@ -173,6 +175,8 @@ export class MQTTManager extends EventEmitter {
     const data = create(DataSchema, {
       portnum: PortNum.TEXT_MESSAGE_APP,
       payload: new TextEncoder().encode(text),
+      ...(emoji ? { emoji } : {}),
+      ...(replyId ? { replyId } : {}),
     });
     const dataBytes = toBinary(DataSchema, data);
 
