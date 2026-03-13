@@ -418,6 +418,14 @@ npm run dev
 
 This starts the Vite dev server, watches main/preload for changes, and launches Electron automatically. For the best experience, install [React DevTools](https://react.dev/link/react-devtools).
 
+CI (GitHub Actions) runs on **Node 22** for build, test, and release jobs. Use Node 22 locally to match CI and avoid Linux-specific issues on older Node versions. To run workflows locally, use [act](https://github.com/nektos/act) with the amd64 image so Linux jobs match the runner environment:
+
+```bash
+act --container-architecture linux/amd64
+```
+
+Under act, artifact upload is skipped automatically; the rest of the pipeline runs as on GitHub.
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for coding conventions, branch workflow, and PR guidelines.
 
 ---

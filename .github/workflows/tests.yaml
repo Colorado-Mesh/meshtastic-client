@@ -17,7 +17,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
@@ -27,7 +27,7 @@ jobs:
         run: npm run test:run
 
       - name: Upload test results
-        if: always()
+        if: always() && github.actor != 'nektos/act'
         uses: actions/upload-artifact@v6
         with:
           name: vitest-report
