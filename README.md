@@ -588,6 +588,12 @@ CI builds avoid both issues by using short paths and clean agents; local Windows
 - **Windows**: `%APPDATA%\mesh-client\`
 - **Linux**: `~/.config/mesh-client/`
 
+### macOS: "representedObject is not a WeakPtrToElectronMenuModelAsNSObject" when typing in chat
+
+**Cause**: Known Electron/Chromium quirk on macOS when the first responder is a text field (e.g. the chat input). The native menu bridge logs this; it does not affect behavior.
+
+**Fix**: None required — safe to ignore. Copy/paste and other edit actions still work.
+
 ### Update check fails / no update banner
 
 The app functions fully offline — this is not a critical error. If "Update check failed" appears in the console, verify network connectivity. Update checks are rate-limited by the GitHub API and may silently skip when the limit is reached.

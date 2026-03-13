@@ -1551,10 +1551,38 @@ export function useDevice() {
               });
           }
         } else {
-          // No packetId — fall back to clearing any message stuck at 'sending'
-          setMessages((prev) =>
-            prev.map((m) => (m.status === 'sending' ? { ...m, status: 'failed', error } : m)),
-          );
+          // No packetId — clear device status and wire MQTT to the message that has both sending (so MQTT doesn't stay hourglass)
+          setMessages((prev) => {
+            const target = prev.find((m) => m.status === 'sending' && m.mqttStatus === 'sending');
+            const pid = target?.packetId;
+            if (pid !== undefined) {
+              window.electronAPI.db.updateMessageStatus(pid, 'failed', error);
+              if (mqttPromise) {
+                mqttPromise
+                  .then((mqttPacketId) => {
+                    isDuplicate(mqttPacketId);
+                    setMessages((p) =>
+                      p.map((m) =>
+                        m.packetId === pid ? { ...m, mqttStatus: 'acked' as const } : m,
+                      ),
+                    );
+                    window.electronAPI.db.updateMessageStatus(pid, 'failed', error, 'acked');
+                  })
+                  .catch((e) => {
+                    console.debug('[useDevice] sendMessage mqttPromise no-packetId failed', e);
+                    setMessages((p) =>
+                      p.map((m) =>
+                        m.packetId === pid ? { ...m, mqttStatus: 'failed' as const } : m,
+                      ),
+                    );
+                    window.electronAPI.db.updateMessageStatus(pid, 'failed', error, 'failed');
+                  });
+              }
+            }
+            return prev.map((m) =>
+              m.status === 'sending' ? { ...m, status: 'failed' as const, error } : m,
+            );
+          });
         }
       }
     },

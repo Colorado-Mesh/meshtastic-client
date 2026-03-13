@@ -39,6 +39,8 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 /** Retain tray context menu so macOS menu bridge does not see a freed model (avoids console warning / crashes). */
 let trayContextMenu: Menu | null = null;
+/** Retain application menu on macOS so the menu bridge has a stable model. */
+let appMenu: Menu | null = null;
 let isConnected = false;
 let isQuitting = false;
 
@@ -302,6 +304,30 @@ function setupTray(window: BrowserWindow) {
     },
   ]);
   tray.setContextMenu(trayContextMenu);
+}
+
+/** Set a minimal application menu on macOS so the native menu bridge has a stable model (avoids freed-model issues; the "representedObject is not a WeakPtrToElectronMenuModelAsNSObject" console warning when focusing text inputs is a known Electron/Chromium macOS quirk and harmless). */
+function setupAppMenu() {
+  if (process.platform !== 'darwin') return;
+  appMenu = Menu.buildFromTemplate([
+    {
+      label: app.name,
+      submenu: [
+        { role: 'about' as const },
+        { type: 'separator' as const },
+        { role: 'services' as const },
+        { type: 'separator' as const },
+        { role: 'hide' as const },
+        { role: 'hideOthers' as const },
+        { role: 'unhide' as const },
+        { type: 'separator' as const },
+        { role: 'quit' as const },
+      ],
+    },
+    { role: 'editMenu' as const },
+    { role: 'windowMenu' as const },
+  ]);
+  Menu.setApplicationMenu(appMenu);
 }
 
 function createWindow() {
@@ -1040,7 +1066,8 @@ app.whenReady().then(() => {
   try {
     initLogFile();
     initDatabase();
-    // Force the dock icon n development on macOS
+    setupAppMenu();
+    // Force the dock icon in development on macOS
     if (!app.isPackaged && process.platform === 'darwin') {
       const iconPath = path.join(
         __dirname,
