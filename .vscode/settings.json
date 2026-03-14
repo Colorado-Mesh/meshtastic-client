@@ -8,5 +8,11 @@
   "[typescriptreact]": { "editor.defaultFormatter": "dbaeumer.vscode-eslint" },
   "editor.codeActionsOnSave": {
     "source.fixAll.eslint": "explicit"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "vscode.json-language-features"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "vscode.json-language-features"
   }
 }
