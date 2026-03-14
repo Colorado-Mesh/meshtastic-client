@@ -156,6 +156,11 @@ GitHub Code scanning (CodeQL) reports **log injection** when user-controlled or 
 - **Checks:** Code scanning runs on push (GitHub default setup). If you add or change code that feeds into the log pipeline, ensure the **first** use of untrusted data in that path is wrapped in `sanitizeLogMessage()` at the call site.
 - **Tests:** When adding or changing code that feeds into the log pipeline (e.g. new call sites of `appendLine`, `console.*` in main, or renderer→main log forwarding), add or extend tests so that log injection is caught by the suite. Pre-commit runs `npm run test:run`, which includes `src/renderer/lib/sanitize-log-message.test.ts`: that file tests both `sanitizeLogMessage` and `sanitizeForLogSink` (used by the console overrides in log-service) and runs the log-injection script so that regressions fail the test run. Add or extend tests there (or equivalent) so regressions are caught. AI and reviewers should ensure such tests exist or are added.
 
+### MQTT publish (nonce and gatewayId)
+
+- When modifying `MQTTManager.publish` or `publishEncryptedData` in `src/main/mqtt-manager.ts`, always normalize `from`, `to`, and `channel` to numbers (for example, `const fromId = Number(from) >>> 0;`) before using them in AES-CTR nonce construction or MeshPacket fields.
+- The AES-CTR nonce and `gatewayId`/MQTT topic must be derived from the **true sender node ID** so other nodes can decrypt MQTT-originated packets. Do not reintroduce positional arguments or string IDs into the MQTT publish path; use the structured `MqttPublishOptions` and keep IDs numeric end-to-end.
+
 ## Commit Style
 
 Use [Conventional Commits](https://www.conventionalcommits.org/):

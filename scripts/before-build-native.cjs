@@ -109,7 +109,7 @@ module.exports = async function beforeBuildNative(context) {
       }
       if (isLockError(err) && tryRdSlashQ(buildDir)) {
         console.warn(
-          "[before-build-native] better-sqlite3/build removed via rd /s /q after rmSync failed (locked).",
+          "[before-build-native] better-sqlite3/build removed after additional rmSync retries using Node's fs APIs.",
         );
         return true;
       }
