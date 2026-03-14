@@ -130,6 +130,11 @@ export function useDevice() {
     myNodeNum: 0,
     connectionType: null,
   });
+  const [deviceOwner, setDeviceOwner] = useState<{
+    longName: string;
+    shortName: string;
+    isLicensed: boolean;
+  } | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [nodes, setNodes] = useState<Map<number, MeshNode>>(new Map());
   const [telemetry, setTelemetry] = useState<TelemetryPoint[]>([]);
@@ -762,6 +767,13 @@ export function useDevice() {
           window.electronAPI.db.saveNode(node);
           return updated;
         });
+        if (packet.from === myNodeNumRef.current) {
+          setDeviceOwner({
+            longName: user.longName ?? '',
+            shortName: user.shortName ?? '',
+            isLicensed: (user as { isLicensed?: boolean }).isLicensed ?? false,
+          });
+        }
       });
       unsubscribesRef.current.push(unsub4);
 
@@ -1583,6 +1595,19 @@ export function useDevice() {
     await deviceRef.current.clearChannel(index);
   }, []);
 
+  const setOwner = useCallback(
+    async (owner: { longName: string; shortName: string; isLicensed: boolean }) => {
+      if (!deviceRef.current) return;
+      const user = create(Mesh.UserSchema, {
+        longName: owner.longName,
+        shortName: owner.shortName,
+        isLicensed: owner.isLicensed,
+      });
+      await deviceRef.current.setOwner(user);
+    },
+    [],
+  );
+
   const reboot = useCallback(async (delay: number) => {
     if (!deviceRef.current) return;
     await deviceRef.current.reboot(delay);
@@ -1906,6 +1931,8 @@ export function useDevice() {
     getPickerStyleNodeLabel,
     getFullNodeLabel,
     getNodes,
+    deviceOwner,
+    setOwner,
   };
 }
 

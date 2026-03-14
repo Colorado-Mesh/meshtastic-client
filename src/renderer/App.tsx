@@ -518,6 +518,8 @@ export default function App() {
                     onResetNodeDb={device.resetNodeDb}
                     ourPosition={device.ourPosition}
                     onSendPositionToDevice={device.sendPositionToDevice}
+                    deviceOwner={device.deviceOwner}
+                    onSetOwner={device.setOwner}
                   />
                 )}
                 {activeTab === 6 && (

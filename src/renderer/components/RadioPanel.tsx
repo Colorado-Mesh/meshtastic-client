@@ -37,6 +37,12 @@ interface Props {
   onResetNodeDb: () => Promise<void>;
   ourPosition?: OurPosition | null;
   onSendPositionToDevice?: (lat: number, lon: number, alt?: number) => Promise<void>;
+  deviceOwner?: { longName: string; shortName: string; isLicensed: boolean } | null;
+  onSetOwner?: (owner: {
+    longName: string;
+    shortName: string;
+    isLicensed: boolean;
+  }) => Promise<void>;
 }
 
 const REGIONS = [
@@ -358,7 +364,22 @@ export default function RadioPanel({
   onResetNodeDb,
   ourPosition,
   onSendPositionToDevice,
+  deviceOwner,
+  onSetOwner,
 }: Props) {
+  // ─── User / Identity settings ─────────────────────────────────
+  const [longName, setLongName] = useState('');
+  const [shortName, setShortName] = useState('');
+  const [isLicensed, setIsLicensed] = useState(false);
+
+  useEffect(() => {
+    if (deviceOwner) {
+      setLongName(deviceOwner.longName);
+      setShortName(deviceOwner.shortName);
+      setIsLicensed(deviceOwner.isLicensed);
+    }
+  }, [deviceOwner]);
+
   // ─── LoRa settings ────────────────────────────────────────────
   const [region, setRegion] = useState(1);
   const [modemPreset, setModemPreset] = useState(0);
@@ -456,6 +477,62 @@ export default function RadioPanel({
           Connect to a device to modify configuration.
         </div>
       )}
+
+      {/* ═══ Device User / Identity ═══ */}
+      <ConfigSection
+        title="Device User / Identity"
+        onApply={async () => {
+          if (!onSetOwner) return;
+          setApplyingSection('User');
+          setStatus('Applying User...');
+          try {
+            await onSetOwner({ longName, shortName, isLicensed });
+            setStatus('User applied successfully!');
+          } catch (err) {
+            setStatus(`Failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+          } finally {
+            setApplyingSection(null);
+          }
+        }}
+        applying={applyingSection === 'User'}
+        disabled={disabled || !onSetOwner}
+      >
+        <div className="space-y-1">
+          <label className="text-sm text-muted">Long Name</label>
+          <input
+            type="text"
+            value={longName}
+            onChange={(e) => setLongName(e.target.value.slice(0, 39))}
+            maxLength={39}
+            disabled={disabled}
+            placeholder="Your Name"
+            className="w-full px-3 py-2 bg-secondary-dark rounded-lg text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none disabled:opacity-50"
+          />
+          <p className="text-xs text-muted">Display name (max 39 chars)</p>
+        </div>
+        <div className="space-y-1">
+          <label className="text-sm text-muted">Short Name</label>
+          <input
+            type="text"
+            value={shortName}
+            onChange={(e) => setShortName(e.target.value.slice(0, 4))}
+            maxLength={4}
+            disabled={disabled}
+            placeholder="NAME"
+            className="w-full px-3 py-2 bg-secondary-dark rounded-lg text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none disabled:opacity-50"
+          />
+          <p className="text-xs text-muted">
+            Short identifier shown on tiny displays (max 4 chars)
+          </p>
+        </div>
+        <ConfigToggle
+          label="Licensed (Ham Radio Operator)"
+          checked={isLicensed}
+          onChange={setIsLicensed}
+          disabled={disabled}
+          description="Enables additional frequencies for licensed amateur radio operators"
+        />
+      </ConfigSection>
 
       {/* ═══ LoRa / Radio ═══ */}
       <ConfigSection
