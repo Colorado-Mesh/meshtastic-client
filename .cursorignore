@@ -1,0 +1,23 @@
+# From .gitignore + dependency/build/lock/log exclusions
+# (node_modules etc. are ignored by default; reference explicitly when needed.)
+
+*.db
+.DS_Store
+.aider*
+.claude/
+.cursor/
+CLAUDE.md
+Thumbs.db
+dist/
+dist-electron/
+node_modules/
+release/
+test-results/
+
+# Dependency and build artifacts
+coverage/
+.next/
+
+# Lock files and large non-source files
+package-lock.json
+*.log
