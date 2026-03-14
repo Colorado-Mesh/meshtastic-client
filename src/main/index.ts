@@ -55,7 +55,7 @@ let lastSerialPortIds = new Set<string>();
 
 // ─── Global error handlers (prevent silent crashes in packaged app) ──
 process.on('uncaughtException', (error) => {
-  console.error('Uncaught exception:', error);
+  console.error('[main] Uncaught exception:', error);
   try {
     dialog.showErrorBox(
       'Mesh-Client — Unexpected Error',
@@ -71,7 +71,7 @@ let lastUnhandledRejectionDialogAt = 0;
 const UNHANDLED_REJECTION_DIALOG_COOLDOWN_MS = 60_000;
 
 process.on('unhandledRejection', (reason) => {
-  console.error('Unhandled rejection:', reason);
+  console.error('[main] Unhandled rejection:', reason);
   const now = Date.now();
   if (now - lastUnhandledRejectionDialogAt < UNHANDLED_REJECTION_DIALOG_COOLDOWN_MS) return;
   lastUnhandledRejectionDialogAt = now;
@@ -449,7 +449,7 @@ function createWindow() {
 
   // ─── Renderer crash / load failure detection ──────────────────────
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
-    console.error('Renderer process gone:', details.reason, details.exitCode);
+    console.error('[main] Renderer process gone:', details.reason, details.exitCode);
     try {
       dialog.showErrorBox(
         'Mesh-Client — Renderer Stopped',
@@ -461,7 +461,7 @@ function createWindow() {
   });
 
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDesc, validatedURL) => {
-    console.error('Failed to load:', errorCode, errorDesc, validatedURL);
+    console.error('[main] Failed to load:', errorCode, errorDesc, validatedURL);
     // ERR_ABORTED (-3) often means navigation was cancelled; avoid noisy dialog
     if (errorCode === -3) return;
     try {
@@ -1113,7 +1113,7 @@ app.whenReady().then(() => {
     }
     createWindow();
   } catch (error) {
-    console.error('Fatal startup error:', error);
+    console.error('[main] Fatal startup error:', error);
     const isNativeModuleError =
       error instanceof Error && (error as NodeJS.ErrnoException).code === 'ERR_DLOPEN_FAILED';
     const message = isNativeModuleError
@@ -1129,7 +1129,7 @@ app.whenReady().then(() => {
       try {
         createWindow();
       } catch (error) {
-        console.error('Window creation error:', error);
+        console.error('[main] Window creation error:', error);
       }
     } else {
       mainWindow?.show(); // Restore hidden window on dock click

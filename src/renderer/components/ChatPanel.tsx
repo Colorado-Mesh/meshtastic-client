@@ -488,7 +488,7 @@ export default function ChatPanel({
       setPersistedLastRead((prev) => ({ ...prev, [viewKey]: now }));
       setUnreadDividerTimestamp(0);
     } catch (err) {
-      console.error('Send failed:', err);
+      console.error('[ChatPanel] Send failed:', err);
     } finally {
       setSending(false);
     }
@@ -500,7 +500,7 @@ export default function ChatPanel({
       console.debug('[ChatPanel] handleReact', emojiCode, packetId, msgChannel);
       await onReact(emojiCode, packetId, msgChannel);
     } catch (err) {
-      console.error('React failed:', err);
+      console.error('[ChatPanel] React failed:', err);
     }
   };
 

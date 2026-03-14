@@ -1203,7 +1203,7 @@ export function useDevice() {
               console.debug('[BLE heartbeat] GATT busy — skipping beat, connection intact');
               return;
             }
-            console.warn('[meshtastic] BLE heartbeat write failed:', err);
+            console.warn('[Meshtastic] BLE heartbeat write failed:', err);
             // Any other GATT write failure = connection is dead
             handleConnectionLostRef.current();
           }
@@ -1220,7 +1220,7 @@ export function useDevice() {
         const btDevice = (device.transport as any)?.__bluetoothDevice;
         if (btDevice) {
           const onGattDisconnected = () => {
-            console.warn('GATT server disconnected event fired');
+            console.warn('[useDevice] GATT server disconnected event fired');
             handleConnectionLostRef.current();
           };
           btDevice.addEventListener('gattserverdisconnected', onGattDisconnected);
@@ -1319,7 +1319,7 @@ export function useDevice() {
       reconnectAttemptRef.current = 0;
       isReconnectingRef.current = false;
     } catch (err) {
-      console.warn(`[meshtastic] Reconnect attempt ${reconnectAttemptRef.current} failed:`, err);
+      console.warn(`[Meshtastic] Reconnect attempt ${reconnectAttemptRef.current} failed:`, err);
       // Retry
       attemptReconnectRef.current();
     }
@@ -1363,7 +1363,7 @@ export function useDevice() {
         // Start configuration AFTER all listeners are wired
         device.configure();
       } catch (err) {
-        console.error('[meshtastic] Connection failed:', err);
+        console.error('[Meshtastic] Connection failed:', err);
         cleanupSubscriptions();
         stopPolling();
         stopWatchdog();
@@ -1420,7 +1420,7 @@ export function useDevice() {
         wireSubscriptions(device, type);
         device.configure();
       } catch (err) {
-        console.error('[meshtastic] Auto-connect failed:', err);
+        console.error('[Meshtastic] Auto-connect failed:', err);
         cleanupSubscriptions();
         stopPolling();
         stopWatchdog();
