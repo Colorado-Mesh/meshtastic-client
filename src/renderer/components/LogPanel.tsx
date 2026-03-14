@@ -113,10 +113,16 @@ function persistPanelWidth(w: number): void {
   }
 }
 
+type LogPanelVariant = 'sidebar' | 'overlay';
+
 export default function LogPanel({
   deviceLogs = [],
+  variant = 'sidebar',
+  onClose,
 }: {
   deviceLogs?: { message: string; time: number; source: string; level: number }[];
+  variant?: LogPanelVariant;
+  onClose?: () => void;
 }) {
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [levelFilters, setLevelFiltersState] = useState<LevelFilters>(readLevelFilters);
@@ -249,98 +255,91 @@ export default function LogPanel({
     });
   }, []);
 
-  return (
-    <div
-      className="flex shrink-0 min-h-0 border-l border-gray-700 bg-deep-black"
-      style={{ width: panelWidth }}
-    >
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Drag to resize log panel"
-        className="w-1.5 shrink-0 cursor-col-resize hover:bg-slate-600 bg-gray-800/50"
-        onMouseDown={onResizeMouseDown}
-      />
-      <aside className="flex flex-col flex-1 min-w-0 min-h-0" aria-label="Application log">
-        <div className="px-2 py-2 border-b border-gray-700 flex flex-col gap-2">
-          <div className="space-y-1">
-            <span className="text-[10px] text-muted uppercase tracking-wide">Show levels</span>
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center gap-2">
-                <input
-                  id="log-filter-loginfo"
-                  type="checkbox"
-                  checked={levelFilters.logInfo}
-                  onChange={(e) => setFilter('logInfo', e.target.checked)}
-                  className="rounded border-gray-600"
-                />
-                <label htmlFor="log-filter-loginfo" className="text-xs text-muted cursor-pointer">
-                  Log / Info
-                </label>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  id="log-filter-warn"
-                  type="checkbox"
-                  checked={levelFilters.warnError}
-                  onChange={(e) => setFilter('warnError', e.target.checked)}
-                  className="rounded border-gray-600"
-                />
-                <label htmlFor="log-filter-warn" className="text-xs text-muted cursor-pointer">
-                  Warn / Error
-                </label>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  id="log-filter-debug"
-                  type="checkbox"
-                  checked={levelFilters.debug}
-                  onChange={(e) => setFilter('debug', e.target.checked)}
-                  className="rounded border-gray-600"
-                />
-                <label htmlFor="log-filter-debug" className="text-xs text-muted cursor-pointer">
-                  Debug
-                </label>
-              </div>
+  const isOverlay = variant === 'overlay';
+  const showResizeControls = !isOverlay;
+
+  const panel = (
+    <aside className="flex flex-col flex-1 min-w-0 min-h-0" aria-label="Application log">
+      <div className="px-2 py-2 border-b border-gray-700 flex flex-col gap-2">
+        <div className="space-y-1">
+          <span className="text-[10px] text-muted uppercase tracking-wide">Show levels</span>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <input
+                id="log-filter-loginfo"
+                type="checkbox"
+                checked={levelFilters.logInfo}
+                onChange={(e) => setFilter('logInfo', e.target.checked)}
+                className="rounded border-gray-600"
+              />
+              <label htmlFor="log-filter-loginfo" className="text-xs text-muted cursor-pointer">
+                Log / Info
+              </label>
             </div>
-            <p className="text-[10px] text-muted leading-snug">
-              All levels are still written to the log file; filters only affect this panel.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <input
-              id="log-main-only-checkbox"
-              type="checkbox"
-              checked={mainOnly}
-              onChange={toggleMainOnly}
-              className="rounded border-gray-600"
-            />
-            <label htmlFor="log-main-only-checkbox" className="text-xs text-muted cursor-pointer">
-              App logs only (hide renderer / device)
-            </label>
+            <div className="flex items-center gap-2">
+              <input
+                id="log-filter-warn"
+                type="checkbox"
+                checked={levelFilters.warnError}
+                onChange={(e) => setFilter('warnError', e.target.checked)}
+                className="rounded border-gray-600"
+              />
+              <label htmlFor="log-filter-warn" className="text-xs text-muted cursor-pointer">
+                Warn / Error
+              </label>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                id="log-filter-debug"
+                type="checkbox"
+                checked={levelFilters.debug}
+                onChange={(e) => setFilter('debug', e.target.checked)}
+                className="rounded border-gray-600"
+              />
+              <label htmlFor="log-filter-debug" className="text-xs text-muted cursor-pointer">
+                Debug
+              </label>
+            </div>
           </div>
           <p className="text-[10px] text-muted leading-snug">
-            When enabled, only main-process lines are shown (e.g. [Startup], [MQTT], [gps], [IPC]).
+            All levels are still written to the log file; filters only affect this panel.
           </p>
-          <div className="flex items-center gap-2 border-t border-gray-700 pt-2">
-            <span className="text-[10px] text-muted uppercase tracking-wide">Source</span>
-            <div className="flex gap-1 ml-auto">
-              <button
-                type="button"
-                onClick={() => setLogSource('app')}
-                className={`px-2 py-0.5 text-[10px] rounded ${logSource === 'app' ? 'bg-brand-green/20 text-brand-green border border-brand-green/40' : 'bg-slate-800 text-gray-400 border border-gray-700'}`}
-              >
-                App
-              </button>
-              <button
-                type="button"
-                onClick={() => setLogSource('device')}
-                className={`px-2 py-0.5 text-[10px] rounded ${logSource === 'device' ? 'bg-brand-green/20 text-brand-green border border-brand-green/40' : 'bg-slate-800 text-gray-400 border border-gray-700'}`}
-              >
-                Device ({deviceLogs.length})
-              </button>
-            </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            id="log-main-only-checkbox"
+            type="checkbox"
+            checked={mainOnly}
+            onChange={toggleMainOnly}
+            className="rounded border-gray-600"
+          />
+          <label htmlFor="log-main-only-checkbox" className="text-xs text-muted cursor-pointer">
+            App logs only (hide renderer / device)
+          </label>
+        </div>
+        <p className="text-[10px] text-muted leading-snug">
+          When enabled, only main-process lines are shown (e.g. [Startup], [MQTT], [gps], [IPC]).
+        </p>
+        <div className="flex items-center gap-2 border-t border-gray-700 pt-2">
+          <span className="text-[10px] text-muted uppercase tracking-wide">Source</span>
+          <div className="flex gap-1 ml-auto">
+            <button
+              type="button"
+              onClick={() => setLogSource('app')}
+              className={`px-2 py-0.5 text-[10px] rounded ${logSource === 'app' ? 'bg-brand-green/20 text-brand-green border border-brand-green/40' : 'bg-slate-800 text-gray-400 border border-gray-700'}`}
+            >
+              App
+            </button>
+            <button
+              type="button"
+              onClick={() => setLogSource('device')}
+              className={`px-2 py-0.5 text-[10px] rounded ${logSource === 'device' ? 'bg-brand-green/20 text-brand-green border border-brand-green/40' : 'bg-slate-800 text-gray-400 border border-gray-700'}`}
+            >
+              Device ({deviceLogs.length})
+            </button>
           </div>
+        </div>
+        {showResizeControls && (
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -360,88 +359,126 @@ export default function LogPanel({
             </button>
             <span className="text-[10px] text-muted flex-1 text-right">{panelWidth}px</span>
           </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={handleExport}
-              className="flex-1 px-2 py-1 text-xs rounded bg-slate-700 hover:bg-slate-600 text-gray-200"
-            >
-              Export log…
-            </button>
-            <button
-              type="button"
-              onClick={handleDelete}
-              aria-label="Delete log file and clear panel"
-              className="px-2 py-1 text-xs rounded bg-slate-800 hover:bg-slate-700 text-gray-300 border border-gray-600"
-            >
-              Delete log
-            </button>
-          </div>
+        )}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={handleExport}
+            className="flex-1 px-2 py-1 text-xs rounded bg-slate-700 hover:bg-slate-600 text-gray-200"
+          >
+            Export log…
+          </button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            aria-label="Delete log file and clear panel"
+            className="px-2 py-1 text-xs rounded bg-slate-800 hover:bg-slate-700 text-gray-300 border border-gray-600"
+          >
+            Delete log
+          </button>
         </div>
-        <div
-          ref={scrollRef}
-          onScroll={onScroll}
-          className="flex-1 overflow-auto p-2 font-mono text-[10px] leading-tight text-gray-400 min-h-0"
-          role="log"
-          aria-live="polite"
-          aria-relevant="additions"
-        >
-          {logSource === 'device' ? (
-            deviceLogs.length === 0 ? (
-              <span className="text-muted">
-                No device log records yet. Device logs are streamed when connected.
-              </span>
-            ) : (
-              [...deviceLogs].reverse().map((entry, i) => {
-                const ts =
-                  entry.time > 0
-                    ? new Date(entry.time * 1000).toISOString().slice(11, 23)
-                    : '--:--:--.---';
-                const levelColor =
-                  entry.level >= 50
-                    ? 'text-red-400'
-                    : entry.level >= 40
-                      ? 'text-red-400'
-                      : entry.level >= 30
-                        ? 'text-yellow-400'
-                        : entry.level >= 20
-                          ? 'text-blue-400'
-                          : 'text-gray-500';
-                return (
-                  <div
-                    key={`device-${i}-${entry.time}-${entry.message.slice(0, 20)}`}
-                    className={`whitespace-pre-wrap break-all ${levelColor}`}
-                  >
-                    {ts} [{entry.source}] {entry.message}
-                  </div>
-                );
-              })
-            )
-          ) : visibleLines.length === 0 ? (
+      </div>
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        className="flex-1 overflow-auto p-2 font-mono text-[10px] leading-tight text-gray-400 min-h-0"
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions"
+      >
+        {logSource === 'device' ? (
+          deviceLogs.length === 0 ? (
             <span className="text-muted">
-              {entries.length === 0
-                ? 'No log lines yet.'
-                : mainOnly
-                  ? 'No app-only lines match the filter. Turn off filter to see renderer logs.'
-                  : !levelFilters.logInfo && !levelFilters.warnError && !levelFilters.debug
-                    ? 'All level filters are off. Enable at least one under Show levels.'
-                    : 'No lines match the current filters.'}
+              No device log records yet. Device logs are streamed when connected.
             </span>
           ) : (
-            visibleLines.map((entry, i) => {
-              const line = formatEntry(entry);
+            [...deviceLogs].reverse().map((entry, i) => {
+              const ts =
+                entry.time > 0
+                  ? new Date(entry.time * 1000).toISOString().slice(11, 23)
+                  : '--:--:--.---';
+              const levelColor =
+                entry.level >= 50
+                  ? 'text-red-400'
+                  : entry.level >= 40
+                    ? 'text-red-400'
+                    : entry.level >= 30
+                      ? 'text-yellow-400'
+                      : entry.level >= 20
+                        ? 'text-blue-400'
+                        : 'text-gray-500';
               return (
                 <div
-                  key={`${i}-${entry.ts}-${line.slice(0, 40)}`}
-                  className="whitespace-pre-wrap break-all"
+                  key={`device-${i}-${entry.time}-${entry.message.slice(0, 20)}`}
+                  className={`whitespace-pre-wrap break-all ${levelColor}`}
                 >
-                  {line}
+                  {ts} [{entry.source}] {entry.message}
                 </div>
               );
             })
-          )}
+          )
+        ) : visibleLines.length === 0 ? (
+          <span className="text-muted">
+            {entries.length === 0
+              ? 'No log lines yet.'
+              : mainOnly
+                ? 'No app-only lines match the filter. Turn off filter to see renderer logs.'
+                : !levelFilters.logInfo && !levelFilters.warnError && !levelFilters.debug
+                  ? 'All level filters are off. Enable at least one under Show levels.'
+                  : 'No lines match the current filters.'}
+          </span>
+        ) : (
+          visibleLines.map((entry, i) => {
+            const line = formatEntry(entry);
+            return (
+              <div
+                key={`${i}-${entry.ts}-${line.slice(0, 40)}`}
+                className="whitespace-pre-wrap break-all"
+              >
+                {line}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </aside>
+  );
+
+  if (isOverlay) {
+    return (
+      <div
+        className="fixed inset-y-0 right-0 z-40 flex flex-col min-h-0 border-l border-gray-700 bg-deep-black w-full max-w-md"
+        role="complementary"
+        aria-label="Application log"
+      >
+        <div className="flex items-center justify-end shrink-0 px-2 py-1.5 border-b border-gray-700">
+          <button
+            type="button"
+            onClick={() => onClose?.()}
+            aria-label="Close log panel"
+            className="px-2 py-1 text-xs rounded bg-slate-800 hover:bg-slate-700 text-gray-300 border border-gray-600"
+          >
+            Close
+          </button>
         </div>
-      </aside>
+        {panel}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="flex shrink-0 min-h-0 border-l border-gray-700 bg-deep-black"
+      style={{ width: panelWidth }}
+    >
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Drag to resize log panel"
+        className="w-1.5 shrink-0 cursor-col-resize hover:bg-slate-600 bg-gray-800/50"
+        onMouseDown={onResizeMouseDown}
+      />
+      {panel}
     </div>
   );
 }

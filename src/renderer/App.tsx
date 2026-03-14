@@ -448,7 +448,7 @@ export default function App() {
           onDismiss={() => setUpdateState((s) => ({ ...s, dismissed: true }))}
         />
 
-        <div className={`flex flex-1 min-h-0 ${logPanelVisible ? 'flex-row' : 'flex-col'}`}>
+        <div className="flex flex-1 min-h-0 flex-col">
           <div className="flex flex-col flex-1 min-w-0 min-h-0">
             {/* Tabs */}
             <Tabs
@@ -636,8 +636,15 @@ export default function App() {
               </span>
             </footer>
           </div>
-          {logPanelVisible && <LogPanel deviceLogs={device.deviceLogs} />}
         </div>
+
+        {logPanelVisible && (
+          <LogPanel
+            deviceLogs={device.deviceLogs}
+            variant="overlay"
+            onClose={() => setLogPanelVisible(false)}
+          />
+        )}
 
         {/* Keyboard Shortcuts Modal */}
         {showShortcuts && <KeyboardShortcutsModal onClose={() => setShowShortcuts(false)} />}
