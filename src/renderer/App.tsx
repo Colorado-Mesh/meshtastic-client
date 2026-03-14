@@ -541,8 +541,6 @@ export default function App() {
                     onRebootOta={device.rebootOta}
                     onEnterDfu={device.enterDfuMode}
                     onFactoryResetConfig={device.factoryResetConfig}
-                    onRequestPosition={device.requestPosition}
-                    nodes={device.nodes}
                   />
                 )}
                 {activeTab === 6 && (

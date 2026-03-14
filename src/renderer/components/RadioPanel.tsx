@@ -46,8 +46,6 @@ interface Props {
   onRebootOta?: (delay: number) => Promise<void>;
   onEnterDfu?: () => Promise<void>;
   onFactoryResetConfig?: () => Promise<void>;
-  onRequestPosition?: (nodeNum: number) => Promise<void>;
-  nodes?: Map<number, { node_id: number; short_name: string; long_name: string }>;
 }
 
 const REGIONS = [
@@ -410,8 +408,6 @@ export default function RadioPanel({
   onRebootOta,
   onEnterDfu,
   onFactoryResetConfig,
-  onRequestPosition,
-  nodes,
 }: Props) {
   // ─── User / Identity settings ─────────────────────────────────
   const [longName, setLongName] = useState('');
@@ -489,9 +485,6 @@ export default function RadioPanel({
   // ─── Shared state ─────────────────────────────────────────────
   const [status, setStatus] = useState<string | null>(null);
   const [applyingSection, setApplyingSection] = useState<string | null>(null);
-
-  // ─── Node Commands ─────────────────────────────────────────────
-  const [selectedNodeNum, setSelectedNodeNum] = useState<number>(0);
 
   // ─── Device command confirmation ──────────────────────────────
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
@@ -1147,46 +1140,6 @@ export default function RadioPanel({
         <p>Changes are written to the device's flash memory and persist across reboots.</p>
         <p>The device may briefly restart after applying new LoRa or device settings.</p>
       </div>
-
-      {/* Node Commands */}
-      {onRequestPosition && (
-        <div className="space-y-3">
-          <h3 className="text-sm font-medium text-muted">Node Commands</h3>
-          <div className="bg-secondary-dark rounded-lg p-4 space-y-3">
-            <div className="flex gap-2 items-center">
-              <select
-                value={selectedNodeNum}
-                onChange={(e) => setSelectedNodeNum(Number(e.target.value))}
-                disabled={!isConnected}
-                aria-label="Select node for position request"
-                className="flex-1 px-3 py-2 bg-deep-black border border-gray-600 rounded text-gray-200 text-sm focus:border-brand-green focus:outline-none disabled:opacity-40"
-              >
-                <option value={0}>Select a node…</option>
-                {nodes &&
-                  [...nodes.values()]
-                    .filter((n) => n.node_id > 0)
-                    .sort((a, b) =>
-                      (a.short_name || a.long_name).localeCompare(b.short_name || b.long_name),
-                    )
-                    .map((n) => (
-                      <option key={n.node_id} value={n.node_id}>
-                        {n.short_name || n.long_name || `!${n.node_id.toString(16)}`}
-                      </option>
-                    ))}
-              </select>
-              <button
-                onClick={() => {
-                  if (selectedNodeNum > 0) void onRequestPosition(selectedNodeNum);
-                }}
-                disabled={!isConnected || selectedNodeNum === 0}
-                className="px-3 py-2 bg-brand-green/20 hover:bg-brand-green/30 text-brand-green border border-brand-green/40 disabled:opacity-50 rounded text-sm font-medium transition-colors whitespace-nowrap"
-              >
-                Request Position
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Device Commands */}
       <div className="space-y-3">
