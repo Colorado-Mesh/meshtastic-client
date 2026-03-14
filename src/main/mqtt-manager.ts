@@ -439,8 +439,6 @@ export class MQTTManager extends EventEmitter {
           portnum?: number;
           payload?: Uint8Array;
         };
-        const portnum = decoded.portnum ?? 0;
-        console.log('[SUCCESS] Topic:', sanitizeLogMessage(topic), '| Portnum:', portnum);
         this.handleDecoded(nodeId, packetId, decoded);
       } else if (payloadCase === 'encrypted') {
         const encrypted = packet.payloadVariant!.value as Uint8Array;
@@ -448,8 +446,6 @@ export class MQTTManager extends EventEmitter {
         if (decrypted) {
           try {
             const decodedData = fromBinary(DataSchema, decrypted);
-            const portnum = (decodedData as { portnum?: number }).portnum ?? 0;
-            console.log('[SUCCESS] Topic:', sanitizeLogMessage(topic), '| Portnum:', portnum);
             this.handleDecoded(
               nodeId,
               packetId,
@@ -464,14 +460,12 @@ export class MQTTManager extends EventEmitter {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(
-        '[PROTO ERROR]',
+      console.warn(
+        '[MQTT] ServiceEnvelope decode failed:',
         sanitizeLogMessage(msg),
         '| Topic:',
         sanitizeLogMessage(topic),
       );
-      const hex20 = Buffer.from(cleanBytes.slice(0, 20)).toString('hex').slice(0, 40);
-      console.error('[PROTO DUMP] Length:', cleanBytes.length, '| Hex:', hex20);
     }
   }
 
