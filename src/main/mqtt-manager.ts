@@ -123,8 +123,8 @@ export class MQTTManager extends EventEmitter {
       });
     });
 
-    this.client.on('message', (_topic: string, payload: Buffer) => {
-      this.onMessage(payload);
+    this.client.on('message', (topic: string, payload: Buffer | string) => {
+      this.onMessage(topic, payload);
     });
 
     this.client.on('error', (err: Error & { code?: string | number }) => {
@@ -386,11 +386,27 @@ export class MQTTManager extends EventEmitter {
     return Array.from(this.nodeCache.values());
   }
 
-  private onMessage(payload: Buffer): void {
+  private onMessage(topic: string, payload: Buffer | string): void {
+    const cleanBytes = Uint8Array.from(Buffer.from(payload));
+    if (cleanBytes.length === 0) return;
+
+    if (cleanBytes[0] === 0x7b) {
+      try {
+        const parsed = JSON.parse(new TextDecoder().decode(cleanBytes));
+        this.handleJsonMessage(parsed, topic);
+      } catch {
+        // Silent: not valid JSON, skip
+      }
+      return;
+    }
+
+    if (cleanBytes[0] !== 0x0a) return;
+
     try {
-      const envelope = fromBinary(ServiceEnvelopeSchema, payload);
+      // @meshtastic/protobufs Mqtt namespace: ServiceEnvelopeSchema from MqttProto; decode via fromBinary (bufbuild)
+      const envelope = fromBinary(ServiceEnvelopeSchema, cleanBytes);
       const packet = envelope.packet;
-      if (!packet || !packet.from) return;
+      if (!packet?.from) return;
 
       const nodeId = packet.from;
       const packetId = packet.id;
@@ -400,18 +416,25 @@ export class MQTTManager extends EventEmitter {
       const payloadCase = packet.payloadVariant?.case;
 
       if (payloadCase === 'decoded') {
-        const decoded = packet.payloadVariant!.value as { portnum?: number; payload?: Uint8Array };
+        const decoded = packet.payloadVariant!.value as {
+          portnum?: number;
+          payload?: Uint8Array;
+        };
+        const portnum = decoded.portnum ?? 0;
+        console.log('[SUCCESS] Topic:', sanitizeLogMessage(topic), '| Portnum:', portnum);
         this.handleDecoded(nodeId, packetId, decoded);
       } else if (payloadCase === 'encrypted') {
         const encrypted = packet.payloadVariant!.value as Uint8Array;
         const decrypted = this.tryDecrypt(encrypted, packetId, nodeId);
         if (decrypted) {
           try {
-            const data = fromBinary(DataSchema, decrypted);
+            const decodedData = fromBinary(DataSchema, decrypted);
+            const portnum = (decodedData as { portnum?: number }).portnum ?? 0;
+            console.log('[SUCCESS] Topic:', sanitizeLogMessage(topic), '| Portnum:', portnum);
             this.handleDecoded(
               nodeId,
               packetId,
-              data as { portnum?: number; payload?: Uint8Array },
+              decodedData as { portnum?: number; payload?: Uint8Array },
             );
           } catch {
             this.emitMinimalNodeUpdate(nodeId);
@@ -420,14 +443,22 @@ export class MQTTManager extends EventEmitter {
           this.emitMinimalNodeUpdate(nodeId);
         }
       }
-    } catch (e) {
-      // Not all MQTT messages are ServiceEnvelopes; ignore but log for operator diagnosis
-      // warn (not debug) so log panel shows without enabling debug spam
-      console.warn(
-        '[MQTT] Ignored non–ServiceEnvelope or parse error:',
-        e instanceof Error ? e.message : String(e),
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(
+        '[PROTO ERROR]',
+        sanitizeLogMessage(msg),
+        '| Topic:',
+        sanitizeLogMessage(topic),
       );
+      const hex20 = Buffer.from(cleanBytes.slice(0, 20)).toString('hex').slice(0, 40);
+      console.error('[PROTO DUMP] Length:', cleanBytes.length, '| Hex:', hex20);
     }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- JSON path; params reserved for future routing
+  private handleJsonMessage(_parsed: unknown, _topic: string): void {
+    // Silent: JSON messages handled without logging
   }
 
   private handleDecoded(
