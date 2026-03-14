@@ -328,6 +328,15 @@ export default function App() {
 
   const statusColor = STATUS_COLOR[device.state.status] ?? 'bg-gray-500';
 
+  const queueUsed = device.queueStatus ? device.queueStatus.maxlen - device.queueStatus.free : 0;
+  const queueShowBadge = device.queueStatus != null && queueUsed > 0;
+  const queueColorClass =
+    queueUsed <= 10
+      ? 'bg-green-900/60 text-green-300 border border-green-700'
+      : queueUsed <= 14
+        ? 'bg-amber-900/60 text-amber-300 border border-amber-700'
+        : 'bg-red-900/60 text-red-300 border border-red-700';
+
   return (
     <ToastProvider>
       {/* Global assertive live region for critical announcements */}
@@ -371,19 +380,6 @@ export default function App() {
                 MQTT
               </span>
             </div>
-            {/* Queue status badge */}
-            {device.queueStatus && device.queueStatus.free < device.queueStatus.maxlen && (
-              <div
-                className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
-                  device.queueStatus.free === 0
-                    ? 'bg-red-900/60 text-red-300 border border-red-700'
-                    : 'bg-amber-900/60 text-amber-300 border border-amber-700'
-                }`}
-                title={`Queue: ${device.queueStatus.maxlen - device.queueStatus.free}/${device.queueStatus.maxlen} used`}
-              >
-                Q: {device.queueStatus.maxlen - device.queueStatus.free}/{device.queueStatus.maxlen}
-              </div>
-            )}
             {isConnectedOrOperational && <LinkIcon className="w-4 h-4" aria-hidden="true" />}
             <div
               className={`w-2.5 h-2.5 rounded-full ${statusColor}`}
@@ -401,6 +397,15 @@ export default function App() {
               <span className="text-xs text-muted ml-2 whitespace-nowrap">
                 Node: {device.getPickerStyleNodeLabel(device.state.myNodeNum)}
               </span>
+            )}
+            {/* Queue status badge: 0–10 used = green, 11–14 = yellow, 15–16 = red */}
+            {queueShowBadge && device.queueStatus && (
+              <div
+                className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${queueColorClass}`}
+                title={`Queue: ${queueUsed}/${device.queueStatus.maxlen} used`}
+              >
+                Q: {queueUsed}/{device.queueStatus.maxlen}
+              </div>
             )}
           </div>
         </header>
