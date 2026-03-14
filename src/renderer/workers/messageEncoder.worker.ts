@@ -6,6 +6,16 @@ import { Mesh } from '@meshtastic/protobufs';
 import type { WorkerCommand, WorkerEvent } from '../lib/transport/types';
 
 self.onmessage = (event: MessageEvent<WorkerCommand>) => {
+  if (
+    !event ||
+    typeof event.data !== 'object' ||
+    event.data === null ||
+    !('type' in event.data) ||
+    (event.data as { type?: string }).type !== 'ENCODE_MESSAGE'
+  ) {
+    return;
+  }
+
   const cmd = event.data;
 
   if (cmd.type !== 'ENCODE_MESSAGE') return;

@@ -37,7 +37,7 @@ function stripConsoleStyles(msg: string): string {
   // tslog uses: font-weight, color, background, padding, border-radius, font-style, text-decoration.
   return withoutMarkers
     .replace(
-      /(\s+(?:font-weight|font-style|color|background(?:-color)?|padding|border-radius|text-decoration)\s*:[^,\n]+)+$/,
+      /\s+(?:font-weight|font-style|color|background(?:-color)?|padding|border-radius|text-decoration)\s*:.*$/,
       '',
     )
     .trim();
