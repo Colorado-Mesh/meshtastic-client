@@ -3,6 +3,8 @@ import { app } from 'electron';
 import fs from 'fs';
 import path from 'path';
 
+import { sanitizeLogMessage } from './log-service';
+
 let db: Database.Database | null = null;
 
 export function getDatabasePath(): string {
@@ -51,9 +53,14 @@ export function initDatabase(): void {
     setup();
 
     const version = db.pragma('user_version', { simple: true });
-    console.log(`[db] Database initialized at ${dbPath} (user_version = ${version})`);
+    console.log(
+      `[db] Database initialized at ${sanitizeLogMessage(dbPath)} (user_version = ${version})`,
+    );
   } catch (error) {
-    console.error('[db] Database init failed:', error);
+    console.error(
+      '[db] Database init failed:',
+      sanitizeLogMessage(error instanceof Error ? error.message : String(error)),
+    );
     throw error;
   }
 }
@@ -114,7 +121,10 @@ function createBaseTables(): void {
       CREATE INDEX IF NOT EXISTS idx_nodes_last_heard ON nodes(last_heard);
     `);
   } catch (error) {
-    console.error('[db] createBaseTables failed', error);
+    console.error(
+      '[db] createBaseTables failed',
+      sanitizeLogMessage(error instanceof Error ? error.message : String(error)),
+    );
     throw new Error(
       `Failed to create base tables: ${error instanceof Error ? error.message : String(error)}`,
     );
@@ -132,7 +142,10 @@ function runMigrations(): void {
       db!.pragma('user_version = 1');
       userVersion = 1;
     } catch (e) {
-      console.error('[db] migration v1 failed', e);
+      console.error(
+        '[db] migration v1 failed',
+        sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+      );
       throw new Error(`Migration v1 failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
@@ -144,7 +157,10 @@ function runMigrations(): void {
       db!.pragma('user_version = 2');
       userVersion = 2;
     } catch (e) {
-      console.error('[db] migration v2 failed', e);
+      console.error(
+        '[db] migration v2 failed',
+        sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+      );
       throw new Error(`Migration v2 failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
@@ -155,7 +171,10 @@ function runMigrations(): void {
       db!.pragma('user_version = 3');
       userVersion = 3;
     } catch (e) {
-      console.error('[db] migration v3 failed', e);
+      console.error(
+        '[db] migration v3 failed',
+        sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+      );
       throw new Error(`Migration v3 failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
@@ -170,7 +189,10 @@ function runMigrations(): void {
       db!.pragma('user_version = 4');
       userVersion = 4;
     } catch (e) {
-      console.error('[db] migration v4 failed', e);
+      console.error(
+        '[db] migration v4 failed',
+        sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+      );
       throw new Error(`Migration v4 failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
@@ -181,7 +203,10 @@ function runMigrations(): void {
       db!.pragma('user_version = 5');
       userVersion = 5;
     } catch (e) {
-      console.error('[db] migration v5 failed', e);
+      console.error(
+        '[db] migration v5 failed',
+        sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+      );
       throw new Error(`Migration v5 failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
@@ -196,7 +221,10 @@ function runMigrations(): void {
       db!.pragma('user_version = 6');
       userVersion = 6;
     } catch (e) {
-      console.error('[db] migration v6 failed', e);
+      console.error(
+        '[db] migration v6 failed',
+        sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+      );
       throw new Error(`Migration v6 failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
@@ -207,7 +235,10 @@ function runMigrations(): void {
       db!.pragma('user_version = 7');
       userVersion = 7;
     } catch (e) {
-      console.error('[db] migration v7 failed', e);
+      console.error(
+        '[db] migration v7 failed',
+        sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+      );
       throw new Error(`Migration v7 failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
@@ -218,7 +249,10 @@ function runMigrations(): void {
       db!.pragma('user_version = 8');
       userVersion = 8;
     } catch (e) {
-      console.error('[db] migration v8 failed', e);
+      console.error(
+        '[db] migration v8 failed',
+        sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+      );
       throw new Error(`Migration v8 failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
@@ -232,7 +266,10 @@ function runMigrations(): void {
       db!.pragma('user_version = 9');
       userVersion = 9;
     } catch (e) {
-      console.error('[db] migration v9 failed', e);
+      console.error(
+        '[db] migration v9 failed',
+        sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+      );
       throw new Error(`Migration v9 failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
@@ -242,7 +279,10 @@ function runMigrations(): void {
       db!.prepare('ALTER TABLE messages ADD COLUMN received_via TEXT').run();
       db!.pragma('user_version = 10');
     } catch (e) {
-      console.error('[db] migration v10 failed', e);
+      console.error(
+        '[db] migration v10 failed',
+        sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+      );
       throw new Error(`Migration v10 failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
@@ -323,7 +363,10 @@ export function mergeDatabase(sourcePath: string) {
 
     return result;
   } catch (err) {
-    console.error('[db] Merge failed:', err);
+    console.error(
+      '[db] Merge failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   } finally {
     if (sourceDb) sourceDb.close();
@@ -341,7 +384,10 @@ export function closeDatabase(): void {
     try {
       db.close();
     } catch (err) {
-      console.error('[db] Error closing database:', err);
+      console.error(
+        '[db] Error closing database:',
+        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+      );
     } finally {
       db = null;
     }

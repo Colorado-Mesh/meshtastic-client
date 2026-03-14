@@ -545,21 +545,6 @@ export function useDevice() {
         return;
       }
 
-      // If a device is connected, enforce downlink channel config
-      if (deviceRef.current) {
-        const chCfg = channelConfigsRef.current.find((c) => c.index === msg.channel);
-        if (!chCfg?.downlinkEnabled) return; // drop: downlink not enabled for this channel
-
-        // Re-transmit over RF. Firmware stamps `from` with the gateway's own node number,
-        // so we prefix the payload with [MQTT:SHORT_NAME] to preserve attribution.
-        const senderNode = nodesRef.current.get(msg.sender_id);
-        const shortName = senderNode?.short_name ?? `!${msg.sender_id.toString(16)}`;
-        const prefixedPayload = `[MQTT:${shortName}] ${msg.payload}`;
-        deviceRef.current.sendText(prefixedPayload, 'broadcast', true, msg.channel).catch((e) => {
-          console.debug('[useDevice] MQTT downlink sendText non-fatal', e);
-        });
-      }
-
       // Deduplicate by content too (same sender + timestamp)
       const mqttMsg = { ...msg, receivedVia: 'mqtt' as const };
       setMessages((prev) => {

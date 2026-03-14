@@ -29,9 +29,10 @@ After `npm install`, the repo’s git hooks are enabled (`core.hooksPath` → `.
 2. **Re-stage** — Only files that were already staged are re-added, so unstaged WIP is not swept in.
 3. **`npm run lint`**
 4. **`npm run typecheck`** — TypeScript check for renderer and main/preload.
-5. **`npm audit`** — Fails the commit if npm reports vulnerabilities.
-6. **`actionlint`** — Lints `.github/workflows/*.yml`; must be installed (see above).
-7. **`npm run test:run`** — Fails the commit if tests fail.
+5. **`npm run check:log-injection`** — Ensures main-process `console.*` calls do not pass raw error variables (`err`, `e`, `error`, `reason`) without `sanitizeLogMessage()` at the call site. See [Log injection (CodeQL js/log-injection)](#log-injection-codeql-jslog-injection) below.
+6. **`npm audit`** — Fails the commit if npm reports vulnerabilities.
+7. **`actionlint`** — Lints `.github/workflows/*.yml`; must be installed (see above).
+8. **`npm run test:run`** — Fails the commit if tests fail.
 
 To skip the hook in an emergency: `git commit --no-verify`.
 
@@ -150,8 +151,10 @@ GitHub Code scanning (CodeQL) reports **log injection** when user-controlled or 
 
 - **Helper:** `sanitizeLogMessage(message: unknown): string` in `src/main/log-service.ts` strips control characters (including newlines) and normalizes whitespace. Use it for every log message and source string that is derived from untrusted input.
 - **Example:** In `patchMainConsole()`, console overrides pass `sanitizeLogMessage(stringifyArgs(args))` into `appendLine()`, not `stringifyArgs(args)` alone.
+- **Before you commit:** If you added or changed any main-process logging (`src/main/**/*.ts`) that passes error-like values (e.g. `err`, `e`, `error`, `reason`) into `console.log` / `console.warn` / `console.error`, wrap the value in `sanitizeLogMessage(...)` at the call site. The pre-commit hook runs `npm run check:log-injection`, which flags such calls; fix any reported lines before committing.
+- **Local check:** Run `npm run check:log-injection` to scan `src/main` for unsanitized `console.*(..., err|e|error|reason)` patterns. To suppress a false positive, add `// log-injection-ok` with a short reason on the same line as the console call.
 - **Checks:** Code scanning runs on push (GitHub default setup). If you add or change code that feeds into the log pipeline, ensure the **first** use of untrusted data in that path is wrapped in `sanitizeLogMessage()` at the call site.
-- **Tests:** When adding or changing code that feeds into the log pipeline (e.g. new call sites of `appendLine`, `console.*` in main, or renderer→main log forwarding), add or extend tests so that log injection is caught by the suite. Pre-commit runs `npm run test:run`, which includes `src/renderer/lib/sanitize-log-message.test.ts`: that file tests both `sanitizeLogMessage` and `sanitizeForLogSink` (used by the console overrides in log-service) so that newlines and control characters are stripped and behavior matches. Add or extend tests there (or equivalent) so regressions fail the test run. AI and reviewers should ensure such tests exist or are added.
+- **Tests:** When adding or changing code that feeds into the log pipeline (e.g. new call sites of `appendLine`, `console.*` in main, or renderer→main log forwarding), add or extend tests so that log injection is caught by the suite. Pre-commit runs `npm run test:run`, which includes `src/renderer/lib/sanitize-log-message.test.ts`: that file tests both `sanitizeLogMessage` and `sanitizeForLogSink` (used by the console overrides in log-service) and runs the log-injection script so that regressions fail the test run. Add or extend tests there (or equivalent) so regressions are caught. AI and reviewers should ensure such tests exist or are added.
 
 ## Commit Style
 

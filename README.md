@@ -39,11 +39,11 @@ The official Meshtastic apps cover the basics, but desktop power users need more
 - **Bluetooth LE** — pair wirelessly; one-click reconnect card remembers your last device (name persists across sessions)
 - **USB Serial** — plug in via USB; auto-reconnects silently on startup
 - **WiFi/HTTP** — connect to network-enabled nodes; saves last address for quick reconnect
-- **MQTT** — subscribe to a broker to receive mesh traffic over the internet; AES-128-CTR decryption, automatic RF deduplication, exponential-backoff reconnect
+- **MQTT** — subscribe to a broker to receive mesh traffic over the internet; AES-128-CTR decryption, automatic RF deduplication, exponential-backoff reconnect, and an **active node cache** that periodically refreshes presence information so MQTT-only and RF+MQTT nodes stay visible even when your radio is offline.
 
 **Chat**
 
-- Send/receive messages across channels with per-transport delivery badges (BT / USB / WiFi / MQTT) — shows ACK, no-ACK, and failure states independently for each transport
+- Send/receive messages across channels with per-transport delivery badges (BT / USB / WiFi / MQTT) and a **transport indicator (RF / MQTT / both)** on received messages — shows ACK, no-ACK, and failure states independently for each transport
 - Emoji reactions (11 emojis with compose picker) and reply-to-message (quoted preview in bubble)
 - Unread message divider that persists across restarts and auto-scrolls on tab switch
 - Direct messages (DMs) to individual nodes
@@ -58,7 +58,7 @@ The official Meshtastic apps cover the basics, but desktop power users need more
 
 - Edit channels: name, PSK, and role; 18 region presets and 7 modem presets
 - Device roles: Client, Router, Tracker, Sensor, TAK, and more
-- Per-channel MQTT gateway uplink/downlink; device reboot, shutdown, and factory reset
+- Per-channel MQTT gateway uplink (RF → MQTT); MQTT messages are not retransmitted over RF (see Limitations); device reboot, shutdown, and factory reset
 
 **Diagnostics**
 
@@ -92,6 +92,12 @@ The official Meshtastic apps cover the basics, but desktop power users need more
 - Automatic update checking — packaged builds download and install in-app; macOS opens the release page
 - System tray with live unread badge; app stays accessible when window is closed
 - Persistent storage via local SQLite; DB export/import/clear in the App tab; Clear GPS Data and Reset Diagnostics actions available without a full DB wipe
+
+---
+
+## Limitations
+
+- **MQTT → RF**: Messages received via MQTT are shown in chat but are not rebroadcast over the radio. The underlying Meshtastic libraries cannot reliably relay MQTT-originated messages onto the mesh while preserving correct attribution and delivery state; previous relay behavior caused duplicate or misattributed messages and confused users on the mesh. As a result, MQTT remains receive-only for mesh rebroadcast.
 
 ---
 
@@ -332,7 +338,7 @@ meshtastic-client/
 │   │   ├── index.ts              # Window creation, BLE/Serial intercept, all IPC handlers
 │   │   ├── log-service.ts        # Log file, console patch, log panel IPC
 │   │   ├── database.ts           # SQLite schema & migrations (WAL mode, user_version 9)
-│   │   ├── mqtt-manager.ts       # MQTT client: AES decrypt, dedup, protobuf decode
+│   │   ├── mqtt-manager.ts       # MQTT client: AES decrypt, dedup, protobuf decode, pre-parser for firmware trailing padding
 │   │   ├── updater.ts            # Auto-update checks via electron-updater
 │   │   └── gps.ts                # Main-process GPS helper
 │   ├── preload/

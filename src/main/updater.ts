@@ -1,6 +1,8 @@
 import type { BrowserWindow } from 'electron';
 import { app, ipcMain, shell } from 'electron';
 
+import { sanitizeLogMessage } from './log-service';
+
 // electron-updater is a runtime dependency only in the packaged app path
 // We do a dynamic require so the dev path still works without it installed
 
@@ -35,7 +37,10 @@ export function initUpdater(win: BrowserWindow): void {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       autoUpdater = require('electron-updater').autoUpdater;
     } catch (e) {
-      console.error('[updater] electron-updater not available:', e);
+      console.error(
+        '[updater] electron-updater not available:',
+        sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+      );
       return;
     }
 
@@ -64,14 +69,14 @@ export function initUpdater(win: BrowserWindow): void {
     });
 
     autoUpdater.on('error', (err: Error) => {
-      console.error('[updater] error:', err.message);
+      console.error('[updater] error:', sanitizeLogMessage(err.message));
       send('update:error', { message: err.message });
     });
 
     // Delay the initial check so the window has time to fully mount
     setTimeout(() => {
       autoUpdater.checkForUpdates().catch((e: Error) => {
-        console.error('[updater] checkForUpdates failed:', e.message);
+        console.error('[updater] checkForUpdates failed:', sanitizeLogMessage(e.message));
       });
     }, 5000);
 
@@ -80,7 +85,7 @@ export function initUpdater(win: BrowserWindow): void {
         await autoUpdater.checkForUpdates();
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
-        console.warn('[updater] update:check failed:', e);
+        console.warn('[updater] update:check failed:', sanitizeLogMessage(msg));
         send('update:error', { message: msg });
       }
     });
@@ -91,7 +96,7 @@ export function initUpdater(win: BrowserWindow): void {
         await autoUpdater.downloadUpdate();
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
-        console.warn('[updater] update:download failed:', e);
+        console.warn('[updater] update:download failed:', sanitizeLogMessage(msg));
         send('update:error', { message: msg });
       }
     });
@@ -108,7 +113,7 @@ export function initUpdater(win: BrowserWindow): void {
           headers: { 'User-Agent': `mesh-client/${app.getVersion()}` },
         });
         if (!res.ok) {
-          console.warn('[updater] GitHub API responded with', res.status);
+          console.warn('[updater] GitHub API responded with', String(res.status));
           return;
         }
         const data = (await res.json()) as { tag_name: string; html_url: string };
@@ -126,7 +131,10 @@ export function initUpdater(win: BrowserWindow): void {
         }
       } catch (e) {
         // Network unreachable — silently skip, don't crash or show error
-        console.warn('[updater] GitHub API fetch failed:', e);
+        console.warn(
+          '[updater] GitHub API fetch failed:',
+          sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+        );
       }
     }, 5000);
 
@@ -151,7 +159,10 @@ export function initUpdater(win: BrowserWindow): void {
           send('update:not-available');
         }
       } catch (e) {
-        console.warn('[updater] manual check failed:', e);
+        console.warn(
+          '[updater] manual check failed:',
+          sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+        );
         send('update:error', { message: 'Update check failed — check network connection' });
       }
     });
@@ -172,7 +183,10 @@ export function initUpdater(win: BrowserWindow): void {
         typeof url === 'string' && url.startsWith('https://github.com/') ? url : RELEASES_URL;
       await shell.openExternal(target);
     } catch (err) {
-      console.error('[IPC] update:open-releases failed:', err);
+      console.error(
+        '[IPC] update:open-releases failed:',
+        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+      );
       throw err;
     }
   });

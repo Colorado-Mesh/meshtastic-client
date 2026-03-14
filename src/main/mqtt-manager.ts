@@ -5,6 +5,7 @@ import { EventEmitter } from 'events';
 import * as mqtt from 'mqtt';
 
 import type { ChatMessage, MeshNode, MQTTSettings, MQTTStatus } from '../renderer/lib/types';
+import { sanitizeLogMessage } from './log-service';
 
 const { ServiceEnvelopeSchema } = MqttProto;
 const { UserSchema, PositionSchema, DataSchema, MeshPacketSchema } = Mesh;
@@ -106,9 +107,12 @@ export class MQTTManager extends EventEmitter {
             err.message.toLowerCase().includes('connection closed') ||
             err.message.toLowerCase().includes('connection reset');
           if (isCascade) {
-            console.warn('[MQTT] Subscribe interrupted (will retry on reconnect):', err.message);
+            console.warn(
+              '[MQTT] Subscribe interrupted (will retry on reconnect):',
+              sanitizeLogMessage(err.message),
+            );
           } else {
-            console.error('[MQTT] Subscribe failed:', err);
+            console.error('[MQTT] Subscribe failed:', sanitizeLogMessage(err.message));
             this.setError(`Subscribe failed: ${err.message}`);
           }
         } else {
@@ -119,8 +123,8 @@ export class MQTTManager extends EventEmitter {
       });
     });
 
-    this.client.on('message', (_topic: string, payload: Buffer) => {
-      this.onMessage(payload);
+    this.client.on('message', (topic: string, payload: Buffer | string) => {
+      this.onMessage(topic, payload);
     });
 
     this.client.on('error', (err: Error & { code?: string | number }) => {
@@ -133,9 +137,9 @@ export class MQTTManager extends EventEmitter {
         code === 'ETIMEDOUT' ||
         code === 'ENOTFOUND';
       if (isTransient) {
-        console.warn('[MQTT] Network error (will reconnect):', err.message);
+        console.warn('[MQTT] Network error (will reconnect):', sanitizeLogMessage(err.message));
       } else {
-        console.error('[MQTT] Fatal connection error:', err);
+        console.error('[MQTT] Fatal connection error:', sanitizeLogMessage(err.message));
         this.setError(err.message);
       }
     });
@@ -382,11 +386,79 @@ export class MQTTManager extends EventEmitter {
     return Array.from(this.nodeCache.values());
   }
 
-  private onMessage(payload: Buffer): void {
+  private onMessage(topic: string, payload: Buffer | string): void {
+    const cleanBytes = Uint8Array.from(Buffer.from(payload));
+    if (cleanBytes.length === 0) return;
+
+    if (cleanBytes[0] === 0x7b) {
+      try {
+        const parsed = JSON.parse(new TextDecoder().decode(cleanBytes));
+        this.handleJsonMessage(parsed, topic);
+      } catch {
+        // Silent: not valid JSON, skip
+      }
+      return;
+    }
+
+    if (cleanBytes[0] !== 0x0a) return;
+
     try {
-      const envelope = fromBinary(ServiceEnvelopeSchema, payload);
-      const packet = envelope.packet;
-      if (!packet || !packet.from) return;
+      // 1. Extract the MeshPacket length and offset from the ServiceEnvelope (Tag 1)
+      let i = 1;
+      let packetLen = 0;
+      let shift = 0;
+      while (i < cleanBytes.length) {
+        const b = cleanBytes[i++];
+        packetLen |= (b & 0x7f) << shift;
+        shift += 7;
+        if ((b & 0x80) === 0) break;
+      }
+
+      const packetBytes = cleanBytes.subarray(i, Math.min(i + packetLen, cleanBytes.length));
+
+      // 2. Mini-parser: Read valid tags and stop exactly when we hit the 0x00 padding
+      let pos = 0;
+      let lastValidPos = 0;
+      while (pos < packetBytes.length) {
+        lastValidPos = pos;
+        const b = packetBytes[pos++];
+        if (b === 0) break;
+        const wireType = b & 7;
+
+        if ((b & 0x80) !== 0) {
+          while (pos < packetBytes.length && (packetBytes[pos++] & 0x80) !== 0) {
+            /* skip remaining tag varint bytes */
+          }
+        }
+
+        if (wireType === 0) {
+          while (pos < packetBytes.length && (packetBytes[pos++] & 0x80) !== 0) {
+            /* skip varint value bytes */
+          }
+        } else if (wireType === 1) {
+          pos += 8;
+        } else if (wireType === 2) {
+          let len = 0;
+          let lShift = 0;
+          while (pos < packetBytes.length) {
+            const lb = packetBytes[pos++];
+            len |= (lb & 0x7f) << lShift;
+            lShift += 7;
+            if ((lb & 0x80) === 0) break;
+          }
+          pos += len;
+        } else if (wireType === 5) {
+          pos += 4;
+        } else {
+          break;
+        }
+      }
+
+      // 3. Slice off the garbage padding and decode using strict fromBinary
+      const sanitizedBytes = packetBytes.subarray(0, lastValidPos);
+      const packet = fromBinary(MeshPacketSchema, sanitizedBytes);
+
+      if (!packet?.from) return;
 
       const nodeId = packet.from;
       const packetId = packet.id;
@@ -396,18 +468,25 @@ export class MQTTManager extends EventEmitter {
       const payloadCase = packet.payloadVariant?.case;
 
       if (payloadCase === 'decoded') {
-        const decoded = packet.payloadVariant!.value as { portnum?: number; payload?: Uint8Array };
+        const decoded = packet.payloadVariant!.value as {
+          portnum?: number;
+          payload?: Uint8Array;
+        };
+        const portnum = decoded.portnum ?? 0;
+        console.log('[SUCCESS] Topic:', sanitizeLogMessage(topic), '| Portnum:', portnum);
         this.handleDecoded(nodeId, packetId, decoded);
       } else if (payloadCase === 'encrypted') {
         const encrypted = packet.payloadVariant!.value as Uint8Array;
         const decrypted = this.tryDecrypt(encrypted, packetId, nodeId);
         if (decrypted) {
           try {
-            const data = fromBinary(DataSchema, decrypted);
+            const decodedData = fromBinary(DataSchema, decrypted);
+            const portnum = (decodedData as { portnum?: number }).portnum ?? 0;
+            console.log('[SUCCESS] Topic:', sanitizeLogMessage(topic), '| Portnum:', portnum);
             this.handleDecoded(
               nodeId,
               packetId,
-              data as { portnum?: number; payload?: Uint8Array },
+              decodedData as { portnum?: number; payload?: Uint8Array },
             );
           } catch {
             this.emitMinimalNodeUpdate(nodeId);
@@ -416,14 +495,22 @@ export class MQTTManager extends EventEmitter {
           this.emitMinimalNodeUpdate(nodeId);
         }
       }
-    } catch (e) {
-      // Not all MQTT messages are ServiceEnvelopes; ignore but log for operator diagnosis
-      // warn (not debug) so log panel shows without enabling debug spam
-      console.warn(
-        '[MQTT] Ignored non–ServiceEnvelope or parse error:',
-        e instanceof Error ? e.message : String(e),
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(
+        '[PROTO ERROR]',
+        sanitizeLogMessage(msg),
+        '| Topic:',
+        sanitizeLogMessage(topic),
       );
+      const hex20 = Buffer.from(cleanBytes.slice(0, 20)).toString('hex').slice(0, 40);
+      console.error('[PROTO DUMP] Length:', cleanBytes.length, '| Hex:', hex20);
     }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- JSON path; params reserved for future routing
+  private handleJsonMessage(_parsed: unknown, _topic: string): void {
+    // Silent: JSON messages handled without logging
   }
 
   private handleDecoded(

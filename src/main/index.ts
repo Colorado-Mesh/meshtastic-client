@@ -19,6 +19,7 @@ import {
   getRecentLines,
   initLogFile,
   patchMainConsole,
+  sanitizeLogMessage,
   setMainWindow,
 } from './log-service';
 import { MQTTManager } from './mqtt-manager';
@@ -55,7 +56,10 @@ let lastSerialPortIds = new Set<string>();
 
 // ─── Global error handlers (prevent silent crashes in packaged app) ──
 process.on('uncaughtException', (error) => {
-  console.error('[main] Uncaught exception:', error);
+  console.error(
+    '[main] Uncaught exception:',
+    sanitizeLogMessage(error?.stack ?? error?.message ?? String(error)),
+  );
   try {
     dialog.showErrorBox(
       'Mesh-Client — Unexpected Error',
@@ -71,7 +75,10 @@ let lastUnhandledRejectionDialogAt = 0;
 const UNHANDLED_REJECTION_DIALOG_COOLDOWN_MS = 60_000;
 
 process.on('unhandledRejection', (reason) => {
-  console.error('[main] Unhandled rejection:', reason);
+  console.error(
+    '[main] Unhandled rejection:',
+    sanitizeLogMessage(reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)),
+  );
   const now = Date.now();
   if (now - lastUnhandledRejectionDialogAt < UNHANDLED_REJECTION_DIALOG_COOLDOWN_MS) return;
   lastUnhandledRejectionDialogAt = now;
@@ -414,7 +421,7 @@ function createWindow() {
   mainWindow.webContents.session.setPermissionCheckHandler((_webContents, permission) => {
     const granted = permission === 'serial' || permission === 'geolocation';
     if (granted) {
-      console.log(`[permissions] checkHandler: ${permission} → granted`);
+      console.log(`[permissions] checkHandler: ${sanitizeLogMessage(permission)} → granted`);
     }
     return granted;
   });
@@ -424,7 +431,7 @@ function createWindow() {
     (_webContents, permission, callback) => {
       const grant = permission === 'geolocation';
       if (grant) {
-        console.log(`[permissions] requestHandler: ${permission} → granted`);
+        console.log(`[permissions] requestHandler: ${sanitizeLogMessage(permission)} → granted`);
       }
       callback(grant);
     },
@@ -449,7 +456,11 @@ function createWindow() {
 
   // ─── Renderer crash / load failure detection ──────────────────────
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
-    console.error('[main] Renderer process gone:', details.reason, details.exitCode);
+    console.error(
+      '[main] Renderer process gone:',
+      sanitizeLogMessage(details.reason),
+      details.exitCode,
+    );
     try {
       dialog.showErrorBox(
         'Mesh-Client — Renderer Stopped',
@@ -461,7 +472,12 @@ function createWindow() {
   });
 
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDesc, validatedURL) => {
-    console.error('[main] Failed to load:', errorCode, errorDesc, validatedURL);
+    console.error(
+      '[main] Failed to load:',
+      errorCode,
+      sanitizeLogMessage(String(errorDesc)),
+      sanitizeLogMessage(validatedURL),
+    );
     // ERR_ABORTED (-3) often means navigation was cancelled; avoid noisy dialog
     if (errorCode === -3) return;
     try {
@@ -486,19 +502,19 @@ function createWindow() {
   // Load the app
   if (process.env.VITE_DEV_SERVER_URL) {
     // Same startup diagnostics as packaged build so Log panel captures them in dev too
-    console.log('[Startup] dev server URL:', process.env.VITE_DEV_SERVER_URL);
+    console.log('[Startup] dev server URL:', sanitizeLogMessage(process.env.VITE_DEV_SERVER_URL));
     console.log('[Startup] app.isPackaged:', app.isPackaged);
-    console.log('[Startup] userData:', app.getPath('userData'));
+    console.log('[Startup] userData:', sanitizeLogMessage(app.getPath('userData')));
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
     mainWindow.webContents.openDevTools();
   } else {
     const indexPath = path.join(__dirname, '../../dist/renderer/index.html');
     // Startup diagnostics for troubleshooting packaged app issues
     console.log('[Startup] app.isPackaged:', app.isPackaged);
-    console.log('[Startup] __dirname:', __dirname);
-    console.log('[Startup] Renderer path:', indexPath);
-    console.log('[Startup] process.resourcesPath:', process.resourcesPath);
-    console.log('[Startup] userData:', app.getPath('userData'));
+    console.log('[Startup] __dirname:', sanitizeLogMessage(__dirname));
+    console.log('[Startup] Renderer path:', sanitizeLogMessage(indexPath));
+    console.log('[Startup] process.resourcesPath:', sanitizeLogMessage(process.resourcesPath));
+    console.log('[Startup] userData:', sanitizeLogMessage(app.getPath('userData')));
     mainWindow.loadFile(indexPath);
   }
 
@@ -602,7 +618,10 @@ ipcMain.handle('mqtt:connect', async (_event, settings) => {
     validateMqttSettings(settings);
     mqttManager.connect(settings);
   } catch (err) {
-    console.error('[IPC] mqtt:connect failed:', err);
+    console.error(
+      '[IPC] mqtt:connect failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -611,7 +630,10 @@ ipcMain.handle('mqtt:disconnect', async () => {
     console.debug('[IPC] mqtt:disconnect');
     mqttManager.disconnect();
   } catch (err) {
-    console.error('[IPC] mqtt:disconnect failed:', err);
+    console.error(
+      '[IPC] mqtt:disconnect failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -620,7 +642,10 @@ ipcMain.handle('mqtt:getClientId', async () => {
     console.debug('[IPC] mqtt:getClientId');
     return mqttManager.getClientId();
   } catch (err) {
-    console.error('[IPC] mqtt:getClientId failed:', err);
+    console.error(
+      '[IPC] mqtt:getClientId failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -647,7 +672,10 @@ ipcMain.handle('mqtt:publish', async (_event, args) => {
       a.replyId,
     );
   } catch (err) {
-    console.error('[IPC] mqtt:publish failed:', err);
+    console.error(
+      '[IPC] mqtt:publish failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -655,7 +683,10 @@ ipcMain.handle('mqtt:getCachedNodes', async () => {
   try {
     return mqttManager.getCachedNodes();
   } catch (err) {
-    console.error('[IPC] mqtt:getCachedNodes failed:', err);
+    console.error(
+      '[IPC] mqtt:getCachedNodes failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -685,7 +716,10 @@ ipcMain.handle('mqtt:publishNodeInfo', async (_event, args) => {
       a.hwModel,
     );
   } catch (err) {
-    console.error('[IPC] mqtt:publishNodeInfo failed:', err);
+    console.error(
+      '[IPC] mqtt:publishNodeInfo failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -719,7 +753,10 @@ ipcMain.handle('mqtt:publishPosition', async (_event, args) => {
       a.altitude,
     );
   } catch (err) {
-    console.error('[IPC] mqtt:publishPosition failed:', err);
+    console.error(
+      '[IPC] mqtt:publishPosition failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -729,7 +766,10 @@ ipcMain.handle('gps:getFix', async () => {
   try {
     return await getGpsFix();
   } catch (err) {
-    console.error('[gps] getGpsFix threw:', err);
+    console.error(
+      '[gps] getGpsFix threw:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     return {
       status: 'error',
       message: 'Location unavailable (network or service error).',
@@ -745,7 +785,10 @@ ipcMain.handle('app:quit', async () => {
   try {
     mqttManager.disconnect();
   } catch (err) {
-    console.error('[IPC] app:quit disconnect failed:', err);
+    console.error(
+      '[IPC] app:quit disconnect failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
   } finally {
     app.quit();
   }
@@ -780,7 +823,10 @@ ipcMain.handle('db:saveMessage', (_event, message) => {
           : null,
     });
   } catch (err) {
-    console.error('[IPC] db:saveMessage failed:', err);
+    console.error(
+      '[IPC] db:saveMessage failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -811,7 +857,10 @@ ipcMain.handle('db:getMessages', (_event, channel?: number, limit = 200) => {
       return { ...rest, to: to_node ?? undefined };
     });
   } catch (err) {
-    console.error('[IPC] db:getMessages failed:', err);
+    console.error(
+      '[IPC] db:getMessages failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -865,7 +914,10 @@ ipcMain.handle('db:saveNode', (_event, node) => {
       via_mqtt: node.via_mqtt != null ? (node.via_mqtt ? 1 : 0) : null,
     });
   } catch (err) {
-    console.error('[IPC] db:saveNode failed:', err);
+    console.error(
+      '[IPC] db:saveNode failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -880,7 +932,10 @@ ipcMain.handle('db:setNodeFavorited', (_event, nodeId: number, favorited: boolea
       .prepare('UPDATE nodes SET favorited = ? WHERE node_id = ?')
       .run(favorited ? 1 : 0, id);
   } catch (err) {
-    console.error('[IPC] db:setNodeFavorited failed:', err);
+    console.error(
+      '[IPC] db:setNodeFavorited failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -890,7 +945,10 @@ ipcMain.handle('db:getNodes', () => {
     const db = getDatabase();
     return db.prepare('SELECT * FROM nodes ORDER BY last_heard DESC').all();
   } catch (err) {
-    console.error('[IPC] db:getNodes failed:', err);
+    console.error(
+      '[IPC] db:getNodes failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -900,7 +958,10 @@ ipcMain.handle('db:clearMessages', () => {
     const db = getDatabase();
     return db.prepare('DELETE FROM messages').run();
   } catch (err) {
-    console.error('[IPC] db:clearMessages failed:', err);
+    console.error(
+      '[IPC] db:clearMessages failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -910,7 +971,10 @@ ipcMain.handle('db:clearNodes', () => {
     const db = getDatabase();
     return db.prepare('DELETE FROM nodes').run();
   } catch (err) {
-    console.error('[IPC] db:clearNodes failed:', err);
+    console.error(
+      '[IPC] db:clearNodes failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -920,7 +984,10 @@ ipcMain.handle('db:clearNodePositions', () => {
     const db = getDatabase();
     return db.prepare('UPDATE nodes SET latitude = NULL, longitude = NULL, altitude = NULL').run();
   } catch (err) {
-    console.error('[IPC] db:clearNodePositions failed:', err);
+    console.error(
+      '[IPC] db:clearNodePositions failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -931,7 +998,10 @@ ipcMain.handle('db:deleteNode', (_event, nodeId: number) => {
     const db = getDatabase();
     return db.prepare('DELETE FROM nodes WHERE node_id = ?').run(id);
   } catch (err) {
-    console.error('[IPC] db:deleteNode failed:', err);
+    console.error(
+      '[IPC] db:deleteNode failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -942,7 +1012,10 @@ ipcMain.handle('db:deleteNodesByAge', (_event, days: number) => {
     const cutoff = Math.floor(Date.now() / 1000) - days * 86400;
     return getDatabase().prepare('DELETE FROM nodes WHERE last_heard < ?').run(cutoff);
   } catch (err) {
-    console.error('[IPC] db:deleteNodesByAge failed:', err);
+    console.error(
+      '[IPC] db:deleteNodesByAge failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -956,7 +1029,10 @@ ipcMain.handle('db:pruneNodesByCount', (_event, maxCount: number) => {
       )
       .run(maxCount);
   } catch (err) {
-    console.error('[IPC] db:pruneNodesByCount failed:', err);
+    console.error(
+      '[IPC] db:pruneNodesByCount failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -974,7 +1050,10 @@ ipcMain.handle('db:deleteNodesBatch', (_event, nodeIds: number[]) => {
       .run(...safe);
     return result.changes;
   } catch (err) {
-    console.error('[IPC] db:deleteNodesBatch failed:', err);
+    console.error(
+      '[IPC] db:deleteNodesBatch failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -984,7 +1063,10 @@ ipcMain.handle('db:clearMessagesByChannel', (_event, channel: number) => {
     const ch = safeNonNegativeInt(channel);
     return getDatabase().prepare('DELETE FROM messages WHERE channel = ?').run(ch);
   } catch (err) {
-    console.error('[IPC] db:clearMessagesByChannel failed:', err);
+    console.error(
+      '[IPC] db:clearMessagesByChannel failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -993,7 +1075,10 @@ ipcMain.handle('db:getMessageChannels', () => {
   try {
     return getDatabase().prepare('SELECT DISTINCT channel FROM messages ORDER BY channel').all();
   } catch (err) {
-    console.error('[IPC] db:getMessageChannels failed:', err);
+    console.error(
+      '[IPC] db:getMessageChannels failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -1005,7 +1090,10 @@ ipcMain.handle('db:deleteNodesBySource', (_event, source: string) => {
     if (source.length > 64) throw new Error('db:deleteNodesBySource: source string too long');
     return deleteNodesBySource(source);
   } catch (err) {
-    console.error('[IPC] db:deleteNodesBySource failed:', err);
+    console.error(
+      '[IPC] db:deleteNodesBySource failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -1040,7 +1128,10 @@ ipcMain.handle(
         .prepare('UPDATE messages SET status = ?, error = ? WHERE packet_id = ?')
         .run(statusSafe, errorSafe, pid);
     } catch (err) {
-      console.error('[IPC] db:updateMessageStatus failed:', err);
+      console.error(
+        '[IPC] db:updateMessageStatus failed:',
+        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+      );
       throw err;
     }
   },
@@ -1057,7 +1148,10 @@ ipcMain.handle('db:updateMessageReceivedVia', (_event, packetId: number) => {
       )
       .run(pid);
   } catch (err) {
-    console.error('[IPC] db:updateMessageReceivedVia failed:', err);
+    console.error(
+      '[IPC] db:updateMessageReceivedVia failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -1077,7 +1171,10 @@ ipcMain.handle('db:export', async () => {
     }
     return null;
   } catch (err) {
-    console.error('[IPC] db:export failed:', err);
+    console.error(
+      '[IPC] db:export failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -1097,7 +1194,10 @@ ipcMain.handle('db:import', async () => {
     }
     return null;
   } catch (err) {
-    console.error('[IPC] db:import failed:', err);
+    console.error(
+      '[IPC] db:import failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -1112,7 +1212,10 @@ ipcMain.handle('session:clearData', async () => {
     });
     await win.webContents.session.clearCache();
   } catch (err) {
-    console.error('[IPC] session:clearData failed:', err);
+    console.error(
+      '[IPC] session:clearData failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -1122,7 +1225,10 @@ ipcMain.handle('log:getPath', () => {
   try {
     return getLogPath();
   } catch (err) {
-    console.error('[IPC] log:getPath failed:', err);
+    console.error(
+      '[IPC] log:getPath failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -1131,7 +1237,10 @@ ipcMain.handle('log:getRecentLines', () => {
   try {
     return getRecentLines();
   } catch (err) {
-    console.error('[IPC] log:getRecentLines failed:', err);
+    console.error(
+      '[IPC] log:getRecentLines failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -1140,7 +1249,10 @@ ipcMain.handle('log:clear', () => {
   try {
     clearLogFile();
   } catch (err) {
-    console.error('[IPC] log:clear failed:', err);
+    console.error(
+      '[IPC] log:clear failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -1164,7 +1276,10 @@ ipcMain.handle('log:export', async () => {
     }
     return null;
   } catch (err) {
-    console.error('[IPC] log:export failed:', err);
+    console.error(
+      '[IPC] log:export failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
     throw err;
   }
 });
@@ -1185,7 +1300,10 @@ app.whenReady().then(() => {
     }
     createWindow();
   } catch (error) {
-    console.error('[main] Fatal startup error:', error);
+    console.error(
+      '[main] Fatal startup error:',
+      sanitizeLogMessage(error instanceof Error ? (error.stack ?? error.message) : String(error)),
+    );
     const isNativeModuleError =
       error instanceof Error && (error as NodeJS.ErrnoException).code === 'ERR_DLOPEN_FAILED';
     const message = isNativeModuleError
@@ -1201,7 +1319,10 @@ app.whenReady().then(() => {
       try {
         createWindow();
       } catch (error) {
-        console.error('[main] Window creation error:', error);
+        console.error(
+          '[main] Window creation error:',
+          sanitizeLogMessage(error instanceof Error ? error.message : String(error)),
+        );
       }
     } else {
       mainWindow?.show(); // Restore hidden window on dock click

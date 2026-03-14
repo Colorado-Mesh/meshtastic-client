@@ -4,6 +4,8 @@
  * the log pipeline or sanitizeLogMessage/sanitizeForLogSink, ensure these tests
  * still pass so regressions are caught by the suite (including pre-commit).
  */
+import { execFileSync } from 'child_process';
+import path from 'path';
 import { describe, expect, it } from 'vitest';
 
 import { sanitizeForLogSink, sanitizeLogMessage } from '@/main/sanitize-log-message';
@@ -58,5 +60,16 @@ describe('sanitizeForLogSink (console path, CodeQL pattern)', () => {
     for (const s of inputs) {
       expect(sanitizeForLogSink(s)).toBe(sanitizeLogMessage(s));
     }
+  });
+});
+
+describe('log-injection check (main process)', () => {
+  it('main process has no unsanitized console.*(..., err|e|error|reason) calls', () => {
+    const projectRoot = path.resolve(import.meta.dirname ?? __dirname, '..', '..', '..');
+    execFileSync('node', [path.join(projectRoot, 'scripts', 'check-log-injection.mjs')], {
+      encoding: 'utf8',
+      stdio: 'pipe',
+      cwd: projectRoot,
+    });
   });
 });
