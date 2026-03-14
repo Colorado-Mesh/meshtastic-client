@@ -40,6 +40,10 @@ jobs:
       - name: Rebuild native dependencies
         run: npm run rebuild
 
+      - name: Install Linux package build tools
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
       - name: Build and Publish
         env:
           # electron-publish reads GH_TOKEN; GITHUB_TOKEN alone is not used for uploads
