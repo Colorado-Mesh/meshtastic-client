@@ -668,7 +668,11 @@ export default function App() {
                     ourPosition={device.ourPosition}
                     onSendPositionToDevice={device.sendPositionToDevice}
                     deviceOwner={device.deviceOwner}
-                    onSetOwner={device.setOwner}
+                    onSetOwner={
+                      protocol === 'meshcore'
+                        ? async (owner) => meshcoreDevice.setOwner(owner)
+                        : device.setOwner
+                    }
                     onRebootOta={device.rebootOta}
                     onEnterDfu={device.enterDfuMode}
                     onFactoryResetConfig={device.factoryResetConfig}

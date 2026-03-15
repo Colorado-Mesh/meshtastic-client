@@ -596,14 +596,11 @@ export default function RadioPanel({
               importedFreqHz = rs.frequency * 1000;
               setRadioFreqHz(importedFreqHz);
             }
-            // bandwidth: Hz in config → nearest kHz option (31, 62, 125, 250, 500)
+            // bandwidth: Hz in config → kHz (float ok, e.g. 62500 → 62.5)
             if (typeof rs.bandwidth === 'number') {
               const bwKhz = rs.bandwidth / 1000;
-              const nearest = [31, 62, 125, 250, 500].reduce((a, b) =>
-                Math.abs(b - bwKhz) < Math.abs(a - bwKhz) ? b : a,
-              );
-              importedBwKhz = nearest;
-              setBandwidth(nearest);
+              importedBwKhz = bwKhz;
+              setBandwidth(bwKhz);
             }
             if (typeof rs.spreading_factor === 'number') {
               importedSf = rs.spreading_factor;
