@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
-import type { MeshNode, NeighborInfoRecord } from '../lib/types';
+import type { MeshCoreRepeaterStatus } from '../hooks/useMeshCore';
+import type { MeshNode, MeshProtocol, NeighborInfoRecord } from '../lib/types';
 import { useDiagnosticsStore } from '../stores/diagnosticsStore';
 import NodeInfoBody from './NodeInfoBody';
 
@@ -19,6 +20,10 @@ interface NodeDetailModalProps {
   homeNode?: MeshNode | null;
   neighborInfo?: Map<number, NeighborInfoRecord>;
   useFahrenheit?: boolean;
+  protocol?: MeshProtocol;
+  meshcoreTraceResult?: { hops: { snr: number }[]; lastSnr: number };
+  meshcoreRepeaterStatus?: MeshCoreRepeaterStatus;
+  onRequestRepeaterStatus?: (nodeId: number) => Promise<void>;
 }
 
 export default function NodeDetailModal({
@@ -35,8 +40,14 @@ export default function NodeDetailModal({
   homeNode = null,
   neighborInfo,
   useFahrenheit,
+  protocol,
+  meshcoreTraceResult,
+  meshcoreRepeaterStatus,
+  onRequestRepeaterStatus,
 }: NodeDetailModalProps) {
   const [actionStatus, setActionStatus] = useState<string | null>(null);
+  const [repeaterStatusPending, setRepeaterStatusPending] = useState(false);
+  const [showRepeaterStats, setShowRepeaterStats] = useState(false);
   const [positionRequestedAt, setPositionRequestedAt] = useState<number | null>(null);
   const [traceRoutePending, setTraceRoutePending] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -71,6 +82,8 @@ export default function NodeDetailModal({
     setPositionRequestedAt(null);
     setTraceRoutePending(false);
     setShowDeleteConfirm(false);
+    setRepeaterStatusPending(false);
+    setShowRepeaterStats(false);
   }, [node?.node_id]);
 
   // Detect position update after a request was sent
@@ -96,6 +109,14 @@ export default function NodeDetailModal({
   useEffect(() => {
     if (traceRouteHops) setTraceRoutePending(false);
   }, [traceRouteHops]);
+
+  // Auto-show repeater stats when they arrive
+  useEffect(() => {
+    if (meshcoreRepeaterStatus) {
+      setRepeaterStatusPending(false);
+      setShowRepeaterStats(true);
+    }
+  }, [meshcoreRepeaterStatus]);
 
   // 60-second timeout for trace route
   useEffect(() => {
@@ -209,6 +230,96 @@ export default function NodeDetailModal({
             nodes={nodes}
             useFahrenheit={useFahrenheit}
           />
+
+          {/* MeshCore: trace path result */}
+          {protocol === 'meshcore' && !isOurNode && meshcoreTraceResult && (
+            <div className="mt-3 space-y-1">
+              <h4 className="text-xs font-medium text-muted uppercase tracking-wide">Path Trace</h4>
+              <div className="bg-secondary-dark rounded p-2 space-y-1">
+                {meshcoreTraceResult.hops.map((hop, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs">
+                    <span className="text-muted">Hop {i + 1}</span>
+                    <span
+                      className={`font-mono ${hop.snr >= 5 ? 'text-green-400' : hop.snr >= 0 ? 'text-yellow-400' : 'text-red-400'}`}
+                    >
+                      {hop.snr.toFixed(2)} dB
+                    </span>
+                  </div>
+                ))}
+                <div className="flex items-center gap-2 text-xs border-t border-gray-700 pt-1">
+                  <span className="text-muted">Last hop (dest)</span>
+                  <span
+                    className={`font-mono ${meshcoreTraceResult.lastSnr >= 5 ? 'text-green-400' : meshcoreTraceResult.lastSnr >= 0 ? 'text-yellow-400' : 'text-red-400'}`}
+                  >
+                    {meshcoreTraceResult.lastSnr.toFixed(2)} dB
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* MeshCore: repeater status */}
+          {protocol === 'meshcore' && !isOurNode && meshcoreRepeaterStatus && showRepeaterStats && (
+            <div className="mt-3 space-y-1">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-medium text-muted uppercase tracking-wide">
+                  Repeater Status
+                </h4>
+                <button
+                  onClick={() => setShowRepeaterStats(false)}
+                  className="text-xs text-muted hover:text-gray-300"
+                >
+                  Hide
+                </button>
+              </div>
+              <div className="bg-secondary-dark rounded p-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                <div className="text-muted">Battery</div>
+                <div className="font-mono text-gray-200">
+                  {(meshcoreRepeaterStatus.battMilliVolts / 1000).toFixed(2)} V
+                </div>
+                <div className="text-muted">Noise Floor</div>
+                <div className="font-mono text-gray-200">
+                  {meshcoreRepeaterStatus.noiseFloor} dBm
+                </div>
+                <div className="text-muted">Last RSSI</div>
+                <div className="font-mono text-gray-200">{meshcoreRepeaterStatus.lastRssi} dBm</div>
+                <div className="text-muted">Last SNR</div>
+                <div className="font-mono text-gray-200">
+                  {meshcoreRepeaterStatus.lastSnr.toFixed(2)} dB
+                </div>
+                <div className="text-muted">Pkts Recv / Sent</div>
+                <div className="font-mono text-gray-200">
+                  {meshcoreRepeaterStatus.nPacketsRecv} / {meshcoreRepeaterStatus.nPacketsSent}
+                </div>
+                <div className="text-muted">Air Time</div>
+                <div className="font-mono text-gray-200">
+                  {meshcoreRepeaterStatus.totalAirTimeSecs}s
+                </div>
+                <div className="text-muted">Uptime</div>
+                <div className="font-mono text-gray-200">
+                  {Math.floor(meshcoreRepeaterStatus.totalUpTimeSecs / 60)}m
+                </div>
+                <div className="text-muted">TX Queue</div>
+                <div className="font-mono text-gray-200">
+                  {meshcoreRepeaterStatus.currTxQueueLen}
+                </div>
+                <div className="text-muted">Flood / Direct sent</div>
+                <div className="font-mono text-gray-200">
+                  {meshcoreRepeaterStatus.nSentFlood} / {meshcoreRepeaterStatus.nSentDirect}
+                </div>
+                <div className="text-muted">Flood / Direct recv</div>
+                <div className="font-mono text-gray-200">
+                  {meshcoreRepeaterStatus.nRecvFlood} / {meshcoreRepeaterStatus.nRecvDirect}
+                </div>
+                <div className="text-muted">Errors</div>
+                <div className="font-mono text-gray-200">{meshcoreRepeaterStatus.errEvents}</div>
+                <div className="text-muted">Dups (direct / flood)</div>
+                <div className="font-mono text-gray-200">
+                  {meshcoreRepeaterStatus.nDirectDups} / {meshcoreRepeaterStatus.nFloodDups}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Neighbors section */}
@@ -247,20 +358,42 @@ export default function NodeDetailModal({
         {/* Footer actions — omitted for directly connected node (no position/trace/message to self) */}
         {!isOurNode && (
           <div className="shrink-0 px-5 py-3 border-t border-gray-700 flex items-center gap-2 flex-wrap">
-            <button
-              onClick={handleRequestPosition}
-              disabled={!isConnected || positionRequestedAt !== null}
-              className="flex-1 min-w-[8rem] px-3 py-2 text-sm font-medium bg-secondary-dark hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-200 rounded-lg transition-colors"
-            >
-              📍 Request Position
-            </button>
+            {protocol !== 'meshcore' && (
+              <button
+                onClick={handleRequestPosition}
+                disabled={!isConnected || positionRequestedAt !== null}
+                className="flex-1 min-w-[8rem] px-3 py-2 text-sm font-medium bg-secondary-dark hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-200 rounded-lg transition-colors"
+              >
+                📍 Request Position
+              </button>
+            )}
             <button
               onClick={handleTraceRoute}
               disabled={!isConnected || traceRoutePending}
               className="flex-1 min-w-[8rem] px-3 py-2 text-sm font-medium bg-secondary-dark hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-200 rounded-lg transition-colors"
             >
-              🛤 Trace Route
+              🛤 {traceRoutePending ? 'Tracing...' : 'Trace Route'}
             </button>
+            {protocol === 'meshcore' && onRequestRepeaterStatus && (
+              <button
+                onClick={async () => {
+                  setRepeaterStatusPending(true);
+                  setActionStatus('Requesting status...');
+                  try {
+                    await onRequestRepeaterStatus(node.node_id);
+                    setActionStatus(null);
+                  } catch (e) {
+                    console.warn('[NodeDetailModal] requestRepeaterStatus failed', e);
+                    setRepeaterStatusPending(false);
+                    setActionStatus('Status request failed');
+                  }
+                }}
+                disabled={!isConnected || repeaterStatusPending}
+                className="flex-1 min-w-[8rem] px-3 py-2 text-sm font-medium bg-secondary-dark hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-200 rounded-lg transition-colors"
+              >
+                📊 {repeaterStatusPending ? 'Requesting...' : 'Request Status'}
+              </button>
+            )}
             {onMessageNode && (
               <button
                 onClick={() => {

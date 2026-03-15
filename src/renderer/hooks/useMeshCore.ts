@@ -61,6 +61,26 @@ export interface MeshCoreSelfInfo {
   type: number;
   txPower: number;
   radioFreq: number;
+  batteryMilliVolts?: number;
+}
+
+export interface MeshCoreRepeaterStatus {
+  battMilliVolts: number;
+  noiseFloor: number;
+  lastRssi: number;
+  lastSnr: number;
+  nPacketsRecv: number;
+  nPacketsSent: number;
+  totalAirTimeSecs: number;
+  totalUpTimeSecs: number;
+  nSentFlood: number;
+  nSentDirect: number;
+  nRecvFlood: number;
+  nRecvDirect: number;
+  errEvents: number;
+  nDirectDups: number;
+  nFloodDups: number;
+  currTxQueueLen: number;
 }
 
 // The connection object returned by meshcore.js is typed loosely — use unknown and cast
@@ -75,8 +95,42 @@ interface MeshCoreConnection {
   getChannels(): Promise<MeshCoreChannelRaw[]>;
   getWaitingMessages(): Promise<unknown[]>;
   sendFloodAdvert(): Promise<void>;
-  sendTextMessage(pubKey: Uint8Array, text: string, type?: number): Promise<unknown>;
+  sendTextMessage(
+    pubKey: Uint8Array,
+    text: string,
+    type?: number,
+  ): Promise<{ expectedAckCrc?: number; estTimeout?: number }>;
   sendChannelTextMessage(channelIdx: number, text: string): Promise<void>;
+  removeContact(pubKey: Uint8Array): Promise<void>;
+  setAdvertName(name: string): Promise<void>;
+  reboot(): Promise<void>;
+  getBatteryVoltage(): Promise<{ batteryMilliVolts: number }>;
+  syncDeviceTime(): Promise<void>;
+  tracePath(pubKeys: Uint8Array[]): Promise<{
+    pathLen: number;
+    pathHashes: number[];
+    pathSnrs: number[];
+    lastSnr: number;
+    tag: number;
+  }>;
+  getStatus(pubKey: Uint8Array): Promise<{
+    batt_milli_volts: number;
+    curr_tx_queue_len: number;
+    noise_floor: number;
+    last_rssi: number;
+    n_packets_recv: number;
+    n_packets_sent: number;
+    total_air_time_secs: number;
+    total_up_time_secs: number;
+    n_sent_flood: number;
+    n_sent_direct: number;
+    n_recv_flood: number;
+    n_recv_direct: number;
+    err_events: number;
+    last_snr: number;
+    n_direct_dups: number;
+    n_flood_dups: number;
+  }>;
 }
 
 interface MeshCoreContactRaw {
@@ -93,11 +147,20 @@ interface MeshCoreChannelRaw {
   name: string;
 }
 
+interface DeviceLogEntry {
+  ts: number;
+  level: string;
+  source: string;
+  message: string;
+}
+
 const INITIAL_STATE: DeviceState = {
   status: 'disconnected',
   myNodeNum: 0,
   connectionType: null,
 };
+
+const MAX_DEVICE_LOGS = 500;
 
 export function useMeshCore() {
   const [state, setState] = useState<DeviceState>(INITIAL_STATE);
@@ -105,6 +168,13 @@ export function useMeshCore() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [channels, setChannels] = useState<{ index: number; name: string }[]>([]);
   const [selfInfo, setSelfInfo] = useState<MeshCoreSelfInfo | null>(null);
+  const [deviceLogs, setDeviceLogs] = useState<DeviceLogEntry[]>([]);
+  const [meshcoreTraceResults, setMeshcoreTraceResults] = useState<
+    Map<number, { hops: { snr: number }[]; lastSnr: number }>
+  >(new Map());
+  const [meshcoreNodeStatus, setMeshcoreNodeStatus] = useState<Map<number, MeshCoreRepeaterStatus>>(
+    new Map(),
+  );
 
   const connRef = useRef<MeshCoreConnection | null>(null);
   const ipcTcpRef = useRef<IpcTcpConnection | null>(null);
@@ -114,6 +184,11 @@ export function useMeshCore() {
   const pubKeyMapRef = useRef<Map<number, Uint8Array>>(new Map());
   // Stable ref to current nodes so event listeners don't form stale closures
   const nodesRef = useRef<Map<number, MeshNode>>(new Map());
+  // Pending ACK tracking: packetId → { nodeId, timeoutId }
+  const pendingAcksRef = useRef<Map<number, { timeoutId: ReturnType<typeof setTimeout> }>>(
+    new Map(),
+  );
+
   useEffect(() => {
     nodesRef.current = nodes;
   }, [nodes]);
@@ -153,6 +228,31 @@ export function useMeshCore() {
           });
           return next;
         });
+      });
+
+      // Push: path updated — event 0x81 = 129; update last_heard for that contact
+      conn.on(129, (data: unknown) => {
+        const d = data as { publicKey: Uint8Array };
+        const nodeId = pubkeyToNodeId(d.publicKey);
+        setNodes((prev) => {
+          const existing = prev.get(nodeId);
+          if (!existing) return prev;
+          const next = new Map(prev);
+          next.set(nodeId, { ...existing, last_heard: Math.floor(Date.now() / 1000) });
+          return next;
+        });
+      });
+
+      // Push: send confirmed — event 0x82 = 130; resolve pending DM delivery
+      conn.on(130, (data: unknown) => {
+        const d = data as { ackCode: number; roundTrip?: number };
+        const pending = pendingAcksRef.current.get(d.ackCode);
+        if (!pending) return;
+        clearTimeout(pending.timeoutId);
+        pendingAcksRef.current.delete(d.ackCode);
+        setMessages((prev) =>
+          prev.map((m) => (m.packetId === d.ackCode ? { ...m, status: 'acked' as const } : m)),
+        );
       });
 
       // Push: new contact discovered — event 0x8A = 138
@@ -261,6 +361,23 @@ export function useMeshCore() {
         });
       });
 
+      // Push: RF packet received — event 0x88 = 136; feed into device logs
+      conn.on(136, (data: unknown) => {
+        const d = data as { lastSnr?: number; lastRssi?: number; raw?: unknown };
+        const snr = d.lastSnr ?? 0;
+        const rssi = d.lastRssi ?? 0;
+        const entry: DeviceLogEntry = {
+          ts: Date.now(),
+          level: 'info',
+          source: 'device',
+          message: `RX SNR=${snr.toFixed(2)}dB RSSI=${rssi}dBm`,
+        };
+        setDeviceLogs((prev) => {
+          const next = [...prev, entry];
+          return next.length > MAX_DEVICE_LOGS ? next.slice(next.length - MAX_DEVICE_LOGS) : next;
+        });
+      });
+
       conn.on('disconnected', () => {
         setState((prev) => ({ ...prev, status: 'disconnected' }));
       });
@@ -301,7 +418,7 @@ export function useMeshCore() {
 
         setState((prev) => ({ ...prev, status: 'connected' }));
 
-        // Fetch self info, contacts, channels
+        // Fetch self info, contacts, channels (sequential — device handles one request at a time)
         const info = await conn.getSelfInfo(5000);
         setSelfInfo(info);
 
@@ -323,6 +440,19 @@ export function useMeshCore() {
 
         const rawChannels = await conn.getChannels();
         setChannels(rawChannels.map((c) => ({ index: c.channelIdx, name: c.name })));
+
+        // Post-init side-effects — fire-and-forget after full handshake to avoid request conflicts
+        void conn.syncDeviceTime().catch((e) => {
+          console.warn('[useMeshCore] syncDeviceTime error', e);
+        });
+        void conn
+          .getBatteryVoltage()
+          .then(({ batteryMilliVolts }) => {
+            setSelfInfo((prev) => (prev ? { ...prev, batteryMilliVolts } : prev));
+          })
+          .catch((e) => {
+            console.warn('[useMeshCore] getBatteryVoltage error', e);
+          });
       } catch (err) {
         console.error('[useMeshCore] connect error', err);
         setState({ status: 'disconnected', myNodeNum: 0, connectionType: null });
@@ -334,6 +464,12 @@ export function useMeshCore() {
   );
 
   const disconnect = useCallback(async () => {
+    // Cancel all pending ACK timers
+    for (const { timeoutId } of pendingAcksRef.current.values()) {
+      clearTimeout(timeoutId);
+    }
+    pendingAcksRef.current.clear();
+
     try {
       await connRef.current?.close();
     } catch {
@@ -348,6 +484,9 @@ export function useMeshCore() {
     setMessages([]);
     setChannels([]);
     setSelfInfo(null);
+    setDeviceLogs([]);
+    setMeshcoreTraceResults(new Map());
+    setMeshcoreNodeStatus(new Map());
     setState(INITIAL_STATE);
   }, []);
 
@@ -360,22 +499,80 @@ export function useMeshCore() {
           console.warn('[useMeshCore] sendMessage: no pubKey for', destNodeId);
           return;
         }
-        await connRef.current.sendTextMessage(pubKey, text);
+        const sentAt = Date.now();
+        // Optimistically add own message with 'sending' status
+        const tempMsg: ChatMessage = {
+          sender_id: 0, // placeholder, replaced after we get the ackCrc
+          sender_name: selfInfo?.name ?? 'Me',
+          payload: text,
+          channel: channelIdx,
+          timestamp: sentAt,
+          status: 'sending',
+          to: destNodeId,
+        };
+        setMessages((prev) => [...prev, tempMsg]);
+
+        try {
+          const result = await connRef.current.sendTextMessage(pubKey, text);
+          const ackCrc = result?.expectedAckCrc;
+          const estTimeout = result?.estTimeout ?? 30_000;
+
+          if (ackCrc !== undefined) {
+            // Update the temp message with the real packetId
+            setMessages((prev) =>
+              prev.map((m) =>
+                m === tempMsg || (m.timestamp === sentAt && m.status === 'sending')
+                  ? { ...m, sender_id: 0, packetId: ackCrc }
+                  : m,
+              ),
+            );
+
+            // Schedule failure timeout
+            const timeoutId = setTimeout(() => {
+              pendingAcksRef.current.delete(ackCrc);
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.packetId === ackCrc && m.status === 'sending'
+                    ? { ...m, status: 'failed' as const }
+                    : m,
+                ),
+              );
+            }, estTimeout);
+            pendingAcksRef.current.set(ackCrc, { timeoutId });
+          } else {
+            // No ackCrc — mark as acked immediately
+            setMessages((prev) =>
+              prev.map((m) =>
+                m === tempMsg || (m.timestamp === sentAt && m.status === 'sending')
+                  ? { ...m, sender_id: 0, status: 'acked' as const }
+                  : m,
+              ),
+            );
+          }
+        } catch (e) {
+          console.warn('[useMeshCore] sendTextMessage error', e);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m === tempMsg || (m.timestamp === sentAt && m.status === 'sending')
+                ? { ...m, status: 'failed' as const }
+                : m,
+            ),
+          );
+        }
       } else {
         await connRef.current.sendChannelTextMessage(channelIdx, text);
+        // Channel messages resolve with Ok — add as acked immediately
+        addMessage({
+          sender_id: 0,
+          sender_name: selfInfo?.name ?? 'Me',
+          payload: text,
+          channel: channelIdx,
+          timestamp: Date.now(),
+          status: 'acked',
+        });
       }
-      // Optimistically add own message
-      addMessage({
-        sender_id: state.myNodeNum,
-        sender_name: selfInfo?.name ?? 'Me',
-        payload: text,
-        channel: channelIdx,
-        timestamp: Date.now(),
-        status: 'acked',
-        to: destNodeId,
-      });
     },
-    [addMessage, selfInfo, state.myNodeNum],
+    [addMessage, selfInfo],
   );
 
   const refreshContacts = useCallback(async () => {
@@ -401,6 +598,86 @@ export function useMeshCore() {
     await connRef.current.sendFloodAdvert();
   }, []);
 
+  const reboot = useCallback(async () => {
+    if (!connRef.current) return;
+    try {
+      await connRef.current.reboot();
+    } catch (e) {
+      console.warn('[useMeshCore] reboot error', e);
+    }
+    await disconnect();
+  }, [disconnect]);
+
+  const deleteNode = useCallback(async (nodeId: number) => {
+    const pubKey = pubKeyMapRef.current.get(nodeId);
+    if (!pubKey || !connRef.current) return;
+    await connRef.current.removeContact(pubKey);
+    pubKeyMapRef.current.delete(nodeId);
+    // Remove the 6-byte prefix mapping too
+    for (const [prefix, id] of pubKeyPrefixMapRef.current) {
+      if (id === nodeId) {
+        pubKeyPrefixMapRef.current.delete(prefix);
+        break;
+      }
+    }
+    setNodes((prev) => {
+      const next = new Map(prev);
+      next.delete(nodeId);
+      return next;
+    });
+  }, []);
+
+  const setOwner = useCallback(async (name: string) => {
+    if (!connRef.current) return;
+    await connRef.current.setAdvertName(name);
+    setSelfInfo((prev) => (prev ? { ...prev, name } : prev));
+  }, []);
+
+  const traceRoute = useCallback(async (nodeId: number) => {
+    const pubKey = pubKeyMapRef.current.get(nodeId);
+    if (!pubKey || !connRef.current) return;
+    const result = await connRef.current.tracePath([pubKey]);
+    // pathSnrs are signed bytes in 0.25dB units
+    const hops = result.pathSnrs.map((raw) => {
+      const signed = raw > 127 ? raw - 256 : raw;
+      return { snr: signed * 0.25 };
+    });
+    setMeshcoreTraceResults((prev) => {
+      const next = new Map(prev);
+      next.set(nodeId, { hops, lastSnr: result.lastSnr * 0.25 });
+      return next;
+    });
+  }, []);
+
+  const requestRepeaterStatus = useCallback(async (nodeId: number) => {
+    const pubKey = pubKeyMapRef.current.get(nodeId);
+    if (!pubKey || !connRef.current) return;
+    const raw = await connRef.current.getStatus(pubKey);
+    const status: MeshCoreRepeaterStatus = {
+      battMilliVolts: raw.batt_milli_volts,
+      noiseFloor: raw.noise_floor,
+      lastRssi: raw.last_rssi,
+      lastSnr: raw.last_snr,
+      nPacketsRecv: raw.n_packets_recv,
+      nPacketsSent: raw.n_packets_sent,
+      totalAirTimeSecs: raw.total_air_time_secs,
+      totalUpTimeSecs: raw.total_up_time_secs,
+      nSentFlood: raw.n_sent_flood,
+      nSentDirect: raw.n_sent_direct,
+      nRecvFlood: raw.n_recv_flood,
+      nRecvDirect: raw.n_recv_direct,
+      errEvents: raw.err_events,
+      nDirectDups: raw.n_direct_dups,
+      nFloodDups: raw.n_flood_dups,
+      currTxQueueLen: raw.curr_tx_queue_len,
+    };
+    setMeshcoreNodeStatus((prev) => {
+      const next = new Map(prev);
+      next.set(nodeId, status);
+      return next;
+    });
+  }, []);
+
   // No-op stubs to satisfy the same interface shape used in App.tsx
   const noopAsync = useCallback(async () => {}, []);
   const noopVoid = useCallback(() => {}, []);
@@ -416,6 +693,14 @@ export function useMeshCore() {
     sendMessage,
     sendAdvert,
     refreshContacts,
+    reboot,
+    deleteNode,
+    setOwner,
+    traceRoute,
+    requestRepeaterStatus,
+    deviceLogs,
+    meshcoreTraceResults,
+    meshcoreNodeStatus,
     // Stubs for interface compatibility
     mqttStatus: 'disconnected' as const,
     selfNodeId: state.myNodeNum,
@@ -430,7 +715,6 @@ export function useMeshCore() {
     ),
     traceRouteResults: new Map<number, { route: number[]; from: number }>(),
     queueStatus: null,
-    deviceLogs: [] as { ts: number; level: string; source: string; message: string }[],
     neighborInfo: new Map<number, unknown>(),
     waypoints: [] as unknown[],
     telemetry: [] as unknown[],
@@ -443,11 +727,8 @@ export function useMeshCore() {
     gpsLoading: false,
     telemetryEnabled: null,
     sendReaction: noopAsync,
-    traceRoute: noopAsync,
     requestPosition: noopAsync,
-    deleteNode: noopAsync,
     setNodeFavorited: noopAsync,
-    reboot: noopAsync,
     shutdown: noopAsync,
     factoryReset: noopAsync,
     resetNodeDb: noopAsync,
@@ -455,7 +736,6 @@ export function useMeshCore() {
     setConfig: noopAsync,
     setDeviceChannel: noopAsync,
     clearChannel: noopAsync,
-    setOwner: noopAsync,
     rebootOta: noopAsync,
     enterDfuMode: noopAsync,
     factoryResetConfig: noopAsync,

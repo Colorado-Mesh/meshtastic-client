@@ -745,6 +745,20 @@ export default function App() {
           homeNode={device.nodes.get(device.state.myNodeNum) ?? null}
           neighborInfo={device.neighborInfo}
           useFahrenheit={useFahrenheit}
+          protocol={protocol}
+          meshcoreTraceResult={
+            protocol === 'meshcore' && selectedNode
+              ? meshcoreDevice.meshcoreTraceResults.get(selectedNode.node_id)
+              : undefined
+          }
+          meshcoreRepeaterStatus={
+            protocol === 'meshcore' && selectedNode
+              ? meshcoreDevice.meshcoreNodeStatus.get(selectedNode.node_id)
+              : undefined
+          }
+          onRequestRepeaterStatus={
+            protocol === 'meshcore' ? meshcoreDevice.requestRepeaterStatus : undefined
+          }
         />
       </div>
     </ToastProvider>
