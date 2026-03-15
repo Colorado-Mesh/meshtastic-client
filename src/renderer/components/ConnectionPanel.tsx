@@ -19,28 +19,31 @@ interface LastConnection {
   serialPortId?: string;
 }
 
-const LAST_CONNECTION_KEY = 'mesh-client:lastConnection';
 const LAST_BLE_DEVICE_KEY = 'mesh-client:lastBleDevice';
 const LAST_SERIAL_PORT_KEY = 'mesh-client:lastSerialPort';
 
-function loadLastConnection(): LastConnection | null {
+function lastConnectionKey(p: MeshProtocol) {
+  return `mesh-client:lastConnection:${p}`;
+}
+
+function loadLastConnection(p: MeshProtocol): LastConnection | null {
   return parseStoredJson<LastConnection>(
-    localStorage.getItem(LAST_CONNECTION_KEY),
+    localStorage.getItem(lastConnectionKey(p)),
     'ConnectionPanel loadLastConnection',
   );
 }
 
-function saveLastConnection(c: LastConnection) {
+function saveLastConnection(p: MeshProtocol, c: LastConnection) {
   try {
-    localStorage.setItem(LAST_CONNECTION_KEY, JSON.stringify(c));
+    localStorage.setItem(lastConnectionKey(p), JSON.stringify(c));
   } catch (e) {
     console.debug('[ConnectionPanel] saveLastConnection', e);
   }
 }
 
-function clearLastConnection() {
+function clearLastConnection(p: MeshProtocol) {
   try {
-    localStorage.removeItem(LAST_CONNECTION_KEY);
+    localStorage.removeItem(lastConnectionKey(p));
   } catch (e) {
     console.debug('[ConnectionPanel] clearLastConnection', e);
   }
@@ -203,7 +206,7 @@ export default function ConnectionPanel({
 }: Props) {
   const [connectionType, setConnectionType] = useState<ConnectionType>('ble');
   const [httpAddress, setHttpAddress] = useState(() => {
-    const last = loadLastConnection();
+    const last = loadLastConnection(protocol);
     return last?.type === 'http' && last.httpAddress ? last.httpAddress : 'meshtastic.local';
   });
   const [tcpHost, setTcpHost] = useState('localhost');
@@ -257,13 +260,20 @@ export default function ConnectionPanel({
   const [showSerialPicker, setShowSerialPicker] = useState(false);
 
   // ─── Last connection + auto-connect state ─────────────────────
-  const [lastConnection, setLastConnection] = useState<LastConnection | null>(loadLastConnection);
+  const [lastConnection, setLastConnection] = useState<LastConnection | null>(() =>
+    loadLastConnection(protocol),
+  );
   const autoConnectFiredRef = useRef(false);
   const autoConnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isAutoConnectingRef = useRef(false);
   const [isAutoConnecting, setIsAutoConnecting] = useState(false);
   // Tracks BLE device name at selection time, used when saving LastConnection
   const lastSelectedBleNameRef = useRef<string | null>(null);
+
+  // Reload last connection when protocol switches (each protocol has its own key)
+  useEffect(() => {
+    setLastConnection(loadLastConnection(protocol));
+  }, [protocol]);
 
   // Update connection stage based on state transitions, and save last connection on success
   useEffect(() => {
@@ -303,7 +313,7 @@ export default function ConnectionPanel({
           const serialId = loadLastSerialPort();
           if (serialId) conn.serialPortId = serialId;
         }
-        saveLastConnection(conn);
+        saveLastConnection(protocol, conn);
         setLastConnection(conn);
       }
     } else if (state.status === 'disconnected') {
@@ -320,6 +330,7 @@ export default function ConnectionPanel({
     showSerialPicker,
     httpAddress,
     connectionType,
+    protocol,
   ]);
 
   // Listen for BLE devices discovered by main process
@@ -1062,7 +1073,7 @@ export default function ConnectionPanel({
           </div>
           <button
             onClick={() => {
-              clearLastConnection();
+              clearLastConnection(protocol);
               setLastConnection(null);
             }}
             className="text-xs text-gray-600 hover:text-gray-400 transition-colors"

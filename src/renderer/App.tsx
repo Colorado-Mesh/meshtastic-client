@@ -349,6 +349,16 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // ─── Reset unread tracking on protocol switch ─────────────────
+  // When switching protocols, messages from the newly-active device's DB load
+  // all at once. Without resetting, the message-count effect treats them all
+  // as new arrivals and shows a spurious unread badge.
+  useEffect(() => {
+    isInitialLoadRef.current = true;
+    prevMsgCountRef.current = 0;
+    setChatUnread(0);
+  }, [protocol]);
+
   // ─── Track messages arriving while Chat tab is inactive ──────────
   useEffect(() => {
     const count = device.messages.length;
