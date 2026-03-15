@@ -566,7 +566,8 @@ export function useMeshCore() {
         });
       });
 
-      // Push: RF packet received — event 0x88 = 136; feed into device logs + signal telemetry
+      // Push: RF packet received — event 0x88 = 136; feed into device logs + signal telemetry.
+      // Foreign LoRa fingerprinting requires d.raw (Uint8Array) from meshcore.js/device.
       conn.on(136, (data: unknown) => {
         const d = data as { lastSnr?: number; lastRssi?: number; raw?: unknown };
         const snr = d.lastSnr ?? 0;
@@ -585,8 +586,8 @@ export function useMeshCore() {
         const sigPoint: TelemetryPoint = { timestamp: now, snr, rssi };
         setSignalTelemetry((prev) => [...prev, sigPoint].slice(-MAX_TELEMETRY_POINTS));
 
-        // Foreign LoRa fingerprinting: only flag non-MeshCore packets as foreign
-        if (d.raw instanceof Uint8Array && d.raw.length > 0) {
+        // Foreign LoRa fingerprinting: only flag non-MeshCore packets as foreign (requires known self node ID)
+        if (myNodeNumRef.current !== 0 && d.raw instanceof Uint8Array && d.raw.length > 0) {
           const packetClass = classifyPayload(d.raw);
           if (packetClass !== 'meshcore') {
             const senderId = packetClass === 'meshtastic' ? extractMeshtasticSenderId(d.raw) : null;
@@ -659,6 +660,7 @@ export function useMeshCore() {
 
       const myNodeId = pubkeyToNodeId(info.publicKey);
       setState((prev) => ({ ...prev, myNodeNum: myNodeId, status: 'configured' }));
+      useDiagnosticsStore.getState().migrateForeignLoraFromZero(myNodeId);
 
       const contacts = await withTimeout(conn.getContacts(), 10_000, 'getContacts');
       const newNodes = new Map<number, MeshNode>();

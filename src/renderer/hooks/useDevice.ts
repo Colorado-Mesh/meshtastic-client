@@ -707,6 +707,7 @@ export function useDevice() {
           });
         }
         myNodeNumRef.current = info.myNodeNum;
+        useDiagnosticsStore.getState().migrateForeignLoraFromZero(info.myNodeNum);
         setState((s) => ({ ...s, myNodeNum: info.myNodeNum }));
         updateNodes((prev) => {
           const updated = new Map(prev);
@@ -1382,7 +1383,7 @@ export function useDevice() {
             },
           ];
         });
-        if (containsMeshCorePattern(record.message)) {
+        if (containsMeshCorePattern(record.message) && myNodeNumRef.current !== 0) {
           const { rssi, snr } = extractRssiSnr(record.message);
           useDiagnosticsStore
             .getState()

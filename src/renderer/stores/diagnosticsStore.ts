@@ -286,6 +286,8 @@ interface DiagnosticsState {
   /** Clear persisted snapshot only (rows unchanged until next analysis). */
   clearDiagnosticRowsSnapshot(): void;
   getCuStats24h(nodeId: number): ReturnType<typeof computeCuStats24h>;
+  /** Move foreign LoRa detection and RF rows from nodeId 0 to real self node (call when self ID first known). */
+  migrateForeignLoraFromZero(toNodeId: number): void;
 }
 
 // Module-level debounce timer and pending analysis buffer
@@ -774,6 +776,25 @@ export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
       packetCache: new Map(),
       nodeRedundancy: new Map(),
       foreignLoraDetections: new Map(),
+    });
+  },
+
+  migrateForeignLoraFromZero(toNodeId: number) {
+    if (toNodeId === 0) return;
+    set((state) => {
+      const detectionAtZero = state.foreignLoraDetections.get(0);
+      if (!detectionAtZero) return state;
+      const nextDetections = new Map(state.foreignLoraDetections);
+      nextDetections.delete(0);
+      nextDetections.set(toNodeId, detectionAtZero);
+      const diagnosticRows = state.diagnosticRows.map((r) => {
+        if (r.kind === 'rf' && r.nodeId === 0 && FOREIGN_LORA_CONDITIONS.has(r.condition)) {
+          return { ...r, nodeId: toNodeId, id: rfRowId(toNodeId, r.condition) };
+        }
+        return r;
+      });
+      schedulePersistDiagnosticRows(() => get().diagnosticRows);
+      return { foreignLoraDetections: nextDetections, diagnosticRows };
     });
   },
 }));
