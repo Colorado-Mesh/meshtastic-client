@@ -760,6 +760,10 @@ ipcMain.handle('mqtt:publishNodeInfo', async (_event, args) => {
       a.hwModel,
     );
   } catch (err) {
+    // Presence broadcast is fire-and-forget; silently ignore if MQTT just disconnected
+    if (err instanceof Error && err.message === 'MQTT not connected') {
+      return null;
+    }
     console.error(
       '[IPC] mqtt:publishNodeInfo failed:',
       sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
