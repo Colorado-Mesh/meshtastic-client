@@ -67,6 +67,7 @@ function ConfirmModal({
 interface AdminSettings {
   autoPruneEnabled: boolean;
   autoPruneDays: number;
+  pruneEmptyNamesEnabled: boolean;
   nodeCapEnabled: boolean;
   nodeCapCount: number;
   distanceFilterEnabled: boolean;
@@ -80,6 +81,7 @@ interface AdminSettings {
 const DEFAULT_SETTINGS: AdminSettings = {
   autoPruneEnabled: false,
   autoPruneDays: 30,
+  pruneEmptyNamesEnabled: false,
   nodeCapEnabled: true,
   nodeCapCount: 10000,
   distanceFilterEnabled: false,
@@ -665,6 +667,23 @@ export default function AppPanel({
               className="w-20 px-2 py-1 bg-deep-black border border-gray-600 rounded text-gray-200 text-sm text-right focus:border-brand-green focus:outline-none disabled:opacity-40"
             />
             <span className="text-sm text-gray-300">days</span>
+          </div>
+
+          {/* Prune unnamed nodes on startup */}
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="pruneEmptyNames"
+              checked={settings.pruneEmptyNamesEnabled}
+              onChange={(e) => updateSetting('pruneEmptyNamesEnabled', e.target.checked)}
+              className="accent-brand-green"
+            />
+            <label
+              htmlFor="pruneEmptyNames"
+              className="text-sm text-gray-300 flex-1 cursor-pointer"
+            >
+              Remove unnamed nodes on startup
+            </label>
           </div>
 
           {/* Node cap */}
