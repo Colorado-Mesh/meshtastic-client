@@ -830,7 +830,12 @@ export default function App() {
         )}
 
         {/* Keyboard Shortcuts Modal */}
-        {showShortcuts && <KeyboardShortcutsModal onClose={() => setShowShortcuts(false)} />}
+        {showShortcuts && (
+          <KeyboardShortcutsModal
+            onClose={() => setShowShortcuts(false)}
+            tabNames={displayTabNames}
+          />
+        )}
 
         {/* Node Detail Modal — rendered outside main for proper z-indexing */}
         <NodeDetailModal

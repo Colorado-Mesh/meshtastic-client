@@ -1,15 +1,18 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 
-const SHORTCUTS = [
-  { keys: 'Cmd/Ctrl + 1', action: 'Switch to Connection tab' },
-  { keys: 'Cmd/Ctrl + 2', action: 'Switch to Chat tab' },
-  { keys: 'Cmd/Ctrl + 3', action: 'Switch to Nodes tab' },
-  { keys: 'Cmd/Ctrl + 4', action: 'Switch to Map tab' },
-  { keys: 'Cmd/Ctrl + 5', action: 'Switch to Radio tab' },
-  { keys: 'Cmd/Ctrl + 6', action: 'Switch to Modules tab' },
-  { keys: 'Cmd/Ctrl + 7', action: 'Switch to Telemetry tab' },
-  { keys: 'Cmd/Ctrl + 8', action: 'Switch to App tab' },
-  { keys: 'Cmd/Ctrl + 9', action: 'Switch to Diagnostics tab' },
+const DEFAULT_TAB_NAMES = [
+  'Connection',
+  'Chat',
+  'Nodes',
+  'Map',
+  'Radio',
+  'Modules',
+  'Telemetry',
+  'App',
+  'Diagnostics',
+];
+
+const OTHER_SHORTCUTS = [
   { keys: 'Cmd/Ctrl + F', action: 'Toggle message search (Chat tab)' },
   { keys: 'Escape', action: 'Close search / close DM panel (Chat tab)' },
   { keys: 'Enter', action: 'Send message' },
@@ -19,9 +22,20 @@ const SHORTCUTS = [
 
 interface KeyboardShortcutsModalProps {
   onClose: () => void;
+  /** Current tab labels (e.g. from App). When in MeshCore mode, tab 6 is "Repeaters" instead of "Modules". */
+  tabNames?: string[];
 }
 
-export default function KeyboardShortcutsModal({ onClose }: KeyboardShortcutsModalProps) {
+export default function KeyboardShortcutsModal({ onClose, tabNames }: KeyboardShortcutsModalProps) {
+  const shortcuts = useMemo(() => {
+    const names = tabNames ?? DEFAULT_TAB_NAMES;
+    const tabShortcuts = names.slice(0, 9).map((name, i) => ({
+      keys: `Cmd/Ctrl + ${i + 1}` as const,
+      action: `Switch to ${name} tab` as const,
+    }));
+    return [...tabShortcuts, ...OTHER_SHORTCUTS];
+  }, [tabNames]);
+
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -76,7 +90,7 @@ export default function KeyboardShortcutsModal({ onClose }: KeyboardShortcutsMod
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700/50">
-              {SHORTCUTS.map(({ keys, action }) => (
+              {shortcuts.map(({ keys, action }) => (
                 <tr key={keys}>
                   <td className="py-2 pr-4">
                     <kbd className="px-1.5 py-0.5 bg-secondary-dark border border-gray-600 rounded text-xs font-mono text-gray-300 whitespace-nowrap">
