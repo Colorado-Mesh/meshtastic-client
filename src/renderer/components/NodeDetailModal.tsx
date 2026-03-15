@@ -6,6 +6,7 @@ import type {
   MeshCoreRepeaterStatus,
 } from '../hooks/useMeshCore';
 import type { MeshNode, MeshProtocol, NeighborInfoRecord } from '../lib/types';
+import type { ForeignLoraDetection } from '../stores/diagnosticsStore';
 import { useDiagnosticsStore } from '../stores/diagnosticsStore';
 import NodeInfoBody from './NodeInfoBody';
 
@@ -69,6 +70,7 @@ export default function NodeDetailModal({
   const [showMeshcoreNeighbors, setShowMeshcoreNeighbors] = useState(false);
   const mqttIgnoredNodes = useDiagnosticsStore((s) => s.mqttIgnoredNodes);
   const setNodeMqttIgnored = useDiagnosticsStore((s) => s.setNodeMqttIgnored);
+  const foreignLoraDetections = useDiagnosticsStore((s) => s.foreignLoraDetections);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
@@ -406,6 +408,74 @@ export default function NodeDetailModal({
               </div>
             </div>
           )}
+
+          {/* Foreign LoRa activity — shown for connected device only */}
+          {isOurNode &&
+            (() => {
+              const detection: ForeignLoraDetection | undefined = foreignLoraDetections.get(
+                node.node_id,
+              );
+              if (!detection) return null;
+              const classLabels: Record<string, string> = {
+                meshcore: 'MeshCore Activity',
+                meshtastic: 'Meshtastic Traffic',
+                'unknown-lora': 'Unknown LoRa Signal',
+              };
+              const proximityLabels: Record<string, string> = {
+                'very-close': 'Very Close',
+                nearby: 'Nearby',
+                distant: 'Distant',
+                unknown: 'Unknown Distance',
+              };
+              const minutesAgo = Math.floor((Date.now() - detection.detectedAt) / 60_000);
+              const senderNode = detection.lastSenderId
+                ? nodes?.get(detection.lastSenderId)
+                : undefined;
+              const senderName = senderNode?.long_name || senderNode?.short_name;
+              return (
+                <div className="mt-3 space-y-1">
+                  <h4 className="text-xs font-medium text-orange-400 uppercase tracking-wide flex items-center gap-1.5">
+                    <span aria-hidden="true">⚠</span>
+                    Foreign LoRa Activity
+                  </h4>
+                  <div className="bg-secondary-dark rounded p-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                    <div className="text-muted">Class</div>
+                    <div className="text-gray-200">
+                      {classLabels[detection.packetClass] ?? detection.packetClass}
+                    </div>
+                    <div className="text-muted">Proximity</div>
+                    <div className="text-gray-200">
+                      {proximityLabels[detection.proximity] ?? detection.proximity}
+                    </div>
+                    <div className="text-muted">Last Seen</div>
+                    <div className="text-gray-200">
+                      {minutesAgo < 1 ? 'Just now' : `${minutesAgo}m ago`}
+                    </div>
+                    <div className="text-muted">Count</div>
+                    <div className="text-gray-200">{detection.count}×</div>
+                    {(detection.rssi !== undefined || detection.snr !== undefined) && (
+                      <>
+                        <div className="text-muted">Signal</div>
+                        <div className="font-mono text-gray-200">
+                          {detection.rssi !== undefined ? `RSSI ${detection.rssi} dBm` : ''}
+                          {detection.rssi !== undefined && detection.snr !== undefined ? ', ' : ''}
+                          {detection.snr !== undefined ? `SNR ${detection.snr.toFixed(1)} dB` : ''}
+                        </div>
+                      </>
+                    )}
+                    {detection.lastSenderId != null && (
+                      <>
+                        <div className="text-muted">Sender</div>
+                        <div className="font-mono text-gray-200">
+                          !{detection.lastSenderId.toString(16).padStart(8, '0')}
+                          {senderName ? ` (${senderName})` : ''}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
           {/* MeshCore: repeater status */}
           {protocol === 'meshcore' && !isOurNode && meshcoreRepeaterStatus && showRepeaterStats && (

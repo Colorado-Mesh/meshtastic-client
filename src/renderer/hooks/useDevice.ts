@@ -11,6 +11,7 @@ import {
   safeDisconnect,
 } from '../lib/connection';
 import { validateCoords } from '../lib/coordUtils';
+import { containsMeshCorePattern, extractRssiSnr } from '../lib/foreignLoraDetection';
 import type { OurPosition } from '../lib/gpsSource';
 import { resolveOurPosition } from '../lib/gpsSource';
 import { parseStoredJson } from '../lib/parseStoredJson';
@@ -1381,6 +1382,12 @@ export function useDevice() {
             },
           ];
         });
+        if (containsMeshCorePattern(record.message)) {
+          const { rssi, snr } = extractRssiSnr(record.message);
+          useDiagnosticsStore
+            .getState()
+            .recordForeignLora(myNodeNumRef.current, 'meshcore', rssi, snr);
+        }
       });
       unsubscribesRef.current.push(unsubLog);
 

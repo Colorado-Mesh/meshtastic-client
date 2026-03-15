@@ -30,8 +30,8 @@ const PROTOCOL_KEY = 'mesh-client:protocol';
 
 // Tabs (0-indexed) that are disabled in MeshCore mode
 // Tab 6 (Telemetry) re-enabled — capabilities-aware rendering handles battery/signal differences
-// Tab 8 (Diagnostics) disabled — routing anomaly detection and RF diagnostics are Meshtastic-specific
-const MESHCORE_DISABLED_TABS = new Set([8]);
+// Tab 8 (Diagnostics) re-enabled — foreign LoRa detection works in both Meshtastic and MeshCore modes
+const MESHCORE_DISABLED_TABS = new Set<number>([]);
 
 const STATUS_COLOR: Record<string, string> = {
   disconnected: 'bg-red-500',

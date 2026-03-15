@@ -15,11 +15,23 @@ import {
   resetCuSpikeCooldown,
 } from '../lib/diagnostics/RFDiagnosticEngine';
 import { analyzeNode } from '../lib/diagnostics/RoutingDiagnosticEngine';
+import {
+  classifyProximity,
+  type PacketClass,
+  RollingRateCounter,
+} from '../lib/foreignLoraDetection';
 import type { GpsSource } from '../lib/gpsSource';
 import { isLowAccuracyPosition } from '../lib/gpsSource';
 import { parseStoredJson } from '../lib/parseStoredJson';
 import type { ProtocolCapabilities } from '../lib/radio/BaseRadioProvider';
-import type { DiagnosticRow, HopHistoryPoint, MeshNode, NodeAnomaly } from '../lib/types';
+import type {
+  DiagnosticRow,
+  HopHistoryPoint,
+  MeshNode,
+  NodeAnomaly,
+  RfDiagnosticRow,
+} from '../lib/types';
+import { rfRowId } from '../lib/types';
 
 const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 const FIFTEEN_MIN = 15 * 60 * 1000;
@@ -44,6 +56,30 @@ export interface NodeRedundancy {
   score: number; // 0-100: min(round((maxPaths-1)/3 * 100), 100)
   recentPackets: PacketRecord[]; // last 20 packets
 }
+
+export interface ForeignLoraDetection {
+  detectedAt: number;
+  rssi?: number;
+  snr?: number;
+  proximity: 'very-close' | 'nearby' | 'distant' | 'unknown';
+  packetClass: PacketClass;
+  count: number;
+  lastSenderId?: number;
+}
+
+/** Foreign LoRa condition strings — used to surgically replace only these rows. */
+const FOREIGN_LORA_CONDITIONS = new Set([
+  'MeshCore Activity Detected',
+  'Meshtastic Traffic Detected',
+  'Unknown LoRa Traffic',
+  'Potential MeshCore Repeater Conflict',
+]);
+
+/** Module-level rate counter for MeshCore-class packets (Meshtastic mode). */
+const meshcoreRateCounter = new RollingRateCounter(60_000);
+
+/** Last RF row update time per `nodeId:packetClass` key (5-min cooldown). */
+const rfRowCooldowns = new Map<string, number>();
 
 export type EnvMode = 'standard' | 'city' | 'canyon';
 
@@ -213,6 +249,8 @@ interface DiagnosticsState {
   mqttIgnoredNodes: Set<number>;
   ourPositionSource: GpsSource | null;
   envMode: EnvMode;
+  /** Session-only: cross-protocol foreign LoRa detections keyed by connected device nodeId. */
+  foreignLoraDetections: Map<number, ForeignLoraDetection>;
   processNodeUpdate(
     node: MeshNode,
     homeNode: MeshNode | null,
@@ -220,6 +258,14 @@ interface DiagnosticsState {
     capabilities?: ProtocolCapabilities,
   ): void;
   recordDuplicate(fromNodeId: number): void;
+  recordForeignLora(
+    nodeId: number,
+    packetClass: PacketClass,
+    rssi?: number,
+    snr?: number,
+    senderId?: number,
+    getNodes?: () => Map<number, MeshNode>,
+  ): void;
   recordPacketPath(packetId: number, fromNodeId: number, path: PacketPath): void;
   runReanalysis(
     getNodes: () => Map<number, MeshNode>,
@@ -307,6 +353,7 @@ export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
   ourPositionSource: null,
   envMode: loadEnvMode(),
   diagnosticRowsMaxAgeHours: loadDiagnosticRowsMaxAgeHours(),
+  foreignLoraDetections: new Map(),
 
   processNodeUpdate(
     node: MeshNode,
@@ -414,6 +461,117 @@ export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
       const newPacketStats = new Map(state.packetStats);
       newPacketStats.set(fromNodeId, { ...stats, duplicates: stats.duplicates + 1 });
       return { packetStats: newPacketStats };
+    });
+  },
+
+  recordForeignLora(
+    nodeId: number,
+    packetClass: PacketClass,
+    rssi?: number,
+    snr?: number,
+    senderId?: number,
+    getNodes?: () => Map<number, MeshNode>,
+  ) {
+    const now = Date.now();
+    const proximity = classifyProximity(rssi, snr);
+
+    // Always update detection summary
+    set((state) => {
+      const existing = state.foreignLoraDetections.get(nodeId);
+      const updated: ForeignLoraDetection = {
+        detectedAt: now,
+        rssi,
+        snr,
+        proximity,
+        packetClass,
+        count: (existing?.count ?? 0) + 1,
+        lastSenderId: senderId ?? existing?.lastSenderId,
+      };
+      const next = new Map(state.foreignLoraDetections);
+      next.set(nodeId, updated);
+      return { foreignLoraDetections: next };
+    });
+
+    // Rate counter for MeshCore-class packets
+    if (packetClass === 'meshcore') {
+      meshcoreRateCounter.record();
+    }
+
+    // RF row cooldown: only update diagnostic rows every 5 minutes per nodeId+class
+    const cooldownKey = `${nodeId}:${packetClass}`;
+    const lastUpdate = rfRowCooldowns.get(cooldownKey) ?? 0;
+    if (now - lastUpdate < 5 * 60 * 1000) return;
+    rfRowCooldowns.set(cooldownKey, now);
+
+    // Build cause text
+    const nodes = getNodes?.();
+    let condition: string;
+    let cause: string;
+
+    if (packetClass === 'meshcore') {
+      condition = 'MeshCore Activity Detected';
+      if (proximity === 'very-close') {
+        cause = `MeshCore node very close (RSSI ${rssi} dBm) — likely causing packet collisions.`;
+      } else if (proximity === 'nearby') {
+        cause = `MeshCore node detected nearby (RSSI ${rssi} dBm) — may interfere with traffic.`;
+      } else if (proximity === 'distant') {
+        cause = `Distant MeshCore activity on this frequency (RSSI ${rssi} dBm).`;
+      } else {
+        cause = 'MeshCore node transmitting on this frequency.';
+      }
+    } else if (packetClass === 'meshtastic') {
+      condition = 'Meshtastic Traffic Detected';
+      const senderHex = senderId ? `!${senderId.toString(16).padStart(8, '0')}` : 'unknown';
+      const senderNode = senderId ? nodes?.get(senderId) : undefined;
+      const senderName = senderNode?.long_name || senderNode?.short_name;
+      const senderLabel = senderName ? `${senderHex} (${senderName})` : senderHex;
+      const proxLabel =
+        proximity === 'very-close'
+          ? 'Very close'
+          : proximity === 'nearby'
+            ? 'Nearby'
+            : proximity === 'distant'
+              ? 'Distant'
+              : '';
+      cause = `Meshtastic node transmitting on this frequency. Sender: ${senderLabel}. ${proxLabel ? proxLabel + '. ' : ''}This node may be in your MeshCore repeater area.`;
+    } else {
+      condition = 'Unknown LoRa Traffic';
+      cause = `Unrecognized LoRa signal detected (RSSI ${rssi ?? '?'} dBm, SNR ${snr ?? '?'} dB).`;
+    }
+
+    const mainRow: RfDiagnosticRow = {
+      kind: 'rf',
+      id: rfRowId(nodeId, condition),
+      nodeId,
+      condition,
+      cause,
+      severity: 'info',
+      detectedAt: now,
+    };
+
+    const extraRows: RfDiagnosticRow[] = [];
+    if (packetClass === 'meshcore' && meshcoreRateCounter.getRate() > 5) {
+      extraRows.push({
+        kind: 'rf',
+        id: rfRowId(nodeId, 'Potential MeshCore Repeater Conflict'),
+        nodeId,
+        condition: 'Potential MeshCore Repeater Conflict',
+        cause:
+          'High MeshCore packet rate detected (>5/min). A nearby MeshCore repeater may be causing packet collisions.',
+        severity: 'warning',
+        detectedAt: now,
+      });
+    }
+
+    set((state) => {
+      // Replace only foreign LoRa rows (preserve CU spike and other RF rows)
+      const withoutForeign = state.diagnosticRows.filter(
+        (r) =>
+          !(r.kind === 'rf' && r.nodeId === nodeId && FOREIGN_LORA_CONDITIONS.has(r.condition)),
+      );
+      const diagnosticRows = [...withoutForeign, mainRow, ...extraRows];
+      schedulePersistDiagnosticRows(() => get().diagnosticRows);
+      return { diagnosticRows };
     });
   },
 
@@ -606,6 +764,7 @@ export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
     } catch {
       /* ignore */
     }
+    rfRowCooldowns.clear();
     set({
       diagnosticRows: [],
       diagnosticRowsRestoredAt: null,
@@ -614,6 +773,7 @@ export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
       packetStats: new Map(),
       packetCache: new Map(),
       nodeRedundancy: new Map(),
+      foreignLoraDetections: new Map(),
     });
   },
 }));

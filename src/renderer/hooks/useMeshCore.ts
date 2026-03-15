@@ -6,12 +6,14 @@ import {
 } from '@liamcottle/meshcore.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { classifyPayload, extractMeshtasticSenderId } from '../lib/foreignLoraDetection';
 import {
   CONTACT_TYPE_LABELS,
   meshcoreContactToMeshNode,
   pubkeyToNodeId,
 } from '../lib/meshcoreUtils';
 import type { ChatMessage, DeviceState, MeshNode, TelemetryPoint } from '../lib/types';
+import { useDiagnosticsStore } from '../stores/diagnosticsStore';
 import { usePositionHistoryStore } from '../stores/positionHistoryStore';
 import { useRepeaterSignalStore } from '../stores/repeaterSignalStore';
 
@@ -326,6 +328,8 @@ export function useMeshCore() {
   const nicknameMapRef = useRef<Map<number, string>>(new Map());
   // Stable ref to current nodes so event listeners don't form stale closures
   const nodesRef = useRef<Map<number, MeshNode>>(new Map());
+  // Stable ref to own node ID so event listeners don't form stale closures
+  const myNodeNumRef = useRef<number>(0);
   // Pending ACK tracking: packetId → { nodeId, timeoutId }
   const pendingAcksRef = useRef<Map<number, { timeoutId: ReturnType<typeof setTimeout> }>>(
     new Map(),
@@ -334,6 +338,10 @@ export function useMeshCore() {
   useEffect(() => {
     nodesRef.current = nodes;
   }, [nodes]);
+
+  useEffect(() => {
+    myNodeNumRef.current = state.myNodeNum;
+  }, [state.myNodeNum]);
 
   // Record a battery telemetry point whenever selfInfo battery data arrives/changes
   useEffect(() => {
@@ -576,6 +584,24 @@ export function useMeshCore() {
         });
         const sigPoint: TelemetryPoint = { timestamp: now, snr, rssi };
         setSignalTelemetry((prev) => [...prev, sigPoint].slice(-MAX_TELEMETRY_POINTS));
+
+        // Foreign LoRa fingerprinting: only flag non-MeshCore packets as foreign
+        if (d.raw instanceof Uint8Array && d.raw.length > 0) {
+          const packetClass = classifyPayload(d.raw);
+          if (packetClass !== 'meshcore') {
+            const senderId = packetClass === 'meshtastic' ? extractMeshtasticSenderId(d.raw) : null;
+            useDiagnosticsStore
+              .getState()
+              .recordForeignLora(
+                myNodeNumRef.current,
+                packetClass,
+                rssi || undefined,
+                snr || undefined,
+                senderId ?? undefined,
+                () => nodesRef.current,
+              );
+          }
+        }
       });
 
       conn.on('disconnected', () => {
@@ -1150,14 +1176,26 @@ export function useMeshCore() {
         console.log('[useMeshCore] setRadioParams succeeded');
       } catch (e) {
         console.error('[useMeshCore] setRadioParams threw:', e);
-        throw e;
+        const err =
+          e === undefined || (e instanceof Error && !e.message)
+            ? new Error(
+                'Failed to apply radio settings. The device may not support changing radio parameters over this connection.',
+              )
+            : e;
+        throw err;
       }
       try {
         await connRef.current.setTxPower(p.txPower);
         console.log('[useMeshCore] setTxPower succeeded');
       } catch (e) {
         console.error('[useMeshCore] setTxPower threw:', e);
-        throw e;
+        const err =
+          e === undefined || (e instanceof Error && !e.message)
+            ? new Error(
+                'Failed to set TX power. The device may not support changing it over this connection.',
+              )
+            : e;
+        throw err;
       }
       setSelfInfo((prev) =>
         prev
