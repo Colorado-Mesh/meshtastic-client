@@ -16,15 +16,21 @@ export function classifyPayload(raw: Uint8Array): PacketClass {
 
 /**
  * Check if a Meshtastic device log message contains the MeshCore 0x3c frame-start
- * pattern in a dropped/CRC-error context.
+ * pattern in a dropped/CRC/decode-failure context. Accepts common firmware wordings
+ * (e.g. "preamble", "decode failed") so MeshCore traffic is recognized when the
+ * device logs the failure and includes the first byte or '<' (0x3c).
  */
+/** Log messages indicating receive/decode failure (packet dropped, CRC, preamble, etc.). */
+const FAILURE_CONTEXT_REGEX = /packet.?dropped|crc.?err|crc.?fail|decode.?fail|preamble/i;
+
 export function containsMeshCorePattern(message: string): boolean {
-  if (!/packet.?dropped|crc.?err/i.test(message)) return false;
+  if (!FAILURE_CONTEXT_REGEX.test(message)) return false;
   return (
     /\b3c\s+[0-9a-f]{1,2}\s+[0-9a-f]{1,2}/i.test(message) ||
     /\b3c[0-9a-f]{4}/i.test(message) ||
+    /\b0x3c\b/i.test(message) ||
     /0x3c\s*0x[0-9a-f]{2}\s*0x[0-9a-f]{2}/i.test(message) ||
-    (message.includes('<') && /packet.?dropped|crc.?err/i.test(message))
+    (message.includes('<') && FAILURE_CONTEXT_REGEX.test(message))
   );
 }
 

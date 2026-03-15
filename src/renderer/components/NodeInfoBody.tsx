@@ -523,6 +523,7 @@ function RFDiagnosticsSection({
   const getCuStats24h = useDiagnosticsStore((s) => s.getCuStats24h);
   const packetCache = useDiagnosticsStore((s) => s.packetCache);
   const diagnosticRows = useDiagnosticsStore((s) => s.diagnosticRows);
+  const foreignLoraDetections = useDiagnosticsStore((s) => s.foreignLoraDetections);
   const anomaliesMap = diagnosticRowsToRoutingMap(diagnosticRows);
 
   let findings: RFDiagnosis[] | null;
@@ -547,7 +548,14 @@ function RFDiagnosticsSection({
     if (findings === null) noTelemetry = true;
   }
 
-  const flagged = findings?.length ?? 0;
+  // When we have a specific foreign LoRa detection (MeshCore/Meshtastic), don't show the generic "LoRa Collision or Corruption" in the RF list
+  const hasForeignLora = foreignLoraDetections?.has(node.node_id) ?? false;
+  const findingsToShow =
+    findings != null && hasForeignLora
+      ? findings.filter((f) => f.condition !== 'LoRa Collision or Corruption')
+      : findings;
+
+  const flagged = findingsToShow?.length ?? 0;
   const meshCongestionFinding =
     isOurNode && findings?.find((f) => f.condition === 'Mesh Congestion');
   const attrForOurNode =
@@ -597,7 +605,7 @@ function RFDiagnosticsSection({
           <div className="text-xs text-brand-green">All RF diagnostics OK</div>
         ) : (
           <div className="flex flex-col gap-1.5">
-            {findings!.map((f, i) => (
+            {findingsToShow!.map((f, i) => (
               <div
                 key={i}
                 className={`flex items-start gap-1.5 text-xs ${SEVERITY_STYLES[f.severity]}`}

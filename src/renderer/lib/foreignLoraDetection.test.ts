@@ -37,6 +37,20 @@ describe('containsMeshCorePattern', () => {
     expect(containsMeshCorePattern('packet dropped <garbage rssi=-90')).toBe(true);
     expect(containsMeshCorePattern('crc err <payload')).toBe(true);
   });
+
+  it('returns true for preamble/decode-fail wording with 0x3c (common firmware log style)', () => {
+    expect(containsMeshCorePattern('Preamble detected but CRC failed. First byte: 0x3c')).toBe(
+      true,
+    );
+    expect(containsMeshCorePattern('decode failed 3c 00 01')).toBe(true);
+    expect(containsMeshCorePattern('CRC fail <')).toBe(true);
+  });
+
+  it('returns false for preamble/decode-fail without 0x3c or <', () => {
+    expect(
+      containsMeshCorePattern('Preamble detected but CRC/decode failed (non-Meshtastic LoRa)'),
+    ).toBe(false);
+  });
 });
 
 describe('extractRssiSnr', () => {
