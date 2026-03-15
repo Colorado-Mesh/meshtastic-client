@@ -28,8 +28,9 @@ import { useDiagnosticsStore } from './stores/diagnosticsStore';
 const PROTOCOL_KEY = 'mesh-client:protocol';
 
 // Tabs (0-indexed) that are disabled in MeshCore mode
-// Tabs 6 (Telemetry) and 8 (Diagnostics) re-enabled — capabilities-aware rendering handles protocol differences
-const MESHCORE_DISABLED_TABS = new Set([4, 5]);
+// Tab 6 (Telemetry) re-enabled — capabilities-aware rendering handles battery/signal differences
+// Tab 8 (Diagnostics) disabled — routing anomaly detection and RF diagnostics are Meshtastic-specific
+const MESHCORE_DISABLED_TABS = new Set([4, 5, 8]);
 
 const STATUS_COLOR: Record<string, string> = {
   disconnected: 'bg-red-500',

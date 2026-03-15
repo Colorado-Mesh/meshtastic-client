@@ -2,7 +2,7 @@ import { SerialConnection, WebBleConnection, WebSerialConnection } from '@liamco
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { meshcoreContactToMeshNode, pubkeyToNodeId } from '../lib/meshcoreUtils';
-import type { ChatMessage, DeviceState, MeshNode } from '../lib/types';
+import type { ChatMessage, DeviceState, MeshNode, TelemetryPoint } from '../lib/types';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface SerialConnectionInstance extends InstanceType<typeof SerialConnection> {}
@@ -161,6 +161,7 @@ const INITIAL_STATE: DeviceState = {
 };
 
 const MAX_DEVICE_LOGS = 500;
+const MAX_TELEMETRY_POINTS = 50;
 
 export function useMeshCore() {
   const [state, setState] = useState<DeviceState>(INITIAL_STATE);
@@ -169,6 +170,8 @@ export function useMeshCore() {
   const [channels, setChannels] = useState<{ index: number; name: string }[]>([]);
   const [selfInfo, setSelfInfo] = useState<MeshCoreSelfInfo | null>(null);
   const [deviceLogs, setDeviceLogs] = useState<DeviceLogEntry[]>([]);
+  const [telemetry, setTelemetry] = useState<TelemetryPoint[]>([]);
+  const [signalTelemetry, setSignalTelemetry] = useState<TelemetryPoint[]>([]);
   const [meshcoreTraceResults, setMeshcoreTraceResults] = useState<
     Map<number, { hops: { snr: number }[]; lastSnr: number }>
   >(new Map());
@@ -192,6 +195,14 @@ export function useMeshCore() {
   useEffect(() => {
     nodesRef.current = nodes;
   }, [nodes]);
+
+  // Record a battery telemetry point whenever selfInfo battery data arrives/changes
+  useEffect(() => {
+    if (selfInfo?.batteryMilliVolts == null) return;
+    const voltage = selfInfo.batteryMilliVolts / 1000;
+    const point: TelemetryPoint = { timestamp: Date.now(), voltage };
+    setTelemetry((prev) => [...prev, point].slice(-MAX_TELEMETRY_POINTS));
+  }, [selfInfo?.batteryMilliVolts]);
 
   const addMessage = useCallback((msg: ChatMessage) => {
     setMessages((prev) => [...prev, msg]);
@@ -361,13 +372,14 @@ export function useMeshCore() {
         });
       });
 
-      // Push: RF packet received — event 0x88 = 136; feed into device logs
+      // Push: RF packet received — event 0x88 = 136; feed into device logs + signal telemetry
       conn.on(136, (data: unknown) => {
         const d = data as { lastSnr?: number; lastRssi?: number; raw?: unknown };
         const snr = d.lastSnr ?? 0;
         const rssi = d.lastRssi ?? 0;
+        const now = Date.now();
         const entry: DeviceLogEntry = {
-          ts: Date.now(),
+          ts: now,
           level: 'info',
           source: 'device',
           message: `RX SNR=${snr.toFixed(2)}dB RSSI=${rssi}dBm`,
@@ -376,6 +388,8 @@ export function useMeshCore() {
           const next = [...prev, entry];
           return next.length > MAX_DEVICE_LOGS ? next.slice(next.length - MAX_DEVICE_LOGS) : next;
         });
+        const sigPoint: TelemetryPoint = { timestamp: now, snr, rssi };
+        setSignalTelemetry((prev) => [...prev, sigPoint].slice(-MAX_TELEMETRY_POINTS));
       });
 
       conn.on('disconnected', () => {
@@ -485,6 +499,8 @@ export function useMeshCore() {
     setChannels([]);
     setSelfInfo(null);
     setDeviceLogs([]);
+    setTelemetry([]);
+    setSignalTelemetry([]);
     setMeshcoreTraceResults(new Map());
     setMeshcoreNodeStatus(new Map());
     setState(INITIAL_STATE);
@@ -717,8 +733,8 @@ export function useMeshCore() {
     queueStatus: null,
     neighborInfo: new Map<number, unknown>(),
     waypoints: [] as unknown[],
-    telemetry: [] as unknown[],
-    signalTelemetry: [] as unknown[],
+    telemetry,
+    signalTelemetry,
     environmentTelemetry: [] as unknown[],
     channelConfigs: [] as unknown[],
     moduleConfigs: {} as Record<string, unknown>,
