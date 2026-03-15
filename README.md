@@ -590,7 +590,17 @@ You're missing build tools for the native modules (e.g. `better-sqlite3`, `@seri
 
 - **Mac**: `xcode-select --install`
 - **Linux**: `sudo apt install build-essential python3`
-- **Windows**: Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the "Desktop development with C++" workload, and **Python 3** (see [Windows — extra notes](#windows--extra-notes) step 4). If you see "Could not find any Python installation to use", install Python and ensure it is on PATH or set `npm config set python "C:\Path\To\python.exe"`.
+- **Windows**: Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the "Desktop development with C++" workload, and **Python 3** (see [Windows — extra notes](#windows--extra-notes) step 4). If you see "Could not find any Python installation to use", see the [Python troubleshooting](#windows-could-not-find-any-python-installation-to-use-eg-when-building-serialportbindings-cpp) section. If you see "Could not find any Visual Studio installation to use", see the [Visual Studio troubleshooting](#windows-could-not-find-any-visual-studio-installation-to-use) section.
+
+### Windows: "Could not find any Visual Studio installation to use"
+
+**Cause**: node-gyp (used to build native modules like `better-sqlite3` and `@serialport/bindings-cpp`) requires Visual Studio Build Tools (or full Visual Studio) with the C++ workload on Windows. The error appears during `npm install` (postinstall) or `npm run dist:win` when no suitable installation is found. **Even when Build Tools are installed**, this often happens when the **project path contains spaces** (e.g. `C:\Users\Joey Stanford\meshcore`) — node-gyp's Visual Studio finder can fail in that case. Fix the path first.
+
+**Fix**:
+
+1. **Use a path without spaces** (do this first, especially if Build Tools are already installed): Clone or move the repo to e.g. `C:\dev\meshcore` or `C:\src\meshcore`, then run `npm install` from there. This resolves the issue in most cases. See [dist:win fails: "space in the path"](#distwin-fails-space-in-the-path-or-eperm-unlink-on-better_sqlite3node) for details.
+2. **Install Visual Studio Build Tools** (if not already): Download [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) and select the **"Desktop development with C++"** workload. After installation, close and reopen your terminal so environment variables are picked up.
+3. **If Build Tools are installed but node-gyp still fails** (and you cannot move the repo): Open **"Developer Command Prompt for VS"** or **"x64 Native Tools Command Prompt for VS"** from the Start menu, `cd` to your project folder, and run `npm install` there so the correct `cl.exe` and paths are in scope. Or set the version explicitly: `npm config set msvs_version 2022` (use your installed year/build).
 
 ### Windows: "Could not find any Python installation to use" (e.g. when building `@serialport/bindings-cpp`)
 
@@ -668,7 +678,7 @@ npm run trace-deprecation
 
 **Cause**
 
-1. **Spaces in the project path** — node-gyp and the native rebuild step are unreliable when the repo lives under a path with spaces (e.g. `C:\Users\Joey Stanford\meshtastic-client`). See [node-gyp#65](https://github.com/nodejs/node-gyp/issues/65#issuecomment-368820565).
+1. **Spaces in the project path** — node-gyp and the native rebuild step are unreliable when the repo lives under a path with spaces (e.g. `C:\Users\Joey Stanford\meshtastic-client`). This can surface as "Attempting to build a module with a space in the path", "Could not find any Visual Studio installation to use", or EPERM. See [node-gyp#65](https://github.com/nodejs/node-gyp/issues/65#issuecomment-368820565).
 2. **EPERM on unlink** — Something on Windows still has the `.node` file open (another `node`/`electron` process, antivirus/Windows Defender scanning the file, or a stuck handle), so the rebuild cannot replace it.
 
 3. **Why it used to work** — electron-builder **always runs a second native rebuild** during `dist:win` (after `postinstall` already built `better-sqlite3`). Recent **@electron/rebuild** / node-gyp behavior can hit EPERM when replacing the existing `.node`. The repo now runs a **beforeBuild** hook that deletes `node_modules/better-sqlite3/build` first (with retries) so the packaging rebuild compiles into a clean folder instead of unlinking a locked file. If delete still hits EPERM, the hook **renames** `build` to `build.stale.<timestamp>` (so node-gyp can create a fresh `build`) or tries **`rd /s /q`** before failing.
