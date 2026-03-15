@@ -320,6 +320,7 @@ export function useMeshCore() {
 
   const connRef = useRef<MeshCoreConnection | null>(null);
   const ipcTcpRef = useRef<IpcTcpConnection | null>(null);
+  const bleConnectInProgressRef = useRef(false);
   // Map pubKeyPrefix (6-byte hex) → nodeId for DM routing
   const pubKeyPrefixMapRef = useRef<Map<string, number>>(new Map());
   // Full pubKey → nodeId for sending
@@ -846,11 +847,19 @@ export function useMeshCore() {
 
   const connect = useCallback(
     async (type: 'ble' | 'serial' | 'tcp', tcpHost?: string) => {
+      if (type === 'ble' && bleConnectInProgressRef.current) {
+        throw new Error(
+          'Bluetooth connection already in progress. Wait for it to finish or cancel, then try again.',
+        );
+      }
+
       setState({
         status: 'connecting',
         myNodeNum: 0,
         connectionType: type === 'tcp' ? 'http' : type,
       });
+
+      if (type === 'ble') bleConnectInProgressRef.current = true;
 
       try {
         let conn: MeshCoreConnection;
@@ -944,10 +953,27 @@ export function useMeshCore() {
         await initConn(conn);
         console.log('[useMeshCore] connect: handshake complete, type=', type);
       } catch (err) {
-        console.error('[useMeshCore] connect error', err);
+        const message =
+          err instanceof Error
+            ? err.message
+            : typeof err === 'string'
+              ? err
+              : String(err ?? 'Connection failed');
+        const isAlreadyInProgress = /already in progress|Connection already in progress/i.test(
+          message,
+        );
+        const normalizedErr = new Error(
+          isAlreadyInProgress
+            ? 'Bluetooth connection already in progress. Wait for it to finish or try Serial/USB instead.'
+            : message || 'Connection failed',
+        );
+        console.error('[useMeshCore] connect error', normalizedErr.message, err);
         setState({ status: 'disconnected', myNodeNum: 0, connectionType: null });
         ipcTcpRef.current?.cleanup();
         ipcTcpRef.current = null;
+        throw normalizedErr;
+      } finally {
+        if (type === 'ble') bleConnectInProgressRef.current = false;
       }
     },
     [initConn],

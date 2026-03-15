@@ -1260,8 +1260,10 @@ export default function ConnectionPanel({
           {/* Connect button */}
           <div className="pt-1">
             <button
+              type="button"
               onClick={handleConnect}
-              className="w-full px-4 py-2.5 text-white text-sm font-medium rounded-lg transition-colors"
+              disabled={connecting || state.status === 'connecting'}
+              className="w-full px-4 py-2.5 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ backgroundColor: '#4CAF50' }}
             >
               Connect
