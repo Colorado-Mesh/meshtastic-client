@@ -30,7 +30,7 @@ const PROTOCOL_KEY = 'mesh-client:protocol';
 // Tabs (0-indexed) that are disabled in MeshCore mode
 // Tab 6 (Telemetry) re-enabled — capabilities-aware rendering handles battery/signal differences
 // Tab 8 (Diagnostics) disabled — routing anomaly detection and RF diagnostics are Meshtastic-specific
-const MESHCORE_DISABLED_TABS = new Set([4, 5, 8]);
+const MESHCORE_DISABLED_TABS = new Set([5, 8]);
 
 const STATUS_COLOR: Record<string, string> = {
   disconnected: 'bg-red-500',
@@ -639,6 +639,23 @@ export default function App() {
                     onRebootOta={device.rebootOta}
                     onEnterDfu={device.enterDfuMode}
                     onFactoryResetConfig={device.factoryResetConfig}
+                    capabilities={capabilities}
+                    onApplyLoraParams={
+                      protocol === 'meshcore'
+                        ? async (p) => meshcoreDevice.setRadioParams(p)
+                        : undefined
+                    }
+                    loraConfig={
+                      protocol === 'meshcore' && meshcoreDevice.selfInfo
+                        ? {
+                            freq: meshcoreDevice.selfInfo.radioFreq,
+                            bw: meshcoreDevice.selfInfo.radioBw,
+                            sf: meshcoreDevice.selfInfo.radioSf,
+                            cr: meshcoreDevice.selfInfo.radioCr,
+                            txPower: meshcoreDevice.selfInfo.txPower,
+                          }
+                        : undefined
+                    }
                   />
                 )}
                 {activeTab === 5 && (

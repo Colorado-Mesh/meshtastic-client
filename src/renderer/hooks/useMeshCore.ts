@@ -1,8 +1,43 @@
 import { SerialConnection, WebBleConnection, WebSerialConnection } from '@liamcottle/meshcore.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { meshcoreContactToMeshNode, pubkeyToNodeId } from '../lib/meshcoreUtils';
+import {
+  CONTACT_TYPE_LABELS,
+  meshcoreContactToMeshNode,
+  pubkeyToNodeId,
+} from '../lib/meshcoreUtils';
 import type { ChatMessage, DeviceState, MeshNode, TelemetryPoint } from '../lib/types';
+
+function contactToDbRow(
+  contact: MeshCoreContactRaw,
+): Parameters<typeof window.electronAPI.db.saveMeshcoreContact>[0] {
+  return {
+    node_id: pubkeyToNodeId(contact.publicKey),
+    public_key: Array.from(contact.publicKey)
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join(''),
+    adv_name: contact.advName ?? null,
+    contact_type: contact.type,
+    last_advert: contact.lastAdvert ?? null,
+    adv_lat: contact.advLat !== 0 ? contact.advLat / 1e7 : null,
+    adv_lon: contact.advLon !== 0 ? contact.advLon / 1e7 : null,
+  };
+}
+
+function messageToDbRow(
+  msg: ChatMessage,
+): Parameters<typeof window.electronAPI.db.saveMeshcoreMessage>[0] {
+  return {
+    sender_id: msg.sender_id !== 0 ? msg.sender_id : null,
+    sender_name: msg.sender_name ?? null,
+    payload: msg.payload,
+    channel_idx: msg.channel,
+    timestamp: msg.timestamp,
+    status: msg.status ?? 'acked',
+    packet_id: msg.packetId ?? null,
+    to_node: msg.to ?? null,
+  };
+}
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface SerialConnectionInstance extends InstanceType<typeof SerialConnection> {}
@@ -61,6 +96,9 @@ export interface MeshCoreSelfInfo {
   type: number;
   txPower: number;
   radioFreq: number;
+  radioBw?: number;
+  radioSf?: number;
+  radioCr?: number;
   batteryMilliVolts?: number;
 }
 
@@ -103,6 +141,9 @@ interface MeshCoreConnection {
   sendChannelTextMessage(channelIdx: number, text: string): Promise<void>;
   removeContact(pubKey: Uint8Array): Promise<void>;
   setAdvertName(name: string): Promise<void>;
+  setRadioParams(freq: number, bw: number, sf: number, cr: number): Promise<void>;
+  setTxPower(txPower: number): Promise<void>;
+  setAdvertLatLong(lat: number, lon: number): Promise<void>;
   reboot(): Promise<void>;
   getBatteryVoltage(): Promise<{ batteryMilliVolts: number }>;
   syncDeviceTime(): Promise<void>;
@@ -206,6 +247,9 @@ export function useMeshCore() {
 
   const addMessage = useCallback((msg: ChatMessage) => {
     setMessages((prev) => [...prev, msg]);
+    void window.electronAPI.db.saveMeshcoreMessage(messageToDbRow(msg)).catch((e: unknown) => {
+      console.warn('[useMeshCore] saveMeshcoreMessage error', e);
+    });
   }, []);
 
   const updateNode = useCallback((node: MeshNode) => {
@@ -239,6 +283,20 @@ export function useMeshCore() {
           });
           return next;
         });
+        // Persist updated advert position to DB
+        void window.electronAPI.db
+          .saveMeshcoreContact({
+            node_id: nodeId,
+            public_key: Array.from(d.publicKey)
+              .map((b) => b.toString(16).padStart(2, '0'))
+              .join(''),
+            last_advert: d.lastAdvert ?? null,
+            adv_lat: d.advLat !== 0 ? d.advLat / 1e7 : null,
+            adv_lon: d.advLon !== 0 ? d.advLon / 1e7 : null,
+          })
+          .catch((e: unknown) => {
+            console.warn('[useMeshCore] saveMeshcoreContact (advert) error', e);
+          });
       });
 
       // Push: path updated — event 0x81 = 129; update last_heard for that contact
@@ -264,6 +322,11 @@ export function useMeshCore() {
         setMessages((prev) =>
           prev.map((m) => (m.packetId === d.ackCode ? { ...m, status: 'acked' as const } : m)),
         );
+        void window.electronAPI.db
+          .updateMeshcoreMessageStatus(d.ackCode, 'acked')
+          .catch((e: unknown) => {
+            console.warn('[useMeshCore] updateMeshcoreMessageStatus error', e);
+          });
       });
 
       // Push: new contact discovered — event 0x8A = 138
@@ -276,6 +339,9 @@ export function useMeshCore() {
           .join('');
         pubKeyPrefixMapRef.current.set(prefix, node.node_id);
         updateNode(node);
+        void window.electronAPI.db.saveMeshcoreContact(contactToDbRow(d)).catch((e: unknown) => {
+          console.warn('[useMeshCore] saveMeshcoreContact (event 138) error', e);
+        });
       });
 
       // Push: message waiting — event 0x83 = 131; fetch all queued messages
@@ -407,6 +473,37 @@ export function useMeshCore() {
 
       setState((prev) => ({ ...prev, status: 'connected' }));
 
+      // Load persisted messages from DB before device's MsgWaiting fires
+      try {
+        const dbMsgs = (await window.electronAPI.db.getMeshcoreMessages(undefined, 500)) as {
+          id: number;
+          sender_id: number | null;
+          sender_name: string | null;
+          payload: string;
+          channel_idx: number;
+          timestamp: number;
+          status: string;
+          packet_id: number | null;
+          to_node: number | null;
+        }[];
+        if (dbMsgs.length > 0) {
+          const mapped: ChatMessage[] = dbMsgs.map((r) => ({
+            sender_id: r.sender_id ?? 0,
+            sender_name: r.sender_name ?? 'Unknown',
+            payload: r.payload,
+            channel: r.channel_idx,
+            timestamp: r.timestamp,
+            status: (r.status as ChatMessage['status']) ?? 'acked',
+            packetId: r.packet_id ?? undefined,
+            to: r.to_node ?? undefined,
+            isHistory: true,
+          }));
+          setMessages(mapped);
+        }
+      } catch (e) {
+        console.warn('[useMeshCore] loadMessagesFromDb error', e);
+      }
+
       // Fetch self info, contacts, channels (sequential — device handles one request at a time)
       const info = await conn.getSelfInfo(5000);
       setSelfInfo(info);
@@ -424,7 +521,47 @@ export function useMeshCore() {
           .map((b) => b.toString(16).padStart(2, '0'))
           .join('');
         pubKeyPrefixMapRef.current.set(prefix, node.node_id);
+        void window.electronAPI.db.saveMeshcoreContact(contactToDbRow(contact)).catch((e) => {
+          console.warn('[useMeshCore] saveMeshcoreContact (init) error', e);
+        });
       }
+
+      // Seed contacts from DB for any nodes not returned by device (cache fallback)
+      try {
+        const dbContacts = (await window.electronAPI.db.getMeshcoreContacts()) as {
+          node_id: number;
+          public_key: string;
+          adv_name: string | null;
+          contact_type: number;
+          last_advert: number | null;
+          adv_lat: number | null;
+          adv_lon: number | null;
+          last_snr: number | null;
+          last_rssi: number | null;
+          favorited: number;
+        }[];
+        for (const row of dbContacts) {
+          if (!newNodes.has(row.node_id)) {
+            const node: MeshNode = {
+              node_id: row.node_id,
+              long_name: row.adv_name ?? `Node-${row.node_id.toString(16).toUpperCase()}`,
+              short_name: '',
+              hw_model: CONTACT_TYPE_LABELS[row.contact_type] ?? 'Unknown',
+              battery: 0,
+              snr: row.last_snr ?? 0,
+              rssi: row.last_rssi ?? 0,
+              last_heard: row.last_advert ?? 0,
+              latitude: row.adv_lat ?? null,
+              longitude: row.adv_lon ?? null,
+              favorited: row.favorited === 1,
+            };
+            newNodes.set(row.node_id, node);
+          }
+        }
+      } catch (e) {
+        console.warn('[useMeshCore] loadContactsFromDb error', e);
+      }
+
       setNodes(newNodes);
 
       const rawChannels = await conn.getChannels();
@@ -609,6 +746,21 @@ export function useMeshCore() {
                   : m,
               ),
             );
+            // Persist the outgoing DM with packet_id for status tracking
+            void window.electronAPI.db
+              .saveMeshcoreMessage({
+                sender_id: null,
+                sender_name: selfInfo?.name ?? 'Me',
+                payload: text,
+                channel_idx: channelIdx,
+                timestamp: sentAt,
+                status: 'sending',
+                packet_id: ackCrc,
+                to_node: destNodeId,
+              })
+              .catch((e) => {
+                console.warn('[useMeshCore] saveMeshcoreMessage (outgoing) error', e);
+              });
 
             // Schedule failure timeout
             const timeoutId = setTimeout(() => {
@@ -620,6 +772,11 @@ export function useMeshCore() {
                     : m,
                 ),
               );
+              void window.electronAPI.db
+                .updateMeshcoreMessageStatus(ackCrc, 'failed')
+                .catch((e) => {
+                  console.warn('[useMeshCore] updateMeshcoreMessageStatus (timeout) error', e);
+                });
             }, estTimeout);
             pendingAcksRef.current.set(ackCrc, { timeoutId });
           } else {
@@ -631,6 +788,19 @@ export function useMeshCore() {
                   : m,
               ),
             );
+            void window.electronAPI.db
+              .saveMeshcoreMessage({
+                sender_id: null,
+                sender_name: selfInfo?.name ?? 'Me',
+                payload: text,
+                channel_idx: channelIdx,
+                timestamp: sentAt,
+                status: 'acked',
+                to_node: destNodeId,
+              })
+              .catch((e) => {
+                console.warn('[useMeshCore] saveMeshcoreMessage (outgoing-no-ack) error', e);
+              });
           }
         } catch (e) {
           console.warn('[useMeshCore] sendTextMessage error', e);
@@ -708,12 +878,44 @@ export function useMeshCore() {
       next.delete(nodeId);
       return next;
     });
+    void window.electronAPI.db.deleteMeshcoreContact(nodeId).catch((e) => {
+      console.warn('[useMeshCore] deleteMeshcoreContact error', e);
+    });
   }, []);
 
-  const setOwner = useCallback(async (name: string) => {
+  const setOwner = useCallback(
+    async (owner: { longName: string; shortName: string; isLicensed: boolean }) => {
+      if (!connRef.current) return;
+      await connRef.current.setAdvertName(owner.longName);
+      setSelfInfo((prev) => (prev ? { ...prev, name: owner.longName } : prev));
+    },
+    [],
+  );
+
+  const setRadioParams = useCallback(
+    async (p: { freq: number; bw: number; sf: number; cr: number; txPower: number }) => {
+      if (!connRef.current) return;
+      await connRef.current.setRadioParams(p.freq, p.bw, p.sf, p.cr);
+      await connRef.current.setTxPower(p.txPower);
+      setSelfInfo((prev) =>
+        prev
+          ? {
+              ...prev,
+              radioFreq: p.freq,
+              radioBw: p.bw,
+              radioSf: p.sf,
+              radioCr: p.cr,
+              txPower: p.txPower,
+            }
+          : prev,
+      );
+    },
+    [],
+  );
+
+  const sendPositionToDeviceMeshCore = useCallback(async (lat: number, lon: number) => {
     if (!connRef.current) return;
-    await connRef.current.setAdvertName(name);
-    setSelfInfo((prev) => (prev ? { ...prev, name } : prev));
+    await connRef.current.setAdvertLatLong(lat, lon);
   }, []);
 
   const traceRoute = useCallback(async (nodeId: number) => {
@@ -805,7 +1007,7 @@ export function useMeshCore() {
     environmentTelemetry: [] as unknown[],
     channelConfigs: [] as unknown[],
     moduleConfigs: {} as Record<string, unknown>,
-    deviceOwner: null,
+    deviceOwner: selfInfo ? { longName: selfInfo.name, shortName: '', isLicensed: false } : null,
     ourPosition: null,
     gpsLoading: false,
     telemetryEnabled: null,
@@ -828,11 +1030,77 @@ export function useMeshCore() {
     setCannedMessages: noopAsync,
     requestRefresh: noopAsync,
     refreshOurPosition: noopAsync,
-    sendPositionToDevice: noopAsync,
+    sendPositionToDevice: sendPositionToDeviceMeshCore,
     updateGpsInterval: noopVoid,
-    refreshNodesFromDb: noopAsync,
-    refreshMessagesFromDb: noopAsync,
+    refreshNodesFromDb: useCallback(async () => {
+      try {
+        const dbContacts = (await window.electronAPI.db.getMeshcoreContacts()) as {
+          node_id: number;
+          adv_name: string | null;
+          contact_type: number;
+          last_advert: number | null;
+          adv_lat: number | null;
+          adv_lon: number | null;
+          last_snr: number | null;
+          last_rssi: number | null;
+          favorited: number;
+        }[];
+        setNodes((prev) => {
+          const next = new Map(prev);
+          for (const row of dbContacts) {
+            if (!next.has(row.node_id)) {
+              next.set(row.node_id, {
+                node_id: row.node_id,
+                long_name: row.adv_name ?? `Node-${row.node_id.toString(16).toUpperCase()}`,
+                short_name: '',
+                hw_model: CONTACT_TYPE_LABELS[row.contact_type] ?? 'Unknown',
+                battery: 0,
+                snr: row.last_snr ?? 0,
+                rssi: row.last_rssi ?? 0,
+                last_heard: row.last_advert ?? 0,
+                latitude: row.adv_lat ?? null,
+                longitude: row.adv_lon ?? null,
+                favorited: row.favorited === 1,
+              });
+            }
+          }
+          return next;
+        });
+      } catch (e) {
+        console.warn('[useMeshCore] refreshNodesFromDb error', e);
+      }
+    }, []),
+    refreshMessagesFromDb: useCallback(async () => {
+      try {
+        const dbMsgs = (await window.electronAPI.db.getMeshcoreMessages(undefined, 500)) as {
+          sender_id: number | null;
+          sender_name: string | null;
+          payload: string;
+          channel_idx: number;
+          timestamp: number;
+          status: string;
+          packet_id: number | null;
+          to_node: number | null;
+        }[];
+        setMessages(
+          dbMsgs.map((r) => ({
+            sender_id: r.sender_id ?? 0,
+            sender_name: r.sender_name ?? 'Unknown',
+            payload: r.payload,
+            channel: r.channel_idx,
+            timestamp: r.timestamp,
+            status: (r.status as ChatMessage['status']) ?? 'acked',
+            packetId: r.packet_id ?? undefined,
+            to: r.to_node ?? undefined,
+            isHistory: true,
+          })),
+        );
+      } catch (e) {
+        console.warn('[useMeshCore] refreshMessagesFromDb error', e);
+      }
+    }, []),
     connectAutomatic,
     telemetryDeviceUpdateInterval: undefined as number | undefined,
+    setRadioParams,
   };
 }

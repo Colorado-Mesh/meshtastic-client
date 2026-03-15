@@ -31,6 +31,26 @@ export interface ProtocolCapabilities {
   hasRepeaterStatus: boolean;
   /** Whether on-demand node status queries are supported */
   hasOnDemandNodeStatus: boolean;
+  /** Whether Bluetooth config (enabled toggle, PIN) is available */
+  hasBluetoothConfig: boolean;
+  /** Whether device role selector is available */
+  hasDeviceRoleConfig: boolean;
+  /** Whether display config (screen on duration, units) is available */
+  hasDisplayConfig: boolean;
+  /** Whether power config (sleep timers, battery shutdown) is available */
+  hasPowerConfig: boolean;
+  /** Whether WiFi / Ethernet network config is available */
+  hasWifiConfig: boolean;
+  /** Whether telemetry device metrics update interval config is available */
+  hasTelemetryIntervalConfig: boolean;
+  /** Whether shutdown button is available */
+  hasShutdown: boolean;
+  /** Whether Reset NodeDB button is available */
+  hasNodeDbReset: boolean;
+  /** Whether factory reset buttons are available */
+  hasFactoryReset: boolean;
+  /** Whether full GPS position config is available; false = fixed lat/lon only */
+  hasFullPositionConfig: boolean;
 }
 
 export const MESHTASTIC_CAPABILITIES: ProtocolCapabilities = {
@@ -48,6 +68,16 @@ export const MESHTASTIC_CAPABILITIES: ProtocolCapabilities = {
   hasBatteryTelemetry: true,
   hasRepeaterStatus: false,
   hasOnDemandNodeStatus: false,
+  hasBluetoothConfig: true,
+  hasDeviceRoleConfig: true,
+  hasDisplayConfig: true,
+  hasPowerConfig: true,
+  hasWifiConfig: true,
+  hasTelemetryIntervalConfig: true,
+  hasShutdown: true,
+  hasNodeDbReset: true,
+  hasFactoryReset: true,
+  hasFullPositionConfig: true,
 };
 
 export const MESHCORE_CAPABILITIES: ProtocolCapabilities = {
@@ -65,4 +95,14 @@ export const MESHCORE_CAPABILITIES: ProtocolCapabilities = {
   hasBatteryTelemetry: true,
   hasRepeaterStatus: true,
   hasOnDemandNodeStatus: true,
+  hasBluetoothConfig: false,
+  hasDeviceRoleConfig: false,
+  hasDisplayConfig: false,
+  hasPowerConfig: false,
+  hasWifiConfig: false,
+  hasTelemetryIntervalConfig: false,
+  hasShutdown: false,
+  hasNodeDbReset: false,
+  hasFactoryReset: false,
+  hasFullPositionConfig: false,
 };

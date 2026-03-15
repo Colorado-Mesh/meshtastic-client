@@ -169,6 +169,49 @@ function validateSaveNode(
   checkStr('source', 64);
 }
 
+function validateSaveMeshcoreMessage(msg: unknown): asserts msg is Record<string, unknown> & {
+  payload: string;
+  timestamp: number;
+} {
+  if (!msg || typeof msg !== 'object')
+    throw new Error('db:saveMeshcoreMessage: message must be an object');
+  const m = msg as Record<string, unknown>;
+  if (typeof m.payload !== 'string')
+    throw new Error('db:saveMeshcoreMessage: payload must be a string');
+  if (m.payload.length > MAX_PAYLOAD_LENGTH)
+    throw new Error('db:saveMeshcoreMessage: payload too long');
+  if (typeof m.timestamp !== 'number' || !Number.isFinite(m.timestamp))
+    throw new Error('db:saveMeshcoreMessage: timestamp must be a finite number');
+  if (
+    m.sender_name != null &&
+    typeof m.sender_name === 'string' &&
+    m.sender_name.length > MAX_NODE_STRING
+  )
+    throw new Error('db:saveMeshcoreMessage: sender_name too long');
+  if (m.status != null && typeof m.status === 'string' && m.status.length > MAX_STATUS_STRING)
+    throw new Error('db:saveMeshcoreMessage: status too long');
+}
+
+function validateSaveMeshcoreContact(contact: unknown): asserts contact is Record<
+  string,
+  unknown
+> & {
+  node_id: number;
+  public_key: string;
+} {
+  if (!contact || typeof contact !== 'object')
+    throw new Error('db:saveMeshcoreContact: contact must be an object');
+  const c = contact as Record<string, unknown>;
+  const nodeId = Number(c.node_id);
+  if (!Number.isFinite(nodeId) || nodeId < 0)
+    throw new Error('db:saveMeshcoreContact: node_id must be a finite non-negative number');
+  if (typeof c.public_key !== 'string')
+    throw new Error('db:saveMeshcoreContact: public_key must be a string');
+  if (c.public_key.length > 128) throw new Error('db:saveMeshcoreContact: public_key too long');
+  if (c.adv_name != null && typeof c.adv_name === 'string' && c.adv_name.length > MAX_NODE_STRING)
+    throw new Error('db:saveMeshcoreContact: adv_name too long');
+}
+
 function validateMqttSettings(settings: unknown): void {
   if (!settings || typeof settings !== 'object')
     throw new Error('mqtt:connect: settings must be an object');
@@ -1280,6 +1323,160 @@ ipcMain.handle('log:export', async () => {
   } catch (err) {
     console.error(
       '[IPC] log:export failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
+});
+
+// ─── IPC: MeshCore database operations ──────────────────────────────
+ipcMain.handle('db:getMeshcoreMessages', (_event, channelIdx?: number, limit = 200) => {
+  try {
+    const safeLimit = Math.min(Math.max(1, Number(limit) || 200), 10000);
+    const db = getDatabase();
+    if (channelIdx !== undefined && channelIdx !== null) {
+      const ch = typeof channelIdx === 'number' ? Math.trunc(channelIdx) : 0;
+      return db
+        .prepare(
+          'SELECT * FROM meshcore_messages WHERE channel_idx = ? ORDER BY timestamp ASC LIMIT ?',
+        )
+        .all(ch, safeLimit);
+    }
+    return db
+      .prepare('SELECT * FROM meshcore_messages ORDER BY timestamp ASC LIMIT ?')
+      .all(safeLimit);
+  } catch (err) {
+    console.error(
+      '[IPC] db:getMeshcoreMessages failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
+});
+
+ipcMain.handle('db:getMeshcoreContacts', () => {
+  try {
+    return getDatabase().prepare('SELECT * FROM meshcore_contacts').all();
+  } catch (err) {
+    console.error(
+      '[IPC] db:getMeshcoreContacts failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
+});
+
+ipcMain.handle('db:saveMeshcoreMessage', (_event, message) => {
+  try {
+    validateSaveMeshcoreMessage(message);
+    const m = message as Record<string, unknown>;
+    const db = getDatabase();
+    return db
+      .prepare(
+        'INSERT OR IGNORE INTO meshcore_messages ' +
+          '(sender_id, sender_name, payload, channel_idx, timestamp, status, packet_id, to_node) ' +
+          'VALUES (@sender_id, @sender_name, @payload, @channel_idx, @timestamp, @status, @packet_id, @to_node)',
+      )
+      .run({
+        sender_id: m.sender_id != null ? Number(m.sender_id) : null,
+        sender_name: m.sender_name != null ? String(m.sender_name) : null,
+        payload: m.payload as string,
+        channel_idx: m.channel_idx != null ? Math.trunc(Number(m.channel_idx)) : 0,
+        timestamp: Number(m.timestamp),
+        status: m.status != null ? String(m.status) : 'acked',
+        packet_id: m.packet_id != null ? Number(m.packet_id) : null,
+        to_node: m.to_node != null ? Number(m.to_node) : null,
+      });
+  } catch (err) {
+    console.error(
+      '[IPC] db:saveMeshcoreMessage failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
+});
+
+ipcMain.handle('db:saveMeshcoreContact', (_event, contact) => {
+  try {
+    validateSaveMeshcoreContact(contact);
+    const c = contact as Record<string, unknown>;
+    const db = getDatabase();
+    return db
+      .prepare(
+        'INSERT OR REPLACE INTO meshcore_contacts ' +
+          '(node_id, public_key, adv_name, contact_type, last_advert, adv_lat, adv_lon, last_snr, last_rssi, favorited) ' +
+          'VALUES (@node_id, @public_key, @adv_name, @contact_type, @last_advert, @adv_lat, @adv_lon, @last_snr, @last_rssi, ' +
+          'COALESCE((SELECT favorited FROM meshcore_contacts WHERE node_id = @node_id), 0))',
+      )
+      .run({
+        node_id: Number(c.node_id),
+        public_key: c.public_key as string,
+        adv_name: c.adv_name != null ? String(c.adv_name) : null,
+        contact_type: c.contact_type != null ? Number(c.contact_type) : 0,
+        last_advert: c.last_advert != null ? Number(c.last_advert) : null,
+        adv_lat: c.adv_lat != null ? Number(c.adv_lat) : null,
+        adv_lon: c.adv_lon != null ? Number(c.adv_lon) : null,
+        last_snr: c.last_snr != null ? Number(c.last_snr) : null,
+        last_rssi: c.last_rssi != null ? Number(c.last_rssi) : null,
+      });
+  } catch (err) {
+    console.error(
+      '[IPC] db:saveMeshcoreContact failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
+});
+
+ipcMain.handle('db:updateMeshcoreMessageStatus', (_event, packetId: number, status: string) => {
+  try {
+    const pid = Number(packetId);
+    if (!Number.isFinite(pid)) throw new Error('db:updateMeshcoreMessageStatus: invalid packetId');
+    if (typeof status !== 'string' || status.length > MAX_STATUS_STRING)
+      throw new Error('db:updateMeshcoreMessageStatus: invalid status');
+    return getDatabase()
+      .prepare('UPDATE meshcore_messages SET status = ? WHERE packet_id = ?')
+      .run(status, pid);
+  } catch (err) {
+    console.error(
+      '[IPC] db:updateMeshcoreMessageStatus failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
+});
+
+ipcMain.handle('db:deleteMeshcoreContact', (_event, nodeId: number) => {
+  try {
+    const id = safeNonNegativeInt(nodeId);
+    return getDatabase().prepare('DELETE FROM meshcore_contacts WHERE node_id = ?').run(id);
+  } catch (err) {
+    console.error(
+      '[IPC] db:deleteMeshcoreContact failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
+});
+
+ipcMain.handle('db:clearMeshcoreMessages', () => {
+  try {
+    return getDatabase().prepare('DELETE FROM meshcore_messages').run();
+  } catch (err) {
+    console.error(
+      '[IPC] db:clearMeshcoreMessages failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
+});
+
+ipcMain.handle('db:clearMeshcoreContacts', () => {
+  try {
+    return getDatabase().prepare('DELETE FROM meshcore_contacts').run();
+  } catch (err) {
+    console.error(
+      '[IPC] db:clearMeshcoreContacts failed:',
       sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
     );
     throw err;

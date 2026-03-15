@@ -45,7 +45,7 @@ export function initDatabase(): void {
       createBaseTables();
       if (isFreshDb) {
         // Base DDL already includes all columns; stamp current schema version
-        db!.pragma('user_version = 10');
+        db!.pragma('user_version = 11');
       } else {
         runMigrations();
       }
@@ -119,6 +119,36 @@ function createBaseTables(): void {
       CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
       CREATE INDEX IF NOT EXISTS idx_messages_channel_ts ON messages(channel, timestamp DESC);
       CREATE INDEX IF NOT EXISTS idx_nodes_last_heard ON nodes(last_heard);
+
+      CREATE TABLE IF NOT EXISTS meshcore_contacts (
+        node_id      INTEGER PRIMARY KEY,
+        public_key   TEXT NOT NULL,
+        adv_name     TEXT,
+        contact_type INTEGER DEFAULT 0,
+        last_advert  INTEGER,
+        adv_lat      REAL,
+        adv_lon      REAL,
+        last_snr     REAL,
+        last_rssi    REAL,
+        favorited    INTEGER DEFAULT 0
+      );
+
+      CREATE TABLE IF NOT EXISTS meshcore_messages (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        sender_id   INTEGER,
+        sender_name TEXT,
+        payload     TEXT NOT NULL,
+        channel_idx INTEGER DEFAULT 0,
+        timestamp   INTEGER NOT NULL,
+        status      TEXT DEFAULT 'acked',
+        packet_id   INTEGER,
+        to_node     INTEGER
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_mc_msgs_ts ON meshcore_messages(timestamp);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_mc_msg_dedup
+        ON meshcore_messages(sender_id, timestamp, channel_idx)
+        WHERE sender_id IS NOT NULL;
     `);
   } catch (error) {
     console.error(
@@ -278,12 +308,43 @@ function runMigrations(): void {
     try {
       db!.prepare('ALTER TABLE messages ADD COLUMN received_via TEXT').run();
       db!.pragma('user_version = 10');
+      userVersion = 10;
     } catch (e) {
       console.error(
         '[db] migration v10 failed',
         sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
       );
       throw new Error(`Migration v10 failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  if (userVersion < 11) {
+    try {
+      db!.exec(
+        'CREATE TABLE IF NOT EXISTS meshcore_contacts (' +
+          'node_id INTEGER PRIMARY KEY, public_key TEXT NOT NULL, adv_name TEXT,' +
+          'contact_type INTEGER DEFAULT 0, last_advert INTEGER,' +
+          'adv_lat REAL, adv_lon REAL, last_snr REAL, last_rssi REAL, favorited INTEGER DEFAULT 0)',
+      );
+      db!.exec(
+        'CREATE TABLE IF NOT EXISTS meshcore_messages (' +
+          'id INTEGER PRIMARY KEY AUTOINCREMENT, sender_id INTEGER, sender_name TEXT,' +
+          'payload TEXT NOT NULL, channel_idx INTEGER DEFAULT 0, timestamp INTEGER NOT NULL,' +
+          "status TEXT DEFAULT 'acked', packet_id INTEGER, to_node INTEGER)",
+      );
+      db!.exec('CREATE INDEX IF NOT EXISTS idx_mc_msgs_ts ON meshcore_messages(timestamp)');
+      db!.exec(
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_mc_msg_dedup ' +
+          'ON meshcore_messages(sender_id, timestamp, channel_idx) ' +
+          'WHERE sender_id IS NOT NULL',
+      );
+      db!.pragma('user_version = 11');
+    } catch (e) {
+      console.error(
+        '[db] migration v11 failed',
+        sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+      );
+      throw new Error(`Migration v11 failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 }

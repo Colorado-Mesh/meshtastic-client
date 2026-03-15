@@ -288,6 +288,33 @@ declare global {
         deleteNodesBySource: (source: string) => Promise<number>;
         clearNodePositions: () => Promise<unknown>;
         updateMessageReceivedVia: (packetId: number) => Promise<unknown>;
+        saveMeshcoreMessage: (message: {
+          sender_id?: number | null;
+          sender_name?: string | null;
+          payload: string;
+          channel_idx?: number;
+          timestamp: number;
+          status?: string;
+          packet_id?: number | null;
+          to_node?: number | null;
+        }) => Promise<unknown>;
+        saveMeshcoreContact: (contact: {
+          node_id: number;
+          public_key: string;
+          adv_name?: string | null;
+          contact_type?: number;
+          last_advert?: number | null;
+          adv_lat?: number | null;
+          adv_lon?: number | null;
+          last_snr?: number | null;
+          last_rssi?: number | null;
+        }) => Promise<unknown>;
+        updateMeshcoreMessageStatus: (packetId: number, status: string) => Promise<unknown>;
+        getMeshcoreMessages: (channelIdx?: number, limit?: number) => Promise<unknown[]>;
+        getMeshcoreContacts: () => Promise<unknown[]>;
+        deleteMeshcoreContact: (nodeId: number) => Promise<unknown>;
+        clearMeshcoreMessages: () => Promise<unknown>;
+        clearMeshcoreContacts: () => Promise<unknown>;
       };
       mqtt: {
         connect: (settings: MQTTSettings) => Promise<void>;

@@ -61,6 +61,37 @@ contextBridge.exposeInMainWorld('electronAPI', {
     clearNodePositions: () => ipcRenderer.invoke('db:clearNodePositions'),
     updateMessageReceivedVia: (packetId: number) =>
       ipcRenderer.invoke('db:updateMessageReceivedVia', packetId),
+
+    getMeshcoreMessages: (channelIdx?: number, limit?: number) =>
+      ipcRenderer.invoke('db:getMeshcoreMessages', channelIdx, limit),
+    getMeshcoreContacts: () => ipcRenderer.invoke('db:getMeshcoreContacts'),
+    saveMeshcoreMessage: (message: {
+      sender_id?: number | null;
+      sender_name?: string | null;
+      payload: string;
+      channel_idx?: number;
+      timestamp: number;
+      status?: string;
+      packet_id?: number | null;
+      to_node?: number | null;
+    }) => ipcRenderer.invoke('db:saveMeshcoreMessage', message),
+    saveMeshcoreContact: (contact: {
+      node_id: number;
+      public_key: string;
+      adv_name?: string | null;
+      contact_type?: number;
+      last_advert?: number | null;
+      adv_lat?: number | null;
+      adv_lon?: number | null;
+      last_snr?: number | null;
+      last_rssi?: number | null;
+    }) => ipcRenderer.invoke('db:saveMeshcoreContact', contact),
+    updateMeshcoreMessageStatus: (packetId: number, status: string) =>
+      ipcRenderer.invoke('db:updateMeshcoreMessageStatus', packetId, status),
+    deleteMeshcoreContact: (nodeId: number) =>
+      ipcRenderer.invoke('db:deleteMeshcoreContact', nodeId),
+    clearMeshcoreMessages: () => ipcRenderer.invoke('db:clearMeshcoreMessages'),
+    clearMeshcoreContacts: () => ipcRenderer.invoke('db:clearMeshcoreContacts'),
   },
 
   // ─── MQTT ──────────────────────────────────────────────────────

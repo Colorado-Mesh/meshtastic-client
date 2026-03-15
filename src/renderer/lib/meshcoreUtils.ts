@@ -11,7 +11,7 @@ export function pubkeyToNodeId(key: Uint8Array): number {
   return result >>> 0;
 }
 
-const CONTACT_TYPE_LABELS: Record<number, string> = {
+export const CONTACT_TYPE_LABELS: Record<number, string> = {
   0: 'None',
   1: 'Chat',
   2: 'Repeater',
