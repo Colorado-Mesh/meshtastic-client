@@ -433,7 +433,7 @@ export function useDevice() {
         // Periodic NodeInfo broadcast so other nodes see this client (every 5 min)
         if (mqttPresenceIntervalRef.current) clearInterval(mqttPresenceIntervalRef.current);
         const sendPresence = () => {
-          if (deviceRef.current) {
+          if (deviceRef.current || mqttStatusRef.current !== 'connected') {
             if (mqttPresenceIntervalRef.current) {
               clearInterval(mqttPresenceIntervalRef.current);
               mqttPresenceIntervalRef.current = null;
