@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { OurPosition } from '../lib/gpsSource';
 import type { ProtocolCapabilities } from '../lib/radio/BaseRadioProvider';
@@ -944,8 +944,11 @@ export default function RadioPanel({
             <label className="text-sm text-muted">Frequency (MHz)</label>
             <input
               type="number"
-              value={radioFreqHz / 1e6}
-              onChange={(e) => setRadioFreqHz(Math.round(Number(e.target.value) * 1e6))}
+              value={(radioFreqHz / 1e6).toFixed(3)}
+              onChange={(e) => {
+                const parsed = parseFloat(e.target.value);
+                if (!Number.isNaN(parsed)) setRadioFreqHz(Math.round(parsed * 1e6));
+              }}
               step={0.001}
               min={150}
               max={960}
@@ -2091,13 +2094,27 @@ function MeshcoreChannelSection({
   const [confirmDeleteIdx, setConfirmDeleteIdx] = useState<number | null>(null);
   const [addingNew, setAddingNew] = useState(false);
   const [newIdx, setNewIdx] = useState('');
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const formRef = useRef<HTMLDivElement>(null);
 
   const isValidHex = editKeyHex.length === 32 && /^[0-9a-fA-F]{32}$/.test(editKeyHex);
+
+  useEffect(() => {
+    if (editingIdx !== null || addingNew) {
+      if (detailsRef.current) detailsRef.current.open = true;
+    }
+  }, [editingIdx, addingNew]);
+
+  useEffect(() => {
+    if ((editingIdx !== null || addingNew) && formRef.current) {
+      formRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [editingIdx, addingNew]);
 
   function openEdit(ch: { index: number; name: string; secret: Uint8Array }) {
     setEditingIdx(ch.index);
     setEditName(ch.name);
-    setEditKeyHex(bytesToHex(ch.secret));
+    setEditKeyHex(ch.secret && ch.secret.length === 16 ? bytesToHex(ch.secret) : '');
     setAddingNew(false);
   }
 
@@ -2143,7 +2160,10 @@ function MeshcoreChannelSection({
   const showForm = editingIdx !== null || addingNew;
 
   return (
-    <details className="group rounded-lg border border-gray-700/60 bg-secondary-dark/40 overflow-hidden">
+    <details
+      ref={detailsRef}
+      className="group rounded-lg border border-gray-700/60 bg-secondary-dark/40 overflow-hidden"
+    >
       <summary className="flex items-center justify-between px-4 py-3 cursor-pointer select-none hover:bg-gray-800/40 transition-colors">
         <span className="text-sm font-semibold text-gray-200">Channels (MeshCore)</span>
         <svg
@@ -2192,7 +2212,11 @@ function MeshcoreChannelSection({
                   {revealed ? 'Hide' : 'Show'}
                 </button>
                 <button
-                  onClick={() => openEdit(ch)}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openEdit(ch);
+                  }}
                   disabled={disabled}
                   className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50 px-1"
                 >
@@ -2230,7 +2254,10 @@ function MeshcoreChannelSection({
 
         {/* ── Edit / Add Form ── */}
         {showForm && (
-          <div className="mt-3 p-3 bg-deep-black/60 rounded-lg border border-gray-600 space-y-3">
+          <div
+            ref={formRef}
+            className="mt-3 p-3 bg-deep-black/60 rounded-lg border border-gray-600 space-y-3"
+          >
             <h4 className="text-sm font-medium text-gray-200">
               {addingNew ? 'Add Channel' : `Edit Channel ${editingIdx}`}
             </h4>

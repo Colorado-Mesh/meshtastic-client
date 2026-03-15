@@ -245,6 +245,20 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- device object ref excluded intentionally; specific stable properties listed instead
   }, [selectedNode, device.traceRouteResults, device.state.myNodeNum, device.getFullNodeLabel]);
 
+  /** In meshcore mode, only show configured channels (key !== all zeros) in chat. */
+  const chatChannels = useMemo(() => {
+    if (protocol !== 'meshcore') return device.channels;
+    const chs = device.channels as { index: number; name: string; secret?: Uint8Array }[];
+    const toHex = (s: Uint8Array) =>
+      Array.from(s)
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+    const unconfiguredKey = '00000000000000000000000000000000';
+    return chs
+      .filter((ch) => ch.secret && ch.secret.length === 16 && toHex(ch.secret) !== unconfiguredKey)
+      .map((ch) => ({ index: ch.index, name: ch.name }));
+  }, [protocol, device.channels]);
+
   // ─── Startup node pruning based on persisted admin settings ─────
   const { refreshNodesFromDb } = device;
   useEffect(() => {
@@ -611,7 +625,7 @@ export default function App() {
                 <div className={activeTab === 1 ? 'contents' : 'hidden'}>
                   <ChatPanel
                     messages={device.messages}
-                    channels={device.channels}
+                    channels={chatChannels}
                     myNodeNum={device.selfNodeId}
                     onSend={device.sendMessage}
                     onReact={device.sendReaction}
