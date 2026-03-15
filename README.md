@@ -90,12 +90,14 @@ The official Meshtastic apps cover the basics, but desktop power users need more
 **Node Management**
 
 - Node list with SNR, battery, GPS, last heard — **signal bars** appear only for direct (0-hop) RF neighbors; multi-hop and MQTT-only paths omit bars
+- **Cross-Protocol Signal Analyzer** — foreign LoRa traffic detection (non-mesh packets); shown in Node Detail when present
 - Distance filter, favorite/pin nodes, device role icons
 - Node Detail Modal: DM, trace route with per-hop display, delete node, neighbor info
 
 **Map & Position**
 
 - Interactive OpenStreetMap with node positions and your current location (device GPS → browser geolocation → IP-based city-level fallback)
+- **60-minute position trail** — in-memory path overlay for the last hour of positions; toggle in App tab
 - Auto-refresh at configurable intervals; manual static position entry; send your position back to your device
 
 **Telemetry**
@@ -114,7 +116,7 @@ The official Meshtastic apps cover the basics, but desktop power users need more
 
 ### MeshCore Features
 
-MeshCore support is available alongside Meshtastic — switch protocols in the Connection tab. Tabs incompatible with MeshCore (Modules, Network Diagnostics) are disabled automatically when MeshCore is active.
+MeshCore support is available alongside Meshtastic — switch protocols in the Connection tab. When MeshCore is active, the sixth tab is **Repeaters** (instead of Modules); all other tabs, including Network Diagnostics, are available.
 
 **Contacts & Discovery**
 
@@ -136,9 +138,14 @@ MeshCore support is available alongside Meshtastic — switch protocols in the C
 - **Remote Telemetry** — pull CayenneLPP-encoded environment data (temperature, humidity, barometric pressure, voltage, GPS) from any contact via `getTelemetry`; results shown inline in the node detail modal with fetch timestamp
 - **Neighbor Info** — query a Repeater node's neighbor list via `getNeighbours`; shows each neighbor's name (resolved from contacts or hex prefix), how recently it was heard, and color-coded SNR
 
+**Repeaters**
+
+- **Repeaters panel** (MeshCore-only tab) — list repeaters with on-demand status (noise floor, RSSI/SNR, packet counts, air time, uptime, TX queue); JSON nickname import for bulk contact names
+
 **Radio Parameters**
 
 - Frequency (Hz), bandwidth, spreading factor, coding rate, and TX power — synced from device `selfInfo` and applied live via the Radio tab
+- **Channel display and edit** — view and edit channel list from the device in the Radio tab; config import with auto-apply
 
 **Battery & Signal Telemetry**
 
@@ -156,7 +163,7 @@ MeshCore support is available alongside Meshtastic — switch protocols in the C
 
 - **MQTT → RF**: Messages received via MQTT are shown in chat but are not rebroadcast over the radio. Previous relay behavior caused duplicate or misattributed messages.
 - **MeshCore — no MQTT**: MQTT is a Meshtastic-specific feature and is not available in MeshCore mode.
-- **MeshCore — no routing diagnostics**: Hop anomaly detection and RF diagnostics require Meshtastic-specific packets (`hops_away`, LocalStats, NeighborInfo). The Network Diagnostics tab is disabled in MeshCore mode.
+- **MeshCore — no routing anomaly diagnostics**: Hop anomaly detection (hop_goblin, bad_route, etc.) and RF diagnostics require Meshtastic-specific packets (`hops_away`, LocalStats, NeighborInfo). The Network Diagnostics tab is available in MeshCore for foreign LoRa detection and other shared features.
 - **MeshCore — no channel/device config editing**: MeshCore does not expose a channel-configuration API. Radio parameters (frequency, bandwidth, spreading factor, coding rate, TX power) can be set via the Radio tab.
 - **MeshCore — remote telemetry availability**: `getTelemetry` requires the remote node to have environment sensors. A timeout is returned if the node has no sensor data.
 - **MeshCore — neighbor info availability**: `getNeighbours` is supported only by Repeater-type nodes running firmware v1.9.0+. The button is hidden for Chat and Room contacts.
@@ -425,7 +432,7 @@ meshtastic-client/
 │   ├── main/
 │   │   ├── index.ts              # Window creation, BLE/Serial intercept, all IPC handlers
 │   │   ├── log-service.ts        # Log file, console patch, log panel IPC
-│   │   ├── database.ts           # SQLite schema & migrations (WAL mode, user_version 11)
+│   │   ├── database.ts           # SQLite schema & migrations (WAL mode, user_version 13)
 │   │   ├── mqtt-manager.ts       # MQTT client: AES decrypt, dedup, protobuf decode, pre-parser for firmware trailing padding
 │   │   ├── updater.ts            # Auto-update checks via electron-updater
 │   │   └── gps.ts                # Main-process GPS helper
@@ -433,7 +440,7 @@ meshtastic-client/
 │   │   └── index.ts              # contextBridge: electronAPI (db, mqtt, log, BLE, serial, session)
 │   └── renderer/
 │       ├── index.html            # HTML entry
-│       ├── App.tsx               # Shell: 8 tabs, Log panel (right rail), keyboard shortcuts, status header
+│       ├── App.tsx               # Shell: 9 tabs, Log panel (right rail), keyboard shortcuts, status header
 │       ├── main.tsx              # React entry point
 │       ├── components/
 │       │   ├── ChatPanel.tsx         # Chat UI, DMs, emoji reactions, channel switching
@@ -446,7 +453,8 @@ meshtastic-client/
 │       │   ├── DiagnosticsPanel.tsx  # Health band + counts, diagnosticRows table, halos, max age
 │       │   ├── MeshCongestionAttributionBlock.tsx  # Shared mesh congestion / duplicate-traffic copy
 │       │   ├── LogPanel.tsx          # Live app log, debug toggle, export/delete log file
-│       │   ├── RadioPanel.tsx        # Radio settings, fixed position, GPS send
+│       │   ├── RadioPanel.tsx        # Radio settings, fixed position, GPS send; MeshCore: channel display/edit, config import
+│       │   ├── RepeatersPanel.tsx    # MeshCore: repeater list, status, JSON nickname import
 │       │   ├── AppPanel.tsx          # App settings, appearance (theme presets), GPS interval, database management
 │       │   ├── NodeDetailModal.tsx   # Node info overlay; MeshCore: trace, repeater status, telemetry, neighbors
 │       │   ├── NodeInfoBody.tsx      # Shared node info content (modal + map popup)
@@ -461,11 +469,14 @@ meshtastic-client/
 │       │   ├── useDevice.ts          # Core hook: Meshtastic device lifecycle, 3 transports, auto-reconnect
 │       │   └── useMeshCore.ts        # MeshCore hook: BLE/Serial/TCP, contacts, messages, ACK, trace route, telemetry, neighbors
 │       ├── stores/
-│       │   ├── diagnosticsStore.ts   # Zustand: anomalies, packet stats, halo flags, MQTT ignore
-│       │   └── mapViewportStore.ts   # Zustand: persisted map center/zoom
+│       │   ├── diagnosticsStore.ts   # Zustand: anomalies, packet stats, halo flags, MQTT ignore, foreign LoRa detections
+│       │   ├── mapViewportStore.ts   # Zustand: persisted map center/zoom
+│       │   ├── positionHistoryStore.ts  # 60-min position trail; show/hide path overlay
+│       │   └── repeaterSignalStore.ts    # MeshCore: repeater status cache
 │       ├── lib/
 │       │   ├── types.ts              # TypeScript interfaces: MeshNode, ChatMessage, DeviceState, MeshProtocol…
 │       │   ├── connection.ts         # Connection factory: BLE/Serial/HTTP transport creation
+│       │   ├── foreignLoraDetection.ts   # Cross-protocol: classify payload, foreign LoRa detection, RSSI/SNR extraction
 │       │   ├── meshcoreUtils.ts      # MeshCore helpers: pubkeyToNodeId, meshcoreContactToMeshNode, contact type labels
 │       │   ├── gpsSource.ts          # GPS waterfall: device coords → browser geolocation → null
 │       │   ├── nodeStatus.ts         # Node freshness: online <30 min, stale <2 h, offline 2 h+
