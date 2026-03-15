@@ -1308,16 +1308,34 @@ export function useMeshCore() {
     errors: string[];
   }> => {
     const raw = await window.electronAPI.meshcore.openJsonFile();
-    if (raw == null) return { imported: 0, skipped: 0, errors: [] };
+    if (raw == null) {
+      console.log('[useMeshCore] importRepeaters: file picker cancelled');
+      return { imported: 0, skipped: 0, errors: [] };
+    }
+    console.log('[useMeshCore] importRepeaters: file opened, length=', raw.length);
 
     let parsed: unknown[];
     try {
       const val = JSON.parse(raw) as unknown;
-      if (!Array.isArray(val)) throw new Error('JSON root must be an array');
-      parsed = val;
+      // Accept root array or root object with any array-valued key (e.g. { repeaters: [...] })
+      if (Array.isArray(val)) {
+        parsed = val;
+      } else if (val && typeof val === 'object') {
+        const arrays = Object.values(val as Record<string, unknown>).filter(Array.isArray);
+        if (arrays.length === 0) throw new Error('JSON contains no array of entries');
+        parsed = arrays[0] as unknown[];
+        console.log(
+          '[useMeshCore] importRepeaters: found array under object key, length=',
+          parsed.length,
+        );
+      } else {
+        throw new Error('JSON root must be an array or an object containing an array');
+      }
     } catch (e) {
+      console.warn('[useMeshCore] importRepeaters: parse error', e);
       return { imported: 0, skipped: 0, errors: [e instanceof Error ? e.message : String(e)] };
     }
+    console.log('[useMeshCore] importRepeaters: parsed', parsed.length, 'entries');
 
     function parsePublicKey(rawKey: string): Uint8Array | null {
       const s = rawKey.trim().replace(/-/g, '+').replace(/_/g, '/');
@@ -1341,6 +1359,7 @@ export function useMeshCore() {
 
     for (const r of parsed) {
       if (!r || typeof r !== 'object') {
+        console.debug('[useMeshCore] importRepeaters: skipping non-object entry', r);
         skipped++;
         continue;
       }
@@ -1348,20 +1367,36 @@ export function useMeshCore() {
       const name = String(rec.name ?? rec.label ?? rec.title ?? rec.node_name ?? '').trim();
       const rawKey = String(rec.public_key ?? rec.pubkey ?? rec.key ?? rec.publicKey ?? '').trim();
       if (!name || !rawKey) {
+        console.debug('[useMeshCore] importRepeaters: skipping entry missing name or key', rec);
         skipped++;
         continue;
       }
       const pubKey = parsePublicKey(rawKey);
       if (!pubKey) {
+        console.warn('[useMeshCore] importRepeaters: invalid public key for', name, rawKey);
         errors.push(`Skipped "${name}": invalid public key`);
         skipped++;
         continue;
       }
       const nodeId = pubkeyToNodeId(pubKey);
+      console.log(
+        '[useMeshCore] importRepeaters: valid entry',
+        name,
+        nodeId.toString(16).toUpperCase(),
+      );
       nicknameMapRef.current.set(nodeId, name);
       pubKeyMapRef.current.set(nodeId, pubKey);
       validEntries.push({ nodeId, name, pubKey });
     }
+
+    console.log(
+      '[useMeshCore] importRepeaters: imported=',
+      validEntries.length,
+      'skipped=',
+      skipped,
+      'errors=',
+      errors.length,
+    );
 
     if (validEntries.length > 0) {
       setNodes((prev) => {
