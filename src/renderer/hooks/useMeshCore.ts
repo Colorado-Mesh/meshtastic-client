@@ -724,6 +724,36 @@ export function useMeshCore() {
         console.warn('[useMeshCore] loadContactsFromDb error', e);
       }
 
+      // Ensure self node is in the map with radio name so Connection panel shows name, not hex
+      const selfNode = newNodes.get(myNodeId);
+      const hexFallback = `Node-${myNodeId.toString(16).toUpperCase()}`;
+      const selfNameTrimmed = typeof info.name === 'string' ? info.name.trim() : '';
+      const displayLongName = selfNameTrimmed || selfNode?.long_name || hexFallback;
+      const displayShortName = selfNameTrimmed
+        ? selfNameTrimmed.slice(0, 4)
+        : selfNode?.short_name || '????';
+
+      if (selfNode) {
+        newNodes.set(myNodeId, {
+          ...selfNode,
+          long_name: displayLongName,
+          short_name: displayShortName,
+        });
+      } else if (myNodeId > 0) {
+        newNodes.set(myNodeId, {
+          node_id: myNodeId,
+          long_name: displayLongName,
+          short_name: displayShortName,
+          hw_model: 'Unknown',
+          battery: 0,
+          snr: 0,
+          rssi: 0,
+          last_heard: Math.floor(Date.now() / 1000),
+          latitude: null,
+          longitude: null,
+        });
+      }
+
       setNodes(newNodes);
       console.log('[useMeshCore] initConn: contacts loaded, device=', contacts.length);
 
