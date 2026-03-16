@@ -12,6 +12,11 @@
 
 The official Meshtastic apps cover the basics, but desktop power users need more: persistent message history, mesh diagnostics, MQTT integration, and keyboard-driven workflows. Mesh-Client fills that gap — a full-featured desktop Meshtastic client built on Electron with a local SQLite database, routing diagnostics, and multi-transport connectivity. It also supports **MeshCore** firmware devices, giving you a single app for both mesh protocols.
 
+**Known Bugs:**
+
+- **Linux Web Bluetooth** — Web Bluetooth is experimental upstream and does not work reliably on Linux. BLE connection from this app on Linux may fail (e.g. "User cancelled" immediately). Use USB Serial or WiFi/HTTP to connect on Linux.
+- **MeshCore library race** — There is a race condition in the MeshCore (e.g. `@liamcottle/meshcore.js`) connection flow that can cause BLE connections to fail or behave inconsistently.
+
 ---
 
 ## Visuals
