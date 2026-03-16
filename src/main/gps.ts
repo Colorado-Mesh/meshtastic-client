@@ -128,7 +128,11 @@ export async function getGpsFix(): Promise<GpsFixResult> {
     // call succeeds (proving permissions/hardware are OK) or fails fast so we
     // can fall back to inetChecksite below. The timeout bounds the cost, so
     // running this scan for its side effects is intentional and acceptable.
-    await withTimeout(si.wifiNetworks(), GPS_SYSTEM_CHECK_TIMEOUT_MS, undefined);
+    // Attach .catch() so that if the timeout wins the race, a later rejection
+    // from si.wifiNetworks() (e.g. systeminformation wifi.js .split() on undefined)
+    // does not become an unhandled promise rejection.
+    const wifiPromise = si.wifiNetworks().catch(() => undefined);
+    await withTimeout(wifiPromise, GPS_SYSTEM_CHECK_TIMEOUT_MS, undefined);
   } catch {
     // Optional: WiFi scan can fail (permissions, no adapter). Try inetChecksite as fallback.
     try {
