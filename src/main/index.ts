@@ -1757,6 +1757,7 @@ const MAX_TCP_HOST_LENGTH = 253;
 
 ipcMain.handle('meshcore:tcp-connect', (_event, host: string, port: number) => {
   return new Promise<void>((resolve, reject) => {
+    let settled = false;
     const p = Number(port);
     if (!Number.isInteger(p) || p < 1 || p > 65535) {
       reject(new Error('Invalid port'));
@@ -1774,7 +1775,10 @@ ipcMain.handle('meshcore:tcp-connect', (_event, host: string, port: number) => {
     meshcoreTcpSocket = socket;
     socket.connect(p, host, () => {
       console.log('[IPC] meshcore:tcp-connect connected to', host, p);
-      resolve();
+      if (!settled) {
+        settled = true;
+        resolve();
+      }
     });
     socket.on('data', (data) => {
       mainWindow?.webContents.send('meshcore:tcp-data', Array.from(data));
@@ -1785,7 +1789,10 @@ ipcMain.handle('meshcore:tcp-connect', (_event, host: string, port: number) => {
     });
     socket.on('error', (err) => {
       console.error('[IPC] meshcore:tcp-connect error:', sanitizeLogMessage(err.message));
-      reject(err);
+      if (!settled) {
+        settled = true;
+        reject(err);
+      }
       if (meshcoreTcpSocket === socket) meshcoreTcpSocket = null;
     });
   });
