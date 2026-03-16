@@ -49,6 +49,8 @@ let isQuitting = false;
 
 // Pending Bluetooth callback from Chromium's Web Bluetooth API
 let pendingBluetoothCallback: ((deviceId: string) => void) | null = null;
+// Accumulated BLE devices for the current discovery session (merged across multiple select-bluetooth-device events)
+const bluetoothDiscoveryDevices = new Map<string, { deviceId: string; deviceName: string }>();
 // Pending Serial callback (mirrors the BLE pattern)
 let pendingSerialCallback: ((portId: string) => void) | null = null;
 // Last discovery sets: only allow selection IPC to resolve callbacks with ids from these sets
@@ -423,24 +425,29 @@ function createWindow() {
   // When the renderer calls navigator.bluetooth.requestDevice(),
   // Chromium fires this event. We intercept it to build our own picker
   // in the renderer instead of the (missing) native Chromium dialog.
+  // On Linux, Chromium can fire the event multiple times during discovery;
+  // if we overwrite the callback each time, the previous promise is rejected
+  // with "User cancelled". Retain the first callback and merge device lists
+  // from subsequent events so the picker updates without cancelling.
   mainWindow.webContents.on('select-bluetooth-device', (event, devices, callback) => {
     event.preventDefault();
 
-    // Chromium fires this event repeatedly during discovery with an
-    // updated device list and a NEW callback each time. Simply overwrite
-    // the reference — Chromium manages the lifecycle of old callbacks.
-    pendingBluetoothCallback = callback;
-
-    // Deduplicate devices by ID before sending to renderer
-    const seen = new Map<string, { deviceId: string; deviceName: string }>();
+    if (!pendingBluetoothCallback) {
+      pendingBluetoothCallback = callback;
+      bluetoothDiscoveryDevices.clear();
+    }
+    // Merge new devices into the accumulated list for this discovery session
     for (const d of devices) {
-      seen.set(d.deviceId, {
+      bluetoothDiscoveryDevices.set(d.deviceId, {
         deviceId: d.deviceId,
         deviceName: d.deviceName || 'Unknown Device',
       });
     }
-    lastBluetoothDeviceIds = new Set(seen.keys());
-    mainWindow?.webContents.send('bluetooth-devices-discovered', Array.from(seen.values()));
+    lastBluetoothDeviceIds = new Set(bluetoothDiscoveryDevices.keys());
+    mainWindow?.webContents.send(
+      'bluetooth-devices-discovered',
+      Array.from(bluetoothDiscoveryDevices.values()),
+    );
   });
 
   // ─── Web Serial: Port Selection ────────────────────────────────────
@@ -617,6 +624,7 @@ ipcMain.on('bluetooth-device-selected', (_event, deviceId: unknown) => {
   pendingBluetoothCallback(id);
   pendingBluetoothCallback = null;
   lastBluetoothDeviceIds.clear();
+  bluetoothDiscoveryDevices.clear();
 });
 
 // ─── IPC: Cancel Bluetooth selection ────────────────────────────────
@@ -626,6 +634,7 @@ ipcMain.on('bluetooth-device-cancelled', () => {
     pendingBluetoothCallback = null;
   }
   lastBluetoothDeviceIds.clear();
+  bluetoothDiscoveryDevices.clear();
 });
 
 // ─── IPC: Serial port selected by user ──────────────────────────────
