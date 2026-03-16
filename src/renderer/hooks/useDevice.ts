@@ -1516,6 +1516,10 @@ export function useDevice() {
           unsubscribesRef.current.push(() => {
             btDevice.removeEventListener('gattserverdisconnected', onGattDisconnected);
           });
+        } else {
+          console.warn(
+            '[useDevice] BLE: __bluetoothDevice not found on transport — GATT disconnect events unavailable; relying on heartbeat + watchdog only',
+          );
         }
       }
     },

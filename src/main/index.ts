@@ -270,6 +270,10 @@ function validateMqttPublishArgs(args: unknown): void {
 app.commandLine.appendSwitch('enable-features', 'WebBluetooth');
 // Enable Web Serial (experimental)
 app.commandLine.appendSwitch('enable-blink-features', 'Serial');
+// Linux: some Electron 28-30 builds require this for WebBluetooth to fire select-bluetooth-device
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('enable-experimental-web-platform-features');
+}
 
 // ─── Icon Path Helper ──────────────────────────────────────────────
 /**
@@ -433,6 +437,23 @@ function createWindow() {
     event.preventDefault();
 
     if (!pendingBluetoothCallback) {
+      pendingBluetoothCallback = callback;
+      bluetoothDiscoveryDevices.clear();
+      // Safety: auto-cancel if the callback is never resolved (e.g. renderer crash, unmount).
+      // This prevents blocking future BLE discovery sessions on Linux where multi-fire is common.
+      setTimeout(() => {
+        if (pendingBluetoothCallback === callback) {
+          console.warn('[IPC] BLE discovery callback stale after 60s — auto-cancelling');
+          pendingBluetoothCallback('');
+          pendingBluetoothCallback = null;
+          lastBluetoothDeviceIds.clear();
+          bluetoothDiscoveryDevices.clear();
+        }
+      }, 60_000);
+    } else {
+      // Stale callback from a previous session that never resolved (crash, throw, unmount).
+      // Replace it so this session's selection works correctly.
+      console.warn('[IPC] select-bluetooth-device: replacing stale pendingBluetoothCallback');
       pendingBluetoothCallback = callback;
       bluetoothDiscoveryDevices.clear();
     }

@@ -26,6 +26,20 @@ function lastConnectionKey(p: MeshProtocol) {
   return `mesh-client:lastConnection:${p}`;
 }
 
+function humanizeBleError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (msg.includes('Bluetooth adapter not found') || msg.includes('adapter is not available')) {
+    return `${msg} — Make sure Bluetooth is enabled. On Linux, run: systemctl status bluetooth`;
+  }
+  if (msg.includes('SecurityError') || msg.includes('not allowed to access')) {
+    return `${msg} — Bluetooth permission denied. Ensure the app has access to the Bluetooth device.`;
+  }
+  if (msg.includes('GATT Server is disconnected')) {
+    return `${msg} — GATT connection dropped. Try moving closer to the device and reconnecting.`;
+  }
+  return msg;
+}
+
 function loadLastConnection(p: MeshProtocol): LastConnection | null {
   return parseStoredJson<LastConnection>(
     localStorage.getItem(lastConnectionKey(p)),
@@ -402,7 +416,13 @@ export default function ConnectionPanel({
       await onConnect(connectionType, httpAddress);
     } catch (err) {
       console.warn('[ConnectionPanel] handleConnect failed', err);
-      setError(err instanceof Error ? err.message : 'Connection failed');
+      setError(
+        connectionType === 'ble'
+          ? humanizeBleError(err)
+          : err instanceof Error
+            ? err.message
+            : 'Connection failed',
+      );
       setConnecting(false);
       setConnectionStage('');
     }
@@ -467,6 +487,7 @@ export default function ConnectionPanel({
     const startAutoConnectTimeout = () => {
       if (autoConnectTimeoutRef.current) clearTimeout(autoConnectTimeoutRef.current);
       autoConnectTimeoutRef.current = setTimeout(() => {
+        console.warn('[ConnectionPanel] BLE auto-connect timed out after 30s');
         isAutoConnectingRef.current = false;
         setIsAutoConnecting(false);
         setError('Auto-connect timed out.');
@@ -529,6 +550,7 @@ export default function ConnectionPanel({
         autoConnectTimeoutRef.current = null;
       }
       autoConnectTimeoutRef.current = setTimeout(() => {
+        console.warn('[ConnectionPanel] BLE auto-connect timed out after 30s');
         isAutoConnectingRef.current = false;
         setIsAutoConnecting(false);
         setError('Auto-connect timed out.');
@@ -542,7 +564,7 @@ export default function ConnectionPanel({
         }
         isAutoConnectingRef.current = false;
         setIsAutoConnecting(false);
-        setError(err instanceof Error ? err.message : 'Reconnect failed');
+        setError(humanizeBleError(err));
         setConnecting(false);
         setConnectionStage('');
       });

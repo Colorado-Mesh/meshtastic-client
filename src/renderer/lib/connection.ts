@@ -7,6 +7,8 @@ import type { ConnectionType } from './types';
 
 // HTTP base connection: timeouts and retries to avoid hanging on slow mDNS or flaky networks.
 const HTTP_CONNECT_TIMEOUT_MS = 15_000;
+// BLE reconnect: gatt.connect() can hang indefinitely on Linux when the BT stack is confused.
+const BLE_RECONNECT_TIMEOUT_MS = 15_000;
 const HTTP_PREFLIGHT_RETRIES = 3;
 const HTTP_PREFLIGHT_RETRY_DELAY_MS = 2_000;
 
@@ -142,8 +144,14 @@ export async function createConnection(
 export async function reconnectBle(): Promise<MeshDevice> {
   let target: BluetoothDevice | undefined;
 
-  if (typeof navigator.bluetooth.getDevices === 'function') {
+  const hasGetDevices = typeof navigator.bluetooth.getDevices === 'function';
+  console.debug(
+    `[connection] reconnectBle: getDevices=${hasGetDevices}, captured=${!!capturedBleDevice}`,
+  );
+
+  if (hasGetDevices) {
     const devices = await navigator.bluetooth.getDevices();
+    console.debug(`[connection] reconnectBle: getDevices returned ${devices.length} device(s)`);
     // Prefer disconnected-but-known GATT; else any with gatt; else first granted
     // device — gatt is often null until connect(); createFromDevice/prepareConnection
     // will call gatt.connect(). On some Electron builds getDevices() stays empty
@@ -164,16 +172,34 @@ export async function reconnectBle(): Promise<MeshDevice> {
   }
 
   if (!target) {
+    console.warn('[connection] reconnectBle: no target device found — reconnection will fail');
     throw new Error('No previously connected BLE device found for reconnection');
   }
 
+  console.debug(
+    `[connection] reconnectBle: target device id=${target.id}, gatt.connected=${target.gatt?.connected ?? 'n/a'}`,
+  );
+
   // Let the transport library handle GATT connection internally
   // (both createFromDevice and prepareConnection call gatt.connect())
+  // Wrap in a timeout to guard against hung gatt.connect() on Linux when the BT stack is confused.
   let transport: any;
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(
+      () => reject(new Error(`BLE reconnect timed out after ${BLE_RECONNECT_TIMEOUT_MS / 1000}s`)),
+      BLE_RECONNECT_TIMEOUT_MS,
+    ),
+  );
   if (typeof (TransportWebBluetooth as any).createFromDevice === 'function') {
-    transport = await (TransportWebBluetooth as any).createFromDevice(target);
+    transport = await Promise.race([
+      (TransportWebBluetooth as any).createFromDevice(target),
+      timeoutPromise,
+    ]);
   } else if (typeof (TransportWebBluetooth as any).prepareConnection === 'function') {
-    transport = await (TransportWebBluetooth as any).prepareConnection(target);
+    transport = await Promise.race([
+      (TransportWebBluetooth as any).prepareConnection(target),
+      timeoutPromise,
+    ]);
   } else {
     throw new Error(
       'TransportWebBluetooth has no method to create a transport from an existing device',
