@@ -440,10 +440,10 @@ function runMigrations(): void {
       db!
         .prepare(
           'CREATE TABLE IF NOT EXISTS position_history (' +
-            'id INTEGER PRIMARY KEY AUTOINCREMENT,' +
-            'node_id INTEGER NOT NULL,' +
-            'latitude REAL NOT NULL,' +
-            'longitude REAL NOT NULL,' +
+            'id INTEGER PRIMARY KEY AUTOINCREMENT, ' +
+            'node_id INTEGER NOT NULL, ' +
+            'latitude REAL NOT NULL, ' +
+            'longitude REAL NOT NULL, ' +
             "recorded_at INTEGER NOT NULL, source TEXT DEFAULT 'rf')",
         )
         .run();
@@ -454,7 +454,6 @@ function runMigrations(): void {
         )
         .run();
       db!.pragma('user_version = 14');
-      userVersion = 14;
     } catch (e) {
       console.error(
         '[db] migration v14 failed',
