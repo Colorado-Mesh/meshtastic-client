@@ -636,6 +636,31 @@ You're missing build tools for the native modules (e.g. `better-sqlite3`, `@seri
 - Ensure USB drivers are installed for your device (CP210x, CH340, etc.)
 - On Linux, add yourself to the `dialout` group: `sudo usermod -a -G dialout $USER`
 
+### Linux: `Serial: serial_io_handler.cc:147 Failed to open serial port: FILE_ERROR_ACCESS_DENIED`
+
+This error means your user doesn't have permission to access the serial port.
+
+**Fix**:
+
+1. Add yourself to the `dialout` group and re-login:
+
+   ```sh
+   sudo usermod -a -G dialout $USER
+   ```
+
+   Then **log out and back in** for the group membership to take effect.
+
+2. If the error persists after re-logging, verify the group was applied:
+   ```sh
+   groups
+   ```
+   If `dialout` is not listed, the group may not exist on your distro. Create it and activate it in your current session without logging out:
+   ```sh
+   sudo groupadd dialout
+   sudo usermod -a -G dialout $USER
+   newgrp dialout
+   ```
+
 ### App crashes on launch (macOS distributable)
 
 - **macOS 26 (Tahoe) + EXC_BREAKPOINT at launch**: electron-builder ad-hoc signing can crash during ElectronMain/V8 init before any app code runs. This repo sets `mac.identity: null` in `electron-builder.yml` so the packaged app is unsigned and avoids that re-sign path; first open may require **Right-click → Open** or `xattr -cr` on the app. For notarized releases, set a real Developer ID in `mac.identity` and retest on macOS 26. See [electron#49522](https://github.com/electron/electron/issues/49522) and [electron-builder#9396](https://github.com/electron-userland/electron-builder/issues/9396).
