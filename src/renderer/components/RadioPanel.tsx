@@ -98,6 +98,7 @@ const DEVICE_ROLES = [
   { value: 1, label: 'Client Mute', description: 'Client that does not transmit' },
   { value: 2, label: 'Router', description: 'Dedicated router/repeater' },
   { value: 3, label: 'Router Client', description: 'Router + client mode' },
+  { value: 4, label: 'Client Base', description: 'Base station for client devices' },
   { value: 5, label: 'Tracker', description: 'GPS tracker only' },
   { value: 6, label: 'Sensor', description: 'Telemetry sensor node' },
   { value: 7, label: 'TAK', description: 'TAK-enabled device' },

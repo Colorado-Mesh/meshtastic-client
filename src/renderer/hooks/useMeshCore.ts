@@ -1113,6 +1113,7 @@ export function useMeshCore() {
     setMeshcoreNodeTelemetry(new Map());
     setMeshcoreNeighbors(new Map());
     setState(INITIAL_STATE);
+    console.log('[useMeshCore] disconnect: complete');
   }, []);
 
   const sendMessage = useCallback(
@@ -1311,8 +1312,8 @@ export function useMeshCore() {
       }
       return next;
     });
-    await window.electronAPI.db.clearMeshcoreContacts().catch((e) => {
-      console.warn('[useMeshCore] clearMeshcoreContacts error', e);
+    await window.electronAPI.db.clearMeshcoreRepeaters().catch((e) => {
+      console.warn('[useMeshCore] clearMeshcoreRepeaters error', e);
     });
   }, []);
 

@@ -102,7 +102,7 @@ The official Meshtastic apps cover the basics, but desktop power users need more
 **Map & Position**
 
 - Interactive OpenStreetMap with node positions and your current location (device GPS → browser geolocation → IP-based city-level fallback)
-- **60-minute position trail** — in-memory path overlay for the last hour of positions; toggle in App tab
+- **Position trail** — persisted path overlay (configurable 1 h – 7 days); survives restarts via SQLite; toggle and window size in App tab; wipe via Danger Zone
 - Auto-refresh at configurable intervals; manual static position entry; send your position back to your device
 
 **Telemetry**
@@ -146,6 +146,8 @@ MeshCore support is available alongside Meshtastic — switch protocols in the C
 **Repeaters**
 
 - **Repeaters panel** (MeshCore-only tab) — list repeaters with on-demand status (noise floor, RSSI/SNR, packet counts, air time, uptime, TX queue); JSON nickname import for bulk contact names
+- **Per-repeater removal** — two-click confirm button on each row; removes from in-memory state and deletes from the SQLite contacts DB
+- **Clear All Repeaters** — Danger Zone entry in the App tab that deletes all Repeater-type contacts (contact_type = 2) from the DB while leaving Chat and Room contacts intact
 
 **Radio Parameters**
 
@@ -440,7 +442,7 @@ meshtastic-client/
 │   │   ├── index.ts              # Window creation, BLE/Serial intercept, IPC (incl. meshcore TCP), MQTT
 │   │   ├── log-service.ts        # Log file, console patch, log panel IPC
 │   │   ├── sanitize-log-message.ts  # Log injection sanitization (CodeQL); use at call sites before appendLine
-│   │   ├── database.ts           # SQLite schema & migrations (WAL mode, user_version 13)
+│   │   ├── database.ts           # SQLite schema & migrations (WAL mode, user_version 14)
 │   │   ├── mqtt-manager.ts       # MQTT client: AES decrypt, dedup, protobuf decode (Meshtastic only)
 │   │   ├── updater.ts            # Auto-update checks via electron-updater
 │   │   └── gps.ts                # Main-process GPS helper
@@ -481,7 +483,7 @@ meshtastic-client/
 │       ├── stores/
 │       │   ├── diagnosticsStore.ts   # Anomalies, halo flags, MQTT ignore, foreign LoRa (both protocols)
 │       │   ├── mapViewportStore.ts   # Persisted map center/zoom
-│       │   ├── positionHistoryStore.ts  # 60-min position trail; path overlay visibility
+│       │   ├── positionHistoryStore.ts  # Persisted position trail (1h–7d window, SQLite-backed); path overlay visibility
 │       │   └── repeaterSignalStore.ts    # MeshCore: repeater status cache
 │       ├── lib/
 │       │   ├── types.ts              # MeshNode, ChatMessage, DeviceState, MeshProtocol, etc.

@@ -55,12 +55,26 @@ export function initDatabase(): void {
            WHERE packet_id IS NOT NULL`,
           )
           .run();
-        db!.pragma('user_version = 13');
+        db!.pragma('user_version = 14');
       } else {
         runMigrations();
       }
     });
     setup();
+
+    // Prune position_history rows older than 30 days on startup
+    try {
+      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      const pruned = db.prepare('DELETE FROM position_history WHERE recorded_at < ?').run(cutoff);
+      if (pruned.changes > 0) {
+        console.log(`[db] Pruned ${pruned.changes} old position_history rows`);
+      }
+    } catch (e) {
+      console.warn(
+        '[db] position_history prune failed (non-fatal):',
+        sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+      );
+    }
 
     const version = db.pragma('user_version', { simple: true });
     console.log(
@@ -160,6 +174,17 @@ function createBaseTables(): void {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_mc_msg_dedup
         ON meshcore_messages(sender_id, timestamp, channel_idx)
         WHERE sender_id IS NOT NULL;
+
+      CREATE TABLE IF NOT EXISTS position_history (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        node_id     INTEGER NOT NULL,
+        latitude    REAL    NOT NULL,
+        longitude   REAL    NOT NULL,
+        recorded_at INTEGER NOT NULL,
+        source      TEXT    DEFAULT 'rf'
+      );
+      CREATE INDEX IF NOT EXISTS idx_position_history_node_time
+        ON position_history(node_id, recorded_at);
     `);
   } catch (error) {
     console.error(
@@ -333,14 +358,14 @@ function runMigrations(): void {
     try {
       db!.exec(
         'CREATE TABLE IF NOT EXISTS meshcore_contacts (' +
-          'node_id INTEGER PRIMARY KEY, public_key TEXT NOT NULL, adv_name TEXT,' +
-          'contact_type INTEGER DEFAULT 0, last_advert INTEGER,' +
+          'node_id INTEGER PRIMARY KEY, public_key TEXT NOT NULL, adv_name TEXT, ' +
+          'contact_type INTEGER DEFAULT 0, last_advert INTEGER, ' +
           'adv_lat REAL, adv_lon REAL, last_snr REAL, last_rssi REAL, favorited INTEGER DEFAULT 0)',
       );
       db!.exec(
         'CREATE TABLE IF NOT EXISTS meshcore_messages (' +
-          'id INTEGER PRIMARY KEY AUTOINCREMENT, sender_id INTEGER, sender_name TEXT,' +
-          'payload TEXT NOT NULL, channel_idx INTEGER DEFAULT 0, timestamp INTEGER NOT NULL,' +
+          'id INTEGER PRIMARY KEY AUTOINCREMENT, sender_id INTEGER, sender_name TEXT, ' +
+          'payload TEXT NOT NULL, channel_idx INTEGER DEFAULT 0, timestamp INTEGER NOT NULL, ' +
           "status TEXT DEFAULT 'acked', packet_id INTEGER, to_node INTEGER)",
       );
       db!.exec('CREATE INDEX IF NOT EXISTS idx_mc_msgs_ts ON meshcore_messages(timestamp)');
@@ -409,6 +434,34 @@ function runMigrations(): void {
       throw new Error(`Migration v13 failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
+
+  if (userVersion < 14) {
+    try {
+      db!
+        .prepare(
+          'CREATE TABLE IF NOT EXISTS position_history (' +
+            'id INTEGER PRIMARY KEY AUTOINCREMENT, ' +
+            'node_id INTEGER NOT NULL, ' +
+            'latitude REAL NOT NULL, ' +
+            'longitude REAL NOT NULL, ' +
+            "recorded_at INTEGER NOT NULL, source TEXT DEFAULT 'rf')",
+        )
+        .run();
+      db!
+        .prepare(
+          'CREATE INDEX IF NOT EXISTS idx_position_history_node_time ' +
+            'ON position_history(node_id, recorded_at)',
+        )
+        .run();
+      db!.pragma('user_version = 14');
+    } catch (e) {
+      console.error(
+        '[db] migration v14 failed',
+        sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+      );
+      throw new Error(`Migration v14 failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
 }
 
 /** Export DB to a file. Best-effort for very large databases; may take a long time with no progress callback. */
@@ -475,13 +528,46 @@ export function mergeDatabase(sourcePath: string) {
       `);
 
       for (const node of sourceNodes) {
-        if (insertNode.run(node).changes > 0) nodesAdded++;
+        try {
+          // Basic shape validation: must have a finite node_id; ignore obviously malformed rows.
+          const nodeId = Number((node as { node_id?: unknown }).node_id);
+          if (!Number.isFinite(nodeId)) {
+            console.warn(
+              '[db] mergeDatabase: skipping node row with invalid node_id:',
+              sanitizeLogMessage(String((node as { node_id?: unknown }).node_id)),
+            );
+            continue;
+          }
+          if (insertNode.run(node).changes > 0) nodesAdded++;
+        } catch (e) {
+          console.warn(
+            '[db] mergeDatabase: skipping node row due to error:',
+            sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+          );
+        }
       }
 
       for (const msg of sourceMessages) {
-        if (!checkMessage.get(msg.sender_id, msg.timestamp, msg.payload)) {
-          insertMessage.run(msg);
-          messagesAdded++;
+        try {
+          const senderId = (msg as { sender_id?: unknown }).sender_id;
+          const timestamp = (msg as { timestamp?: unknown }).timestamp;
+          const payload = (msg as { payload?: unknown }).payload;
+          if (!Number.isFinite(Number(timestamp)) || typeof payload !== 'string') {
+            console.warn(
+              '[db] mergeDatabase: skipping message row with invalid timestamp/payload:',
+              sanitizeLogMessage(JSON.stringify({ senderId, timestamp })),
+            );
+            continue;
+          }
+          if (!checkMessage.get(senderId, timestamp, payload)) {
+            insertMessage.run(msg);
+            messagesAdded++;
+          }
+        } catch (e) {
+          console.warn(
+            '[db] mergeDatabase: skipping message row due to error:',
+            sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+          );
         }
       }
 

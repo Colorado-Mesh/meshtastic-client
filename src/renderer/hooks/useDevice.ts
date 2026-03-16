@@ -932,9 +932,9 @@ export function useDevice() {
           let newAlt = info.position?.altitude ?? existing.altitude;
           let posWarn: string | undefined = existing.lastPositionWarning;
 
-          if (info.position?.latitudeI != null || info.position?.longitudeI != null) {
-            const lat = (info.position.latitudeI ?? 0) / 1e7;
-            const lon = (info.position.longitudeI ?? 0) / 1e7;
+          if (info.position?.latitudeI != null && info.position?.longitudeI != null) {
+            const lat = info.position.latitudeI / 1e7;
+            const lon = info.position.longitudeI / 1e7;
             const r = validateCoords(lat, lon);
             if (r.valid) {
               newLat = lat;
@@ -998,9 +998,9 @@ export function useDevice() {
               MESHTASTIC_CAPABILITIES,
             );
         }
-        if (info.position?.latitudeI != null || info.position?.longitudeI != null) {
-          const lat = (info.position.latitudeI ?? 0) / 1e7;
-          const lon = (info.position.longitudeI ?? 0) / 1e7;
+        if (info.position?.latitudeI != null && info.position?.longitudeI != null) {
+          const lat = info.position.latitudeI / 1e7;
+          const lon = info.position.longitudeI / 1e7;
           if (validateCoords(lat, lon).valid) {
             usePositionHistoryStore.getState().recordPosition(nodeNum, lat, lon);
           }

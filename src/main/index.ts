@@ -456,6 +456,19 @@ function createWindow() {
       console.warn('[IPC] select-bluetooth-device: replacing stale pendingBluetoothCallback');
       pendingBluetoothCallback = callback;
       bluetoothDiscoveryDevices.clear();
+      // Safety: start a fresh 60s auto-cancel for the replacement callback.
+      // The old timer references the stale callback reference so it will not fire.
+      setTimeout(() => {
+        if (pendingBluetoothCallback === callback) {
+          console.warn(
+            '[IPC] BLE discovery replacement callback stale after 60s — auto-cancelling',
+          );
+          pendingBluetoothCallback('');
+          pendingBluetoothCallback = null;
+          lastBluetoothDeviceIds.clear();
+          bluetoothDiscoveryDevices.clear();
+        }
+      }, 60_000);
     }
     // Merge new devices into the accumulated list for this discovery session
     for (const d of devices) {
@@ -1645,6 +1658,19 @@ ipcMain.handle('db:clearMeshcoreContacts', () => {
   }
 });
 
+// Deletes only Repeater-type contacts (contact_type = 2), leaving Chat and Room contacts intact.
+ipcMain.handle('db:clearMeshcoreRepeaters', () => {
+  try {
+    return getDatabase().prepare('DELETE FROM meshcore_contacts WHERE contact_type = 2').run();
+  } catch (err) {
+    console.error(
+      '[IPC] db:clearMeshcoreRepeaters failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
+});
+
 ipcMain.handle(
   'db:updateMeshcoreContactAdvert',
   (_e, nodeId: number, lastAdvert: number | null, advLat: number | null, advLon: number | null) => {
@@ -1665,6 +1691,65 @@ ipcMain.handle(
   },
 );
 
+// ─── IPC: Position history ────────────────────────────────────────
+ipcMain.handle(
+  'db:savePositionHistory',
+  (_event, nodeId: number, lat: number, lon: number, recordedAt: number, source: string) => {
+    try {
+      const id = safeNonNegativeInt(nodeId);
+      if (
+        typeof lat !== 'number' ||
+        !isFinite(lat) ||
+        typeof lon !== 'number' ||
+        !isFinite(lon) ||
+        typeof recordedAt !== 'number' ||
+        !isFinite(recordedAt)
+      )
+        return;
+      const src = typeof source === 'string' ? source.slice(0, 16) : 'rf';
+      getDatabase()
+        .prepare(
+          'INSERT INTO position_history (node_id, latitude, longitude, recorded_at, source) VALUES (?, ?, ?, ?, ?)',
+        )
+        .run(id, lat, lon, recordedAt, src);
+    } catch (err) {
+      console.error(
+        '[IPC] db:savePositionHistory failed:',
+        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+      );
+    }
+  },
+);
+
+ipcMain.handle('db:getPositionHistory', (_event, sinceMs: number) => {
+  try {
+    const since = typeof sinceMs === 'number' && isFinite(sinceMs) ? sinceMs : 0;
+    return getDatabase()
+      .prepare(
+        'SELECT node_id, latitude, longitude, recorded_at, source FROM position_history WHERE recorded_at >= ? ORDER BY node_id, recorded_at',
+      )
+      .all(since);
+  } catch (err) {
+    console.error(
+      '[IPC] db:getPositionHistory failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    return [];
+  }
+});
+
+ipcMain.handle('db:clearPositionHistory', () => {
+  try {
+    return getDatabase().prepare('DELETE FROM position_history').run();
+  } catch (err) {
+    console.error(
+      '[IPC] db:clearPositionHistory failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
+});
+
 // ─── MeshCore TCP bridge ───────────────────────────────────────────
 let meshcoreTcpSocket: net.Socket | null = null;
 
@@ -1672,6 +1757,7 @@ const MAX_TCP_HOST_LENGTH = 253;
 
 ipcMain.handle('meshcore:tcp-connect', (_event, host: string, port: number) => {
   return new Promise<void>((resolve, reject) => {
+    let settled = false;
     const p = Number(port);
     if (!Number.isInteger(p) || p < 1 || p > 65535) {
       reject(new Error('Invalid port'));
@@ -1689,7 +1775,10 @@ ipcMain.handle('meshcore:tcp-connect', (_event, host: string, port: number) => {
     meshcoreTcpSocket = socket;
     socket.connect(p, host, () => {
       console.log('[IPC] meshcore:tcp-connect connected to', host, p);
-      resolve();
+      if (!settled) {
+        settled = true;
+        resolve();
+      }
     });
     socket.on('data', (data) => {
       mainWindow?.webContents.send('meshcore:tcp-data', Array.from(data));
@@ -1700,7 +1789,10 @@ ipcMain.handle('meshcore:tcp-connect', (_event, host: string, port: number) => {
     });
     socket.on('error', (err) => {
       console.error('[IPC] meshcore:tcp-connect error:', sanitizeLogMessage(err.message));
-      reject(err);
+      if (!settled) {
+        settled = true;
+        reject(err);
+      }
       if (meshcoreTcpSocket === socket) meshcoreTcpSocket = null;
     });
   });
