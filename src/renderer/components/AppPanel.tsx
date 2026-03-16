@@ -115,6 +115,7 @@ interface Props {
   onGpsIntervalChange?: (secs: number) => void;
   onNodesPruned?: () => void;
   onMessagesPruned?: () => void;
+  onClearMeshcoreRepeaters?: () => Promise<void>;
 }
 
 interface PendingAction {
@@ -140,6 +141,7 @@ export default function AppPanel({
   onGpsIntervalChange,
   onNodesPruned,
   onMessagesPruned,
+  onClearMeshcoreRepeaters,
 }: Props) {
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const { addToast } = useToast();
@@ -1115,6 +1117,32 @@ export default function AppPanel({
               Clear Messages ({messageCount})
             </button>
           </div>
+
+          {/* MeshCore */}
+          {onClearMeshcoreRepeaters && (
+            <div className="border-t border-red-900/50 pt-4 space-y-2">
+              <div className="text-xs font-medium text-red-400 uppercase tracking-wide">
+                MeshCore
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  executeWithConfirmation({
+                    name: 'Clear All Repeaters',
+                    title: 'Clear All Repeaters',
+                    message:
+                      'This will permanently remove all saved MeshCore repeaters from the local database. This cannot be undone.',
+                    confirmLabel: 'Clear All Repeaters',
+                    danger: true,
+                    action: onClearMeshcoreRepeaters,
+                  })
+                }
+                className="w-full px-4 py-3 bg-red-900/50 text-red-300 hover:bg-red-900/70 border border-red-800 rounded-lg text-sm font-medium transition-colors"
+              >
+                Clear All Repeaters
+              </button>
+            </div>
+          )}
 
           {/* Everything */}
           <div className="border-t border-red-900/50 pt-4 space-y-2">

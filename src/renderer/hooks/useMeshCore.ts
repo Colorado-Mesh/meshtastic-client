@@ -1303,6 +1303,19 @@ export function useMeshCore() {
     });
   }, []);
 
+  const clearAllRepeaters = useCallback(async () => {
+    setNodes((prev) => {
+      const next = new Map(prev);
+      for (const [id, node] of prev) {
+        if (node.hw_model === 'Repeater') next.delete(id);
+      }
+      return next;
+    });
+    await window.electronAPI.db.clearMeshcoreContacts().catch((e) => {
+      console.warn('[useMeshCore] clearMeshcoreContacts error', e);
+    });
+  }, []);
+
   const setOwner = useCallback(
     async (owner: { longName: string; shortName: string; isLicensed: boolean }) => {
       console.log(
@@ -1755,6 +1768,7 @@ export function useMeshCore() {
     refreshContacts,
     reboot,
     deleteNode,
+    clearAllRepeaters,
     setOwner,
     traceRoute,
     requestRepeaterStatus,

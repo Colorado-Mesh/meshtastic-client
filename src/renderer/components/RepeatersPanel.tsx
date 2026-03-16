@@ -18,6 +18,7 @@ interface Props {
   onRequestRepeaterStatus: (nodeId: number) => Promise<void>;
   onPing: (nodeId: number) => Promise<void>;
   onImportRepeaters: () => Promise<ImportResult>;
+  onDeleteRepeater: (nodeId: number) => Promise<void>;
   isConnected: boolean;
 }
 
@@ -84,6 +85,7 @@ export default function RepeatersPanel({
   onRequestRepeaterStatus,
   onPing,
   onImportRepeaters,
+  onDeleteRepeater,
   isConnected,
 }: Props) {
   const { addToast } = useToast();
@@ -91,6 +93,8 @@ export default function RepeatersPanel({
   const [statusLoadingSet, setStatusLoadingSet] = useState<Set<number>>(new Set());
   const [pingLoadingSet, setPingLoadingSet] = useState<Set<number>>(new Set());
   const [pingErrorSet, setPingErrorSet] = useState<Set<number>>(new Set());
+  const [deleteLoadingSet, setDeleteLoadingSet] = useState<Set<number>>(new Set());
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [importLoading, setImportLoading] = useState(false);
 
   const repeaters = Array.from(nodes.values())
@@ -157,6 +161,26 @@ export default function RepeatersPanel({
     }
   };
 
+  const handleDelete = async (nodeId: number) => {
+    if (deleteConfirmId !== nodeId) {
+      setDeleteConfirmId(nodeId);
+      return;
+    }
+    setDeleteConfirmId(null);
+    setDeleteLoadingSet((prev) => new Set([...prev, nodeId]));
+    try {
+      await onDeleteRepeater(nodeId);
+    } catch (e) {
+      addToast(`Remove failed: ${e instanceof Error ? e.message : String(e)}`, 'error');
+    } finally {
+      setDeleteLoadingSet((prev) => {
+        const next = new Set(prev);
+        next.delete(nodeId);
+        return next;
+      });
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
@@ -211,6 +235,8 @@ export default function RepeatersPanel({
                 const isStatusLoading = statusLoadingSet.has(node.node_id);
                 const isPingLoading = pingLoadingSet.has(node.node_id);
                 const hasPingError = pingErrorSet.has(node.node_id);
+                const isDeleteLoading = deleteLoadingSet.has(node.node_id);
+                const isDeleteConfirm = deleteConfirmId === node.node_id;
 
                 return (
                   <tr key={node.node_id} className="text-gray-300 hover:bg-gray-800/30">
@@ -282,6 +308,22 @@ export default function RepeatersPanel({
                             <span className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin inline-block" />
                           ) : (
                             'Status'
+                          )}
+                        </button>
+                        <button
+                          onClick={() => void handleDelete(node.node_id)}
+                          disabled={isDeleteLoading}
+                          onBlur={() => {
+                            if (isDeleteConfirm) setDeleteConfirmId(null);
+                          }}
+                          className="px-2 py-0.5 rounded text-xs font-medium bg-red-900/60 text-red-300 border border-red-700 hover:bg-red-800/60 transition-colors disabled:opacity-40"
+                        >
+                          {isDeleteLoading ? (
+                            <span className="w-3 h-3 border border-red-400 border-t-transparent rounded-full animate-spin inline-block" />
+                          ) : isDeleteConfirm ? (
+                            'Confirm?'
+                          ) : (
+                            'Remove'
                           )}
                         </button>
                       </div>

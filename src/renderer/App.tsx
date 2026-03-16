@@ -729,6 +729,7 @@ export default function App() {
                     onRequestRepeaterStatus={meshcoreDevice.requestRepeaterStatus}
                     onPing={meshcoreDevice.traceRoute}
                     onImportRepeaters={meshcoreDevice.importRepeaters}
+                    onDeleteRepeater={meshcoreDevice.deleteNode}
                     isConnected={isOperational}
                   />
                 )}
@@ -775,6 +776,9 @@ export default function App() {
                     onGpsIntervalChange={device.updateGpsInterval}
                     onNodesPruned={device.refreshNodesFromDb}
                     onMessagesPruned={device.refreshMessagesFromDb}
+                    onClearMeshcoreRepeaters={
+                      protocol === 'meshcore' ? meshcoreDevice.clearAllRepeaters : undefined
+                    }
                   />
                 )}
                 {activeTab === 8 && (
