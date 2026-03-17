@@ -60,6 +60,8 @@ function ensureMapStyles() {
       margin: 0;
       min-width: 220px;
       max-width: 320px;
+      max-height: 70vh;
+      overflow-y: auto;
     }
     .leaflet-popup-close-button {
       color: #9ca3af !important;
@@ -280,7 +282,7 @@ const MapMarker = memo(
           zIndexOffset={isSelf ? 1000 : 0}
         >
           <Popup>
-            <div className="px-4 py-3">
+            <div className="px-4 py-3 max-h-[70vh] overflow-y-auto">
               <div className="font-semibold text-gray-100 mb-2 flex items-center gap-1.5">
                 {isSelf && <span title="Your node">★</span>}
                 {node.long_name || `!${node.node_id.toString(16)}`}
