@@ -381,7 +381,7 @@ export default function LogPanel({
   if (isOverlay) {
     return (
       <div
-        className="fixed inset-y-0 right-0 z-40 flex flex-col min-h-0 border-l border-gray-700 bg-deep-black w-full max-w-md"
+        className="fixed inset-y-0 right-0 z-[1100] flex flex-col min-h-0 border-l border-gray-700 bg-deep-black w-full max-w-md"
         role="complementary"
         aria-label="Application log"
       >

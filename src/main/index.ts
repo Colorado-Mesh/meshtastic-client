@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Tray } from 'el
 import fs from 'fs';
 import net from 'net';
 import path from 'path';
+import { pathToFileURL } from 'url';
 
 import {
   closeDatabase,
@@ -619,13 +620,19 @@ function createWindow() {
     mainWindow.webContents.openDevTools();
   } else {
     const indexPath = path.join(__dirname, '../../dist/renderer/index.html');
+    const indexUrl = pathToFileURL(indexPath).toString();
     // Startup diagnostics for troubleshooting packaged app issues
     console.log('[Startup] app.isPackaged:', app.isPackaged);
     console.log('[Startup] __dirname:', sanitizeLogMessage(__dirname));
     console.log('[Startup] Renderer path:', sanitizeLogMessage(indexPath));
     console.log('[Startup] process.resourcesPath:', sanitizeLogMessage(process.resourcesPath));
     console.log('[Startup] userData:', sanitizeLogMessage(app.getPath('userData')));
-    mainWindow.loadFile(indexPath);
+    // Use loadURL with an explicit HTTP referrer so OpenStreetMap tile requests
+    // from the packaged app include a valid Referer header and comply with the
+    // OSM tile usage policy for web-style traffic.
+    mainWindow.loadURL(indexUrl, {
+      httpReferrer: 'https://meshtastic-client.app/',
+    });
   }
 
   mainWindow.on('closed', () => {
