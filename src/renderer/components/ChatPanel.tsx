@@ -783,6 +783,10 @@ export default function ChatPanel({
             const showPicker = pickerOpenFor === (msg.packetId ?? -(i + 1));
             const pickerOpensAbove = i >= filteredMessages.length - 3;
 
+            const senderNode = nodes.get(msg.sender_id);
+            const displaySenderName =
+              senderNode?.short_name || senderNode?.long_name || msg.sender_name;
+
             // Day separator
             const daySeparator = daySeparatorIndices.has(i) ? (
               <div className="flex items-center gap-3 py-2">
@@ -831,7 +835,7 @@ export default function ChatPanel({
                             isDm ? 'text-purple-400' : isOwn ? 'text-blue-400' : 'text-bright-green'
                           }`}
                         >
-                          {msg.sender_name}
+                          {displaySenderName}
                         </button>
                         {isDm && (
                           <span className="text-[10px] text-purple-400/70 font-medium">DM</span>
@@ -855,7 +859,9 @@ export default function ChatPanel({
                               <div className="w-0.5 rounded-full bg-gray-500 shrink-0" />
                               <div className="min-w-0">
                                 <span className="text-[10px] font-semibold text-gray-400 block">
-                                  {orig.sender_name}
+                                  {nodes.get(orig.sender_id)?.short_name ||
+                                    nodes.get(orig.sender_id)?.long_name ||
+                                    orig.sender_name}
                                 </span>
                                 <span className="text-[11px] text-gray-500 block truncate">
                                   {orig.payload.length > 80
@@ -1129,7 +1135,13 @@ export default function ChatPanel({
             />
           </svg>
           <span className="text-gray-400">
-            Replying to <span className="text-gray-200 font-medium">{replyTo.sender_name}</span>:
+            Replying to{' '}
+            <span className="text-gray-200 font-medium">
+              {nodes.get(replyTo.sender_id)?.short_name ||
+                nodes.get(replyTo.sender_id)?.long_name ||
+                replyTo.sender_name}
+            </span>
+            :
           </span>
           <span className="flex-1 truncate text-gray-500">
             {replyTo.payload.length > 60 ? replyTo.payload.slice(0, 60) + '…' : replyTo.payload}
