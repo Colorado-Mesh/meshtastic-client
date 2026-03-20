@@ -270,6 +270,20 @@ interface MeshCoreChannelRaw {
   secret: Uint8Array;
 }
 
+interface MeshcoreContactDbRow {
+  node_id: number;
+  public_key: string;
+  adv_name: string | null;
+  contact_type: number;
+  last_advert: number | null;
+  adv_lat: number | null;
+  adv_lon: number | null;
+  last_snr: number | null;
+  last_rssi: number | null;
+  favorited: number;
+  nickname: string | null;
+}
+
 interface DeviceLogEntry {
   ts: number;
   level: string;
@@ -480,6 +494,97 @@ export function useMeshCore() {
       return next;
     });
   }, []);
+
+  const buildNodesFromContacts = useCallback(
+    async (
+      contacts: MeshCoreContactRaw[],
+      opts?: { self?: MeshCoreSelfInfo | null; myNodeId?: number },
+    ): Promise<Map<number, MeshNode>> => {
+      const nextNodes = new Map<number, MeshNode>();
+      pubKeyMapRef.current.clear();
+      pubKeyPrefixMapRef.current.clear();
+      for (const contact of contacts) {
+        const node = meshcoreContactToMeshNode(contact);
+        nextNodes.set(node.node_id, node);
+        pubKeyMapRef.current.set(node.node_id, contact.publicKey);
+        const prefix = Array.from(contact.publicKey.slice(0, 6))
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join('');
+        pubKeyPrefixMapRef.current.set(prefix, node.node_id);
+        void window.electronAPI.db.saveMeshcoreContact(contactToDbRow(contact)).catch((e) => {
+          console.warn('[useMeshCore] saveMeshcoreContact error', e);
+        });
+      }
+
+      try {
+        const dbContacts =
+          (await window.electronAPI.db.getMeshcoreContacts()) as MeshcoreContactDbRow[];
+        for (const row of dbContacts) {
+          if (!nextNodes.has(row.node_id)) {
+            nextNodes.set(row.node_id, {
+              node_id: row.node_id,
+              long_name:
+                row.nickname ?? row.adv_name ?? `Node-${row.node_id.toString(16).toUpperCase()}`,
+              short_name: row.nickname ? row.nickname.slice(0, 4) : '',
+              hw_model: CONTACT_TYPE_LABELS[row.contact_type] ?? 'Unknown',
+              battery: 0,
+              snr: row.last_snr ?? 0,
+              rssi: row.last_rssi ?? 0,
+              last_heard: row.last_advert ?? 0,
+              latitude: row.adv_lat ?? null,
+              longitude: row.adv_lon ?? null,
+              favorited: row.favorited === 1,
+            });
+          }
+        }
+        for (const row of dbContacts) {
+          if (row.nickname) nicknameMapRef.current.set(row.node_id, row.nickname);
+        }
+      } catch (e) {
+        console.warn('[useMeshCore] loadContactsFromDb error', e);
+      }
+
+      for (const [nodeId, node] of nextNodes) {
+        const nick = nicknameMapRef.current.get(nodeId);
+        if (nick) nextNodes.set(nodeId, { ...node, long_name: nick, short_name: nick.slice(0, 4) });
+      }
+
+      const myNodeId = opts?.myNodeId ?? 0;
+      const self = opts?.self;
+      if (myNodeId > 0 && self) {
+        const selfNode = nextNodes.get(myNodeId);
+        const hexFallback = `Node-${myNodeId.toString(16).toUpperCase()}`;
+        const selfNameTrimmed = typeof self.name === 'string' ? self.name.trim() : '';
+        const displayLongName = selfNameTrimmed || selfNode?.long_name || hexFallback;
+        const displayShortName = selfNameTrimmed
+          ? selfNameTrimmed.slice(0, 4)
+          : selfNode?.short_name || '????';
+        if (selfNode) {
+          nextNodes.set(myNodeId, {
+            ...selfNode,
+            long_name: displayLongName,
+            short_name: displayShortName,
+          });
+        } else {
+          nextNodes.set(myNodeId, {
+            node_id: myNodeId,
+            long_name: displayLongName,
+            short_name: displayShortName,
+            hw_model: 'Unknown',
+            battery: 0,
+            snr: 0,
+            rssi: 0,
+            last_heard: Math.floor(Date.now() / 1000),
+            latitude: null,
+            longitude: null,
+          });
+        }
+      }
+
+      return nextNodes;
+    },
+    [],
+  );
 
   const setupEventListeners = useCallback(
     (conn: MeshCoreConnection) => {
@@ -804,97 +909,7 @@ export function useMeshCore() {
       useDiagnosticsStore.getState().migrateForeignLoraFromZero(myNodeId);
 
       const contacts = await withTimeout(conn.getContacts(), 10_000, 'getContacts');
-      const newNodes = new Map<number, MeshNode>();
-      for (const contact of contacts) {
-        const node = meshcoreContactToMeshNode(contact);
-        newNodes.set(node.node_id, node);
-        pubKeyMapRef.current.set(node.node_id, contact.publicKey);
-        const prefix = Array.from(contact.publicKey.slice(0, 6))
-          .map((b) => b.toString(16).padStart(2, '0'))
-          .join('');
-        pubKeyPrefixMapRef.current.set(prefix, node.node_id);
-        void window.electronAPI.db.saveMeshcoreContact(contactToDbRow(contact)).catch((e) => {
-          console.warn('[useMeshCore] saveMeshcoreContact (init) error', e);
-        });
-      }
-
-      // Seed contacts from DB for any nodes not returned by device (cache fallback)
-      try {
-        const dbContacts = (await window.electronAPI.db.getMeshcoreContacts()) as {
-          node_id: number;
-          public_key: string;
-          adv_name: string | null;
-          contact_type: number;
-          last_advert: number | null;
-          adv_lat: number | null;
-          adv_lon: number | null;
-          last_snr: number | null;
-          last_rssi: number | null;
-          favorited: number;
-          nickname: string | null;
-        }[];
-        for (const row of dbContacts) {
-          if (!newNodes.has(row.node_id)) {
-            const node: MeshNode = {
-              node_id: row.node_id,
-              long_name:
-                row.nickname ?? row.adv_name ?? `Node-${row.node_id.toString(16).toUpperCase()}`,
-              short_name: row.nickname ? row.nickname.slice(0, 4) : '',
-              hw_model: CONTACT_TYPE_LABELS[row.contact_type] ?? 'Unknown',
-              battery: 0,
-              snr: row.last_snr ?? 0,
-              rssi: row.last_rssi ?? 0,
-              last_heard: row.last_advert ?? 0,
-              latitude: row.adv_lat ?? null,
-              longitude: row.adv_lon ?? null,
-              favorited: row.favorited === 1,
-            };
-            newNodes.set(row.node_id, node);
-          }
-        }
-        // Seed nicknameMapRef from DB + apply to nodes
-        for (const row of dbContacts) {
-          if (row.nickname) nicknameMapRef.current.set(row.node_id, row.nickname);
-        }
-        for (const [nodeId, node] of newNodes) {
-          const nick = nicknameMapRef.current.get(nodeId);
-          if (nick)
-            newNodes.set(nodeId, { ...node, long_name: nick, short_name: nick.slice(0, 4) });
-        }
-      } catch (e) {
-        console.warn('[useMeshCore] loadContactsFromDb error', e);
-      }
-
-      // Ensure self node is in the map with radio name so Connection panel shows name, not hex
-      const selfNode = newNodes.get(myNodeId);
-      const hexFallback = `Node-${myNodeId.toString(16).toUpperCase()}`;
-      const selfNameTrimmed = typeof info.name === 'string' ? info.name.trim() : '';
-      const displayLongName = selfNameTrimmed || selfNode?.long_name || hexFallback;
-      const displayShortName = selfNameTrimmed
-        ? selfNameTrimmed.slice(0, 4)
-        : selfNode?.short_name || '????';
-
-      if (selfNode) {
-        newNodes.set(myNodeId, {
-          ...selfNode,
-          long_name: displayLongName,
-          short_name: displayShortName,
-        });
-      } else if (myNodeId > 0) {
-        newNodes.set(myNodeId, {
-          node_id: myNodeId,
-          long_name: displayLongName,
-          short_name: displayShortName,
-          hw_model: 'Unknown',
-          battery: 0,
-          snr: 0,
-          rssi: 0,
-          last_heard: Math.floor(Date.now() / 1000),
-          latitude: null,
-          longitude: null,
-        });
-      }
-
+      const newNodes = await buildNodesFromContacts(contacts, { self: info, myNodeId });
       setNodes(newNodes);
       console.log('[useMeshCore] initConn: contacts loaded, device=', contacts.length);
 
@@ -928,7 +943,7 @@ export function useMeshCore() {
           console.warn('[useMeshCore] getBatteryVoltage error', e);
         });
     },
-    [setupEventListeners],
+    [buildNodesFromContacts, setupEventListeners],
   );
 
   const connect = useCallback(
@@ -1420,24 +1435,16 @@ export function useMeshCore() {
     if (!connRef.current) return;
     try {
       const contacts = await connRef.current.getContacts();
-      const newNodes = new Map<number, MeshNode>();
-      pubKeyMapRef.current.clear();
-      pubKeyPrefixMapRef.current.clear();
-      for (const contact of contacts) {
-        const node = meshcoreContactToMeshNode(contact);
-        newNodes.set(node.node_id, node);
-        pubKeyMapRef.current.set(node.node_id, contact.publicKey);
-        const prefix = Array.from(contact.publicKey.slice(0, 6))
-          .map((b) => b.toString(16).padStart(2, '0'))
-          .join('');
-        pubKeyPrefixMapRef.current.set(prefix, node.node_id);
-      }
+      const newNodes = await buildNodesFromContacts(contacts, {
+        self: selfInfo,
+        myNodeId: myNodeNumRef.current,
+      });
       setNodes(newNodes);
       console.log('[useMeshCore] refreshContacts: loaded', contacts.length);
     } catch (e) {
       console.error('[useMeshCore] refreshContacts error', e);
     }
-  }, []);
+  }, [buildNodesFromContacts, selfInfo]);
 
   const sendAdvert = useCallback(async () => {
     if (!connRef.current) return;

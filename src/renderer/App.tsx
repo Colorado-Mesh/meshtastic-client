@@ -183,6 +183,8 @@ export default function App() {
     protocol === 'meshcore'
       ? (meshcoreDevice as unknown as typeof meshtasticDevice)
       : meshtasticDevice;
+  const nodesForUi = protocol === 'meshcore' ? meshcoreDevice.nodes : meshtasticDevice.nodes;
+  const nodeCountLabel = protocol === 'meshcore' ? 'contacts' : 'nodes';
 
   const capabilities = useRadioProvider(protocol);
 
@@ -228,7 +230,7 @@ export default function App() {
   const isConfigured = device.state.status === 'configured';
   const isOperational = isConfigured || device.state.status === 'stale';
   const isConnectedOrOperational = isOperational || device.state.status === 'connected';
-  const selectedNode = selectedNodeId ? (device.nodes.get(selectedNodeId) ?? null) : null;
+  const selectedNode = selectedNodeId ? (nodesForUi.get(selectedNodeId) ?? null) : null;
 
   const handleResend = useCallback(
     (msg: ChatMessage) => {
@@ -641,7 +643,7 @@ export default function App() {
                     isConnected={isOperational || device.mqttStatus === 'connected'}
                     isMqttOnly={!isOperational && device.mqttStatus === 'connected'}
                     connectionType={device.state.connectionType}
-                    nodes={device.nodes}
+                    nodes={nodesForUi}
                     initialDmTarget={pendingDmTarget}
                     onDmTargetConsumed={() => setPendingDmTarget(null)}
                     isActive={activeTab === 1}
@@ -650,17 +652,18 @@ export default function App() {
                 </div>
                 {activeTab === 2 && (
                   <NodeListPanel
-                    nodes={device.nodes}
+                    nodes={nodesForUi}
                     myNodeNum={device.selfNodeId}
                     onNodeClick={(node) => setSelectedNodeId(node.node_id)}
                     mqttConnected={device.mqttStatus === 'connected'}
                     locationFilter={locationFilter}
                     onToggleFavorite={device.setNodeFavorited}
+                    mode={protocol}
                   />
                 )}
                 {activeTab === 3 && (
                   <MapPanel
-                    nodes={device.nodes}
+                    nodes={nodesForUi}
                     myNodeNum={device.selfNodeId}
                     locationFilter={locationFilter}
                     ourPosition={device.ourPosition}
@@ -781,7 +784,7 @@ export default function App() {
                         console.debug('[App] persist logPanelVisible', e);
                       }
                     }}
-                    nodes={device.nodes}
+                    nodes={nodesForUi}
                     messageCount={device.messages.length}
                     channels={device.channels}
                     myNodeNum={device.state.myNodeNum}
@@ -799,7 +802,7 @@ export default function App() {
                 )}
                 {activeTab === 8 && (
                   <DiagnosticsPanel
-                    nodes={device.nodes}
+                    nodes={nodesForUi}
                     myNodeNum={device.selfNodeId}
                     onTraceRoute={device.traceRoute}
                     isConnected={isOperational}
@@ -849,7 +852,7 @@ export default function App() {
                 .
               </span>
               <span>
-                {device.nodes.size} nodes | {device.messages.length} messages
+                {nodesForUi.size} {nodeCountLabel} | {device.messages.length} messages
               </span>
             </footer>
           </div>
@@ -876,7 +879,7 @@ export default function App() {
           isOpen={searchModalOpen}
           onClose={() => setSearchModalOpen(false)}
           protocol={protocol}
-          nodes={device.nodes}
+          nodes={nodesForUi}
           channels={chatChannels}
           onNavigateToChannel={() => {
             setActiveTab(1);
@@ -885,7 +888,7 @@ export default function App() {
 
         {/* Node Detail Modal — rendered outside main for proper z-indexing */}
         <NodeDetailModal
-          nodes={device.nodes}
+          nodes={nodesForUi}
           node={selectedNode}
           onClose={() => setSelectedNodeId(null)}
           onRequestPosition={device.requestPosition}
@@ -900,7 +903,7 @@ export default function App() {
           }
           onToggleFavorite={device.setNodeFavorited}
           isConnected={isOperational}
-          homeNode={device.nodes.get(device.state.myNodeNum) ?? null}
+          homeNode={nodesForUi.get(device.state.myNodeNum) ?? null}
           neighborInfo={device.neighborInfo}
           useFahrenheit={useFahrenheit}
           protocol={protocol}

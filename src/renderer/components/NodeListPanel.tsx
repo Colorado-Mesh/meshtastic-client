@@ -35,6 +35,7 @@ interface Props {
   mqttConnected?: boolean;
   locationFilter: LocationFilter;
   onToggleFavorite: (nodeId: number, favorited: boolean) => void;
+  mode?: 'meshtastic' | 'meshcore';
 }
 
 export default function NodeListPanel({
@@ -44,6 +45,7 @@ export default function NodeListPanel({
   mqttConnected = false,
   locationFilter,
   onToggleFavorite,
+  mode = 'meshtastic',
 }: Props) {
   const diagnosticRows = useDiagnosticsStore((s) => s.diagnosticRows);
   const ignoreMqttEnabled = useDiagnosticsStore((s) => s.ignoreMqttEnabled);
@@ -215,6 +217,12 @@ export default function NodeListPanel({
     ).length;
     return { hidden: totalWithGps - visibleWithGps };
   }, [locationFilter, myNodeNum, nodes, nodeList]);
+  const totalNodeCount = nodes.size;
+  const visibleNodeCount = nodeList.length;
+  const headerCountLabel =
+    visibleNodeCount === totalNodeCount
+      ? `${visibleNodeCount}`
+      : `${visibleNodeCount} of ${totalNodeCount}`;
 
   function formatTime(ts: number): string {
     if (!ts) return 'Never';
@@ -269,7 +277,9 @@ export default function NodeListPanel({
   return (
     <div className="flex flex-col min-h-0 h-full gap-3">
       <div className="flex justify-between items-center gap-3 shrink-0">
-        <h2 className="text-xl font-semibold text-gray-200">Node Database ({nodeList.length})</h2>
+        <h2 className="text-xl font-semibold text-gray-200">
+          {mode === 'meshcore' ? 'Contacts' : 'Node Database'} ({headerCountLabel})
+        </h2>
         <div className="flex items-center gap-2 flex-1 max-w-xs">
           <input
             type="text"

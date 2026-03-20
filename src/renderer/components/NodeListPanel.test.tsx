@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
 
@@ -35,5 +35,19 @@ describe('NodeListPanel accessibility', () => {
     );
     const results = await axe(container);
     expect(results).toHaveNoViolations();
+  });
+
+  it('shows contacts title in meshcore mode', () => {
+    render(
+      <NodeListPanel
+        nodes={new Map()}
+        myNodeNum={0}
+        onNodeClick={vi.fn()}
+        locationFilter={defaultFilter}
+        onToggleFavorite={vi.fn()}
+        mode="meshcore"
+      />,
+    );
+    expect(screen.getByRole('heading', { name: 'Contacts (0)' })).toBeInTheDocument();
   });
 });
