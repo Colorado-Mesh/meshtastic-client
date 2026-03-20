@@ -1,6 +1,10 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 
-import type { MeshCoreRepeaterStatus } from '../hooks/useMeshCore';
+import type {
+  MeshCoreNeighborResult,
+  MeshCoreNodeTelemetry,
+  MeshCoreRepeaterStatus,
+} from '../hooks/useMeshCore';
 import type { MeshNode } from '../lib/types';
 import { useRepeaterSignalStore } from '../stores/repeaterSignalStore';
 import { useToast } from './Toast';
@@ -20,6 +24,13 @@ interface Props {
   onImportRepeaters: () => Promise<ImportResult>;
   onDeleteRepeater: (nodeId: number) => Promise<void>;
   isConnected: boolean;
+  onSendAdvert?: () => Promise<void>;
+  onSyncClock?: () => Promise<void>;
+  onReboot?: () => Promise<void>;
+  onRequestNeighbors?: (nodeId: number) => Promise<void>;
+  meshcoreNeighbors?: Map<number, MeshCoreNeighborResult>;
+  onRequestTelemetry?: (nodeId: number) => Promise<void>;
+  meshcoreTelemetry?: Map<number, MeshCoreNodeTelemetry>;
 }
 
 const STALE_THRESHOLD_MS = 15 * 60 * 1000;
@@ -87,6 +98,13 @@ export default function RepeatersPanel({
   onImportRepeaters,
   onDeleteRepeater,
   isConnected,
+  onSendAdvert,
+  onSyncClock,
+  onReboot,
+  onRequestNeighbors,
+  meshcoreNeighbors,
+  onRequestTelemetry,
+  meshcoreTelemetry,
 }: Props) {
   const { addToast } = useToast();
   const signalHistory = useRepeaterSignalStore((s) => s.history);
@@ -96,6 +114,15 @@ export default function RepeatersPanel({
   const [deleteLoadingSet, setDeleteLoadingSet] = useState<Set<number>>(new Set());
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [importLoading, setImportLoading] = useState(false);
+  const [advertLoading, setAdvertLoading] = useState(false);
+  const [syncClockLoading, setSyncClockLoading] = useState(false);
+  const [rebootConfirm, setRebootConfirm] = useState(false);
+  const [rebootLoading, setRebootLoading] = useState(false);
+  const [neighborsLoadingSet, setNeighborsLoadingSet] = useState<Set<number>>(new Set());
+  const [telemetryLoadingSet, setTelemetryLoadingSet] = useState<Set<number>>(new Set());
+  const [expandedNeighbors, setExpandedNeighbors] = useState<Set<number>>(new Set());
+  const [expandedTelemetry, setExpandedTelemetry] = useState<Set<number>>(new Set());
+  const [expandedPath, setExpandedPath] = useState<Set<number>>(new Set());
 
   const repeaters = Array.from(nodes.values())
     .filter((n) => n.hw_model === 'Repeater')
@@ -181,6 +208,105 @@ export default function RepeatersPanel({
     }
   };
 
+  const handleSendAdvert = async () => {
+    if (!onSendAdvert) return;
+    setAdvertLoading(true);
+    try {
+      await onSendAdvert();
+      addToast('Flood advert sent', 'success');
+    } catch (e) {
+      addToast(`Advert failed: ${e instanceof Error ? e.message : String(e)}`, 'error');
+    } finally {
+      setAdvertLoading(false);
+    }
+  };
+
+  const handleSyncClock = async () => {
+    if (!onSyncClock) return;
+    setSyncClockLoading(true);
+    try {
+      await onSyncClock();
+      addToast('Clock synced', 'success');
+    } catch (e) {
+      addToast(`Sync failed: ${e instanceof Error ? e.message : String(e)}`, 'error');
+    } finally {
+      setSyncClockLoading(false);
+    }
+  };
+
+  const handleReboot = async () => {
+    if (!rebootConfirm) {
+      setRebootConfirm(true);
+      return;
+    }
+    setRebootConfirm(false);
+    setRebootLoading(true);
+    try {
+      await onReboot?.();
+    } catch (e) {
+      addToast(`Reboot failed: ${e instanceof Error ? e.message : String(e)}`, 'error');
+    } finally {
+      setRebootLoading(false);
+    }
+  };
+
+  const handleNeighbors = async (nodeId: number) => {
+    if (expandedNeighbors.has(nodeId)) {
+      setExpandedNeighbors((prev) => {
+        const n = new Set(prev);
+        n.delete(nodeId);
+        return n;
+      });
+      return;
+    }
+    setNeighborsLoadingSet((prev) => new Set([...prev, nodeId]));
+    try {
+      await onRequestNeighbors?.(nodeId);
+      setExpandedNeighbors((prev) => new Set([...prev, nodeId]));
+    } catch (e) {
+      console.warn('[RepeatersPanel] requestNeighbors error', e);
+    } finally {
+      setNeighborsLoadingSet((prev) => {
+        const n = new Set(prev);
+        n.delete(nodeId);
+        return n;
+      });
+    }
+  };
+
+  const handleTelemetry = async (nodeId: number) => {
+    if (expandedTelemetry.has(nodeId)) {
+      setExpandedTelemetry((prev) => {
+        const n = new Set(prev);
+        n.delete(nodeId);
+        return n;
+      });
+      return;
+    }
+    setTelemetryLoadingSet((prev) => new Set([...prev, nodeId]));
+    try {
+      await onRequestTelemetry?.(nodeId);
+      setExpandedTelemetry((prev) => new Set([...prev, nodeId]));
+    } catch (e) {
+      console.warn('[RepeatersPanel] requestTelemetry error', e);
+    } finally {
+      setTelemetryLoadingSet((prev) => {
+        const n = new Set(prev);
+        n.delete(nodeId);
+        return n;
+      });
+    }
+  };
+
+  const togglePath = (nodeId: number) => {
+    setExpandedPath((prev) => {
+      const n = new Set(prev);
+      if (n.has(nodeId)) n.delete(nodeId);
+      else n.add(nodeId);
+      return n;
+    });
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
@@ -196,6 +322,55 @@ export default function RepeatersPanel({
           Import Repeaters
         </button>
       </div>
+
+      {/* Device Action Bar */}
+      {(onSendAdvert || onSyncClock || onReboot) && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-gray-800/50 rounded-lg border border-gray-700">
+          <span className="text-xs text-gray-400 mr-1">Device:</span>
+          {onSendAdvert && (
+            <button
+              onClick={() => void handleSendAdvert()}
+              disabled={!isConnected || advertLoading}
+              className="px-3 py-1 rounded text-xs font-medium bg-brand-green/20 text-brand-green border border-brand-green/30 hover:bg-brand-green/30 transition-colors disabled:opacity-40"
+            >
+              {advertLoading ? (
+                <span className="w-3 h-3 border border-brand-green border-t-transparent rounded-full animate-spin inline-block" />
+              ) : (
+                'Flood Advert'
+              )}
+            </button>
+          )}
+          {onSyncClock && (
+            <button
+              onClick={() => void handleSyncClock()}
+              disabled={!isConnected || syncClockLoading}
+              className="px-3 py-1 rounded text-xs font-medium bg-blue-900/50 text-blue-300 border border-blue-700 hover:bg-blue-800/60 transition-colors disabled:opacity-40"
+            >
+              {syncClockLoading ? (
+                <span className="w-3 h-3 border border-blue-400 border-t-transparent rounded-full animate-spin inline-block" />
+              ) : (
+                'Sync Clock'
+              )}
+            </button>
+          )}
+          {onReboot && (
+            <button
+              onClick={() => void handleReboot()}
+              disabled={!isConnected || rebootLoading}
+              onBlur={() => setRebootConfirm(false)}
+              className="px-3 py-1 rounded text-xs font-medium bg-red-900/60 text-red-300 border border-red-700 hover:bg-red-800/60 transition-colors disabled:opacity-40"
+            >
+              {rebootLoading ? (
+                <span className="w-3 h-3 border border-red-400 border-t-transparent rounded-full animate-spin inline-block" />
+              ) : rebootConfirm ? (
+                'Confirm Reboot?'
+              ) : (
+                'Reboot Device'
+              )}
+            </button>
+          )}
+        </div>
+      )}
 
       {repeaters.length === 0 ? (
         <div className="text-gray-400 text-sm mt-8 text-center">
@@ -237,98 +412,271 @@ export default function RepeatersPanel({
                 const hasPingError = pingErrorSet.has(node.node_id);
                 const isDeleteLoading = deleteLoadingSet.has(node.node_id);
                 const isDeleteConfirm = deleteConfirmId === node.node_id;
+                const isNeighborsLoading = neighborsLoadingSet.has(node.node_id);
+                const isTelemetryLoading = telemetryLoadingSet.has(node.node_id);
+                const isNeighborsExpanded = expandedNeighbors.has(node.node_id);
+                const isTelemetryExpanded = expandedTelemetry.has(node.node_id);
+                const isPathExpanded = expandedPath.has(node.node_id);
+                const neighborData = meshcoreNeighbors?.get(node.node_id);
+                const telemetryData = meshcoreTelemetry?.get(node.node_id);
+                const hasTraceResult = traceResult && traceResult.hops.length > 0;
 
                 return (
-                  <tr key={node.node_id} className="text-gray-300 hover:bg-gray-800/30">
-                    <td className="py-2 pr-4">
-                      <span className="flex items-center gap-1.5">
-                        <span
-                          className={`w-2 h-2 rounded-full ${
-                            repeaterStatus === 'active'
-                              ? 'bg-green-500'
+                  <Fragment key={node.node_id}>
+                    <tr className="text-gray-300 hover:bg-gray-800/30">
+                      <td className="py-2 pr-4">
+                        <span className="flex items-center gap-1.5">
+                          <span
+                            className={`w-2 h-2 rounded-full ${
+                              repeaterStatus === 'active'
+                                ? 'bg-green-500'
+                                : repeaterStatus === 'stale'
+                                  ? 'bg-amber-500'
+                                  : 'bg-gray-500'
+                            }`}
+                          />
+                          <span
+                            className={
+                              repeaterStatus === 'active'
+                                ? 'text-green-400 text-xs'
+                                : repeaterStatus === 'stale'
+                                  ? 'text-amber-400 text-xs'
+                                  : 'text-gray-500 text-xs'
+                            }
+                          >
+                            {repeaterStatus === 'active'
+                              ? 'Active'
                               : repeaterStatus === 'stale'
-                                ? 'bg-amber-500'
-                                : 'bg-gray-500'
-                          }`}
-                        />
-                        <span
-                          className={
-                            repeaterStatus === 'active'
-                              ? 'text-green-400 text-xs'
-                              : repeaterStatus === 'stale'
-                                ? 'text-amber-400 text-xs'
-                                : 'text-gray-500 text-xs'
-                          }
-                        >
-                          {repeaterStatus === 'active'
-                            ? 'Active'
-                            : repeaterStatus === 'stale'
-                              ? 'Stale'
-                              : '—'}
+                                ? 'Stale'
+                                : '—'}
+                          </span>
                         </span>
-                      </span>
-                    </td>
-                    <td className="py-2 pr-4 font-medium text-white">{node.long_name}</td>
-                    <td className="py-2 pr-4 text-gray-400 text-xs">
-                      {formatRelativeTime(node.last_heard)}
-                    </td>
-                    <td className="py-2 pr-4">{node.snr != null ? node.snr.toFixed(1) : '—'}</td>
-                    <td className="py-2 pr-4">{node.rssi != null ? node.rssi : '—'}</td>
-                    <td className="py-2 pr-4">{traceResult ? traceResult.hops.length : '—'}</td>
-                    <td className="py-2 pr-4">{formatUptime(status?.totalUpTimeSecs)}</td>
-                    <td className="py-2 pr-4">{airPct != null ? `${airPct}%` : '—'}</td>
-                    <td className="py-2 pr-4">
-                      <SignalSparkline points={history} />
-                    </td>
-                    <td className="py-2">
-                      <div className="flex gap-1">
-                        <button
-                          onClick={() => void handlePing(node.node_id)}
-                          disabled={!isConnected || isPingLoading}
-                          className={`px-2 py-0.5 rounded text-xs font-medium transition-colors disabled:opacity-40 ${
-                            hasPingError
-                              ? 'bg-red-900/60 text-red-300 border border-red-700'
-                              : 'bg-blue-900/60 text-blue-300 border border-blue-700 hover:bg-blue-800/60'
-                          }`}
-                        >
-                          {isPingLoading ? (
-                            <span className="w-3 h-3 border border-blue-400 border-t-transparent rounded-full animate-spin inline-block" />
-                          ) : hasPingError ? (
-                            'Error'
+                      </td>
+                      <td className="py-2 pr-4 font-medium text-white">{node.long_name}</td>
+                      <td className="py-2 pr-4 text-gray-400 text-xs">
+                        {formatRelativeTime(node.last_heard)}
+                      </td>
+                      <td className="py-2 pr-4">{node.snr != null ? node.snr.toFixed(1) : '—'}</td>
+                      <td className="py-2 pr-4">{node.rssi != null ? node.rssi : '—'}</td>
+                      <td className="py-2 pr-4">
+                        {traceResult ? (
+                          hasTraceResult ? (
+                            <button
+                              onClick={() => togglePath(node.node_id)}
+                              className="text-blue-400 hover:text-blue-300 underline decoration-dotted"
+                              title="Click to view path SNR detail"
+                            >
+                              {traceResult.hops.length}
+                            </button>
                           ) : (
-                            'Ping'
+                            traceResult.hops.length
+                          )
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="py-2 pr-4">{formatUptime(status?.totalUpTimeSecs)}</td>
+                      <td className="py-2 pr-4">{airPct != null ? `${airPct}%` : '—'}</td>
+                      <td className="py-2 pr-4">
+                        <SignalSparkline points={history} />
+                      </td>
+                      <td className="py-2">
+                        <div className="flex flex-wrap gap-1">
+                          <button
+                            onClick={() => void handlePing(node.node_id)}
+                            disabled={!isConnected || isPingLoading}
+                            className={`px-2 py-0.5 rounded text-xs font-medium transition-colors disabled:opacity-40 ${
+                              hasPingError
+                                ? 'bg-red-900/60 text-red-300 border border-red-700'
+                                : 'bg-blue-900/60 text-blue-300 border border-blue-700 hover:bg-blue-800/60'
+                            }`}
+                          >
+                            {isPingLoading ? (
+                              <span className="w-3 h-3 border border-blue-400 border-t-transparent rounded-full animate-spin inline-block" />
+                            ) : hasPingError ? (
+                              'Error'
+                            ) : (
+                              'Ping'
+                            )}
+                          </button>
+                          <button
+                            onClick={() => void handleStatus(node.node_id)}
+                            disabled={!isConnected || isStatusLoading}
+                            className="px-2 py-0.5 rounded text-xs font-medium bg-gray-800 text-gray-300 border border-gray-600 hover:bg-gray-700 transition-colors disabled:opacity-40"
+                          >
+                            {isStatusLoading ? (
+                              <span className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin inline-block" />
+                            ) : (
+                              'Status'
+                            )}
+                          </button>
+                          {onRequestNeighbors && (
+                            <button
+                              onClick={() => void handleNeighbors(node.node_id)}
+                              disabled={!isConnected || isNeighborsLoading}
+                              className={`px-2 py-0.5 rounded text-xs font-medium transition-colors disabled:opacity-40 ${
+                                isNeighborsExpanded
+                                  ? 'bg-purple-900/60 text-purple-300 border border-purple-700'
+                                  : 'bg-gray-800 text-gray-300 border border-gray-600 hover:bg-gray-700'
+                              }`}
+                            >
+                              {isNeighborsLoading ? (
+                                <span className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin inline-block" />
+                              ) : (
+                                'Neighbors'
+                              )}
+                            </button>
                           )}
-                        </button>
-                        <button
-                          onClick={() => void handleStatus(node.node_id)}
-                          disabled={!isConnected || isStatusLoading}
-                          className="px-2 py-0.5 rounded text-xs font-medium bg-gray-800 text-gray-300 border border-gray-600 hover:bg-gray-700 transition-colors disabled:opacity-40"
-                        >
-                          {isStatusLoading ? (
-                            <span className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin inline-block" />
+                          {onRequestTelemetry && (
+                            <button
+                              onClick={() => void handleTelemetry(node.node_id)}
+                              disabled={!isConnected || isTelemetryLoading}
+                              className={`px-2 py-0.5 rounded text-xs font-medium transition-colors disabled:opacity-40 ${
+                                isTelemetryExpanded
+                                  ? 'bg-amber-900/60 text-amber-300 border border-amber-700'
+                                  : 'bg-gray-800 text-gray-300 border border-gray-600 hover:bg-gray-700'
+                              }`}
+                            >
+                              {isTelemetryLoading ? (
+                                <span className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin inline-block" />
+                              ) : (
+                                'Telemetry'
+                              )}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => void handleDelete(node.node_id)}
+                            disabled={isDeleteLoading}
+                            onBlur={() => {
+                              if (isDeleteConfirm) setDeleteConfirmId(null);
+                            }}
+                            className="px-2 py-0.5 rounded text-xs font-medium bg-red-900/60 text-red-300 border border-red-700 hover:bg-red-800/60 transition-colors disabled:opacity-40"
+                          >
+                            {isDeleteLoading ? (
+                              <span className="w-3 h-3 border border-red-400 border-t-transparent rounded-full animate-spin inline-block" />
+                            ) : isDeleteConfirm ? (
+                              'Confirm?'
+                            ) : (
+                              'Remove'
+                            )}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+
+                    {/* Path SNR detail row */}
+                    {isPathExpanded && traceResult && (
+                      <tr className="bg-gray-900/60">
+                        <td colSpan={10} className="px-4 py-2">
+                          <div className="flex items-center gap-1 text-xs flex-wrap">
+                            <span className="text-gray-400 mr-1">Path:</span>
+                            <span className="text-brand-green">● Me</span>
+                            {traceResult.hops.map((hop, i) => (
+                              <span key={i} className="flex items-center gap-1">
+                                <span className="text-gray-600">→</span>
+                                <span className="px-1.5 py-0.5 rounded bg-blue-900/40 text-blue-300 font-mono">
+                                  {hop.snr > 0 ? '+' : ''}
+                                  {hop.snr.toFixed(2)} dB
+                                </span>
+                                <span className="text-gray-500">● Hop {i + 1}</span>
+                              </span>
+                            ))}
+                            <span className="text-gray-600">→</span>
+                            <span className="px-1.5 py-0.5 rounded bg-brand-green/20 text-brand-green font-mono">
+                              {traceResult.lastSnr > 0 ? '+' : ''}
+                              {traceResult.lastSnr.toFixed(2)} dB
+                            </span>
+                            <span className="text-white">▣ {node.long_name}</span>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+
+                    {/* Neighbors detail row */}
+                    {isNeighborsExpanded && neighborData && (
+                      <tr className="bg-gray-900/60">
+                        <td colSpan={10} className="px-4 py-2">
+                          <p className="text-xs text-gray-400 mb-1">
+                            Neighbors ({neighborData.totalNeighboursCount} total):
+                          </p>
+                          {neighborData.neighbours.length === 0 ? (
+                            <p className="text-xs text-gray-600">No neighbors reported</p>
                           ) : (
-                            'Status'
+                            <div className="flex flex-col gap-1">
+                              {neighborData.neighbours.map((nb, i) => {
+                                const name = nb.resolvedNodeId
+                                  ? (nodes.get(nb.resolvedNodeId)?.long_name ?? nb.prefixHex)
+                                  : nb.prefixHex;
+                                return (
+                                  <div key={i} className="flex items-center gap-3 text-xs">
+                                    <span className="font-mono text-gray-500">{nb.prefixHex}</span>
+                                    <span className="text-gray-300">[{name}]</span>
+                                    <span className="text-brand-green">
+                                      SNR: {nb.snr > 0 ? '+' : ''}
+                                      {nb.snr.toFixed(1)} dB
+                                    </span>
+                                    <span className="text-gray-500">
+                                      Heard:{' '}
+                                      {nb.heardSecondsAgo < 60
+                                        ? `${nb.heardSecondsAgo}s ago`
+                                        : nb.heardSecondsAgo < 3600
+                                          ? `${Math.floor(nb.heardSecondsAgo / 60)}m ago`
+                                          : `${Math.floor(nb.heardSecondsAgo / 3600)}h ago`}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
                           )}
-                        </button>
-                        <button
-                          onClick={() => void handleDelete(node.node_id)}
-                          disabled={isDeleteLoading}
-                          onBlur={() => {
-                            if (isDeleteConfirm) setDeleteConfirmId(null);
-                          }}
-                          className="px-2 py-0.5 rounded text-xs font-medium bg-red-900/60 text-red-300 border border-red-700 hover:bg-red-800/60 transition-colors disabled:opacity-40"
-                        >
-                          {isDeleteLoading ? (
-                            <span className="w-3 h-3 border border-red-400 border-t-transparent rounded-full animate-spin inline-block" />
-                          ) : isDeleteConfirm ? (
-                            'Confirm?'
-                          ) : (
-                            'Remove'
-                          )}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                        </td>
+                      </tr>
+                    )}
+
+                    {/* Telemetry detail row */}
+                    {isTelemetryExpanded && telemetryData && (
+                      <tr className="bg-gray-900/60">
+                        <td colSpan={10} className="px-4 py-2">
+                          <div className="flex items-center gap-4 text-xs flex-wrap">
+                            {telemetryData.voltage != null && (
+                              <span className="text-amber-300">
+                                Battery: {telemetryData.voltage.toFixed(2)}V
+                              </span>
+                            )}
+                            {telemetryData.temperature != null && (
+                              <span className="text-blue-300">
+                                Temp: {telemetryData.temperature.toFixed(1)}°C
+                              </span>
+                            )}
+                            {telemetryData.relativeHumidity != null && (
+                              <span className="text-cyan-300">
+                                Humidity: {telemetryData.relativeHumidity.toFixed(0)}%
+                              </span>
+                            )}
+                            {telemetryData.barometricPressure != null && (
+                              <span className="text-gray-300">
+                                Pressure: {telemetryData.barometricPressure.toFixed(1)} hPa
+                              </span>
+                            )}
+                            {telemetryData.gps && (
+                              <span className="text-green-300">
+                                GPS: {telemetryData.gps.latitude.toFixed(4)}°,{' '}
+                                {telemetryData.gps.longitude.toFixed(4)}°
+                                {telemetryData.gps.altitude
+                                  ? ` alt ${telemetryData.gps.altitude}m`
+                                  : ''}
+                              </span>
+                            )}
+                            {!telemetryData.voltage &&
+                              !telemetryData.temperature &&
+                              !telemetryData.relativeHumidity &&
+                              !telemetryData.gps && (
+                                <span className="text-gray-500">No telemetry data available</span>
+                              )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
             </tbody>

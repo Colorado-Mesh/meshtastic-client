@@ -65,6 +65,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     getMeshcoreMessages: (channelIdx?: number, limit?: number) =>
       ipcRenderer.invoke('db:getMeshcoreMessages', channelIdx, limit),
+    searchMessages: (query: string, limit?: number) =>
+      ipcRenderer.invoke('db:searchMessages', query, limit),
+    searchMeshcoreMessages: (query: string, limit?: number) =>
+      ipcRenderer.invoke('db:searchMeshcoreMessages', query, limit),
     getMeshcoreContacts: () => ipcRenderer.invoke('db:getMeshcoreContacts'),
     saveMeshcoreMessage: (message: {
       sender_id?: number | null;

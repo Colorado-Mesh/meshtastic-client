@@ -1267,6 +1267,12 @@ export function useMeshCore() {
     await connRef.current.sendFloodAdvert();
   }, []);
 
+  const syncClock = useCallback(async () => {
+    if (!connRef.current) return;
+    console.log('[useMeshCore] syncClock');
+    await connRef.current.syncDeviceTime();
+  }, []);
+
   const reboot = useCallback(async () => {
     if (!connRef.current) return;
     try {
@@ -1766,6 +1772,7 @@ export function useMeshCore() {
     disconnect,
     sendMessage,
     sendAdvert,
+    syncClock,
     refreshContacts,
     reboot,
     deleteNode,

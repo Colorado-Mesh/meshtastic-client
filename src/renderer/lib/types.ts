@@ -330,6 +330,8 @@ declare global {
           advLon: number | null,
         ) => Promise<unknown>;
         getMeshcoreMessages: (channelIdx?: number, limit?: number) => Promise<unknown[]>;
+        searchMessages: (query: string, limit?: number) => Promise<unknown[]>;
+        searchMeshcoreMessages: (query: string, limit?: number) => Promise<unknown[]>;
         getMeshcoreContacts: () => Promise<unknown[]>;
         deleteMeshcoreContact: (nodeId: number) => Promise<unknown>;
         clearMeshcoreMessages: () => Promise<unknown>;

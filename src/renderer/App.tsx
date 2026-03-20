@@ -13,6 +13,7 @@ import NodeDetailModal from './components/NodeDetailModal';
 import NodeListPanel from './components/NodeListPanel';
 import RadioPanel from './components/RadioPanel';
 import RepeatersPanel from './components/RepeatersPanel';
+import SearchModal from './components/SearchModal';
 import { LinkIcon } from './components/SignalBars';
 import Tabs from './components/Tabs';
 import TelemetryPanel from './components/TelemetryPanel';
@@ -135,6 +136,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState(0);
   const [selectedNodeId, setSelectedNodeId] = useState<number | null>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [locationFilter, setLocationFilter] = useState<LocationFilter>(() => {
     const s =
       parseStoredJson<Record<string, unknown>>(
@@ -365,7 +367,10 @@ export default function App() {
   // ─── Keyboard shortcuts: Cmd/Ctrl+1-9 for tabs, ? for help ───────────────
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key >= '1' && e.key <= '9') {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        setSearchModalOpen(true);
+      } else if ((e.metaKey || e.ctrlKey) && e.key >= '1' && e.key <= '9') {
         e.preventDefault();
         setActiveTab(parseInt(e.key) - 1);
       } else if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
@@ -638,6 +643,7 @@ export default function App() {
                     initialDmTarget={pendingDmTarget}
                     onDmTargetConsumed={() => setPendingDmTarget(null)}
                     isActive={activeTab === 1}
+                    onGlobalSearch={() => setSearchModalOpen(true)}
                   />
                 </div>
                 {activeTab === 2 && (
@@ -731,6 +737,13 @@ export default function App() {
                     onImportRepeaters={meshcoreDevice.importRepeaters}
                     onDeleteRepeater={meshcoreDevice.deleteNode}
                     isConnected={isOperational}
+                    onSendAdvert={meshcoreDevice.sendAdvert}
+                    onSyncClock={meshcoreDevice.syncClock}
+                    onReboot={meshcoreDevice.reboot}
+                    onRequestNeighbors={meshcoreDevice.requestNeighbors}
+                    meshcoreNeighbors={meshcoreDevice.meshcoreNeighbors}
+                    onRequestTelemetry={meshcoreDevice.requestTelemetry}
+                    meshcoreTelemetry={meshcoreDevice.meshcoreNodeTelemetry}
                   />
                 )}
                 {activeTab === 5 && protocol !== 'meshcore' && (
@@ -854,6 +867,18 @@ export default function App() {
             tabNames={displayTabNames}
           />
         )}
+
+        {/* Cross-channel Search Modal */}
+        <SearchModal
+          isOpen={searchModalOpen}
+          onClose={() => setSearchModalOpen(false)}
+          protocol={protocol}
+          nodes={device.nodes}
+          channels={chatChannels}
+          onNavigateToChannel={() => {
+            setActiveTab(1);
+          }}
+        />
 
         {/* Node Detail Modal — rendered outside main for proper z-indexing */}
         <NodeDetailModal

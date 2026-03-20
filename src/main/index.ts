@@ -12,6 +12,8 @@ import {
   getDatabase,
   initDatabase,
   mergeDatabase,
+  searchMeshcoreMessages,
+  searchMessages,
 } from './database';
 import { getGpsFix } from './gps';
 import {
@@ -1490,6 +1492,32 @@ ipcMain.handle('db:getMeshcoreMessages', (_event, channelIdx?: number, limit = 2
       sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
     );
     throw err;
+  }
+});
+
+ipcMain.handle('db:searchMessages', (_event, query: string, limit?: number) => {
+  try {
+    if (typeof query !== 'string') return [];
+    return searchMessages(query, Math.min(limit ?? 50, 200));
+  } catch (err) {
+    console.error(
+      '[IPC] db:searchMessages failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    return [];
+  }
+});
+
+ipcMain.handle('db:searchMeshcoreMessages', (_event, query: string, limit?: number) => {
+  try {
+    if (typeof query !== 'string') return [];
+    return searchMeshcoreMessages(query, Math.min(limit ?? 50, 200));
+  } catch (err) {
+    console.error(
+      '[IPC] db:searchMeshcoreMessages failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    return [];
   }
 });
 

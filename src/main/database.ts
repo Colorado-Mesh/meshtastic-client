@@ -586,6 +586,28 @@ export function mergeDatabase(sourcePath: string) {
   }
 }
 
+export function searchMessages(query: string, limit = 50): unknown[] {
+  const db = getDatabase();
+  const like = `%${query}%`;
+  return db
+    .prepare(
+      `SELECT id, sender_id, sender_name, payload, channel, timestamp, to_node
+       FROM messages WHERE payload LIKE ? ORDER BY timestamp DESC LIMIT ?`,
+    )
+    .all(like, limit);
+}
+
+export function searchMeshcoreMessages(query: string, limit = 50): unknown[] {
+  const db = getDatabase();
+  const like = `%${query}%`;
+  return db
+    .prepare(
+      `SELECT id, sender_id, sender_name, payload, channel_idx, timestamp, to_node
+       FROM meshcore_messages WHERE payload LIKE ? ORDER BY timestamp DESC LIMIT ?`,
+    )
+    .all(like, limit);
+}
+
 export function deleteNodesBySource(source: string): number {
   const db = getDatabase();
   const result = db.prepare('DELETE FROM nodes WHERE source = ?').run(source);

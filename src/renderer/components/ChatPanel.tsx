@@ -189,6 +189,7 @@ interface Props {
   initialDmTarget?: number | null;
   onDmTargetConsumed?: () => void;
   isActive?: boolean;
+  onGlobalSearch?: () => void;
 }
 
 export default function ChatPanel({
@@ -206,6 +207,7 @@ export default function ChatPanel({
   initialDmTarget,
   onDmTargetConsumed,
   isActive = true,
+  onGlobalSearch,
 }: Props) {
   const [input, setInput] = useState('');
   const [channel, setChannel] = useState(() => (channels.length > 0 ? channels[0].index : 0));
@@ -691,6 +693,30 @@ export default function ChatPanel({
             />
           </svg>
         </button>
+        {onGlobalSearch && (
+          <button
+            onClick={onGlobalSearch}
+            aria-label="Search all channels"
+            className="p-1.5 rounded-lg transition-colors text-muted hover:text-gray-300"
+            title="Search all channels (Cmd+Shift+F)"
+          >
+            <svg
+              className="w-4 h-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20M2 12h20"
+              />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Row 2 — DM tabs */}
