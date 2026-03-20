@@ -171,7 +171,7 @@ MeshCore support is available alongside Meshtastic — switch protocols in the C
 ## Limitations
 
 - **MQTT → RF**: Messages received via MQTT are shown in chat but are not rebroadcast over the radio. Previous relay behavior caused duplicate or misattributed messages.
-- **MeshCore — no MQTT**: MQTT is a Meshtastic-specific feature and is not available in MeshCore mode.
+- **MeshCore — MQTT (JSON v1)**: The Connection tab can connect to an MQTT broker in MeshCore mode using a small JSON chat envelope (see [docs/meshcore-meshtastic-parity.md](docs/meshcore-meshtastic-parity.md)). This is separate from Meshtastic’s protobuf MQTT pipeline.
 - **MeshCore — no routing anomaly diagnostics**: Hop anomaly detection (hop_goblin, bad_route, etc.) and RF diagnostics require Meshtastic-specific packets (`hops_away`, LocalStats, NeighborInfo). The Network Diagnostics tab is available in MeshCore for foreign LoRa detection and other shared features.
 - **MeshCore — no channel/device config editing**: MeshCore does not expose a channel-configuration API. Radio parameters (frequency, bandwidth, spreading factor, coding rate, TX power) can be set via the Radio tab.
 - **MeshCore — remote telemetry availability**: `getTelemetry` requires the remote node to have environment sensors. A timeout is returned if the node has no sensor data.
@@ -409,7 +409,7 @@ Enter your broker URL, topic, and optional credentials in the MQTT section of th
 | Windows  | Yes       | Yes    | Yes  | Yes  |
 | Linux    | Yes       | Yes    | Yes  | Yes  |
 
-**MeshCore** supports three transport types (no MQTT):
+**MeshCore** supports BLE, Web Serial, TCP, and optional MQTT (broker JSON v1 adapter):
 
 | Platform | Bluetooth | Serial | TCP |
 | -------- | --------- | ------ | --- |

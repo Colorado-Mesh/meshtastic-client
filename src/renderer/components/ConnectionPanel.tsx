@@ -1085,7 +1085,12 @@ export default function ConnectionPanel({
           </div>
           <div className="pt-1">
             <button
-              onClick={() => window.electronAPI.mqtt.connect(mqttSettings)}
+              onClick={() =>
+                window.electronAPI.mqtt.connect({
+                  ...mqttSettings,
+                  mqttTransportProtocol: protocol === 'meshcore' ? 'meshcore' : 'meshtastic',
+                })
+              }
               disabled={mqttStatus === 'connecting'}
               className="w-full px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-40"
               style={{ backgroundColor: '#4CAF50' }}
@@ -1214,7 +1219,7 @@ export default function ConnectionPanel({
           </div>
         )}
 
-        {protocol === 'meshtastic' && mqttSection}
+        {mqttSection}
       </div>
     );
   }
@@ -1442,7 +1447,7 @@ export default function ConnectionPanel({
         </div>
       </div>
 
-      {protocol === 'meshtastic' && mqttSection}
+      {mqttSection}
     </div>
   );
 }

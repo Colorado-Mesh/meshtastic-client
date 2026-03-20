@@ -303,31 +303,34 @@ export default function App() {
     }
   }, [refreshNodesFromDb]);
 
-  // ─── Disconnect MQTT when switching to MeshCore mode ─────────────
-  // MQTT is Meshtastic-specific. If it's connected when the user switches to
-  // MeshCore, disconnect it so the window close handler isn't blocked.
+  // ─── Disconnect MQTT when switching protocol ─────────────────────
+  // Avoid wrong broker codec (Meshtastic protobuf vs MeshCore JSON) on the same session.
+  const isFirstProtocolEffectRef = useRef(true);
   useEffect(() => {
-    if (protocol === 'meshcore') {
-      void window.electronAPI.mqtt
-        .disconnect()
-        .catch((e) => console.debug('[App] MQTT disconnect on meshcore switch', e));
+    if (isFirstProtocolEffectRef.current) {
+      isFirstProtocolEffectRef.current = false;
+      return;
     }
+    void window.electronAPI.mqtt
+      .disconnect()
+      .catch((e) => console.debug('[App] MQTT disconnect on protocol switch', e));
   }, [protocol]);
 
   // ─── MQTT auto-launch on startup ─────────────────────────────────
-  // Skip in MeshCore mode — MQTT is Meshtastic-specific and staying connected
-  // in MeshCore mode prevents the window from closing after device disconnect.
   // Read protocol from localStorage directly so this one-time effect has no deps.
   useEffect(() => {
-    if ((localStorage.getItem(PROTOCOL_KEY) as MeshProtocol) === 'meshcore') return;
     try {
       const settings = parseStoredJson<MQTTSettings>(
         localStorage.getItem('mesh-client:mqttSettings'),
         'App MQTT auto-launch',
       );
       if (settings?.autoLaunch) {
+        const prot = (localStorage.getItem(PROTOCOL_KEY) as MeshProtocol) ?? 'meshtastic';
         void window.electronAPI.mqtt
-          .connect(settings)
+          .connect({
+            ...settings,
+            mqttTransportProtocol: prot === 'meshcore' ? 'meshcore' : 'meshtastic',
+          })
           .catch((e) => console.warn('[App] MQTT auto-launch connect failed', e));
       }
     } catch (e) {
@@ -499,22 +502,19 @@ export default function App() {
             >
               {protocol === 'meshcore' ? 'MeshCore' : 'Meshtastic'}
             </span>
-            {/* MQTT status globe — hidden in MeshCore mode */}
-            {protocol === 'meshtastic' && (
-              <div
-                className="flex items-center gap-1.5 mr-3 pr-3 border-r border-gray-700"
-                aria-label={
-                  device.mqttStatus === 'connected' ? 'MQTT: connected' : 'MQTT: disconnected'
-                }
+            <div
+              className="flex items-center gap-1.5 mr-3 pr-3 border-r border-gray-700"
+              aria-label={
+                device.mqttStatus === 'connected' ? 'MQTT: connected' : 'MQTT: disconnected'
+              }
+            >
+              <MqttGlobeIcon connected={device.mqttStatus === 'connected'} />
+              <span
+                className={`text-xs ${device.mqttStatus === 'connected' ? 'text-brand-green' : 'text-gray-500'}`}
               >
-                <MqttGlobeIcon connected={device.mqttStatus === 'connected'} />
-                <span
-                  className={`text-xs ${device.mqttStatus === 'connected' ? 'text-brand-green' : 'text-gray-500'}`}
-                >
-                  MQTT
-                </span>
-              </div>
-            )}
+                MQTT
+              </span>
+            </div>
             {isConnectedOrOperational && <LinkIcon className="w-4 h-4" aria-hidden="true" />}
             <div
               className={`w-2.5 h-2.5 rounded-full ${statusColor}`}

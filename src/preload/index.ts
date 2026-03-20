@@ -110,6 +110,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     clearMeshcoreRepeaters: () => ipcRenderer.invoke('db:clearMeshcoreRepeaters'),
     updateMeshcoreContactNickname: (nodeId: number, nickname: string | null) =>
       ipcRenderer.invoke('db:updateMeshcoreContactNickname', nodeId, nickname),
+    updateMeshcoreContactFavorited: (
+      nodeId: number,
+      favorited: boolean,
+      publicKeyHex?: string | null,
+    ) => ipcRenderer.invoke('db:updateMeshcoreContactFavorited', nodeId, favorited, publicKeyHex),
     savePositionHistory: (
       nodeId: number,
       lat: number,
@@ -176,6 +181,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
       longitudeI: number;
       altitude?: number;
     }) => ipcRenderer.invoke('mqtt:publishPosition', args),
+    publishMeshcore: (args: {
+      text: string;
+      channelIdx: number;
+      senderName?: string;
+      senderNodeId?: number;
+      timestamp?: number;
+    }) => ipcRenderer.invoke('mqtt:publishMeshcore', args),
+    onMeshcoreChat: (cb: (msg: unknown) => void) => {
+      const handler = (_: unknown, m: unknown) => cb(m);
+      ipcRenderer.on('mqtt:meshcore-chat', handler);
+      return () => ipcRenderer.off('mqtt:meshcore-chat', handler);
+    },
   },
 
   // ─── Bluetooth device selection ─────────────────────────────────

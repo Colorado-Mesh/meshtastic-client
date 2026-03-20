@@ -16,6 +16,6 @@
       "@meshtastic/protobufs": ["node_modules/@meshtastic/protobufs/_dist/mod"]
     }
   },
-  "include": ["src/main/**/*", "src/preload/**/*"],
+  "include": ["src/main/**/*", "src/preload/**/*", "src/shared/**/*"],
   "exclude": ["node_modules", "dist"]
 }

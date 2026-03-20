@@ -4,6 +4,7 @@ import net from 'net';
 import path from 'path';
 import { pathToFileURL } from 'url';
 
+import type { MQTTSettings } from '../renderer/lib/types';
 import {
   closeDatabase,
   deleteNodesBySource,
@@ -27,6 +28,7 @@ import {
   sanitizeLogMessage,
   setMainWindow,
 } from './log-service';
+import { MeshcoreMqttAdapter } from './meshcore-mqtt-adapter';
 import { MQTTManager } from './mqtt-manager';
 import { initUpdater } from './updater';
 
@@ -40,6 +42,11 @@ if (process.platform === 'linux' && process.env.MESH_CLIENT_DISABLE_GPU === '1')
 }
 
 const mqttManager = new MQTTManager();
+const meshcoreMqttAdapter = new MeshcoreMqttAdapter();
+
+function isAnyMqttConnected(): boolean {
+  return mqttManager.getStatus() === 'connected' || meshcoreMqttAdapter.getStatus() === 'connected';
+}
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -246,6 +253,36 @@ function validateMqttSettings(settings: unknown): void {
     throw new Error('mqtt:connect: password must be a string');
   if (s.tlsInsecure != null && typeof s.tlsInsecure !== 'boolean')
     throw new Error('mqtt:connect: tlsInsecure must be a boolean');
+  if (s.mqttTransportProtocol != null) {
+    if (s.mqttTransportProtocol !== 'meshtastic' && s.mqttTransportProtocol !== 'meshcore') {
+      throw new Error('mqtt:connect: mqttTransportProtocol must be meshtastic or meshcore');
+    }
+  }
+}
+
+const MAX_MESHCORE_MQTT_TEXT = 16000;
+
+function validateMqttPublishMeshcoreArgs(args: unknown): void {
+  if (!args || typeof args !== 'object')
+    throw new Error('mqtt:publishMeshcore: args must be an object');
+  const a = args as Record<string, unknown>;
+  if (typeof a.text !== 'string') throw new Error('mqtt:publishMeshcore: text must be a string');
+  if (a.text.length > MAX_MESHCORE_MQTT_TEXT)
+    throw new Error('mqtt:publishMeshcore: text too long');
+  const ch = Number(a.channelIdx);
+  if (!Number.isFinite(ch) || ch < 0 || ch > 255)
+    throw new Error('mqtt:publishMeshcore: channelIdx must be 0–255');
+  if (a.senderName != null && (typeof a.senderName !== 'string' || a.senderName.length > 200)) {
+    throw new Error('mqtt:publishMeshcore: senderName invalid');
+  }
+  if (a.senderNodeId != null) {
+    const id = Number(a.senderNodeId);
+    if (!Number.isFinite(id) || id < 0)
+      throw new Error('mqtt:publishMeshcore: senderNodeId invalid');
+  }
+  if (a.timestamp != null && !Number.isFinite(Number(a.timestamp))) {
+    throw new Error('mqtt:publishMeshcore: timestamp invalid');
+  }
 }
 
 function validateMqttPublishArgs(args: unknown): void {
@@ -385,6 +422,7 @@ function setupTray(window: BrowserWindow) {
       click: () => {
         isQuitting = true;
         mqttManager.disconnect();
+        meshcoreMqttAdapter.disconnect();
         isConnected = false;
         mainWindow?.destroy();
         app.quit();
@@ -666,7 +704,7 @@ function createWindow() {
   // Handle window close event
   const win = mainWindow;
   win.on('close', (event) => {
-    if (!isQuitting && (isConnected || mqttManager.getStatus() === 'connected')) {
+    if (!isQuitting && (isConnected || isAnyMqttConnected())) {
       event.preventDefault();
       if (process.platform === 'darwin') {
         console.log('[main] window close event: hiding (macOS, device connected)');
@@ -772,12 +810,37 @@ mqttManager.on('message', (m) => {
   else console.debug('[main] mqtt:message dropped (mainWindow not ready)');
 });
 
+meshcoreMqttAdapter.on('status', (s) => {
+  if (mainWindow) mainWindow.webContents.send('mqtt:status', s);
+  else console.debug('[main] mqtt:status (meshcore) dropped (mainWindow not ready)', s);
+});
+meshcoreMqttAdapter.on('error', (msg) => {
+  if (mainWindow) mainWindow.webContents.send('mqtt:error', msg);
+  else console.debug('[main] mqtt:error (meshcore) dropped (mainWindow not ready)', msg);
+});
+meshcoreMqttAdapter.on('clientId', (id) => {
+  if (mainWindow) mainWindow.webContents.send('mqtt:clientId', id);
+  else console.debug('[main] mqtt:clientId (meshcore) dropped (mainWindow not ready)', id);
+});
+meshcoreMqttAdapter.on('chatMessage', (m) => {
+  if (mainWindow) mainWindow.webContents.send('mqtt:meshcore-chat', m);
+  else console.debug('[main] mqtt:meshcore-chat dropped (mainWindow not ready)');
+});
+
 // ─── IPC: MQTT connect/disconnect ───────────────────────────────────
 ipcMain.handle('mqtt:connect', async (_event, settings) => {
   try {
     console.debug('[IPC] mqtt:connect');
     validateMqttSettings(settings);
-    mqttManager.connect(settings);
+    const s = settings as { mqttTransportProtocol?: string };
+    const mode = s.mqttTransportProtocol === 'meshcore' ? 'meshcore' : 'meshtastic';
+    meshcoreMqttAdapter.disconnect();
+    mqttManager.disconnect();
+    if (mode === 'meshcore') {
+      meshcoreMqttAdapter.connect(settings as MQTTSettings);
+    } else {
+      mqttManager.connect(settings);
+    }
   } catch (err) {
     console.error(
       '[IPC] mqtt:connect failed:',
@@ -790,6 +853,7 @@ ipcMain.handle('mqtt:disconnect', async () => {
   try {
     console.debug('[IPC] mqtt:disconnect');
     mqttManager.disconnect();
+    meshcoreMqttAdapter.disconnect();
   } catch (err) {
     console.error(
       '[IPC] mqtt:disconnect failed:',
@@ -801,6 +865,9 @@ ipcMain.handle('mqtt:disconnect', async () => {
 ipcMain.handle('mqtt:getClientId', async () => {
   try {
     console.debug('[IPC] mqtt:getClientId');
+    if (meshcoreMqttAdapter.getStatus() === 'connected') {
+      return meshcoreMqttAdapter.getClientId();
+    }
     return mqttManager.getClientId();
   } catch (err) {
     console.error(
@@ -840,6 +907,35 @@ ipcMain.handle('mqtt:publish', async (_event, args) => {
     throw err;
   }
 });
+
+ipcMain.handle('mqtt:publishMeshcore', async (_event, args) => {
+  try {
+    console.debug('[IPC] mqtt:publishMeshcore');
+    validateMqttPublishMeshcoreArgs(args);
+    const a = args as {
+      text: string;
+      channelIdx: number;
+      senderName?: string;
+      senderNodeId?: number;
+      timestamp?: number;
+    };
+    meshcoreMqttAdapter.publishChat({
+      v: 1,
+      text: a.text,
+      channelIdx: a.channelIdx,
+      senderName: a.senderName,
+      senderNodeId: a.senderNodeId,
+      timestamp: a.timestamp,
+    });
+  } catch (err) {
+    console.error(
+      '[IPC] mqtt:publishMeshcore failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
+});
+
 ipcMain.handle('mqtt:getCachedNodes', async () => {
   try {
     return mqttManager.getCachedNodes();
@@ -949,6 +1045,7 @@ ipcMain.handle('app:quit', async () => {
   isConnected = false;
   try {
     mqttManager.disconnect();
+    meshcoreMqttAdapter.disconnect();
   } catch (err) {
     console.error(
       '[IPC] app:quit disconnect failed:',
@@ -1652,6 +1749,47 @@ ipcMain.handle(
   },
 );
 
+ipcMain.handle(
+  'db:updateMeshcoreContactFavorited',
+  (_event, nodeId: number, favorited: boolean, publicKeyHex?: string | null) => {
+    try {
+      const id = safeNonNegativeInt(nodeId);
+      if (typeof favorited !== 'boolean') {
+        throw new Error('db:updateMeshcoreContactFavorited: favorited must be a boolean');
+      }
+      if (publicKeyHex != null && typeof publicKeyHex !== 'string') {
+        throw new Error('db:updateMeshcoreContactFavorited: publicKeyHex must be a string or null');
+      }
+      if (publicKeyHex != null && publicKeyHex.length > 128) {
+        throw new Error('db:updateMeshcoreContactFavorited: publicKeyHex too long');
+      }
+      const db = getDatabase();
+      const run = db
+        .prepare('UPDATE meshcore_contacts SET favorited = ? WHERE node_id = ?')
+        .run(favorited ? 1 : 0, id);
+      if (run.changes > 0) return run;
+      const hex = publicKeyHex?.replace(/\s/g, '') ?? '';
+      if (!hex) {
+        throw new Error(
+          'db:updateMeshcoreContactFavorited: contact not in database; public_key required to create row',
+        );
+      }
+      db.prepare(
+        `INSERT INTO meshcore_contacts (node_id, public_key, favorited)
+         VALUES (?, ?, ?)
+         ON CONFLICT(node_id) DO UPDATE SET favorited = excluded.favorited`,
+      ).run(id, hex, favorited ? 1 : 0);
+      return { changes: 1 };
+    } catch (err) {
+      console.error(
+        '[IPC] db:updateMeshcoreContactFavorited failed:',
+        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+      );
+      throw err;
+    }
+  },
+);
+
 ipcMain.handle('meshcore:openJsonFile', async () => {
   if (!mainWindow) return null;
   const result = await dialog.showOpenDialog(mainWindow, {
@@ -1938,7 +2076,7 @@ app.on('before-quit', () => {
 });
 
 app.on('window-all-closed', () => {
-  const hasConnection = isConnected || mqttManager.getStatus() === 'connected';
+  const hasConnection = isConnected || isAnyMqttConnected();
   // On macOS: quit when user chose Quit, or when there's no connection (window closed with nothing to keep running for)
   if (process.platform !== 'darwin' || isQuitting || !hasConnection) {
     app.quit();

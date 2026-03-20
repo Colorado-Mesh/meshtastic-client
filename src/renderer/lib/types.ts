@@ -158,6 +158,8 @@ export interface MQTTSettings {
    * The default PSK (AQ==, padded to 16 bytes) is always tried first.
    */
   channelPsks?: string[];
+  /** Broker codec: Meshtastic protobuf vs MeshCore JSON adapter (main process). */
+  mqttTransportProtocol?: 'meshtastic' | 'meshcore';
 }
 
 export type MQTTStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -344,6 +346,11 @@ declare global {
           nodeId: number,
           nickname: string | null,
         ) => Promise<unknown>;
+        updateMeshcoreContactFavorited: (
+          nodeId: number,
+          favorited: boolean,
+          publicKeyHex?: string | null,
+        ) => Promise<unknown>;
         savePositionHistory: (
           nodeId: number,
           lat: number,
@@ -396,6 +403,14 @@ declare global {
           longitudeI: number;
           altitude?: number;
         }) => Promise<number>;
+        publishMeshcore: (args: {
+          text: string;
+          channelIdx: number;
+          senderName?: string;
+          senderNodeId?: number;
+          timestamp?: number;
+        }) => Promise<void>;
+        onMeshcoreChat: (cb: (msg: unknown) => void) => () => void;
       };
       meshcore: {
         tcp: {

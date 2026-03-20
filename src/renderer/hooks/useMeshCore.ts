@@ -21,7 +21,14 @@ import {
   selectGrantedSerialPort,
   signaturesEqual,
 } from '../lib/serialPortSignature';
-import type { ChatMessage, DeviceState, MeshNode, TelemetryPoint } from '../lib/types';
+import type {
+  ChatMessage,
+  DeviceState,
+  EnvironmentTelemetryPoint,
+  MeshNode,
+  MQTTStatus,
+  TelemetryPoint,
+} from '../lib/types';
 import { useDiagnosticsStore } from '../stores/diagnosticsStore';
 import { usePositionHistoryStore } from '../stores/positionHistoryStore';
 import { useRepeaterSignalStore } from '../stores/repeaterSignalStore';
@@ -313,6 +320,8 @@ const INITIAL_STATE: DeviceState = {
 const MAX_DEVICE_LOGS = 500;
 const MAX_TELEMETRY_POINTS = 50;
 
+const MAX_ENV_TELEMETRY_POINTS = 50;
+
 interface MeshcoreNormalizedText {
   senderName?: string;
   payload: string;
@@ -385,6 +394,9 @@ export function useMeshCore() {
       return false;
     }
   });
+  const [environmentTelemetry, setEnvironmentTelemetry] = useState<EnvironmentTelemetryPoint[]>([]);
+  const [mqttStatus, setMqttStatus] = useState<MQTTStatus>('disconnected');
+  const mqttStatusRef = useRef<MQTTStatus>('disconnected');
 
   const connRef = useRef<MeshCoreConnection | null>(null);
   const ipcTcpRef = useRef<IpcTcpConnection | null>(null);
@@ -416,6 +428,19 @@ export function useMeshCore() {
   useEffect(() => {
     myNodeNumRef.current = state.myNodeNum;
   }, [state.myNodeNum]);
+
+  useEffect(() => {
+    mqttStatusRef.current = mqttStatus;
+  }, [mqttStatus]);
+
+  useEffect(() => {
+    const offStatus = window.electronAPI.mqtt.onStatus((s) => {
+      const st = s as MQTTStatus;
+      mqttStatusRef.current = st;
+      setMqttStatus(st);
+    });
+    return offStatus;
+  }, []);
 
   // Load persisted MeshCore contacts (e.g. imported repeaters) from DB on mount so list shows before connect
   useEffect(() => {
@@ -496,6 +521,32 @@ export function useMeshCore() {
       });
     }
   }, []);
+
+  useEffect(() => {
+    const off = window.electronAPI.mqtt.onMeshcoreChat((raw: unknown) => {
+      const m = raw as {
+        text?: string;
+        channelIdx?: number;
+        senderName?: string;
+        senderNodeId?: number;
+        timestamp?: number;
+      };
+      if (typeof m.text !== 'string' || m.channelIdx == null) return;
+      const senderId = m.senderNodeId ?? 0;
+      const ts = m.timestamp ?? Date.now();
+      addMessage({
+        sender_id: senderId,
+        sender_name:
+          m.senderName ?? (senderId ? `Node-${senderId.toString(16).toUpperCase()}` : 'Unknown'),
+        payload: m.text,
+        channel: m.channelIdx,
+        timestamp: ts,
+        status: 'acked',
+        receivedVia: 'mqtt',
+      });
+    });
+    return off;
+  }, [addMessage]);
 
   const updateNode = useCallback((node: MeshNode) => {
     setNodes((prev) => {
@@ -1321,6 +1372,7 @@ export function useMeshCore() {
     setMeshcoreNodeStatus(new Map());
     setMeshcoreNodeTelemetry(new Map());
     setMeshcoreNeighbors(new Map());
+    setEnvironmentTelemetry([]);
     setState(INITIAL_STATE);
     console.log('[useMeshCore] disconnect: complete');
   }, []);
@@ -1428,19 +1480,38 @@ export function useMeshCore() {
           );
         }
       } else {
+        const sentAt = Date.now();
         try {
-          await connRef.current.sendChannelTextMessage(channelIdx, text);
-          // Channel messages resolve with Ok — add as acked immediately
-          addMessage({
-            sender_id: myNodeNumRef.current,
-            sender_name: selfInfo?.name ?? 'Me',
-            payload: text,
-            channel: channelIdx,
-            timestamp: Date.now(),
-            status: 'acked',
-          });
+          if (connRef.current) {
+            await connRef.current.sendChannelTextMessage(channelIdx, text);
+            addMessage({
+              sender_id: myNodeNumRef.current,
+              sender_name: selfInfo?.name ?? 'Me',
+              payload: text,
+              channel: channelIdx,
+              timestamp: sentAt,
+              status: 'acked',
+            });
+          } else if (mqttStatusRef.current === 'connected') {
+            await window.electronAPI.mqtt.publishMeshcore({
+              text,
+              channelIdx,
+              senderNodeId: myNodeNumRef.current || undefined,
+              senderName: selfInfo?.name,
+              timestamp: sentAt,
+            });
+            addMessage({
+              sender_id: myNodeNumRef.current,
+              sender_name: selfInfo?.name ?? 'Me',
+              payload: text,
+              channel: channelIdx,
+              timestamp: sentAt,
+              status: 'acked',
+              receivedVia: 'mqtt',
+            });
+          }
         } catch (e) {
-          console.warn('[useMeshCore] sendChannelTextMessage error', e);
+          console.warn('[useMeshCore] sendChannelTextMessage / publishMeshcore error', e);
         }
       }
     },
@@ -1753,6 +1824,20 @@ export function useMeshCore() {
         next.set(nodeId, result);
         return next;
       });
+      const hasEnv =
+        result.temperature != null ||
+        result.relativeHumidity != null ||
+        result.barometricPressure != null;
+      if (hasEnv) {
+        const pt: EnvironmentTelemetryPoint = {
+          timestamp: result.fetchedAt,
+          nodeNum: nodeId,
+          temperature: result.temperature,
+          relativeHumidity: result.relativeHumidity,
+          barometricPressure: result.barometricPressure,
+        };
+        setEnvironmentTelemetry((prev) => [...prev, pt].slice(-MAX_ENV_TELEMETRY_POINTS));
+      }
       console.log('[useMeshCore] requestTelemetry result:', result);
     } catch (e) {
       console.warn('[useMeshCore] requestTelemetry error', e);
@@ -2018,6 +2103,38 @@ export function useMeshCore() {
     return { imported: validEntries.length, skipped, errors };
   }, []);
 
+  const setNodeFavorited = useCallback(async (nodeId: number, favorited: boolean) => {
+    const node = nodesRef.current.get(nodeId);
+    if (!node) return;
+    const prevFav = node.favorited;
+    const pk = pubKeyMapRef.current.get(nodeId);
+    const hex =
+      pk != null
+        ? Array.from(pk)
+            .map((b) => b.toString(16).padStart(2, '0'))
+            .join('')
+        : null;
+    setNodes((prev) => {
+      const n = prev.get(nodeId);
+      if (!n) return prev;
+      const next = new Map(prev);
+      next.set(nodeId, { ...n, favorited });
+      return next;
+    });
+    try {
+      await window.electronAPI.db.updateMeshcoreContactFavorited(nodeId, favorited, hex);
+    } catch (e) {
+      console.warn('[useMeshCore] updateMeshcoreContactFavorited error', e);
+      setNodes((prev) => {
+        const n = prev.get(nodeId);
+        if (!n) return prev;
+        const next = new Map(prev);
+        next.set(nodeId, { ...n, favorited: prevFav });
+        return next;
+      });
+    }
+  }, []);
+
   const sendReaction = useCallback(
     async (emoji: number, replyId: number, channel: number) => {
       if (!connRef.current) return;
@@ -2098,7 +2215,7 @@ export function useMeshCore() {
     meshcoreNeighbors,
     manualAddContacts,
     // Stubs for interface compatibility
-    mqttStatus: 'disconnected' as const,
+    mqttStatus,
     selfNodeId: state.myNodeNum,
     getNodes: useCallback(() => nodes, [nodes]),
     getFullNodeLabel: useCallback(
@@ -2115,7 +2232,7 @@ export function useMeshCore() {
     waypoints: [] as unknown[],
     telemetry,
     signalTelemetry,
-    environmentTelemetry: [] as unknown[],
+    environmentTelemetry,
     channelConfigs: [] as unknown[],
     moduleConfigs: {} as Record<string, unknown>,
     deviceOwner: selfInfo ? { longName: selfInfo.name, shortName: '', isLicensed: false } : null,
@@ -2124,7 +2241,7 @@ export function useMeshCore() {
     telemetryEnabled: null,
     sendReaction,
     requestPosition: noopAsync,
-    setNodeFavorited: noopAsync,
+    setNodeFavorited,
     shutdown: noopAsync,
     factoryReset: noopAsync,
     resetNodeDb: noopAsync,
@@ -2194,6 +2311,7 @@ export function useMeshCore() {
           emoji: number | null;
           reply_id: number | null;
           to_node: number | null;
+          received_via?: string | null;
         }[];
         setMessages(
           dbMsgs.map((r) => ({
@@ -2207,6 +2325,7 @@ export function useMeshCore() {
             emoji: r.emoji ?? undefined,
             replyId: r.reply_id ?? undefined,
             to: r.to_node ?? undefined,
+            receivedVia: meshcoreReceivedViaFromDb(r.received_via),
             isHistory: true,
           })),
         );
