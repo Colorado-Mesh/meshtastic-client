@@ -90,6 +90,7 @@ The official Meshtastic apps cover the basics, but desktop power users need more
 **Chat**
 
 - Send/receive messages across channels with per-transport delivery badges and delivery ACK / failure states
+- **Spellcheck** — the message composer uses a textarea with inline misspelling marks; right‑click for replacements (Electron main process configures the spellchecker for **Meshtastic** and **MeshCore**)
 - Emoji reactions (11 emojis with compose picker) and reply-to-message (quoted preview in bubble)
 - Unread message divider that persists across restarts; auto-scrolls on tab switch
 - Direct messages (DMs) to individual nodes

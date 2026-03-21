@@ -639,6 +639,7 @@ export default function App() {
                 </div>
                 <div className={activeTab === 1 ? 'contents' : 'hidden'}>
                   <ChatPanel
+                    protocol={protocol}
                     messages={device.messages}
                     channels={chatChannels}
                     myNodeNum={device.selfNodeId}

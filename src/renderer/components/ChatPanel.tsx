@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import { parseStoredJson } from '../lib/parseStoredJson';
 import { emojiDisplayChar, emojiDisplayLabel } from '../lib/reactions';
-import type { ChatMessage, MeshNode } from '../lib/types';
+import type { ChatMessage, MeshNode, MeshProtocol } from '../lib/types';
 
 function StatusBadge({
   status,
@@ -175,6 +175,8 @@ function UnreadDivider() {
 }
 
 interface Props {
+  /** Active mesh protocol — same Chat tab UI (composer, spellcheck, search) for both. */
+  protocol: MeshProtocol;
   messages: ChatMessage[];
   channels: { index: number; name: string }[];
   myNodeNum: number;
@@ -193,6 +195,7 @@ interface Props {
 }
 
 export default function ChatPanel({
+  protocol,
   messages,
   channels,
   myNodeNum,
@@ -1207,7 +1210,15 @@ export default function ChatPanel({
             typeof navigator !== 'undefined' && navigator.language ? navigator.language : undefined
           }
           enterKeyHint="send"
-          aria-label={isDmMode ? 'Direct message text' : 'Channel message text'}
+          aria-label={
+            protocol === 'meshcore'
+              ? isDmMode
+                ? 'MeshCore direct message text'
+                : 'MeshCore channel message text'
+              : isDmMode
+                ? 'Meshtastic direct message text'
+                : 'Meshtastic channel message text'
+          }
           placeholder={
             isDmMode
               ? `DM to ${dmNodeName}...`
