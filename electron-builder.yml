@@ -1,8 +1,5 @@
 appId: com.mesh-client.app
 productName: Mesh-client
-# Before @electron/rebuild runs during dist, drop better-sqlite3/build on Windows
-# so node-gyp does not EPERM unlink an in-use .node. See scripts/before-build-native.cjs.
-beforeBuild: scripts/before-build-native.cjs
 directories:
   buildResources: resources
   output: release
@@ -12,9 +9,8 @@ files:
   - node_modules/**/*
   - package.json
 asarUnpack:
-  - "node_modules/better-sqlite3/**/*"
   - "node_modules/systeminformation/**/*"
-  - "node_modules/@abandonware/**/*"
+  - "node_modules/@stoprocent/**/*"
 publish:
   provider: github
   owner: Colorado-Mesh

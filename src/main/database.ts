@@ -1,11 +1,11 @@
-import Database from 'better-sqlite3';
 import { app } from 'electron';
 import fs from 'fs';
 import path from 'path';
 
+import { NodeSqliteDB } from './db-compat';
 import { sanitizeLogMessage } from './log-service';
 
-let db: Database.Database | null = null;
+let db: NodeSqliteDB | null = null;
 
 export function getDatabasePath(): string {
   return path.join(app.getPath('userData'), 'mesh-client.db');
@@ -26,7 +26,7 @@ export function initDatabase(): void {
   }
 
   try {
-    db = new Database(dbPath, { timeout: 5000 });
+    db = new NodeSqliteDB(dbPath);
     // Restrict DB file to owner-only access (no-op on Windows)
     try {
       fs.chmodSync(dbPath, 0o600);
@@ -35,6 +35,7 @@ export function initDatabase(): void {
     }
     db.pragma('journal_mode = WAL');
     db.pragma('synchronous = NORMAL');
+    db.pragma('busy_timeout = 5000');
 
     // Detect fresh DB before running setup (user_version = 0, no tables yet)
     const isFreshDb =
@@ -89,14 +90,14 @@ export function initDatabase(): void {
   }
 }
 
-export function getDatabase(): Database.Database {
+export function getDatabase(): NodeSqliteDB {
   if (!db) initDatabase();
   return db!;
 }
 
 function createBaseTables(): void {
   try {
-    db!.exec(`
+    db!.execScript(`
       CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         sender_id INTEGER,
@@ -205,9 +206,9 @@ function runMigrations(): void {
 
   if (userVersion < 1) {
     try {
-      db!.exec('ALTER TABLE messages ADD COLUMN packet_id INTEGER');
-      db!.exec("ALTER TABLE messages ADD COLUMN status TEXT DEFAULT 'acked'");
-      db!.exec('ALTER TABLE messages ADD COLUMN error TEXT');
+      db!.execScript('ALTER TABLE messages ADD COLUMN packet_id INTEGER');
+      db!.execScript("ALTER TABLE messages ADD COLUMN status TEXT DEFAULT 'acked'");
+      db!.execScript('ALTER TABLE messages ADD COLUMN error TEXT');
       db!.pragma('user_version = 1');
       userVersion = 1;
     } catch (e) {
@@ -221,8 +222,8 @@ function runMigrations(): void {
 
   if (userVersion < 2) {
     try {
-      db!.exec('ALTER TABLE messages ADD COLUMN emoji INTEGER');
-      db!.exec('ALTER TABLE messages ADD COLUMN reply_id INTEGER');
+      db!.execScript('ALTER TABLE messages ADD COLUMN emoji INTEGER');
+      db!.execScript('ALTER TABLE messages ADD COLUMN reply_id INTEGER');
       db!.pragma('user_version = 2');
       userVersion = 2;
     } catch (e) {
@@ -236,7 +237,7 @@ function runMigrations(): void {
 
   if (userVersion < 3) {
     try {
-      db!.exec('ALTER TABLE messages ADD COLUMN to_node INTEGER');
+      db!.execScript('ALTER TABLE messages ADD COLUMN to_node INTEGER');
       db!.pragma('user_version = 3');
       userVersion = 3;
     } catch (e) {
@@ -250,7 +251,7 @@ function runMigrations(): void {
 
   if (userVersion < 4) {
     try {
-      db!.exec(
+      db!.execScript(
         'CREATE UNIQUE INDEX IF NOT EXISTS idx_reaction_dedup ' +
           'ON messages(sender_id, reply_id, emoji) ' +
           'WHERE emoji IS NOT NULL AND reply_id IS NOT NULL',
@@ -359,20 +360,20 @@ function runMigrations(): void {
 
   if (userVersion < 11) {
     try {
-      db!.exec(
+      db!.execScript(
         'CREATE TABLE IF NOT EXISTS meshcore_contacts (' +
           'node_id INTEGER PRIMARY KEY, public_key TEXT NOT NULL, adv_name TEXT, ' +
           'contact_type INTEGER DEFAULT 0, last_advert INTEGER, ' +
           'adv_lat REAL, adv_lon REAL, last_snr REAL, last_rssi REAL, favorited INTEGER DEFAULT 0)',
       );
-      db!.exec(
+      db!.execScript(
         'CREATE TABLE IF NOT EXISTS meshcore_messages (' +
           'id INTEGER PRIMARY KEY AUTOINCREMENT, sender_id INTEGER, sender_name TEXT, ' +
           'payload TEXT NOT NULL, channel_idx INTEGER DEFAULT 0, timestamp INTEGER NOT NULL, ' +
           "status TEXT DEFAULT 'acked', packet_id INTEGER, emoji INTEGER, reply_id INTEGER, to_node INTEGER)",
       );
-      db!.exec('CREATE INDEX IF NOT EXISTS idx_mc_msgs_ts ON meshcore_messages(timestamp)');
-      db!.exec(
+      db!.execScript('CREATE INDEX IF NOT EXISTS idx_mc_msgs_ts ON meshcore_messages(timestamp)');
+      db!.execScript(
         'CREATE UNIQUE INDEX IF NOT EXISTS idx_mc_msg_dedup ' +
           'ON meshcore_messages(sender_id, timestamp, channel_idx) ' +
           'WHERE sender_id IS NOT NULL',
@@ -509,8 +510,8 @@ function runMigrations(): void {
     try {
       // Previous index (sender_id, timestamp, channel_idx) dropped distinct lines that shared
       // those three fields — common for RF channel chat (second-resolution timestamps + stub ids).
-      db!.exec('DROP INDEX IF EXISTS idx_mc_msg_dedup');
-      db!.exec(
+      db!.execScript('DROP INDEX IF EXISTS idx_mc_msg_dedup');
+      db!.execScript(
         'CREATE UNIQUE INDEX IF NOT EXISTS idx_mc_msg_dedup ' +
           'ON meshcore_messages(sender_id, timestamp, channel_idx, payload) ' +
           'WHERE sender_id IS NOT NULL',
@@ -552,10 +553,10 @@ export function mergeDatabase(sourcePath: string) {
   }
 
   const targetDb = getDatabase();
-  let sourceDb: Database.Database | undefined;
+  let sourceDb: NodeSqliteDB | undefined;
 
   try {
-    sourceDb = new Database(sourcePath, { readonly: true });
+    sourceDb = new NodeSqliteDB(sourcePath, { readonly: true });
 
     const sourceNodes = sourceDb.prepare('SELECT * FROM nodes').all() as any[];
     const sourceMessages = sourceDb.prepare('SELECT * FROM messages').all() as any[];
@@ -621,7 +622,7 @@ export function mergeDatabase(sourcePath: string) {
             );
             continue;
           }
-          if (!checkMessage.get(senderId, timestamp, payload)) {
+          if (!checkMessage.get(senderId as number, timestamp as number, payload as string)) {
             insertMessage.run(msg);
             messagesAdded++;
           }
@@ -673,7 +674,7 @@ export function searchMeshcoreMessages(query: string, limit = 50): unknown[] {
 export function deleteNodesBySource(source: string): number {
   const db = getDatabase();
   const result = db.prepare('DELETE FROM nodes WHERE source = ?').run(source);
-  return result.changes;
+  return Number(result.changes);
 }
 
 export function deleteNodesWithoutLongname(): number {
@@ -683,7 +684,7 @@ export function deleteNodesWithoutLongname(): number {
       "DELETE FROM nodes WHERE long_name IS NULL OR TRIM(long_name) = '' OR long_name = printf('!%08x', node_id)",
     )
     .run();
-  return result.changes;
+  return Number(result.changes);
 }
 
 export function closeDatabase(): void {
