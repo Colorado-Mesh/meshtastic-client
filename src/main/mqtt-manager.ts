@@ -106,8 +106,11 @@ export class MQTTManager extends EventEmitter {
     let connectOpts: mqtt.IClientOptions;
     if (settings.useWebSocket) {
       const wsScheme = settings.port === 443 || settings.tlsInsecure !== true ? 'wss' : 'ws';
-      const wsUrl = `${wsScheme}://${settings.server.trim()}:${settings.port}/mqtt`;
       connectOpts = {
+        protocol: wsScheme as 'wss' | 'ws',
+        host: settings.server.trim(),
+        port: settings.port,
+        path: '/mqtt',
         clientId,
         username: settings.username || undefined,
         password: settings.password || undefined,
@@ -117,7 +120,7 @@ export class MQTTManager extends EventEmitter {
         reconnectPeriod: 0,
         rejectUnauthorized: settings.port === 443 ? true : rejectUnauthorized,
       };
-      this.client = mqtt.connect(wsUrl, connectOpts);
+      this.client = mqtt.connect(connectOpts);
     } else {
       connectOpts = {
         host: settings.server,
