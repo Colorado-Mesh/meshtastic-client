@@ -1,9 +1,4 @@
-import {
-  CayenneLpp,
-  SerialConnection,
-  WebBleConnection,
-  WebSerialConnection,
-} from '@liamcottle/meshcore.js';
+import { CayenneLpp, SerialConnection, WebSerialConnection } from '@liamcottle/meshcore.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { classifyPayload, extractMeshtasticSenderId } from '../lib/foreignLoraDetection';
@@ -28,6 +23,7 @@ import type {
   EnvironmentTelemetryPoint,
   MeshNode,
   MQTTStatus,
+  NobleBleSessionId,
   TelemetryPoint,
 } from '../lib/types';
 import { useDiagnosticsStore } from '../stores/diagnosticsStore';
@@ -128,6 +124,58 @@ class IpcTcpConnection {
       console.error('[IpcTcpConnection] connect/onConnected error', e);
       throw e;
     }
+  }
+
+  get connection() {
+    return this.inner;
+  }
+
+  cleanup() {
+    this.cleanupFns.forEach((fn) => fn());
+    this.cleanupFns = [];
+  }
+}
+
+/** BLE connection implemented over session-scoped Noble IPC. */
+class IpcNobleConnection {
+  private readonly peripheralId: string;
+  private readonly sessionId: NobleBleSessionId;
+  private inner: SerialConnectionInstance | null = null;
+  private cleanupFns: (() => void)[] = [];
+
+  constructor(peripheralId: string, sessionId: NobleBleSessionId = 'meshcore') {
+    this.peripheralId = peripheralId;
+    this.sessionId = sessionId;
+  }
+
+  async connect() {
+    class NobleOverIpc extends (SerialConnection as unknown as new () => SerialConnectionInstance) {
+      constructor(private readonly session: NobleBleSessionId) {
+        super();
+      }
+
+      async write(bytes: Uint8Array) {
+        await window.electronAPI.nobleBleToRadio(this.session, bytes);
+      }
+
+      async close() {
+        await window.electronAPI.disconnectNobleBle(this.session);
+      }
+    }
+
+    const instance = new NobleOverIpc(this.sessionId) as unknown as SerialConnectionInstance;
+    this.inner = instance;
+    const offData = window.electronAPI.onNobleBleFromRadio(({ sessionId, bytes }) => {
+      if (sessionId !== this.sessionId) return;
+      void instance.onDataReceived(bytes);
+    });
+    const offDisc = window.electronAPI.onNobleBleDisconnected((sessionId) => {
+      if (sessionId !== this.sessionId) return;
+      instance.onDisconnected();
+    });
+    this.cleanupFns = [offData, offDisc];
+    await window.electronAPI.connectNobleBle(this.sessionId, this.peripheralId);
+    await instance.onConnected();
   }
 
   get connection() {
@@ -437,6 +485,7 @@ export function useMeshCore() {
 
   const connRef = useRef<MeshCoreConnection | null>(null);
   const ipcTcpRef = useRef<IpcTcpConnection | null>(null);
+  const ipcNobleRef = useRef<IpcNobleConnection | null>(null);
   const bleConnectInProgressRef = useRef(false);
   // Map pubKeyPrefix (6-byte hex) → nodeId for DM routing
   const pubKeyPrefixMapRef = useRef<Map<string, number>>(new Map());
@@ -1182,7 +1231,7 @@ export function useMeshCore() {
   );
 
   const connect = useCallback(
-    async (type: 'ble' | 'serial' | 'tcp', tcpHost?: string) => {
+    async (type: 'ble' | 'serial' | 'tcp', tcpHost?: string, blePeripheralId?: string) => {
       if (type === 'ble' && bleConnectInProgressRef.current) {
         throw new Error(
           'Bluetooth connection already in progress. Wait for it to finish or cancel, then try again.',
@@ -1201,109 +1250,14 @@ export function useMeshCore() {
         let conn: MeshCoreConnection;
 
         if (type === 'ble') {
-          let hasRetriedBle = false;
-          const BLE_RETRY_DELAY_MS = 2_500;
-
-          while (true) {
-            try {
-              console.log('[useMeshCore] connect: BLE opening...');
-              conn = (await (
-                WebBleConnection as unknown as { open(): Promise<unknown> }
-              ).open()) as MeshCoreConnection;
-              // WebBleConnection.open() returns before init() finishes — init() calls
-              // gatt.connect() + startNotifications() async in the constructor without
-              // awaiting.  'connected' is emitted at the end of init() via onConnected().
-              // We must wait for it before sending any commands or rxCharacteristic is null.
-              //
-              // Two failure modes we guard against:
-              // 1. init() throws before onConnected() (no try/catch in the lib) → unhandledrejection
-              // 2. deviceQuery() inside onConnected() hangs because the device never responds
-              //    (BLE write can silently fail with "GATT operation already in progress").
-              //    onConnected() catches deviceQuery errors and emits 'connected' regardless,
-              //    so we unblock it by emitting ResponseCodes.Err (1) after a nudge timeout.
-              await new Promise<void>((resolve, reject) => {
-                const NUDGE_MS = 10_000; // emit Err to unblock hanging deviceQuery
-                const TIMEOUT_MS = 20_000; // hard timeout after nudge attempt
-
-                interface EventSource {
-                  once(event: string, fn: () => void): void;
-                  emit(event: string | number, ...args: unknown[]): void;
-                }
-
-                const cleanup = () => {
-                  clearTimeout(nudge);
-                  clearTimeout(timeout);
-                  window.removeEventListener('unhandledrejection', onUnhandledRejection);
-                };
-
-                // Catch errors thrown inside init() (no try/catch in WebBleConnection.init())
-                const onUnhandledRejection = (event: PromiseRejectionEvent) => {
-                  cleanup();
-                  reject(event.reason ?? new Error('BLE init failed'));
-                };
-                window.addEventListener('unhandledrejection', onUnhandledRejection, {
-                  once: true,
-                });
-
-                // If deviceQuery hangs (device doesn't respond), nudge it by emitting Err.
-                // onConnected() wraps deviceQuery in try/catch and ignores errors, so it will
-                // proceed to emit 'connected' after we force-reject the deviceQuery promise.
-                const nudge = setTimeout(() => {
-                  console.warn(
-                    '[useMeshCore] BLE deviceQuery appears stuck — nudging with Err event',
-                  );
-                  (conn as unknown as EventSource).emit(1 /* ResponseCodes.Err */);
-                }, NUDGE_MS);
-
-                const timeout = setTimeout(() => {
-                  cleanup();
-                  reject(new Error('BLE GATT init timed out'));
-                }, TIMEOUT_MS);
-
-                (conn as unknown as EventSource).once('connected', () => {
-                  cleanup();
-                  resolve();
-                });
-                (conn as unknown as EventSource).once('disconnected', () => {
-                  cleanup();
-                  reject(
-                    new Error(
-                      'BLE disconnected during GATT init. Move closer to the device, ensure it is on, and try again.',
-                    ),
-                  );
-                });
-              });
-              break;
-            } catch (bleErr) {
-              const bleMsg =
-                bleErr instanceof Error
-                  ? bleErr.message
-                  : typeof bleErr === 'string'
-                    ? bleErr
-                    : String(bleErr ?? '');
-              const isRetryable =
-                /already in progress|Connection already in progress|disconnected during GATT init/i.test(
-                  bleMsg,
-                );
-              if (isRetryable && !hasRetriedBle) {
-                hasRetriedBle = true;
-                console.warn(
-                  '[useMeshCore] BLE connect failed, retrying once in',
-                  BLE_RETRY_DELAY_MS,
-                  'ms',
-                );
-                await new Promise((r) => setTimeout(r, BLE_RETRY_DELAY_MS));
-                continue;
-              }
-              // Never rethrow undefined so the outer catch always gets a proper Error and message
-              throw bleErr instanceof Error && bleErr.message
-                ? bleErr
-                : new Error(
-                    (bleMsg && bleMsg.trim()) ||
-                      'BLE connection failed (device did not respond in time). Try again or use Serial/USB.',
-                  );
-            }
+          if (!blePeripheralId) {
+            throw new Error('BLE peripheral ID required');
           }
+          console.log('[useMeshCore] connect: BLE via Noble IPC opening...');
+          const nobleConn = new IpcNobleConnection(blePeripheralId, 'meshcore');
+          ipcNobleRef.current = nobleConn;
+          await nobleConn.connect();
+          conn = nobleConn.connection as unknown as MeshCoreConnection;
         } else if (type === 'serial') {
           console.log('[useMeshCore] connect: serial requesting port...');
           if (!navigator.serial?.requestPort) throw new Error('Web Serial API not available');
@@ -1353,6 +1307,8 @@ export function useMeshCore() {
         setState({ status: 'disconnected', myNodeNum: 0, connectionType: null });
         ipcTcpRef.current?.cleanup();
         ipcTcpRef.current = null;
+        ipcNobleRef.current?.cleanup();
+        ipcNobleRef.current = null;
         throw normalizedErr;
       } finally {
         if (type === 'ble') bleConnectInProgressRef.current = false;
@@ -1414,6 +1370,8 @@ export function useMeshCore() {
     }
     ipcTcpRef.current?.cleanup();
     ipcTcpRef.current = null;
+    ipcNobleRef.current?.cleanup();
+    ipcNobleRef.current = null;
     connRef.current = null;
     pubKeyMapRef.current.clear();
     pubKeyPrefixMapRef.current.clear();

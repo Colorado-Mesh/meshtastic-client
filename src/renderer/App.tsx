@@ -444,12 +444,25 @@ export default function App() {
     device.disconnect().then(() => {
       // Small delay before reconnecting
       setTimeout(() => {
+        if (protocol === 'meshtastic' && lastType === 'ble') {
+          const raw = localStorage.getItem('mesh-client:lastConnection:meshtastic');
+          const parsed = parseStoredJson<{ bleDeviceId?: string }>(raw, 'App handleReconnect BLE');
+          const bleDeviceId = parsed?.bleDeviceId;
+          if (!bleDeviceId) {
+            console.warn('[App] handleReconnect missing BLE peripheral ID');
+            return;
+          }
+          device.connectAutomatic('ble', undefined, undefined, bleDeviceId).catch((err) => {
+            console.warn('[App] handleReconnect BLE auto-connect failed', err);
+          });
+          return;
+        }
         device.connect(lastType).catch((err) => {
           console.warn('[App] handleReconnect connect failed', err);
         });
       }, 500);
     });
-  }, [device]);
+  }, [device, protocol]);
 
   const handleMessageNode = useCallback((nodeNum: number) => {
     setPendingDmTarget(nodeNum);
@@ -608,10 +621,11 @@ export default function App() {
                     state={device.state}
                     onConnect={
                       protocol === 'meshcore'
-                        ? (type, addr) =>
+                        ? (type, addr, blePeripheralId) =>
                             meshcoreDevice.connect(
                               type === 'http' ? 'tcp' : (type as 'ble' | 'serial'),
                               addr,
+                              blePeripheralId,
                             )
                         : meshtasticDevice.connect
                     }
