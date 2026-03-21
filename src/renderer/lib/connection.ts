@@ -40,7 +40,7 @@ async function httpPreflightWithRetries(connectionUrl: string): Promise<void> {
 }
 
 /**
- * Create a BLE connection to a Meshtastic device via @abandonware/noble.
+ * Create a BLE connection to a Meshtastic device via @stoprocent/noble.
  * The main process NobleBleManager must have already discovered the peripheral
  * (via startNobleBleScanning) before this is called.
  */

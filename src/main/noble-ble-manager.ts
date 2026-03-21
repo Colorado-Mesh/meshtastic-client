@@ -48,9 +48,15 @@ export class NobleBleManager extends EventEmitter {
   /** Serializes connect() calls across all sessions to prevent native CBCentralManager races. */
   private connectQueue: Promise<void> = Promise.resolve();
   private readonly knownPeripherals = new Map<string, any>();
-  private scanRequested = false;
+  /**
+   * Tracks which sessions have an active scan interest.
+   * meshtastic → filtered scan (Meshtastic service UUID only)
+   * meshcore   → open scan (MeshCore service UUID is unknown)
+   * Both       → open scan (superset)
+   */
+  private readonly scanRequesters = new Set<NobleSessionId>();
   private adapterReady = false;
-  /** True only while noble.startScanning() has actually been called and not yet followed by noble.stopScanning(). */
+  /** True only while noble.startScanning() has actually been called and confirmed active. */
   private scanningActive = false;
 
   constructor() {
@@ -60,7 +66,7 @@ export class NobleBleManager extends EventEmitter {
     noble.on('stateChange', (state: string) => {
       this.adapterReady = state === 'poweredOn';
       this.emit('adapterState', state);
-      if (this.adapterReady && this.scanRequested) {
+      if (this.adapterReady && this.scanRequesters.size > 0) {
         void this.doStartScanning().catch((err) => {
           console.error('[NobleBleManager] deferred startScanning error:', err); // log-injection-ok noble internal error
         });
@@ -178,7 +184,7 @@ export class NobleBleManager extends EventEmitter {
 
   /** True while a Noble scan is requested or a GATT session is active (used for app shutdown). */
   isBleSessionActive(): boolean {
-    if (this.scanRequested) return true;
+    if (this.scanRequesters.size > 0) return true;
     for (const session of this.sessions.values()) {
       if (
         session.connectedPeripheral ||
@@ -192,19 +198,50 @@ export class NobleBleManager extends EventEmitter {
     return false;
   }
 
-  async startScanning(): Promise<void> {
+  /**
+   * Returns the scan filter for the current set of requesters.
+   * - meshtastic only → filter by known Meshtastic service UUID (cleaner results)
+   * - meshcore present → open scan (MeshCore service UUID is not publicly known)
+   * - both → open scan (superset; discovers all BLE devices)
+   */
+  private computeScanFilter(): string[] {
+    if (this.scanRequesters.has('meshcore')) {
+      return [];
+    }
+    return [SERVICE_UUID];
+  }
+
+  async startScanning(sessionId: NobleSessionId): Promise<void> {
     // Clear known peripherals so every device is re-emitted as discovered on each new scan.
     // Without this, devices found in a previous scan are never re-emitted (isNew = false),
     // so the picker stays empty on second and subsequent scan attempts.
     this.knownPeripherals.clear();
-    this.scanRequested = true;
+    this.scanRequesters.add(sessionId);
     if (!this.adapterReady) throw new Error('Bluetooth adapter is not powered on');
     await this.doStartScanning();
   }
 
+  async stopScanning(sessionId: NobleSessionId): Promise<void> {
+    this.scanRequesters.delete(sessionId);
+    if (this.scanRequesters.size === 0) {
+      await this.doStopScanning();
+    } else {
+      // Other sessions still want to scan; restart with updated filter.
+      // e.g. meshcore stopped → switch from open scan back to meshtastic-only filter.
+      await this.doStartScanning();
+    }
+  }
+
+  /** Stop all scanning immediately — used for app quit and force-quit IPC. */
+  async stopAllScanning(): Promise<void> {
+    this.scanRequesters.clear();
+    await this.doStopScanning();
+  }
+
   private doStartScanning(): Promise<void> {
+    const filter = this.computeScanFilter();
     return new Promise((resolve, reject) => {
-      noble.startScanning([SERVICE_UUID], false, (err: Error | null) => {
+      noble.startScanning(filter, false, (err: Error | null) => {
         if (err) {
           console.error('[NobleBleManager] startScanning error:', err); // log-injection-ok noble internal error
           reject(err);
@@ -216,13 +253,15 @@ export class NobleBleManager extends EventEmitter {
     });
   }
 
-  stopScanning(): Promise<void> {
-    this.scanRequested = false;
-    this.scanningActive = false;
+  private doStopScanning(): Promise<void> {
     return new Promise((resolve) => {
       try {
-        noble.stopScanning(() => resolve());
+        noble.stopScanning(() => {
+          this.scanningActive = false;
+          resolve();
+        });
       } catch {
+        this.scanningActive = false;
         resolve();
       }
     });
@@ -240,19 +279,18 @@ export class NobleBleManager extends EventEmitter {
     for (const session of this.sessions.values()) {
       session.closing = true;
     }
+    // Clear scan requesters to prevent any deferred scan restart during teardown.
+    this.scanRequesters.clear();
     // Only call noble.stopScanning() if scanning is actually active.
     // Calling it twice in a row (e.g. once in before-quit and again here)
     // is a known SIGSEGV trigger in noble's native XPC layer.
     if (this.scanningActive) {
-      this.scanRequested = false;
       this.scanningActive = false;
       try {
         noble.stopScanning();
       } catch {
         /* ignore */
       }
-    } else {
-      this.scanRequested = false;
     }
     try {
       noble.removeAllListeners('stateChange');
@@ -284,13 +322,17 @@ export class NobleBleManager extends EventEmitter {
     let peripheral: any = null;
     let connected = false;
     console.debug(
-      `[BLE:${sessionId}] connect start — peripheralId=${peripheralId} adapterReady=${this.adapterReady} scanRequested=${this.scanRequested}`,
+      `[BLE:${sessionId}] connect start — peripheralId=${peripheralId} adapterReady=${this.adapterReady} scanRequesters=[${[...this.scanRequesters].join(',')}]`,
     );
     try {
       if (!this.adapterReady) {
         throw new Error('Bluetooth adapter is not powered on');
       }
-      await this.stopScanning();
+      // CBCentralManager on macOS cannot scan and connect simultaneously.
+      // Stop scanning without clearing scanRequesters — it will resume in the finally block.
+      if (this.scanningActive) {
+        await this.doStopScanning();
+      }
       await this.disconnect(sessionId);
       // Re-open a fresh session (disconnect sets closing=true; reset it for the new connection).
       session.closing = false;
@@ -414,6 +456,12 @@ export class NobleBleManager extends EventEmitter {
       throw err;
     } finally {
       releaseQueue();
+      // If any session was scanning when we stopped for this connect, restart the scan now.
+      if (this.scanRequesters.size > 0 && this.adapterReady && !this.scanningActive) {
+        void this.doStartScanning().catch((err) => {
+          console.error('[NobleBleManager] post-connect scan restart error:', err); // log-injection-ok noble internal error
+        });
+      }
     }
   }
 
@@ -457,6 +505,10 @@ export class NobleBleManager extends EventEmitter {
         try {
           if (onFromRadioData) fromRadio.removeListener?.('data', onFromRadioData);
           else fromRadio.removeAllListeners?.('data');
+          // If fromRadio was subscribed via GATT notifications, unsubscribe it cleanly.
+          if (onFromRadioData) {
+            await fromRadio.unsubscribeAsync?.();
+          }
         } catch (err) {
           console.debug('[NobleBleManager] fromRadio cleanup error (ignored):', err); // log-injection-ok noble internal error
         }
@@ -470,7 +522,7 @@ export class NobleBleManager extends EventEmitter {
       }
       if (peripheral) {
         try {
-          await peripheral.disconnectAsync();
+          await withTimeout(peripheral.disconnectAsync(), 5000, 'BLE disconnectAsync');
         } catch (err) {
           console.debug('[NobleBleManager] disconnectAsync error (ignored):', err); // log-injection-ok noble internal error
         }

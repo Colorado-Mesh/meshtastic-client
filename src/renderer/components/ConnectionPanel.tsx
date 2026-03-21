@@ -478,7 +478,7 @@ export default function ConnectionPanel({
             clearTimeout(autoConnectTimeoutRef.current);
             autoConnectTimeoutRef.current = null;
           }
-          void window.electronAPI.stopNobleBleScanning();
+          void window.electronAPI.stopNobleBleScanning(protocol);
           saveLastBleDevice(device.deviceId);
           lastSelectedBleNameRef.current = device.deviceName ?? null;
           setConnectionStage('Connecting to device...');
@@ -496,7 +496,7 @@ export default function ConnectionPanel({
       setConnectionStage('Scanning — select your device when it appears below');
     });
     return cleanup;
-  }, [lastConnection, onConnect]); // isAutoConnecting intentionally omitted — ref handles it
+  }, [lastConnection, onConnect, protocol]); // isAutoConnecting intentionally omitted — ref handles it
 
   // Listen for serial ports discovered by main process
   useEffect(() => {
@@ -540,7 +540,7 @@ export default function ConnectionPanel({
       // Noble: start scanning — actual connection triggered when user selects a device
       setConnectionStage('Scanning — select your device when it appears below');
       try {
-        await window.electronAPI.startNobleBleScanning();
+        await window.electronAPI.startNobleBleScanning(protocol);
       } catch (err) {
         setError(humanizeBleError(err));
         setConnecting(false);
@@ -566,7 +566,7 @@ export default function ConnectionPanel({
       setConnecting(false);
       setConnectionStage('');
     }
-  }, [connectionType, activeHostAddress, onConnect]);
+  }, [connectionType, activeHostAddress, onConnect, protocol]);
 
   const handleCancelConnection = useCallback(async () => {
     isAutoConnectingRef.current = false;
@@ -576,7 +576,7 @@ export default function ConnectionPanel({
       autoConnectTimeoutRef.current = null;
     }
     if (showBlePicker || connectionType === 'ble') {
-      void window.electronAPI.stopNobleBleScanning();
+      void window.electronAPI.stopNobleBleScanning(protocol);
     }
     if (showSerialPicker) {
       window.electronAPI.cancelSerialSelection();
@@ -592,7 +592,7 @@ export default function ConnectionPanel({
     } catch (e) {
       console.debug('[ConnectionPanel] onDisconnect best-effort cleanup', e);
     }
-  }, [showBlePicker, showSerialPicker, onDisconnect, connectionType]);
+  }, [showBlePicker, showSerialPicker, onDisconnect, connectionType, protocol]);
 
   const handleSelectBleDevice = useCallback(
     (deviceId: string) => {
@@ -601,7 +601,7 @@ export default function ConnectionPanel({
       // Save BLE advertisement name for use in LastConnection display
       const found = bleDevices.find((d) => d.deviceId === deviceId);
       lastSelectedBleNameRef.current = found?.deviceName ?? null;
-      void window.electronAPI.stopNobleBleScanning();
+      void window.electronAPI.stopNobleBleScanning(protocol);
       setShowBlePicker(false);
       setConnectionStage('Connecting to device...');
       // Trigger the actual connection with the peripheral ID
@@ -612,7 +612,7 @@ export default function ConnectionPanel({
         setConnectionStage('');
       });
     },
-    [bleDevices, onConnect],
+    [bleDevices, onConnect, protocol],
   );
 
   const handleSelectSerialPort = useCallback((portId: string) => {
@@ -677,7 +677,7 @@ export default function ConnectionPanel({
         setConnecting(true);
         setConnectionStage('Scanning for last Bluetooth device…');
         startAutoConnectTimeout();
-        void window.electronAPI.startNobleBleScanning().catch(onAutoConnectFailed);
+        void window.electronAPI.startNobleBleScanning(protocol).catch(onAutoConnectFailed);
       }
     }
     // HTTP: do not auto-trigger — show one-click reconnect card instead
@@ -718,7 +718,7 @@ export default function ConnectionPanel({
           setConnecting(false);
           setConnectionStage('');
         }, 30_000);
-        void window.electronAPI.startNobleBleScanning().catch((err: unknown) => {
+        void window.electronAPI.startNobleBleScanning(protocol).catch((err: unknown) => {
           if (autoConnectTimeoutRef.current) {
             clearTimeout(autoConnectTimeoutRef.current);
             autoConnectTimeoutRef.current = null;

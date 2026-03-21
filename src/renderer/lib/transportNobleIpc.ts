@@ -3,7 +3,7 @@ import type { Types } from '@meshtastic/core';
 import type { NobleBleSessionId } from './types';
 
 /**
- * IPC-backed Transport implementation for @abandonware/noble BLE.
+ * IPC-backed Transport implementation for @stoprocent/noble BLE.
  * The actual BLE operations run in the Electron main process via NobleBleManager.
  * This transport bridges the renderer-side MeshDevice to the main-process noble instance
  * using Electron IPC.

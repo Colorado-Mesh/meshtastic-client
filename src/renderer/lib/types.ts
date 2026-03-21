@@ -434,8 +434,8 @@ declare global {
       onNobleBleFromRadio: (
         cb: (payload: { sessionId: NobleBleSessionId; bytes: Uint8Array }) => void,
       ) => () => void;
-      startNobleBleScanning: () => Promise<void>;
-      stopNobleBleScanning: () => Promise<void>;
+      startNobleBleScanning: (sessionId: NobleBleSessionId) => Promise<void>;
+      stopNobleBleScanning: (sessionId: NobleBleSessionId) => Promise<void>;
       connectNobleBle: (sessionId: NobleBleSessionId, peripheralId: string) => Promise<void>;
       disconnectNobleBle: (sessionId: NobleBleSessionId) => Promise<void>;
       nobleBleToRadio: (sessionId: NobleBleSessionId, bytes: Uint8Array) => Promise<void>;

@@ -227,8 +227,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('noble-ble-from-radio', handler);
     return () => ipcRenderer.off('noble-ble-from-radio', handler);
   },
-  startNobleBleScanning: (): Promise<void> => ipcRenderer.invoke('noble-ble-start-scan'),
-  stopNobleBleScanning: (): Promise<void> => ipcRenderer.invoke('noble-ble-stop-scan'),
+  startNobleBleScanning: (sessionId: NobleBleSessionId): Promise<void> =>
+    ipcRenderer.invoke('noble-ble-start-scan', sessionId),
+  stopNobleBleScanning: (sessionId: NobleBleSessionId): Promise<void> =>
+    ipcRenderer.invoke('noble-ble-stop-scan', sessionId),
   connectNobleBle: (sessionId: NobleBleSessionId, peripheralId: string): Promise<void> =>
     ipcRenderer.invoke('noble-ble-connect', sessionId, peripheralId),
   disconnectNobleBle: (sessionId: NobleBleSessionId): Promise<void> =>

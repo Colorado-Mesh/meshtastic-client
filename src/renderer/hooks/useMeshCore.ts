@@ -149,12 +149,14 @@ class IpcNobleConnection {
   }
 
   async connect() {
+    const sessionId = this.sessionId;
     class NobleOverIpc extends (SerialConnection as unknown as new () => SerialConnectionInstance) {
       constructor(private readonly session: NobleBleSessionId) {
         super();
       }
 
       async write(bytes: Uint8Array) {
+        console.debug(`[IpcNobleConnection:${this.session}] write ${bytes.length} bytes`);
         await window.electronAPI.nobleBleToRadio(this.session, bytes);
       }
 
@@ -163,18 +165,20 @@ class IpcNobleConnection {
       }
     }
 
-    const instance = new NobleOverIpc(this.sessionId) as unknown as SerialConnectionInstance;
+    const instance = new NobleOverIpc(sessionId) as unknown as SerialConnectionInstance;
     this.inner = instance;
-    const offData = window.electronAPI.onNobleBleFromRadio(({ sessionId, bytes }) => {
-      if (sessionId !== this.sessionId) return;
+    const offData = window.electronAPI.onNobleBleFromRadio(({ sessionId: sid, bytes }) => {
+      if (sid !== sessionId) return;
+      console.debug(`[IpcNobleConnection:${sessionId}] fromRadio ${bytes.length} bytes`);
       void instance.onDataReceived(bytes);
     });
-    const offDisc = window.electronAPI.onNobleBleDisconnected((sessionId) => {
-      if (sessionId !== this.sessionId) return;
+    const offDisc = window.electronAPI.onNobleBleDisconnected((sid) => {
+      if (sid !== sessionId) return;
+      console.warn(`[IpcNobleConnection:${sessionId}] peripheral disconnected`);
       instance.onDisconnected();
     });
     this.cleanupFns = [offData, offDisc];
-    await window.electronAPI.connectNobleBle(this.sessionId, this.peripheralId);
+    await window.electronAPI.connectNobleBle(sessionId, this.peripheralId);
     await instance.onConnected();
   }
 

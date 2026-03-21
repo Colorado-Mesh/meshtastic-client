@@ -864,14 +864,21 @@ nobleBleManager.on(
 );
 
 // ─── Noble BLE: IPC command handlers ────────────────────────────────
-ipcMain.handle('noble-ble-start-scan', async () => {
+ipcMain.handle('noble-ble-start-scan', async (_event, sessionId: unknown) => {
+  if (sessionId !== 'meshtastic' && sessionId !== 'meshcore') {
+    throw new Error('noble-ble-start-scan: sessionId must be meshtastic or meshcore');
+  }
   if (isQuitting) {
+    console.debug('[main] noble-ble-start-scan: ignoring (app is quitting)');
     return;
   }
-  await nobleBleManager.startScanning();
+  await nobleBleManager.startScanning(sessionId);
 });
-ipcMain.handle('noble-ble-stop-scan', async () => {
-  await nobleBleManager.stopScanning();
+ipcMain.handle('noble-ble-stop-scan', async (_event, sessionId: unknown) => {
+  if (sessionId !== 'meshtastic' && sessionId !== 'meshcore') {
+    throw new Error('noble-ble-stop-scan: sessionId must be meshtastic or meshcore');
+  }
+  await nobleBleManager.stopScanning(sessionId);
 });
 ipcMain.handle('noble-ble-connect', async (_event, sessionId: unknown, peripheralId: unknown) => {
   if (sessionId !== 'meshtastic' && sessionId !== 'meshcore') {
@@ -880,6 +887,7 @@ ipcMain.handle('noble-ble-connect', async (_event, sessionId: unknown, periphera
   if (typeof peripheralId !== 'string')
     throw new Error('noble-ble-connect: peripheralId must be a string');
   if (isQuitting) {
+    console.debug(`[main] noble-ble-connect: ignoring session=${sessionId} (app is quitting)`);
     return;
   }
   await nobleBleManager.connect(sessionId, peripheralId);
@@ -895,6 +903,7 @@ ipcMain.handle('noble-ble-to-radio', async (_event, sessionId: unknown, bytes: u
     throw new Error('noble-ble-to-radio: sessionId must be meshtastic or meshcore');
   }
   if (isQuitting) {
+    console.debug(`[main] noble-ble-to-radio: ignoring session=${sessionId} (app is quitting)`);
     return;
   }
   const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes as Uint8Array);
@@ -1161,7 +1170,7 @@ ipcMain.handle('app:quit', async () => {
 
     meshcoreMqttAdapter.disconnect();
 
-    nobleBleManager.stopScanning();
+    await nobleBleManager.stopAllScanning();
 
     closeDatabase();
 
@@ -2223,7 +2232,7 @@ app.on('before-quit', (event) => {
     event.preventDefault();
     void (async () => {
       try {
-        nobleBleManager.stopScanning();
+        await nobleBleManager.stopAllScanning();
         await nobleBleManager.disconnectAll();
       } catch (err) {
         console.error(
