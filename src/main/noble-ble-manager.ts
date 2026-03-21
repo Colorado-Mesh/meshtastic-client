@@ -50,6 +50,8 @@ export class NobleBleManager extends EventEmitter {
   private readonly knownPeripherals = new Map<string, any>();
   private scanRequested = false;
   private adapterReady = false;
+  /** True only while noble.startScanning() has actually been called and not yet followed by noble.stopScanning(). */
+  private scanningActive = false;
 
   constructor() {
     super();
@@ -208,6 +210,7 @@ export class NobleBleManager extends EventEmitter {
           reject(err);
           return;
         }
+        this.scanningActive = true;
         resolve();
       });
     });
@@ -215,6 +218,7 @@ export class NobleBleManager extends EventEmitter {
 
   stopScanning(): Promise<void> {
     this.scanRequested = false;
+    this.scanningActive = false;
     return new Promise((resolve) => {
       try {
         noble.stopScanning(() => resolve());
@@ -236,11 +240,19 @@ export class NobleBleManager extends EventEmitter {
     for (const session of this.sessions.values()) {
       session.closing = true;
     }
-    try {
+    // Only call noble.stopScanning() if scanning is actually active.
+    // Calling it twice in a row (e.g. once in before-quit and again here)
+    // is a known SIGSEGV trigger in noble's native XPC layer.
+    if (this.scanningActive) {
       this.scanRequested = false;
-      noble.stopScanning();
-    } catch {
-      /* ignore */
+      this.scanningActive = false;
+      try {
+        noble.stopScanning();
+      } catch {
+        /* ignore */
+      }
+    } else {
+      this.scanRequested = false;
     }
     try {
       noble.removeAllListeners('stateChange');
