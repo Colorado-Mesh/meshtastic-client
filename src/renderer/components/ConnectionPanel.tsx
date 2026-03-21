@@ -248,6 +248,19 @@ const MESHCORE_MQTT_DEFAULTS: MQTTSettings = {
   maxRetries: 5,
 };
 
+function migrateMqttSettingsOnce(): void {
+  if (localStorage.getItem('mesh-client:mqttSettings:meshcore') !== null) return;
+  const raw = localStorage.getItem('mesh-client:mqttSettings');
+  if (!raw) return;
+  const parsed = parseStoredJson<Partial<MQTTSettings>>(raw, 'migrateMqttSettingsOnce');
+  if (!parsed) return;
+  if (typeof parsed.topicPrefix === 'string' && parsed.topicPrefix.startsWith('meshcore')) {
+    localStorage.setItem('mesh-client:mqttSettings:meshcore', raw);
+    localStorage.removeItem('mesh-client:mqttSettings');
+  }
+}
+migrateMqttSettingsOnce();
+
 function loadMqttSettings(): MQTTSettings {
   const raw = localStorage.getItem('mesh-client:mqttSettings');
   const parsed = parseStoredJson<Partial<MQTTSettings>>(raw, 'ConnectionPanel loadMqttSettings');
@@ -339,6 +352,10 @@ export default function ConnectionPanel({
   const mqttSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const meshcoreMqttSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [meshcorePreset, setMeshcorePreset] = useState<'letsmesh' | 'ripple' | 'custom'>('custom');
+  const [meshtasticPreset, setMeshtasticPreset] = useState<'official' | 'custom'>(() => {
+    const s = loadMqttSettings();
+    return s.server === MQTT_DEFAULTS.server ? 'official' : 'custom';
+  });
 
   // Persist Meshtastic MQTT settings with debounce
   useEffect(() => {
@@ -386,6 +403,7 @@ export default function ConnectionPanel({
 
   const updateMqtt = <K extends keyof MQTTSettings>(key: K, value: MQTTSettings[K]) => {
     setMeshcorePreset('custom');
+    setMeshtasticPreset('custom');
     setActiveMqttSettings((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -1038,6 +1056,43 @@ export default function ConnectionPanel({
           </div>
         )}
         <div className="p-4 space-y-3">
+          {protocol !== 'meshcore' && (
+            <div className="space-y-1">
+              <p id="conn-meshtastic-network-preset" className="text-xs text-muted">
+                Network Preset
+              </p>
+              <div
+                className="flex gap-2"
+                role="group"
+                aria-labelledby="conn-meshtastic-network-preset"
+              >
+                {(
+                  [
+                    { id: 'official', label: 'Official' },
+                    { id: 'custom', label: 'Custom' },
+                  ] as const
+                ).map(({ id, label }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => {
+                      setMeshtasticPreset(id);
+                      if (id === 'official') {
+                        setMqttSettings(MQTT_DEFAULTS);
+                      }
+                    }}
+                    className={`flex-1 px-2 py-1.5 text-xs font-medium rounded border transition-colors ${
+                      meshtasticPreset === id
+                        ? 'bg-brand-green/20 border-brand-green text-brand-green'
+                        : 'bg-secondary-dark border-gray-600 text-gray-400 hover:border-gray-400 hover:text-gray-200'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {protocol === 'meshcore' && (
             <div className="space-y-1">
               <p id="conn-meshcore-network-preset" className="text-xs text-muted">
