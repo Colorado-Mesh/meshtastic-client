@@ -14,7 +14,7 @@ Shared UI gates use `ProtocolCapabilities` in [`src/renderer/lib/radio/BaseRadio
 | ------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
 | Transports                      | BLE, Serial, HTTP (`@meshtastic/core`)                                              | BLE, Web Serial, TCP bridge (4403)                                                                                                                                                                           | Different stacks                                                |
 | Tab “Modules” / “Repeaters”     | `ModulePanel` (protobuf modules)                                                    | `RepeatersPanel` (trace, status, neighbors)                                                                                                                                                                  | Product split                                                   |
-| MQTT broker UI                  | Full (with transport selection)                                                     | Same broker fields; transport protocol selected when connecting                                                                                                                                              | **Post-MQTT** codec on broker path                              |
+| MQTT broker UI                  | Full (with transport selection)                                                     | Same broker fields; transport protocol selected when connecting; MeshCore-only **LetsMesh** / **Ripple** / **Custom** presets fill known public brokers                                                      | **Post-MQTT** codec on broker path                              |
 | MQTT wire format                | `ServiceEnvelope` / `MeshPacket` ([`mqtt-manager.ts`](../src/main/mqtt-manager.ts)) | JSON **v1** chat envelope on `topicPrefix/#` ([`meshcore-mqtt-adapter.ts`](../src/main/meshcore-mqtt-adapter.ts), parser in [`meshcoreMqttEnvelope.ts`](../src/shared/meshcoreMqttEnvelope.ts)) — extensible | Adapter vs protobuf                                             |
 | Node list hops / MQTT columns   | `hops_away`, `via_mqtt` from device                                                 | Contact model; optional trace                                                                                                                                                                                | **Partial** (trace); full hops **blocked** without device field |
 | RF diagnostics (LocalStats)     | From protobuf                                                                       | Not available                                                                                                                                                                                                | **Blocked**                                                     |
@@ -44,6 +44,18 @@ Interim broker format until a binary/official MeshCore MQTT layout ships:
 ```
 
 Subscribes under `{topicPrefix}/#`. Outbound optional publish uses `mqtt:publishMeshcore` → topic `{topicPrefix}/meshcore/chat` (JSON same shape).
+
+## MeshCore MQTT network presets
+
+In **MeshCore** mode only, [`ConnectionPanel.tsx`](../src/renderer/components/ConnectionPanel.tsx) shows **LetsMesh**, **Ripple Networks**, and **Custom** preset buttons. They populate the same `MQTTSettings` the main process uses for [`meshcore-mqtt-adapter.ts`](../src/main/meshcore-mqtt-adapter.ts) (with `mqttTransportProtocol: 'meshcore'`).
+
+| Preset          | Broker host                  | Port | Notes                                                                                                    |
+| --------------- | ---------------------------- | ---- | -------------------------------------------------------------------------------------------------------- |
+| LetsMesh        | `mqtt-us-v1.letsmesh.net`    | 443  | Enables **WebSocket** transport (`useWebSocket` / `wss`) — required for 443                              |
+| Ripple Networks | `mqtt.ripplenetworks.com.au` | 8883 | TLS; preset fills default shared credentials and **insecure TLS** for self-signed / non–public CA chains |
+| Custom          | (user)                       | —    | No automatic changes — use for private brokers                                                           |
+
+Topic prefix is set to `meshcore` for both public presets; users can still edit fields after choosing a preset.
 
 ## Maintenance
 
