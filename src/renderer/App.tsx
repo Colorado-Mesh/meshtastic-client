@@ -488,22 +488,7 @@ export default function App() {
             <h1 className="text-lg font-bold text-bright-green tracking-wide">Colorado Mesh</h1>
             <span className="text-xs text-muted">Meshtastic Client</span>
           </div>
-          {/* Keyboard shortcuts — absolutely centered in header */}
-          <button
-            onClick={() => setShowShortcuts(true)}
-            aria-label="Shortcuts ?"
-            aria-haspopup="dialog"
-            className="absolute left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-slate-600 bg-slate-800/60 shadow-sm text-gray-400 hover:text-gray-200 hover:border-slate-500 hover:bg-slate-700/60 transition-colors text-sm font-medium"
-            title="Keyboard shortcuts (?)"
-          >
-            Shortcuts{' '}
-            <kbd
-              className="px-1.5 py-0.5 border border-slate-500 rounded bg-slate-700 text-slate-300 text-xs font-mono"
-              aria-hidden="true"
-            >
-              ?
-            </kbd>
-          </button>
+
           <div className="flex items-center gap-2">
             {/* Protocol badge */}
             <span
@@ -854,7 +839,7 @@ export default function App() {
             </main>
 
             {/* Footer */}
-            <footer className="px-4 py-1.5 bg-deep-black border-t border-gray-700 text-[11px] text-muted flex justify-between shrink-0">
+            <footer className="px-4 py-1.5 bg-deep-black border-t border-gray-700 text-[11px] text-muted flex items-center justify-between shrink-0">
               <span>
                 A Project by{' '}
                 <a
@@ -888,6 +873,22 @@ export default function App() {
                 </a>
                 .
               </span>
+              {/* Keyboard shortcuts — centered in footer */}
+              <button
+                onClick={() => setShowShortcuts(true)}
+                aria-label="Shortcuts ?"
+                aria-haspopup="dialog"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-slate-700 bg-slate-800/40 text-gray-500 hover:text-gray-300 hover:border-slate-600 transition-colors text-[11px] font-medium"
+                title="Keyboard shortcuts (?)"
+              >
+                Shortcuts{' '}
+                <kbd
+                  className="px-1 border border-slate-600 rounded bg-slate-700 text-slate-400 text-[10px] font-mono"
+                  aria-hidden="true"
+                >
+                  ?
+                </kbd>
+              </button>
               <span>
                 {nodesForUi.size} {nodeCountLabel} | {device.messages.length} messages
               </span>
