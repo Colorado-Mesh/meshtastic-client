@@ -30,21 +30,6 @@ export class TransportNobleIpc implements Types.Transport {
         this._fromDeviceController = controller;
         this._fromRadioUnsub = window.electronAPI.onNobleBleFromRadio(({ sessionId, bytes }) => {
           if (sessionId !== this.sessionId) return;
-          // #region agent log
-          fetch('http://127.0.0.1:7586/ingest/49af3064-4f08-4b78-bc65-b64d378f5d17', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'e199e9' },
-            body: JSON.stringify({
-              sessionId: 'e199e9',
-              runId: 'run-1',
-              hypothesisId: 'H1',
-              location: 'transportNobleIpc.ts:fromRadio',
-              message: 'renderer fromRadio received',
-              data: { sessionId, size: bytes.length },
-              timestamp: Date.now(),
-            }),
-          }).catch(() => {});
-          // #endregion
           console.debug('[TransportNobleIpc] fromRadio bytes', bytes.length);
           if (this._fromDeviceController) {
             this._fromDeviceController.enqueue({ type: 'packet', data: bytes });

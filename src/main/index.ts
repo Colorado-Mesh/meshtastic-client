@@ -662,7 +662,7 @@ function createWindow() {
   mainWindow.webContents.session.setPermissionCheckHandler((_webContents, permission) => {
     const granted = permission === 'serial' || permission === 'geolocation';
     if (granted) {
-      console.log(`[permissions] checkHandler: ${sanitizeLogMessage(permission)} → granted`);
+      console.debug(`[permissions] checkHandler: ${sanitizeLogMessage(permission)} → granted`);
     }
     return granted;
   });
@@ -672,7 +672,7 @@ function createWindow() {
     (_webContents, permission, callback) => {
       const grant = permission === 'geolocation';
       if (grant) {
-        console.log(`[permissions] requestHandler: ${sanitizeLogMessage(permission)} → granted`);
+        console.debug(`[permissions] requestHandler: ${sanitizeLogMessage(permission)} → granted`);
       }
       callback(grant);
     },
@@ -749,9 +749,9 @@ function createWindow() {
   // Load the app
   if (process.env.VITE_DEV_SERVER_URL) {
     // Same startup diagnostics as packaged build so Log panel captures them in dev too
-    console.log('[Startup] dev server URL:', sanitizeLogMessage(process.env.VITE_DEV_SERVER_URL));
-    console.log('[Startup] app.isPackaged:', app.isPackaged);
-    console.log('[Startup] userData:', sanitizeLogMessage(app.getPath('userData')));
+    console.debug('[Startup] dev server URL:', sanitizeLogMessage(process.env.VITE_DEV_SERVER_URL));
+    console.debug('[Startup] app.isPackaged:', app.isPackaged);
+    console.debug('[Startup] userData:', sanitizeLogMessage(app.getPath('userData')));
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
 
     mainWindow.webContents.openDevTools();
@@ -759,11 +759,11 @@ function createWindow() {
     const indexPath = path.join(__dirname, '../../dist/renderer/index.html');
     const indexUrl = pathToFileURL(indexPath).toString();
     // Startup diagnostics for troubleshooting packaged app issues
-    console.log('[Startup] app.isPackaged:', app.isPackaged);
-    console.log('[Startup] __dirname:', sanitizeLogMessage(__dirname));
-    console.log('[Startup] Renderer path:', sanitizeLogMessage(indexPath));
-    console.log('[Startup] process.resourcesPath:', sanitizeLogMessage(process.resourcesPath));
-    console.log('[Startup] userData:', sanitizeLogMessage(app.getPath('userData')));
+    console.debug('[Startup] app.isPackaged:', app.isPackaged);
+    console.debug('[Startup] __dirname:', sanitizeLogMessage(__dirname));
+    console.debug('[Startup] Renderer path:', sanitizeLogMessage(indexPath));
+    console.debug('[Startup] process.resourcesPath:', sanitizeLogMessage(process.resourcesPath));
+    console.debug('[Startup] userData:', sanitizeLogMessage(app.getPath('userData')));
     // Use loadURL with an explicit HTTP referrer so OpenStreetMap tile requests
     // from the packaged app include a valid Referer header and comply with the
     // OSM tile usage policy for web-style traffic.
@@ -786,10 +786,10 @@ function createWindow() {
     if (!isQuitting && (isConnected || isAnyMqttConnected())) {
       event.preventDefault();
       if (process.platform === 'darwin') {
-        console.log('[main] window close event: hiding (macOS, device connected)');
+        console.debug('[main] window close event: hiding (macOS, device connected)');
         win.hide();
       } else {
-        console.log('[main] window close event: minimizing (device connected)');
+        console.debug('[main] window close event: minimizing (device connected)');
         win.minimize();
       }
     }
@@ -835,11 +835,11 @@ ipcMain.on('serial-port-cancelled', () => {
 
 // ─── IPC: Connection status tracking (module-scope, not per-window) ─
 ipcMain.on('device-connected', () => {
-  console.log('[main] device-connected: isConnected = true');
+  console.debug('[main] device-connected: isConnected = true');
   isConnected = true;
 });
 ipcMain.on('device-disconnected', () => {
-  console.log('[main] device-disconnected: isConnected = false');
+  console.debug('[main] device-disconnected: isConnected = false');
   isConnected = false;
 });
 
@@ -1344,7 +1344,7 @@ ipcMain.handle('db:clearMessages', () => {
   try {
     const db = getDatabase();
     const result = db.prepare('DELETE FROM messages').run();
-    console.log(`[IPC] db:clearMessages: deleted ${result.changes} messages`);
+    console.debug(`[IPC] db:clearMessages: deleted ${result.changes} messages`);
     return result;
   } catch (err) {
     console.error(
@@ -1359,7 +1359,7 @@ ipcMain.handle('db:clearNodes', () => {
   try {
     const db = getDatabase();
     const result = db.prepare('DELETE FROM nodes').run();
-    console.log(`[IPC] db:clearNodes: deleted ${result.changes} nodes`);
+    console.debug(`[IPC] db:clearNodes: deleted ${result.changes} nodes`);
     return result;
   } catch (err) {
     console.error(
@@ -1376,7 +1376,7 @@ ipcMain.handle('db:clearNodePositions', () => {
     const result = db
       .prepare('UPDATE nodes SET latitude = NULL, longitude = NULL, altitude = NULL')
       .run();
-    console.log(`[IPC] db:clearNodePositions: cleared positions for ${result.changes} nodes`);
+    console.debug(`[IPC] db:clearNodePositions: cleared positions for ${result.changes} nodes`);
     return result;
   } catch (err) {
     console.error(
@@ -1392,7 +1392,7 @@ ipcMain.handle('db:deleteNode', (_event, nodeId: number) => {
     const id = safeNonNegativeInt(nodeId);
     const db = getDatabase();
     const result = db.prepare('DELETE FROM nodes WHERE node_id = ?').run(id);
-    console.log(
+    console.debug(
       `[IPC] db:deleteNode: deleted node 0x${id.toString(16).toUpperCase()} (${result.changes} rows)`,
     );
     return result;
@@ -1410,7 +1410,7 @@ ipcMain.handle('db:deleteNodesByAge', (_event, days: number) => {
     if (typeof days !== 'number' || days < 1 || !isFinite(days)) return { changes: 0 };
     const cutoff = Math.floor(Date.now() / 1000) - days * 86400;
     const result = getDatabase().prepare('DELETE FROM nodes WHERE last_heard < ?').run(cutoff);
-    console.log(`[IPC] db:deleteNodesByAge: pruned ${result.changes} nodes older than ${days}d`);
+    console.debug(`[IPC] db:deleteNodesByAge: pruned ${result.changes} nodes older than ${days}d`);
     return result;
   } catch (err) {
     console.error(
@@ -1429,7 +1429,7 @@ ipcMain.handle('db:pruneNodesByCount', (_event, maxCount: number) => {
         'DELETE FROM nodes WHERE node_id NOT IN (SELECT node_id FROM nodes ORDER BY last_heard DESC LIMIT ?)',
       )
       .run(maxCount);
-    console.log(
+    console.debug(
       `[IPC] db:pruneNodesByCount: pruned ${result.changes} nodes, keeping top ${maxCount}`,
     );
     return result;
@@ -1453,7 +1453,7 @@ ipcMain.handle('db:deleteNodesBatch', (_event, nodeIds: number[]) => {
     const result = getDatabase()
       .prepare(`DELETE FROM nodes WHERE node_id IN (${placeholders})`)
       .run(...safe);
-    console.log(`[IPC] db:deleteNodesBatch: deleted ${result.changes} nodes`);
+    console.debug(`[IPC] db:deleteNodesBatch: deleted ${result.changes} nodes`);
     return result.changes;
   } catch (err) {
     console.error(
@@ -1468,7 +1468,7 @@ ipcMain.handle('db:clearMessagesByChannel', (_event, channel: number) => {
   try {
     const ch = safeNonNegativeInt(channel);
     const result = getDatabase().prepare('DELETE FROM messages WHERE channel = ?').run(ch);
-    console.log(
+    console.debug(
       `[IPC] db:clearMessagesByChannel: deleted ${result.changes} messages from channel ${ch}`,
     );
     return result;
@@ -1499,7 +1499,7 @@ ipcMain.handle('db:deleteNodesBySource', (_event, source: string) => {
       throw new Error('db:deleteNodesBySource: source must be a string');
     if (source.length > 64) throw new Error('db:deleteNodesBySource: source string too long');
     const changes = deleteNodesBySource(source);
-    console.log(
+    console.debug(
       `[IPC] db:deleteNodesBySource(${sanitizeLogMessage(source)}): pruned ${changes} nodes`,
     );
     return changes;
@@ -1515,7 +1515,7 @@ ipcMain.handle('db:deleteNodesBySource', (_event, source: string) => {
 ipcMain.handle('db:deleteNodesWithoutLongname', () => {
   try {
     const changes = deleteNodesWithoutLongname();
-    console.log(`[IPC] db:deleteNodesWithoutLongname: pruned ${changes} unnamed nodes`);
+    console.debug(`[IPC] db:deleteNodesWithoutLongname: pruned ${changes} unnamed nodes`);
     return changes;
   } catch (err) {
     console.error(
@@ -2112,7 +2112,7 @@ ipcMain.handle('meshcore:tcp-connect', (_event, host: string, port: number) => {
     const socket = new net.Socket();
     meshcoreTcpSocket = socket;
     socket.connect(p, host, () => {
-      console.log('[IPC] meshcore:tcp-connect connected to', sanitizeLogMessage(host), p);
+      console.debug('[IPC] meshcore:tcp-connect connected to', sanitizeLogMessage(host), p);
       if (!settled) {
         settled = true;
         resolve();
@@ -2158,7 +2158,7 @@ ipcMain.handle('meshcore:tcp-write', (_event, bytes: number[]) => {
 
 ipcMain.handle('meshcore:tcp-disconnect', () => {
   if (meshcoreTcpSocket) {
-    console.log('[IPC] meshcore:tcp-disconnect');
+    console.debug('[IPC] meshcore:tcp-disconnect');
     meshcoreTcpSocket.destroy();
     meshcoreTcpSocket = null;
   }

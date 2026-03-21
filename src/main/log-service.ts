@@ -249,7 +249,6 @@ export function patchMainConsole(): void {
   console.debug = (...args: unknown[]) => {
     const safe = sanitizeForLogSink(stringifyArgs(args));
     appendLine('debug', resolveMainSource(), safe);
-    original.debug(...args);
   };
 
   // Capture process.stdout/stderr text writes (some deps log without console.*)

@@ -45,7 +45,8 @@ interface NobleBleSession {
 
 export class NobleBleManager extends EventEmitter {
   private readonly sessions = new Map<NobleSessionId, NobleBleSession>();
-  private readonly connectInProgressSessions = new Set<NobleSessionId>();
+  /** Serializes connect() calls across all sessions to prevent native CBCentralManager races. */
+  private connectQueue: Promise<void> = Promise.resolve();
   private readonly knownPeripherals = new Map<string, any>();
   private scanRequested = false;
   private adapterReady = false;
@@ -130,6 +131,10 @@ export class NobleBleManager extends EventEmitter {
           // Exit immediately if session was torn down between reads.
           if (session.closing || session.connectedPeripheral?.state !== 'connected') {
             console.debug(`[BLE:${sessionId}] read pump: peripheral disconnected, exiting`);
+            return;
+          }
+          if (!session.fromRadioChar) {
+            console.debug(`[BLE:${sessionId}] read pump: fromRadioChar gone, exiting`);
             return;
           }
           let data: Buffer;
@@ -254,10 +259,15 @@ export class NobleBleManager extends EventEmitter {
   }
 
   async connect(sessionId: NobleSessionId, peripheralId: string): Promise<void> {
-    if (this.connectInProgressSessions.has(sessionId)) {
-      throw new Error(`BLE connect already in progress for session ${sessionId}`);
-    }
-    this.connectInProgressSessions.add(sessionId);
+    // Serialize across all sessions — noble's native CBCentralManager crashes (SIGSEGV/SIGBUS)
+    // if a second peripheral's discoverServices/subscribe races with the first.
+    const prevQueue = this.connectQueue;
+    let releaseQueue!: () => void;
+    this.connectQueue = new Promise<void>((r) => {
+      releaseQueue = r;
+    });
+    await prevQueue;
+
     const session = this.getSession(sessionId);
     let peripheral: any = null;
     let connected = false;
@@ -391,7 +401,7 @@ export class NobleBleManager extends EventEmitter {
       }
       throw err;
     } finally {
-      this.connectInProgressSessions.delete(sessionId);
+      releaseQueue();
     }
   }
 
