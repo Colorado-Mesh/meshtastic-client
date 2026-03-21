@@ -668,21 +668,6 @@ export function useDevice() {
     (device: MeshDevice, type: ConnectionType) => {
       // ─── Device status ─────────────────────────────────────────
       const unsub1 = device.events.onDeviceStatus.subscribe((status) => {
-        // #region agent log
-        fetch('http://127.0.0.1:7586/ingest/49af3064-4f08-4b78-bc65-b64d378f5d17', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'e199e9' },
-          body: JSON.stringify({
-            sessionId: 'e199e9',
-            runId: 'run-1',
-            hypothesisId: 'H3',
-            location: 'useDevice.ts:onDeviceStatus',
-            message: 'renderer device status event',
-            data: { status, type },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
         touchLastData();
         console.debug('[useDevice] onDeviceStatus', status, type);
         const statusMap: Record<number, DeviceState['status']> = {
@@ -702,21 +687,6 @@ export function useDevice() {
           isConfiguringRef.current = true;
           if (status === 6 && type === 'ble' && !configureTimeoutRef.current) {
             configureTimeoutRef.current = setTimeout(() => {
-              // #region agent log
-              fetch('http://127.0.0.1:7586/ingest/49af3064-4f08-4b78-bc65-b64d378f5d17', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'e199e9' },
-                body: JSON.stringify({
-                  sessionId: 'e199e9',
-                  runId: 'run-3',
-                  hypothesisId: 'H6',
-                  location: 'useDevice.ts:configureTimeout',
-                  message: 'renderer configure timeout fired',
-                  data: { type, status },
-                  timestamp: Date.now(),
-                }),
-              }).catch(() => {});
-              // #endregion
               const activeDevice = deviceRef.current;
               deviceRef.current = null;
               if (activeDevice) {
@@ -1698,21 +1668,6 @@ export function useDevice() {
         if (type === 'ble') {
           if (!blePeripheralId) throw new Error('BLE peripheral ID required');
           device = await createBleConnection(blePeripheralId, 'meshtastic');
-          // #region agent log
-          fetch('http://127.0.0.1:7586/ingest/49af3064-4f08-4b78-bc65-b64d378f5d17', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'e199e9' },
-            body: JSON.stringify({
-              sessionId: 'e199e9',
-              runId: 'run-1',
-              hypothesisId: 'H2',
-              location: 'useDevice.ts:connect:createBleConnection',
-              message: 'renderer createBleConnection resolved',
-              data: { type, blePeripheralId },
-              timestamp: Date.now(),
-            }),
-          }).catch(() => {});
-          // #endregion
         } else {
           device = await createConnection(type, httpAddress);
         }
@@ -1722,21 +1677,6 @@ export function useDevice() {
         wireSubscriptions(device, type);
 
         // Start configuration AFTER all listeners are wired
-        // #region agent log
-        fetch('http://127.0.0.1:7586/ingest/49af3064-4f08-4b78-bc65-b64d378f5d17', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'e199e9' },
-          body: JSON.stringify({
-            sessionId: 'e199e9',
-            runId: 'run-1',
-            hypothesisId: 'H3',
-            location: 'useDevice.ts:connect:configure',
-            message: 'renderer device.configure start',
-            data: { type },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
         device.configure();
       } catch (err) {
         clearConfigureTimeout();

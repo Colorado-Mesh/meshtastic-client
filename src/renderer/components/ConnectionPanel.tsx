@@ -162,7 +162,14 @@ function ConnectionIcon({ type }: { type: ConnectionType }) {
   switch (type) {
     case 'ble':
       return (
-        <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <svg
+          aria-hidden="true"
+          className={cls}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -172,7 +179,14 @@ function ConnectionIcon({ type }: { type: ConnectionType }) {
       );
     case 'serial':
       return (
-        <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <svg
+          aria-hidden="true"
+          className={cls}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -182,7 +196,14 @@ function ConnectionIcon({ type }: { type: ConnectionType }) {
       );
     case 'http':
       return (
-        <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <svg
+          aria-hidden="true"
+          className={cls}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -196,7 +217,7 @@ function ConnectionIcon({ type }: { type: ConnectionType }) {
 /** Animated spinner */
 function Spinner({ className = '' }: { className?: string }) {
   return (
-    <svg className={`animate-spin ${className}`} fill="none" viewBox="0 0 24 24">
+    <svg aria-hidden="true" className={`animate-spin ${className}`} fill="none" viewBox="0 0 24 24">
       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
       <path
         className="opacity-75"
@@ -245,6 +266,7 @@ function loadMeshcoreMqttSettings(): MQTTSettings {
 function MqttGlobeIcon({ connected }: { connected: boolean }) {
   return (
     <svg
+      aria-hidden="true"
       className={`w-5 h-5 ${connected ? 'text-brand-green' : 'text-gray-400'}`}
       fill="none"
       viewBox="0 0 24 24"
@@ -774,10 +796,16 @@ export default function ConnectionPanel({
 
   // ─── Protocol toggle (shown in both connected and disconnected views) ──
   const protocolToggle = (
-    <div className="flex rounded-lg overflow-hidden border border-gray-700 bg-deep-black">
+    <div
+      role="group"
+      aria-label="Mesh protocol"
+      className="flex rounded-lg overflow-hidden border border-gray-700 bg-deep-black"
+    >
       {(['meshtastic', 'meshcore'] as const).map((p) => (
         <button
           key={p}
+          type="button"
+          aria-pressed={protocol === p}
           onClick={() => onProtocolChange(p)}
           className={`flex-1 py-2 text-sm font-medium transition-colors ${
             protocol === p
@@ -816,10 +844,18 @@ export default function ConnectionPanel({
 
         {/* Embedded BLE Device Picker */}
         {showBlePicker && (
-          <div className="w-full max-w-md bg-deep-black rounded-lg border border-gray-600 overflow-hidden">
+          <div
+            role="region"
+            aria-labelledby="ble-device-picker-heading"
+            className="w-full max-w-md bg-deep-black rounded-lg border border-gray-600 overflow-hidden"
+          >
             <div className="px-4 py-2.5 bg-secondary-dark border-b border-gray-600 flex justify-between items-center">
-              <span className="text-sm font-medium text-gray-200">Select Bluetooth Device</span>
-              <span className="text-xs text-muted">{bleDevices.length} found</span>
+              <span id="ble-device-picker-heading" className="text-sm font-medium text-gray-200">
+                Select Bluetooth Device
+              </span>
+              <span className="text-xs text-muted" aria-live="polite">
+                {bleDevices.length} found
+              </span>
             </div>
             <div className="max-h-60 overflow-y-auto">
               {bleDevices.length === 0 ? (
@@ -843,6 +879,8 @@ export default function ConnectionPanel({
                   return (
                     <button
                       key={device.deviceId}
+                      type="button"
+                      aria-label={`Connect to ${displayName}`}
                       onClick={() => handleSelectBleDevice(device.deviceId)}
                       className="w-full px-4 py-3 text-left hover:bg-secondary-dark transition-colors border-b border-gray-700 last:border-b-0"
                     >
@@ -867,10 +905,18 @@ export default function ConnectionPanel({
 
         {/* Embedded Serial Port Picker */}
         {showSerialPicker && (
-          <div className="w-full max-w-md bg-deep-black rounded-lg border border-gray-600 overflow-hidden">
+          <div
+            role="region"
+            aria-labelledby="serial-port-picker-heading"
+            className="w-full max-w-md bg-deep-black rounded-lg border border-gray-600 overflow-hidden"
+          >
             <div className="px-4 py-2.5 bg-secondary-dark border-b border-gray-600 flex justify-between items-center">
-              <span className="text-sm font-medium text-gray-200">Select Serial Port</span>
-              <span className="text-xs text-muted">{serialPorts.length} found</span>
+              <span id="serial-port-picker-heading" className="text-sm font-medium text-gray-200">
+                Select Serial Port
+              </span>
+              <span className="text-xs text-muted" aria-live="polite">
+                {serialPorts.length} found
+              </span>
             </div>
             <div className="max-h-60 overflow-y-auto">
               {serialPorts.length === 0 ? (
@@ -881,6 +927,8 @@ export default function ConnectionPanel({
                 serialPorts.map((port) => (
                   <button
                     key={port.portId}
+                    type="button"
+                    aria-label={`Connect using serial port ${port.displayName}`}
                     onClick={() => handleSelectSerialPort(port.portId)}
                     className="w-full px-4 py-3 text-left hover:bg-secondary-dark transition-colors border-b border-gray-700 last:border-b-0"
                   >
@@ -908,6 +956,7 @@ export default function ConnectionPanel({
         )}
 
         <button
+          type="button"
           onClick={handleCancelConnection}
           className="px-6 py-2.5 bg-secondary-dark hover:bg-gray-600 text-gray-300 font-medium rounded-lg transition-colors"
         >
@@ -936,8 +985,10 @@ export default function ConnectionPanel({
                 ? 'text-red-400'
                 : 'text-gray-500'
         }`}
+        aria-live="polite"
       >
-        ● {mqttStatus}
+        <span aria-hidden="true">● </span>
+        {mqttStatus}
       </span>
     </div>
   );
@@ -1316,21 +1367,24 @@ export default function ConnectionPanel({
 
         {onToggleManualContacts !== undefined && (
           <div className="border border-gray-700 rounded-xl p-4 flex items-center justify-between gap-4">
-            <div>
+            <div id="manual-contact-approval-label">
               <div className="text-sm font-medium text-gray-200">Manual Contact Approval</div>
               <div className="text-xs text-muted mt-0.5">
                 Require manual approval before new contacts appear
               </div>
             </div>
             <button
+              type="button"
               onClick={() => onToggleManualContacts(!manualAddContacts)}
               className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${
                 manualAddContacts ? 'bg-purple-500' : 'bg-gray-600'
               }`}
               role="switch"
               aria-checked={manualAddContacts}
+              aria-labelledby="manual-contact-approval-label"
             >
               <span
+                aria-hidden="true"
                 className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
                   manualAddContacts ? 'translate-x-4' : 'translate-x-0'
                 }`}
@@ -1350,6 +1404,7 @@ export default function ConnectionPanel({
       {protocolToggle}
       {mqttStatus === 'connected' && (
         <button
+          type="button"
           onClick={() => {
             window.electronAPI.mqtt.disconnect();
             window.electronAPI.quitApp();
@@ -1378,6 +1433,7 @@ export default function ConnectionPanel({
               </div>
             </div>
             <button
+              type="button"
               onClick={handleReconnect}
               className="px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors"
               style={{ backgroundColor: '#4CAF50' }}
@@ -1386,6 +1442,7 @@ export default function ConnectionPanel({
             </button>
           </div>
           <button
+            type="button"
             onClick={() => {
               clearLastConnection(protocol);
               setLastConnection(null);
@@ -1418,13 +1475,22 @@ export default function ConnectionPanel({
         {/* Content */}
         <div className="p-4 space-y-3">
           {/* Connection type selector */}
-          <div className="space-y-2">
-            <label className="text-xs text-muted">Connection Type</label>
+          <fieldset className="space-y-2 border-0 p-0 min-w-0">
+            <legend id="connection-type-legend" className="text-xs text-muted">
+              Connection Type
+            </legend>
             {protocol === 'meshtastic' ? (
-              <div className="grid grid-cols-3 gap-2">
+              <div
+                role="radiogroup"
+                aria-labelledby="connection-type-legend"
+                className="grid grid-cols-3 gap-2"
+              >
                 {(['ble', 'serial', 'http'] as const).map((type) => (
                   <button
                     key={type}
+                    type="button"
+                    role="radio"
+                    aria-checked={connectionType === type}
                     onClick={() => setConnectionType(type)}
                     className={`flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
                       connectionType === type
@@ -1441,10 +1507,17 @@ export default function ConnectionPanel({
                 ))}
               </div>
             ) : (
-              <div className="grid grid-cols-3 gap-2">
+              <div
+                role="radiogroup"
+                aria-labelledby="connection-type-legend"
+                className="grid grid-cols-3 gap-2"
+              >
                 {(['ble', 'serial', 'http'] as const).map((type) => (
                   <button
                     key={type}
+                    type="button"
+                    role="radio"
+                    aria-checked={connectionType === type}
                     onClick={() => setConnectionType(type)}
                     className={`flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
                       connectionType === type
@@ -1461,18 +1534,22 @@ export default function ConnectionPanel({
                 ))}
               </div>
             )}
-          </div>
+          </fieldset>
 
           {/* HTTP / TCP address input */}
           {connectionType === 'http' && protocol === 'meshtastic' && (
             <div className="space-y-1">
-              <label className="text-xs text-muted">Device Address</label>
+              <label htmlFor="connection-meshtastic-host" className="text-xs text-muted">
+                Device Address
+              </label>
               <input
+                id="connection-meshtastic-host"
                 type="text"
                 value={httpAddress}
                 onChange={(e) => setHttpAddress(e.target.value)}
                 placeholder="meshtastic.local or 192.168.1.x"
                 className="w-full px-2 py-1.5 bg-secondary-dark rounded text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none text-sm"
+                autoComplete="off"
               />
               <p className="text-xs text-muted">Enter hostname or IP address (without http://)</p>
               {navigator.userAgent.toLowerCase().includes('windows') && (
@@ -1485,13 +1562,17 @@ export default function ConnectionPanel({
           )}
           {connectionType === 'http' && protocol === 'meshcore' && (
             <div className="space-y-1">
-              <label className="text-xs text-muted">Host (port 4403)</label>
+              <label htmlFor="connection-meshcore-tcp-host" className="text-xs text-muted">
+                Host (port 4403)
+              </label>
               <input
+                id="connection-meshcore-tcp-host"
                 type="text"
                 value={tcpHost}
                 onChange={(e) => setTcpHost(e.target.value)}
                 placeholder="localhost or 192.168.1.x"
                 className="w-full px-2 py-1.5 bg-secondary-dark rounded text-gray-200 border border-gray-600 focus:border-purple-500 focus:outline-none text-sm"
+                autoComplete="off"
               />
               <p className="text-xs text-muted">
                 MeshCore companion radio host (connects on port 4403)
