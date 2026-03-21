@@ -1,11 +1,11 @@
-import Database from 'better-sqlite3';
 import { app } from 'electron';
 import fs from 'fs';
 import path from 'path';
 
+import { NodeSqliteDB } from './db-compat';
 import { sanitizeLogMessage } from './log-service';
 
-let db: Database.Database | null = null;
+let db: NodeSqliteDB | null = null;
 
 export function getDatabasePath(): string {
   return path.join(app.getPath('userData'), 'mesh-client.db');
@@ -26,7 +26,7 @@ export function initDatabase(): void {
   }
 
   try {
-    db = new Database(dbPath, { timeout: 5000 });
+    db = new NodeSqliteDB(dbPath);
     // Restrict DB file to owner-only access (no-op on Windows)
     try {
       fs.chmodSync(dbPath, 0o600);
@@ -35,6 +35,7 @@ export function initDatabase(): void {
     }
     db.pragma('journal_mode = WAL');
     db.pragma('synchronous = NORMAL');
+    db.pragma('busy_timeout = 5000');
 
     // Detect fresh DB before running setup (user_version = 0, no tables yet)
     const isFreshDb =
@@ -89,14 +90,14 @@ export function initDatabase(): void {
   }
 }
 
-export function getDatabase(): Database.Database {
+export function getDatabase(): NodeSqliteDB {
   if (!db) initDatabase();
   return db!;
 }
 
 function createBaseTables(): void {
   try {
-    db!.exec(`
+    db!.execScript(`
       CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         sender_id INTEGER,
@@ -167,7 +168,10 @@ function createBaseTables(): void {
         timestamp   INTEGER NOT NULL,
         status      TEXT DEFAULT 'acked',
         packet_id   INTEGER,
-        to_node     INTEGER
+        emoji       INTEGER,
+        reply_id    INTEGER,
+        to_node     INTEGER,
+        received_via TEXT
       );
 
       CREATE INDEX IF NOT EXISTS idx_mc_msgs_ts ON meshcore_messages(timestamp);
@@ -202,9 +206,9 @@ function runMigrations(): void {
 
   if (userVersion < 1) {
     try {
-      db!.exec('ALTER TABLE messages ADD COLUMN packet_id INTEGER');
-      db!.exec("ALTER TABLE messages ADD COLUMN status TEXT DEFAULT 'acked'");
-      db!.exec('ALTER TABLE messages ADD COLUMN error TEXT');
+      db!.execScript('ALTER TABLE messages ADD COLUMN packet_id INTEGER');
+      db!.execScript("ALTER TABLE messages ADD COLUMN status TEXT DEFAULT 'acked'");
+      db!.execScript('ALTER TABLE messages ADD COLUMN error TEXT');
       db!.pragma('user_version = 1');
       userVersion = 1;
     } catch (e) {
@@ -218,8 +222,8 @@ function runMigrations(): void {
 
   if (userVersion < 2) {
     try {
-      db!.exec('ALTER TABLE messages ADD COLUMN emoji INTEGER');
-      db!.exec('ALTER TABLE messages ADD COLUMN reply_id INTEGER');
+      db!.execScript('ALTER TABLE messages ADD COLUMN emoji INTEGER');
+      db!.execScript('ALTER TABLE messages ADD COLUMN reply_id INTEGER');
       db!.pragma('user_version = 2');
       userVersion = 2;
     } catch (e) {
@@ -233,7 +237,7 @@ function runMigrations(): void {
 
   if (userVersion < 3) {
     try {
-      db!.exec('ALTER TABLE messages ADD COLUMN to_node INTEGER');
+      db!.execScript('ALTER TABLE messages ADD COLUMN to_node INTEGER');
       db!.pragma('user_version = 3');
       userVersion = 3;
     } catch (e) {
@@ -247,7 +251,7 @@ function runMigrations(): void {
 
   if (userVersion < 4) {
     try {
-      db!.exec(
+      db!.execScript(
         'CREATE UNIQUE INDEX IF NOT EXISTS idx_reaction_dedup ' +
           'ON messages(sender_id, reply_id, emoji) ' +
           'WHERE emoji IS NOT NULL AND reply_id IS NOT NULL',
@@ -356,20 +360,20 @@ function runMigrations(): void {
 
   if (userVersion < 11) {
     try {
-      db!.exec(
+      db!.execScript(
         'CREATE TABLE IF NOT EXISTS meshcore_contacts (' +
           'node_id INTEGER PRIMARY KEY, public_key TEXT NOT NULL, adv_name TEXT, ' +
           'contact_type INTEGER DEFAULT 0, last_advert INTEGER, ' +
           'adv_lat REAL, adv_lon REAL, last_snr REAL, last_rssi REAL, favorited INTEGER DEFAULT 0)',
       );
-      db!.exec(
+      db!.execScript(
         'CREATE TABLE IF NOT EXISTS meshcore_messages (' +
           'id INTEGER PRIMARY KEY AUTOINCREMENT, sender_id INTEGER, sender_name TEXT, ' +
           'payload TEXT NOT NULL, channel_idx INTEGER DEFAULT 0, timestamp INTEGER NOT NULL, ' +
-          "status TEXT DEFAULT 'acked', packet_id INTEGER, to_node INTEGER)",
+          "status TEXT DEFAULT 'acked', packet_id INTEGER, emoji INTEGER, reply_id INTEGER, to_node INTEGER)",
       );
-      db!.exec('CREATE INDEX IF NOT EXISTS idx_mc_msgs_ts ON meshcore_messages(timestamp)');
-      db!.exec(
+      db!.execScript('CREATE INDEX IF NOT EXISTS idx_mc_msgs_ts ON meshcore_messages(timestamp)');
+      db!.execScript(
         'CREATE UNIQUE INDEX IF NOT EXISTS idx_mc_msg_dedup ' +
           'ON meshcore_messages(sender_id, timestamp, channel_idx) ' +
           'WHERE sender_id IS NOT NULL',
@@ -462,6 +466,65 @@ function runMigrations(): void {
       throw new Error(`Migration v14 failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
+
+  if (userVersion < 15) {
+    try {
+      const columns = db!.prepare('PRAGMA table_info(meshcore_messages)').all() as {
+        name: string;
+      }[];
+      if (!columns.some((c) => c.name === 'emoji')) {
+        db!.prepare('ALTER TABLE meshcore_messages ADD COLUMN emoji INTEGER').run();
+      }
+      if (!columns.some((c) => c.name === 'reply_id')) {
+        db!.prepare('ALTER TABLE meshcore_messages ADD COLUMN reply_id INTEGER').run();
+      }
+      db!.pragma('user_version = 15');
+    } catch (e) {
+      console.error(
+        '[db] migration v15 failed',
+        sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+      );
+      throw new Error(`Migration v15 failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  if (userVersion < 16) {
+    try {
+      const columns = db!.prepare('PRAGMA table_info(meshcore_messages)').all() as {
+        name: string;
+      }[];
+      if (!columns.some((c) => c.name === 'received_via')) {
+        db!.prepare('ALTER TABLE meshcore_messages ADD COLUMN received_via TEXT').run();
+      }
+      db!.pragma('user_version = 16');
+    } catch (e) {
+      console.error(
+        '[db] migration v16 failed',
+        sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+      );
+      throw new Error(`Migration v16 failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  if (userVersion < 17) {
+    try {
+      // Previous index (sender_id, timestamp, channel_idx) dropped distinct lines that shared
+      // those three fields — common for RF channel chat (second-resolution timestamps + stub ids).
+      db!.execScript('DROP INDEX IF EXISTS idx_mc_msg_dedup');
+      db!.execScript(
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_mc_msg_dedup ' +
+          'ON meshcore_messages(sender_id, timestamp, channel_idx, payload) ' +
+          'WHERE sender_id IS NOT NULL',
+      );
+      db!.pragma('user_version = 17');
+    } catch (e) {
+      console.error(
+        '[db] migration v17 failed',
+        sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+      );
+      throw new Error(`Migration v17 failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
 }
 
 /** Export DB to a file. Best-effort for very large databases; may take a long time with no progress callback. */
@@ -490,10 +553,10 @@ export function mergeDatabase(sourcePath: string) {
   }
 
   const targetDb = getDatabase();
-  let sourceDb: Database.Database | undefined;
+  let sourceDb: NodeSqliteDB | undefined;
 
   try {
-    sourceDb = new Database(sourcePath, { readonly: true });
+    sourceDb = new NodeSqliteDB(sourcePath, { readonly: true });
 
     const sourceNodes = sourceDb.prepare('SELECT * FROM nodes').all() as any[];
     const sourceMessages = sourceDb.prepare('SELECT * FROM messages').all() as any[];
@@ -559,7 +622,7 @@ export function mergeDatabase(sourcePath: string) {
             );
             continue;
           }
-          if (!checkMessage.get(senderId, timestamp, payload)) {
+          if (!checkMessage.get(senderId as number, timestamp as number, payload as string)) {
             insertMessage.run(msg);
             messagesAdded++;
           }
@@ -586,10 +649,32 @@ export function mergeDatabase(sourcePath: string) {
   }
 }
 
+export function searchMessages(query: string, limit = 50): unknown[] {
+  const db = getDatabase();
+  const like = `%${query}%`;
+  return db
+    .prepare(
+      `SELECT id, sender_id, sender_name, payload, channel, timestamp, to_node
+       FROM messages WHERE payload LIKE ? ORDER BY timestamp DESC LIMIT ?`,
+    )
+    .all(like, limit);
+}
+
+export function searchMeshcoreMessages(query: string, limit = 50): unknown[] {
+  const db = getDatabase();
+  const like = `%${query}%`;
+  return db
+    .prepare(
+      `SELECT id, sender_id, sender_name, payload, channel_idx, timestamp, to_node
+       FROM meshcore_messages WHERE payload LIKE ? ORDER BY timestamp DESC LIMIT ?`,
+    )
+    .all(like, limit);
+}
+
 export function deleteNodesBySource(source: string): number {
   const db = getDatabase();
   const result = db.prepare('DELETE FROM nodes WHERE source = ?').run(source);
-  return result.changes;
+  return Number(result.changes);
 }
 
 export function deleteNodesWithoutLongname(): number {
@@ -599,7 +684,7 @@ export function deleteNodesWithoutLongname(): number {
       "DELETE FROM nodes WHERE long_name IS NULL OR TRIM(long_name) = '' OR long_name = printf('!%08x', node_id)",
     )
     .run();
-  return result.changes;
+  return Number(result.changes);
 }
 
 export function closeDatabase(): void {

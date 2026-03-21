@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { LocationFilter } from '../App';
 import { getRoutingRowForNode } from '../lib/diagnostics/diagnosticRows';
 import { snrMeaningfulForNodeDiagnostics } from '../lib/diagnostics/snrMeaningfulForNodeDiagnostics';
-import { getNodeStatus, haversineDistanceKm } from '../lib/nodeStatus';
+import { getNodeStatus, haversineDistanceKm, normalizeLastHeardMs } from '../lib/nodeStatus';
 import { RoleDisplay } from '../lib/roleInfo';
 import type { MeshNode } from '../lib/types';
 import { useDiagnosticsStore } from '../stores/diagnosticsStore';
@@ -35,6 +35,7 @@ interface Props {
   mqttConnected?: boolean;
   locationFilter: LocationFilter;
   onToggleFavorite: (nodeId: number, favorited: boolean) => void;
+  mode?: 'meshtastic' | 'meshcore';
 }
 
 export default function NodeListPanel({
@@ -44,6 +45,7 @@ export default function NodeListPanel({
   mqttConnected = false,
   locationFilter,
   onToggleFavorite,
+  mode = 'meshtastic',
 }: Props) {
   const diagnosticRows = useDiagnosticsStore((s) => s.diagnosticRows);
   const ignoreMqttEnabled = useDiagnosticsStore((s) => s.ignoreMqttEnabled);
@@ -215,14 +217,21 @@ export default function NodeListPanel({
     ).length;
     return { hidden: totalWithGps - visibleWithGps };
   }, [locationFilter, myNodeNum, nodes, nodeList]);
+  const totalNodeCount = nodes.size;
+  const visibleNodeCount = nodeList.length;
+  const headerCountLabel =
+    visibleNodeCount === totalNodeCount
+      ? `${visibleNodeCount}`
+      : `${visibleNodeCount} of ${totalNodeCount}`;
 
   function formatTime(ts: number): string {
     if (!ts) return 'Never';
-    const diff = Date.now() - ts;
+    const normalizedTs = normalizeLastHeardMs(ts);
+    const diff = Date.now() - normalizedTs;
     if (diff < 60_000) return 'Just now';
     if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
     if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-    return new Date(ts).toLocaleDateString();
+    return new Date(normalizedTs).toLocaleDateString();
   }
 
   function formatCoord(val: number | null | undefined): string {
@@ -268,14 +277,16 @@ export default function NodeListPanel({
   return (
     <div className="flex flex-col min-h-0 h-full gap-3">
       <div className="flex justify-between items-center gap-3 shrink-0">
-        <h2 className="text-xl font-semibold text-gray-200">Node Database ({nodeList.length})</h2>
+        <h2 className="text-xl font-semibold text-gray-200">
+          {mode === 'meshcore' ? 'Contacts' : 'Node Database'} ({headerCountLabel})
+        </h2>
         <div className="flex items-center gap-2 flex-1 max-w-xs">
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search nodes..."
-            aria-label="Search nodes"
+            aria-label="Search nodes..."
             className="flex-1 px-3 py-1.5 bg-secondary-dark/80 rounded-lg text-gray-200 text-sm border border-gray-600/50 focus:border-brand-green/50 focus:outline-none"
           />
         </div>
@@ -519,11 +530,6 @@ export default function NodeListPanel({
                   <tr
                     key={node.node_id}
                     onClick={() => onNodeClick(node)}
-                    aria-label={
-                      node.favorited && !isSelf
-                        ? `${node.long_name || node.short_name || 'Node'}, favorited`
-                        : undefined
-                    }
                     className={`cursor-pointer hover:bg-secondary-dark/50 transition-colors ${rowOpacity} ${
                       isSelf ? 'bg-brand-green/5 border-l-2 border-l-brand-green' : ''
                     }`}

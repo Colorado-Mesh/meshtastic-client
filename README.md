@@ -14,8 +14,7 @@ The official Meshtastic apps cover the basics, but desktop power users need more
 
 **Known Bugs:**
 
-- **Linux Web Bluetooth** — Web Bluetooth is experimental upstream. The app automatically enables `--enable-experimental-web-platform-features` on Linux to improve BLE device discovery on Electron 28–30 / Ubuntu 22.04. If BLE still fails (e.g. connection drops after pairing), prefer USB Serial or WiFi/HTTP.
-- **MeshCore library race** — There is a race condition in the MeshCore (e.g. `@liamcottle/meshcore.js`) connection flow that can cause BLE connections to fail or behave inconsistently.
+- **Linux BLE permissions** — BLE uses `@stoprocent/noble` (native BlueZ), which needs raw socket access. Run `sudo setcap cap_net_raw+eip $(which electron)` once after install, or launch with `sudo` during development. Packaged AppImages include the cap in the installer.
 
 ---
 
@@ -82,14 +81,15 @@ The official Meshtastic apps cover the basics, but desktop power users need more
 
 **Connectivity**
 
-- **Bluetooth LE** — pair wirelessly; one-click reconnect card remembers your last device (name persists across sessions)
-- **USB Serial** — plug in via USB; auto-reconnects silently on startup
+- **Bluetooth LE** — pair wirelessly; auto-reconnects on startup with no user gesture required (noble native BLE via BlueZ/CoreBluetooth/WinRT); last device name persists across sessions
+- **USB Serial** — plug in via USB; auto-reconnects silently on startup (saved port signature matches the same physical device across re-enumeration)
 - **WiFi / HTTP / TCP** — connect to network-enabled nodes; saves last address for quick reconnect
 - Protocol toggle in the Connection tab (**Meshtastic / MeshCore**); each protocol remembers its own last connection and reconnects independently; the active protocol is shown as a badge in the header
 
 **Chat**
 
 - Send/receive messages across channels with per-transport delivery badges and delivery ACK / failure states
+- **Spellcheck** — the message composer uses a textarea with inline misspelling marks; right‑click for replacements (Electron main process configures the spellchecker for **Meshtastic** and **MeshCore**)
 - Emoji reactions (11 emojis with compose picker) and reply-to-message (quoted preview in bubble)
 - Unread message divider that persists across restarts; auto-scrolls on tab switch
 - Direct messages (DMs) to individual nodes
@@ -114,7 +114,7 @@ The official Meshtastic apps cover the basics, but desktop power users need more
 **Productivity**
 
 - **Log panel** (right rail) — live app log stream, optional debug toggle, export or delete the log file
-- Full keyboard navigation — press `?` for shortcut reference; `Cmd/Ctrl+1–8` switches tabs; `Cmd/Ctrl+F` searches chat
+- Full keyboard navigation — press `?` for shortcut reference; `Cmd/Ctrl+1–8` switches tabs; `Cmd/Ctrl+F` opens **chat search** across all channels (optional `user:name` and `channel:name` filters)
 - Automatic update checking — packaged builds download and install in-app; macOS opens the release page
 - System tray with live unread badge; app stays accessible when window is closed
 - Persistent SQLite storage; DB export/import/clear in the App tab; Clear GPS Data and Reset Diagnostics without a full DB wipe
@@ -128,6 +128,7 @@ MeshCore support is available alongside Meshtastic — switch protocols in the C
 **Contacts & Discovery**
 
 - Contact list with advert-based positions, contact types (Chat, Repeater, Room), and GPS coordinates persisted to SQLite; contacts seed from DB on reconnect as a fallback cache
+- **Favorite / pin** — persisted per contact in SQLite (`meshcore_contacts.favorited`)
 - **Refresh Contacts** — pull the full contact list from the device on demand
 - **Send Advert** — broadcast your node's presence (flood advert) to the mesh
 - **Manual Contact Approval** — toggle between auto-add (contacts appear automatically when heard) and manual-add (new contacts require approval before appearing); preference is persisted and re-applied on reconnect
@@ -135,6 +136,7 @@ MeshCore support is available alongside Meshtastic — switch protocols in the C
 **Messaging**
 
 - Channel messaging and **direct messages (DMs)** with delivery ACK tracking (`expectedAckCrc`) and failure timeout
+- **Transport badges** on received messages — **RF**, **MQTT**, or **both** (persisted as `received_via` in `meshcore_messages`); MQTT JSON chat can be used when RF is down
 - Incoming push events: periodic advert (0x80), path update (0x81), send confirmed (0x82), message waiting (0x83), new contact (0x8A), incoming DM (7), incoming channel message (8)
 - All messages and contacts persisted to SQLite (`meshcore_messages`, `meshcore_contacts` tables)
 
@@ -147,7 +149,8 @@ MeshCore support is available alongside Meshtastic — switch protocols in the C
 
 **Repeaters**
 
-- **Repeaters panel** (MeshCore-only tab) — list repeaters with on-demand status (noise floor, RSSI/SNR, packet counts, air time, uptime, TX queue); JSON nickname import for bulk contact names
+- **Repeaters panel** (MeshCore-only tab) — list repeaters with on-demand status (noise floor, RSSI/SNR, packet counts, air time, uptime, TX queue); JSON nickname import for bulk contact names; **Path** column shows a per-hop SNR sparkline from the last trace; per-row **Neighbors** expands an inline neighbor list (same query as node detail)
+- **Panel toolbar** — **Send Advert**, **Sync Clock**, and **Reboot Device** (shown when the device supports the corresponding commands)
 - **Per-repeater removal** — two-click confirm button on each row; removes from in-memory state and deletes from the SQLite contacts DB
 - **Clear All Repeaters** — Danger Zone entry in the App tab that deletes all Repeater-type contacts (contact_type = 2) from the DB while leaving Chat and Room contacts intact
 
@@ -159,19 +162,21 @@ MeshCore support is available alongside Meshtastic — switch protocols in the C
 **Battery & Signal Telemetry**
 
 - Battery voltage from device `selfInfo`; per-packet signal telemetry (SNR/RSSI) from RF event 0x88 — visible in the Telemetry tab
+- **Environment charts** (temperature, humidity, barometric pressure, etc.) in the Telemetry tab when pulled Cayenne LPP data is available — same panel as Meshtastic environment telemetry
 
 **Transport Notes**
 
 - BLE: waits for GATT init (`connected` event) before issuing commands; includes nudge timeout for stuck `deviceQuery` on some devices
-- Serial: auto-reconnects on startup using saved port ID
+- Serial: auto-reconnects on startup using a saved port signature so reconnect targets the same physical device when possible
 - TCP: connects to MeshCore companion radio on port 4403
+- **MQTT (JSON v1):** The Connection tab MQTT card includes **Network Preset** buttons — **LetsMesh** (WebSocket on port 443, topic prefix `meshcore`), **Ripple Networks** (TLS on port 8883, same topic prefix, preset default credentials, and **Allow insecure TLS** for brokers that use a non–public CA), and **Custom** for your own broker
 
 ---
 
 ## Limitations
 
 - **MQTT → RF**: Messages received via MQTT are shown in chat but are not rebroadcast over the radio. Previous relay behavior caused duplicate or misattributed messages.
-- **MeshCore — no MQTT**: MQTT is a Meshtastic-specific feature and is not available in MeshCore mode.
+- **MeshCore — MQTT (JSON v1)**: The Connection tab can connect to an MQTT broker in MeshCore mode using a small JSON chat envelope (see [docs/meshcore-meshtastic-parity.md](docs/meshcore-meshtastic-parity.md)). This is separate from Meshtastic’s protobuf MQTT pipeline.
 - **MeshCore — no routing anomaly diagnostics**: Hop anomaly detection (hop_goblin, bad_route, etc.) and RF diagnostics require Meshtastic-specific packets (`hops_away`, LocalStats, NeighborInfo). The Network Diagnostics tab is available in MeshCore for foreign LoRa detection and other shared features.
 - **MeshCore — no channel/device config editing**: MeshCore does not expose a channel-configuration API. Radio parameters (frequency, bandwidth, spreading factor, coding rate, TX power) can be set via the Radio tab.
 - **MeshCore — remote telemetry availability**: `getTelemetry` requires the remote node to have environment sensors. A timeout is returned if the node has no sensor data.
@@ -251,7 +256,13 @@ npm run dist:linux -- --linux rpm
 npm run dist:linux -- --linux appimage
 ```
 
-BLE requires BlueZ (the standard Linux Bluetooth stack, included in most distros).
+BLE uses `@stoprocent/noble` (native BlueZ) and requires raw socket capability:
+
+```bash
+sudo setcap cap_net_raw+eip $(which electron)
+```
+
+Run this once after `npm install`. You may alternatively run with `sudo` during development. BlueZ is the standard Linux Bluetooth stack and is included in most distros.
 
 **Sandbox issues (dev mode or AppImage):**
 
@@ -341,7 +352,7 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 **3. Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)** with the "Desktop development with C++" workload (required for native SQLite and Serial).
 
-**4. Install Python 3** — node-gyp (used to build native modules including `better-sqlite3` and `@serialport/bindings-cpp`) requires Python on Windows. Install from [python.org](https://www.python.org/downloads/) or `winget install Python.Python.3.12`, and during setup check **"Add Python to PATH"**. If Python is installed but not found, set it explicitly: `npm config set python "C:\Path\To\python.exe"`.
+**4. Install Python 3** — node-gyp (used to build native modules including `@serialport/bindings-cpp` and `@stoprocent/noble`) requires Python on Windows. Install from [python.org](https://www.python.org/downloads/) or `winget install Python.Python.3.12`, and during setup check **"Add Python to PATH"**. If Python is installed but not found, set it explicitly: `npm config set python "C:\Path\To\python.exe"`.
 
 **5. Clone and run:**
 
@@ -388,12 +399,13 @@ The **Connection** tab shows a **Meshtastic / MeshCore** toggle at the top. Sele
 After a successful connection, Mesh-Client remembers your last device per protocol. On next launch:
 
 - **Serial** — auto-connects silently in the background (both protocols)
-- **Bluetooth / WiFi / TCP** — a one-click reconnect card appears; click **Reconnect** (BLE requires a user gesture)
-- **MQTT** — auto-reconnects using saved broker settings (Meshtastic only)
+- **Bluetooth** — auto-scans on launch and reconnects when the last device is discovered (no user gesture required)
+- **WiFi / TCP** — a one-click reconnect card appears; click **Reconnect**
+- **MQTT** — auto-reconnects using saved broker settings (Meshtastic protobuf pipeline; MeshCore JSON v1 adapter — select transport when connecting)
 
 ### MQTT
 
-Enter your broker URL, topic, and optional credentials in the MQTT section of the Connection tab. When connected, the section collapses to a compact info card showing the server, client ID, and topic. You can send messages via MQTT even when no hardware device is connected.
+Enter your broker URL, topic, and optional credentials in the MQTT section of the Connection tab. When connected, the section collapses to a compact info card showing the server, client ID, and topic. You can send messages via MQTT even when no hardware device is connected. **Meshtastic** uses the protobuf MQTT stack; **MeshCore** uses the JSON v1 chat envelope on the broker (see [docs/meshcore-meshtastic-parity.md](docs/meshcore-meshtastic-parity.md)). In **MeshCore** mode, **LetsMesh** / **Ripple Networks** presets fill those fields for the corresponding public networks; override username, password, or TLS options if your operator issued different credentials.
 
 ---
 
@@ -409,27 +421,27 @@ Enter your broker URL, topic, and optional credentials in the MQTT section of th
 | Windows  | Yes       | Yes    | Yes  | Yes  |
 | Linux    | Yes       | Yes    | Yes  | Yes  |
 
-**MeshCore** supports three transport types (no MQTT):
+**MeshCore** supports BLE, Web Serial, TCP, and optional MQTT (broker JSON v1 adapter):
 
-| Platform | Bluetooth | Serial | TCP |
-| -------- | --------- | ------ | --- |
-| macOS    | Yes       | Yes    | Yes |
-| Windows  | Yes       | Yes    | Yes |
-| Linux    | Yes       | Yes    | Yes |
+| Platform | Bluetooth | Serial | TCP | MQTT (JSON v1) |
+| -------- | --------- | ------ | --- | -------------- |
+| macOS    | Yes       | Yes    | Yes | Yes            |
+| Windows  | Yes       | Yes    | Yes | Yes            |
+| Linux    | Yes       | Yes    | Yes | Yes            |
 
 ### Tech Stack
 
-| Component  | Technology                                                                             |
-| ---------- | -------------------------------------------------------------------------------------- |
-| Desktop    | Electron                                                                               |
-| UI         | React 19 + TypeScript                                                                  |
-| Styling    | Tailwind CSS v4                                                                        |
-| Meshtastic | @meshtastic/core + transport-http, transport-web-bluetooth, transport-web-serial (JSR) |
-| MeshCore   | @liamcottle/meshcore.js (BLE, Web Serial, TCP via main-process IPC)                    |
-| Maps       | Leaflet + OpenStreetMap                                                                |
-| Charts     | Recharts                                                                               |
-| Database   | SQLite (better-sqlite3)                                                                |
-| Build      | esbuild + Vite + electron-builder                                                      |
+| Component  | Technology                                                                               |
+| ---------- | ---------------------------------------------------------------------------------------- |
+| Desktop    | Electron                                                                                 |
+| UI         | React 19 + TypeScript                                                                    |
+| Styling    | Tailwind CSS v4                                                                          |
+| Meshtastic | @meshtastic/core + transport-http, transport-web-serial (JSR); BLE via @stoprocent/noble |
+| MeshCore   | @liamcottle/meshcore.js (BLE, Web Serial, TCP via main-process IPC)                      |
+| Maps       | Leaflet + OpenStreetMap                                                                  |
+| Charts     | Recharts                                                                                 |
+| Database   | SQLite (node:sqlite built-in, via db-compat.ts shim)                                     |
+| Build      | esbuild + Vite + electron-builder                                                        |
 
 ### Project Structure
 
@@ -442,15 +454,19 @@ meshtastic-client/
 │   └── dependabot.yml
 ├── src/
 │   ├── main/
-│   │   ├── index.ts              # Window creation, BLE/Serial intercept, IPC (incl. meshcore TCP), MQTT
+│   │   ├── index.ts              # Window creation, BLE/Serial intercept, IPC (incl. meshcore TCP & MQTT)
+│   │   ├── meshcore-mqtt-adapter.ts  # MeshCore MQTT JSON v1 subscribe/publish
 │   │   ├── log-service.ts        # Log file, console patch, log panel IPC
 │   │   ├── sanitize-log-message.ts  # Log injection sanitization (CodeQL); use at call sites before appendLine
-│   │   ├── database.ts           # SQLite schema & migrations (WAL mode, user_version 14)
+│   │   ├── database.ts           # SQLite schema & migrations (WAL mode)
+│   │   ├── db-compat.ts          # better-sqlite3 API shim over node:sqlite (no node-gyp)
 │   │   ├── mqtt-manager.ts       # MQTT client: AES decrypt, dedup, protobuf decode (Meshtastic only)
 │   │   ├── updater.ts            # Auto-update checks via electron-updater
 │   │   └── gps.ts                # Main-process GPS helper
 │   ├── preload/
 │   │   └── index.ts              # contextBridge: electronAPI (db, mqtt, log, BLE, serial, session, meshcore.tcp)
+│   ├── shared/
+│   │   └── meshcoreMqttEnvelope.ts   # JSON v1 envelope parse/validate (main + renderer)
 │   └── renderer/
 │       ├── index.html            # HTML entry
 │       ├── main.tsx              # React entry point
@@ -458,6 +474,7 @@ meshtastic-client/
 │       ├── styles.css            # Global styles, theme variables
 │       ├── components/           # Panels and UI (many have co-located *.test.tsx)
 │       │   ├── ChatPanel.tsx         # Chat UI, DMs, emoji reactions, channel switching
+│       │   ├── SearchModal.tsx       # Cross-channel chat search (`user:` / `channel:` filters)
 │       │   ├── NodeListPanel.tsx     # Node browser with online/stale/offline/MQTT filter
 │       │   ├── MapPanel.tsx          # Node positions on OpenStreetMap (Leaflet)
 │       │   ├── TelemetryPanel.tsx    # Battery/voltage/SNR charts (Recharts)
@@ -469,7 +486,7 @@ meshtastic-client/
 │       │   ├── MeshCongestionAttributionBlock.tsx  # Shared mesh congestion / duplicate-traffic copy
 │       │   ├── LogPanel.tsx          # Live app log, debug toggle, export/delete log file
 │       │   ├── RadioPanel.tsx        # Radio settings, position, GPS send; MeshCore: channels, Import Config JSON
-│       │   ├── RepeatersPanel.tsx    # MeshCore only: repeater list, status, JSON nickname import
+│       │   ├── RepeatersPanel.tsx    # MeshCore: repeater list, status, trace SNR, neighbors, console actions
 │       │   ├── AppPanel.tsx          # App settings, theme presets, GPS interval, database management
 │       │   ├── NodeDetailModal.tsx   # Node info overlay; MeshCore: trace, repeater status, telemetry, neighbors
 │       │   ├── NodeInfoBody.tsx      # Shared node info content (modal + map popup)
@@ -482,7 +499,7 @@ meshtastic-client/
 │       │   └── Tabs.tsx
 │       ├── hooks/
 │       │   ├── useDevice.ts          # Meshtastic: device lifecycle, 3 transports, auto-reconnect
-│       │   └── useMeshCore.ts        # MeshCore: BLE/Serial/TCP, contacts, messages, ACK, trace, telemetry
+│       │   └── useMeshCore.ts        # MeshCore: BLE/Serial/TCP/MQTT, contacts, messages, ACK, trace, telemetry
 │       ├── stores/
 │       │   ├── diagnosticsStore.ts   # Anomalies, halo flags, MQTT ignore, foreign LoRa (both protocols)
 │       │   ├── mapViewportStore.ts   # Persisted map center/zoom
@@ -491,6 +508,7 @@ meshtastic-client/
 │       ├── lib/
 │       │   ├── types.ts              # MeshNode, ChatMessage, DeviceState, MeshProtocol, etc.
 │       │   ├── connection.ts         # Meshtastic: createConnection (BLE/Serial/HTTP)
+│       │   ├── serialPortSignature.ts    # Serial port identity persistence for gesture-free reconnect (shared)
 │       │   ├── foreignLoraDetection.ts   # Cross-protocol: classify payload, foreign LoRa, RSSI/SNR
 │       │   ├── meshcoreUtils.ts      # MeshCore: pubkeyToNodeId, meshcoreContactToMeshNode, contact types
 │       │   ├── gpsSource.ts          # GPS waterfall: device → geolocation → null
@@ -522,8 +540,7 @@ meshtastic-client/
 │   ├── entitlements.mac.plist    # macOS signing entitlements (main)
 │   └── entitlements.mac.inherit.plist  # macOS child-process entitlements
 ├── scripts/
-│   ├── before-build-native.cjs   # Cleans better-sqlite3 build before dist (Windows EPERM workaround)
-│   ├── rebuild-native.mjs        # Rebuilds better-sqlite3 for Electron ABI (postinstall)
+│   ├── rebuild-native.mjs        # Rebuilds @stoprocent/noble for Electron ABI (postinstall)
 │   ├── wait-for-dev.mjs          # Waits for Vite dev server before launching Electron
 │   └── check-log-injection.mjs   # Pre-commit: ensures log call sites use sanitizeLogMessage (CodeQL)
 ├── patches/                     # patch-package patches (e.g. electron-builder)
@@ -598,9 +615,15 @@ Join the `#mesh-client-development` channel on Discord for help, feedback, and d
 
 ## Troubleshooting
 
+### npm 11: `Unknown env config "devdir"`
+
+**Cause:** npm 11+ rejects configuration keys it does not define. `devdir` is a legacy node-gyp-related value; it may be set in `~/.npmrc` or via `npm_config_devdir` / `NPM_CONFIG_DEVDIR` (some editors or sandboxes inject it).
+
+**Fix:** Run `npm config delete devdir` and `npm config delete devdir --global` if present; optionally `unset npm_config_devdir NPM_CONFIG_DEVDIR` in your shell. The project’s pre-commit hook unsets these before running npm. See [CONTRIBUTING.md](CONTRIBUTING.md) (Getting Started).
+
 ### `npm install` fails on native module compilation
 
-You're missing build tools for the native modules (e.g. `better-sqlite3`, `@serialport/bindings-cpp`):
+You're missing build tools for the native modules (e.g. `@serialport/bindings-cpp`, `@stoprocent/noble`):
 
 - **Mac**: `xcode-select --install`
 - **Linux**: `sudo apt install build-essential python3`
@@ -608,17 +631,17 @@ You're missing build tools for the native modules (e.g. `better-sqlite3`, `@seri
 
 ### Windows: "Could not find any Visual Studio installation to use"
 
-**Cause**: node-gyp (used to build native modules like `better-sqlite3` and `@serialport/bindings-cpp`) requires Visual Studio Build Tools (or full Visual Studio) with the C++ workload on Windows. The error appears during `npm install` (postinstall) or `npm run dist:win` when no suitable installation is found. **Even when Build Tools are installed**, this often happens when the **project path contains spaces** (e.g. `C:\Users\Joey Stanford\meshcore`) — node-gyp's Visual Studio finder can fail in that case. Fix the path first.
+**Cause**: node-gyp (used to build native modules like `@serialport/bindings-cpp` and `@stoprocent/noble`) requires Visual Studio Build Tools (or full Visual Studio) with the C++ workload on Windows. The error appears during `npm install` (postinstall) or `npm run dist:win` when no suitable installation is found. **Even when Build Tools are installed**, this often happens when the **project path contains spaces** (e.g. `C:\Users\Joey Stanford\meshcore`) — node-gyp's Visual Studio finder can fail in that case. Fix the path first.
 
 **Fix**:
 
-1. **Use a path without spaces** (do this first, especially if Build Tools are already installed): Clone or move the repo to e.g. `C:\dev\meshcore` or `C:\src\meshcore`, then run `npm install` from there. This resolves the issue in most cases. See [dist:win fails: "space in the path"](#distwin-fails-space-in-the-path-or-eperm-unlink-on-better_sqlite3node) for details.
+1. **Use a path without spaces** (do this first, especially if Build Tools are already installed): Clone or move the repo to e.g. `C:\dev\meshcore` or `C:\src\meshcore`, then run `npm install` from there. This resolves the issue in most cases. See [dist:win fails](#distwin-fails-with-space-in-the-path-or-eperm-on-native-modules) for details.
 2. **Install Visual Studio Build Tools** (if not already): Download [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) and select the **"Desktop development with C++"** workload. After installation, close and reopen your terminal so environment variables are picked up.
 3. **If Build Tools are installed but node-gyp still fails** (and you cannot move the repo): Open **"Developer Command Prompt for VS"** or **"x64 Native Tools Command Prompt for VS"** from the Start menu, `cd` to your project folder, and run `npm install` there so the correct `cl.exe` and paths are in scope. Or set the version explicitly: `npm config set msvs_version 2022` (use your installed year/build).
 
 ### Windows: "Could not find any Python installation to use" (e.g. when building `@serialport/bindings-cpp`)
 
-**Cause**: node-gyp (used to compile native addons such as `better-sqlite3` and `@serialport/bindings-cpp`) requires Python on Windows. The build fails during `npm install` (postinstall) or during `npm run dist:win` when Python is not installed or not on PATH.
+**Cause**: node-gyp (used to compile native addons such as `@serialport/bindings-cpp` and `@stoprocent/noble`) requires Python on Windows. The build fails during `npm install` (postinstall) or during `npm run dist:win` when Python is not installed or not on PATH.
 
 **Fix**:
 
@@ -634,22 +657,16 @@ You're missing build tools for the native modules (e.g. `better-sqlite3`, `@seri
 - Try disconnecting fully first, then reconnecting
 - If the device picker never appears, restart the app
 
-### BLE known issues (Linux / Windows)
+### BLE known issues
 
-- **Web Bluetooth is experimental** on some platforms; you may see a console note linking to [implementation-status](https://github.com/WebBluetoothCG/web-bluetooth/blob/main/implementation-status.md).
-- **"Connection already in progress"** or **GATT init failures** can occur when the first BLE write runs before the connection is fully ready. The app **retries once** automatically after a short delay; if it still fails, wait a few seconds and try again, or use **Serial/USB** instead.
-- If BLE is unreliable on your system, prefer Serial or TCP for a stable connection. The root cause is a race in the MeshCore library: the first BLE write (deviceQuery) can run before `gatt.connect()` completes. An [upstream bug report](https://github.com/meshcore-dev/meshcore.js/issues/22) tracks the fix (await GATT connect before any write); the app’s retry is a workaround until the library is updated.
+- **Bluetooth adapter not found** — ensure Bluetooth is enabled at the OS level. On Linux: `systemctl status bluetooth` and `rfkill list`. On macOS: check **System Settings > Bluetooth**. On Windows: **Settings → Bluetooth & devices**.
+- **Device not discovered** — make sure the device is in advertising/pairing mode and within range. Try stopping and restarting the scan.
+- If BLE is unreliable, prefer Serial (USB) or TCP/HTTP for a stable connection.
 
 **Linux-specific:**
 
-- The app passes `--enable-experimental-web-platform-features` on Linux so the Chromium Bluetooth device picker fires correctly. If you see `"Bluetooth adapter not found"`, ensure BlueZ is running (`systemctl status bluetooth`) and the adapter is enabled (`rfkill list`).
-- GATT connect now has a 15-second timeout to prevent indefinite hangs when the BlueZ stack is in a confused state. If you hit it, restart the Bluetooth service (`sudo systemctl restart bluetooth`) and try again.
-
-**Windows-specific:**
-
-- BLE reconnect timeout is **20 seconds** (vs. 15 s on other platforms) to account for WinRT re-scan latency. If the reconnect card times out, retry once before switching to Serial.
-- If you see `"Bluetooth adapter not found"`, go to **Settings → Bluetooth & devices** and confirm Bluetooth is on. Then check **Device Manager → Bluetooth** for adapter errors. If the adapter is present but flagged, reinstall its driver.
-- `"GATT Error: In Progress"` from the WinRT stack is handled gracefully and will not cause a false disconnect.
+- noble requires raw socket capability. Run once after install: `sudo setcap cap_net_raw+eip $(which electron)`. Without this, BLE scanning will silently fail.
+- If the adapter is present but scanning does not start, restart BlueZ: `sudo systemctl restart bluetooth`.
 
 ### Serial port not detected
 
@@ -722,47 +739,30 @@ npm run trace-deprecation
 
 ### "A native module failed to load" dialog on startup
 
-**Cause**: `better-sqlite3` was compiled for a different Electron ABI — common after an Electron or Node version change.
+**Cause**: `@stoprocent/noble` (or `@serialport/bindings-cpp`) was compiled for a different Electron ABI — common after an Electron or Node version change.
 
-**Fix**: Run `npm install` (the postinstall script rebuilds native modules for the correct ABI automatically). The rebuild step **removes any existing `node_modules/better-sqlite3/build`** before compiling, so a wrong-platform `.node` (e.g. Linux ELF left on macOS after copying `node_modules`) cannot persist and cause `ERR_DLOPEN_FAILED`.
+**Fix**: Run `npm install` (the postinstall script rebuilds native modules for the correct ABI automatically).
 
 - If you still see dlopen errors after switching machines or OSes, delete `node_modules` and run a clean `npm install`.
 - **Windows**: Also ensure the [Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist) is installed.
 
-### `dist:win` fails: "space in the path" or `EPERM` unlink on `better_sqlite3.node`
+### `dist:win` fails with "space in the path" or `EPERM` on native modules
 
 **Symptoms**
 
 - `Attempting to build a module with a space in the path` during `npm run dist:win` (or `npm run rebuild`).
-- `EPERM: operation not permitted, unlink '...\better-sqlite3\build\Release\better_sqlite3.node'`.
+- `EPERM: operation not permitted` when the rebuild tries to replace a locked `.node` file.
 
 **Cause**
 
-1. **Spaces in the project path** — node-gyp and the native rebuild step are unreliable when the repo lives under a path with spaces (e.g. `C:\Users\Joey Stanford\meshtastic-client`). This can surface as "Attempting to build a module with a space in the path", "Could not find any Visual Studio installation to use", or EPERM. See [node-gyp#65](https://github.com/nodejs/node-gyp/issues/65#issuecomment-368820565).
-2. **EPERM on unlink** — Something on Windows still has the `.node` file open (another `node`/`electron` process, antivirus/Windows Defender scanning the file, or a stuck handle), so the rebuild cannot replace it.
-
-3. **Why it used to work** — electron-builder **always runs a second native rebuild** during `dist:win` (after `postinstall` already built `better-sqlite3`). Recent **@electron/rebuild** / node-gyp behavior can hit EPERM when replacing the existing `.node`. The repo now runs a **beforeBuild** hook that deletes `node_modules/better-sqlite3/build` first (with retries) so the packaging rebuild compiles into a clean folder instead of unlinking a locked file. If delete still hits EPERM, the hook **renames** `build` to `build.stale.<timestamp>` (so node-gyp can create a fresh `build`) or tries **`rd /s /q`** before failing.
+1. **Spaces in the project path** — node-gyp is unreliable when the repo lives under a path with spaces (e.g. `C:\Users\Joey Stanford\meshtastic-client`). This can surface as "Attempting to build a module with a space in the path", "Could not find any Visual Studio installation to use", or EPERM. See [node-gyp#65](https://github.com/nodejs/node-gyp/issues/65#issuecomment-368820565).
+2. **EPERM on unlink** — Something on Windows still has the `.node` file open (another `node`/`electron` process, antivirus/Windows Defender scanning the file, or a stuck handle).
 
 **Fix**
 
-1. **Try a normal dist again** — `npm run dist:win`. The **beforeBuild** hook removes `better-sqlite3/build` before electron-builder's rebuild so node-gyp often avoids EPERM unlink.
-2. **Skip the packaging rebuild** — If `npm install` / `npm run rebuild` already produced a good `better_sqlite3.node` for this Electron version:
-
-   ```bash
-   npm run dist:win:skip-rebuild
-   ```
-
-   Use when EPERM persists or you only build **x64 on an x64 machine**. Building **arm64** on an x64 host still needs a successful rebuild for that arch.
-
-3. **Use a path without spaces** (strongly recommended):
-   - Clone or copy the repo to e.g. `C:\dev\meshtastic-client` or `C:\src\meshtastic-client`, then `npm install` and `npm run dist:win` from there.
-   - Alternatively, use a directory junction so the "short" path is what tools see, e.g. `mklink /J C:\dev\mesh C:\Users\YourName\meshtastic-client` and work from `C:\dev\mesh`.
-4. **Clear the lock before rebuild**:
-   - Quit any running Mesh-client/Electron dev instances and close other terminals that might be using the repo.
-   - Manually delete `node_modules\better-sqlite3\build` (whole folder). If delete fails, something is still holding the file — use Task Manager to end stray `node.exe` / `electron.exe`, then retry.
-   - Optionally add the project folder to Windows Defender exclusions temporarily while building.
-5. **Rebuild then dist**:
-   - From the no-space path: `npm run rebuild` — if that succeeds, run `npm run dist:win`.
+1. **Use a path without spaces** (strongly recommended): clone or copy the repo to e.g. `C:\dev\meshtastic-client`, then `npm install` and `npm run dist:win` from there.
+2. **Clear the lock before rebuild**: quit any running Mesh-Client/Electron dev instances, then delete the affected `build` folder under `node_modules` and retry.
+3. **Rebuild then dist**: `npm run rebuild` — if that succeeds, run `npm run dist:win`.
 
 CI builds avoid both issues by using short paths and clean agents; local Windows builds need the same constraints.
 

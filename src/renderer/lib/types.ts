@@ -158,6 +158,10 @@ export interface MQTTSettings {
    * The default PSK (AQ==, padded to 16 bytes) is always tried first.
    */
   channelPsks?: string[];
+  /** Broker codec: Meshtastic protobuf vs MeshCore JSON adapter (main process). */
+  mqttTransportProtocol?: 'meshtastic' | 'meshcore';
+  /** Use ws:// or wss:// transport instead of mqtt:// / mqtts:// (required for port 443 on LetsMesh). */
+  useWebSocket?: boolean;
 }
 
 export type MQTTStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -195,6 +199,8 @@ export interface ChatMessage {
   receivedVia?: 'rf' | 'mqtt' | 'both';
   // true for backlog messages (e.g. MeshCore MsgWaiting catch-up); excluded from unread counter
   isHistory?: boolean;
+  /** Full raw line from device/MQTT for dedupe only (not persisted); avoids collapsing same-second identical payloads. */
+  meshcoreDedupeKey?: string;
 }
 
 export interface TelemetryPoint {
@@ -232,10 +238,11 @@ export interface DeviceState {
   firmwareVersion?: string;
 }
 
-export interface BluetoothDevice {
+export interface NobleBleDevice {
   deviceId: string;
   deviceName: string;
 }
+export type NobleBleSessionId = 'meshtastic' | 'meshcore';
 
 export interface SerialPortInfo {
   portId: string;
@@ -308,7 +315,10 @@ declare global {
           timestamp: number;
           status?: string;
           packet_id?: number | null;
+          emoji?: number | null;
+          reply_id?: number | null;
           to_node?: number | null;
+          received_via?: string | null;
         }) => Promise<unknown>;
         saveMeshcoreContact: (contact: {
           node_id: number;
@@ -330,6 +340,8 @@ declare global {
           advLon: number | null,
         ) => Promise<unknown>;
         getMeshcoreMessages: (channelIdx?: number, limit?: number) => Promise<unknown[]>;
+        searchMessages: (query: string, limit?: number) => Promise<unknown[]>;
+        searchMeshcoreMessages: (query: string, limit?: number) => Promise<unknown[]>;
         getMeshcoreContacts: () => Promise<unknown[]>;
         deleteMeshcoreContact: (nodeId: number) => Promise<unknown>;
         clearMeshcoreMessages: () => Promise<unknown>;
@@ -338,6 +350,11 @@ declare global {
         updateMeshcoreContactNickname: (
           nodeId: number,
           nickname: string | null,
+        ) => Promise<unknown>;
+        updateMeshcoreContactFavorited: (
+          nodeId: number,
+          favorited: boolean,
+          publicKeyHex?: string | null,
         ) => Promise<unknown>;
         savePositionHistory: (
           nodeId: number,
@@ -391,6 +408,14 @@ declare global {
           longitudeI: number;
           altitude?: number;
         }) => Promise<number>;
+        publishMeshcore: (args: {
+          text: string;
+          channelIdx: number;
+          senderName?: string;
+          senderNodeId?: number;
+          timestamp?: number;
+        }) => Promise<void>;
+        onMeshcoreChat: (cb: (msg: unknown) => void) => () => void;
       };
       meshcore: {
         tcp: {
@@ -402,9 +427,18 @@ declare global {
         };
         openJsonFile: () => Promise<string | null>;
       };
-      onBluetoothDevicesDiscovered: (cb: (devices: BluetoothDevice[]) => void) => () => void;
-      selectBluetoothDevice: (deviceId: string) => void;
-      cancelBluetoothSelection: () => void;
+      onNobleBleAdapterState: (cb: (state: string) => void) => () => void;
+      onNobleBleDeviceDiscovered: (cb: (device: NobleBleDevice) => void) => () => void;
+      onNobleBleConnected: (cb: (sessionId: NobleBleSessionId) => void) => () => void;
+      onNobleBleDisconnected: (cb: (sessionId: NobleBleSessionId) => void) => () => void;
+      onNobleBleFromRadio: (
+        cb: (payload: { sessionId: NobleBleSessionId; bytes: Uint8Array }) => void,
+      ) => () => void;
+      startNobleBleScanning: (sessionId: NobleBleSessionId) => Promise<void>;
+      stopNobleBleScanning: (sessionId: NobleBleSessionId) => Promise<void>;
+      connectNobleBle: (sessionId: NobleBleSessionId, peripheralId: string) => Promise<void>;
+      disconnectNobleBle: (sessionId: NobleBleSessionId) => Promise<void>;
+      nobleBleToRadio: (sessionId: NobleBleSessionId, bytes: Uint8Array) => Promise<void>;
       onSerialPortsDiscovered: (cb: (ports: SerialPortInfo[]) => void) => () => void;
       selectSerialPort: (portId: string) => void;
       cancelSerialSelection: () => void;

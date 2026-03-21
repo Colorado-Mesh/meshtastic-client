@@ -103,20 +103,38 @@ export class MQTTManager extends EventEmitter {
     const useTls = settings.port === 8883;
     const rejectUnauthorized = useTls ? !settings.tlsInsecure : false;
 
-    this.client = mqtt.connect({
-      host: settings.server,
-      port: settings.port,
-      protocol: useTls ? 'mqtts' : 'mqtt',
-      protocolVersion: 4, // force MQTT 3.1.1; avoids v5 negotiation issues
-      clientId, // stable unique ID; prevents broker session collision
-      username: settings.username || undefined,
-      password: settings.password || undefined,
-      clean: true,
-      keepalive: 60,
-      connectTimeout: 30_000,
-      reconnectPeriod: 0, // we manage reconnects manually
-      rejectUnauthorized,
-    });
+    let connectOpts: mqtt.IClientOptions;
+    if (settings.useWebSocket) {
+      const wsScheme = settings.port === 443 || settings.tlsInsecure !== true ? 'wss' : 'ws';
+      const wsUrl = `${wsScheme}://${settings.server.trim()}:${settings.port}/mqtt`;
+      connectOpts = {
+        clientId,
+        username: settings.username || undefined,
+        password: settings.password || undefined,
+        clean: true,
+        keepalive: 60,
+        connectTimeout: 30_000,
+        reconnectPeriod: 0,
+        rejectUnauthorized: settings.port === 443 ? true : rejectUnauthorized,
+      };
+      this.client = mqtt.connect(wsUrl, connectOpts);
+    } else {
+      connectOpts = {
+        host: settings.server,
+        port: settings.port,
+        protocol: useTls ? 'mqtts' : 'mqtt',
+        protocolVersion: 4, // force MQTT 3.1.1; avoids v5 negotiation issues
+        clientId,
+        username: settings.username || undefined,
+        password: settings.password || undefined,
+        clean: true,
+        keepalive: 60,
+        connectTimeout: 30_000,
+        reconnectPeriod: 0,
+        rejectUnauthorized,
+      };
+      this.client = mqtt.connect(connectOpts);
+    }
 
     this.client.on('connect', () => {
       this.setStatus('connected');

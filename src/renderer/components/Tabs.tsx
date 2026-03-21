@@ -14,7 +14,14 @@ function TabIcon({ name }: { name: string }) {
   switch (name) {
     case 'Connection':
       return (
-        <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <svg
+          aria-hidden="true"
+          className={cls}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -29,7 +36,14 @@ function TabIcon({ name }: { name: string }) {
       );
     case 'Chat':
       return (
-        <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <svg
+          aria-hidden="true"
+          className={cls}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -39,7 +53,14 @@ function TabIcon({ name }: { name: string }) {
       );
     case 'Nodes':
       return (
-        <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <svg
+          aria-hidden="true"
+          className={cls}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -49,7 +70,14 @@ function TabIcon({ name }: { name: string }) {
       );
     case 'Radio':
       return (
-        <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <svg
+          aria-hidden="true"
+          className={cls}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -60,7 +88,14 @@ function TabIcon({ name }: { name: string }) {
       );
     case 'Map':
       return (
-        <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <svg
+          aria-hidden="true"
+          className={cls}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -71,7 +106,14 @@ function TabIcon({ name }: { name: string }) {
       );
     case 'Telemetry':
       return (
-        <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <svg
+          aria-hidden="true"
+          className={cls}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -81,7 +123,14 @@ function TabIcon({ name }: { name: string }) {
       );
     case 'App':
       return (
-        <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <svg
+          aria-hidden="true"
+          className={cls}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -91,7 +140,14 @@ function TabIcon({ name }: { name: string }) {
       );
     case 'Diagnostics':
       return (
-        <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <svg
+          aria-hidden="true"
+          className={cls}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -106,29 +162,28 @@ function TabIcon({ name }: { name: string }) {
 
 export default function Tabs({ tabs, active, onChange, chatUnread = 0, disabledTabs }: TabsProps) {
   return (
-    <nav
+    <div
       role="tablist"
       aria-label="Application panels"
       className="flex bg-deep-black border-b border-gray-700 px-2 gap-1"
     >
       {tabs.map((name, i) => {
         const showChatBadge = name === 'Chat' && chatUnread > 0;
-        const badgeLabel =
-          chatUnread > 99
-            ? '99+ unread messages'
-            : `${chatUnread} unread message${chatUnread === 1 ? '' : 's'}`;
         const isDisabled = disabledTabs?.has(i) ?? false;
+        const tabAriaLabel = showChatBadge
+          ? `${name} ${chatUnread > 99 ? '99+' : chatUnread}`
+          : name;
         return (
           <button
             key={name}
+            type="button"
             role="tab"
+            aria-label={tabAriaLabel}
             aria-selected={active === i}
             aria-controls={`panel-${i}`}
             id={`tab-${i}`}
-            accessKey={String(i + 1)}
             disabled={isDisabled}
             onClick={() => !isDisabled && onChange(i)}
-            aria-label={showChatBadge ? `Chat, ${badgeLabel}` : undefined}
             title={isDisabled ? 'Not available in MeshCore mode' : undefined}
             className={`relative flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium transition-colors rounded-t-md ${
               isDisabled
@@ -141,16 +196,13 @@ export default function Tabs({ tabs, active, onChange, chatUnread = 0, disabledT
             <TabIcon name={name} />
             {name}
             {showChatBadge && (
-              <span
-                aria-hidden="true"
-                className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1"
-              >
+              <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
                 {chatUnread > 99 ? '99+' : chatUnread}
               </span>
             )}
           </button>
         );
       })}
-    </nav>
+    </div>
   );
 }

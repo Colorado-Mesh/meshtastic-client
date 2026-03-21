@@ -189,6 +189,7 @@ interface Props {
   initialDmTarget?: number | null;
   onDmTargetConsumed?: () => void;
   isActive?: boolean;
+  onGlobalSearch?: () => void;
 }
 
 export default function ChatPanel({
@@ -206,6 +207,7 @@ export default function ChatPanel({
   initialDmTarget,
   onDmTargetConsumed,
   isActive = true,
+  onGlobalSearch,
 }: Props) {
   const [input, setInput] = useState('');
   const [channel, setChannel] = useState(() => (channels.length > 0 ? channels[0].index : 0));
@@ -223,7 +225,8 @@ export default function ChatPanel({
   const [showScrollButton, setShowScrollButton] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Two-section UI state — load DM tabs from localStorage for restart persistence
   const [viewMode, setViewMode] = useState<'channels' | 'dm'>('channels');
@@ -237,6 +240,10 @@ export default function ChatPanel({
     }
     return [];
   });
+  const openDmTabsRef = useRef(openDmTabs);
+  openDmTabsRef.current = openDmTabs;
+  const channelsRef = useRef(channels);
+  channelsRef.current = channels;
   const [activeDmNode, setActiveDmNode] = useState<number | null>(null);
 
   // Persist openDmTabs to localStorage whenever it changes
@@ -294,14 +301,14 @@ export default function ChatPanel({
   // Handle initialDmTarget from Nodes tab
   useEffect(() => {
     if (initialDmTarget != null) {
-      if (!openDmTabs.includes(initialDmTarget)) {
+      if (!openDmTabsRef.current.includes(initialDmTarget)) {
         setOpenDmTabs((prev) => [...prev, initialDmTarget]);
       }
       setActiveDmNode(initialDmTarget);
       setViewMode('dm');
       onDmTargetConsumed?.();
     }
-  }, [initialDmTarget]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [initialDmTarget, onDmTargetConsumed]);
 
   // Separate regular messages from reaction messages
   const { regularMessages, reactionsByReplyId } = useMemo(() => {
@@ -320,11 +327,12 @@ export default function ChatPanel({
     return { regularMessages: regular, reactionsByReplyId: reactions };
   }, [messages]);
 
-  // Lookup map for rendering quoted replies
-  const messageByPacketId = useMemo(() => {
+  // Lookup map for rendering quoted replies (packetId in Meshtastic, timestamp fallback in MeshCore)
+  const messageByReplyKey = useMemo(() => {
     const map = new Map<number, ChatMessage>();
     for (const msg of regularMessages) {
-      if (msg.packetId) map.set(msg.packetId, msg);
+      if (msg.packetId != null) map.set(msg.packetId, msg);
+      map.set(msg.timestamp, msg);
     }
     return map;
   }, [regularMessages]);
@@ -349,7 +357,7 @@ export default function ChatPanel({
       const now = Date.now();
       if (channel === -1) {
         // "All" view: mark every channel as read
-        for (const ch of channels) {
+        for (const ch of channelsRef.current) {
           lastReadRef.current.set(ch.index, now);
         }
         setUnreadCounts(new Map());
@@ -362,7 +370,6 @@ export default function ChatPanel({
         });
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- channels ref read at run time; effect intentionally triggered by channel/message/viewMode changes only
   }, [channel, regularMessages.length, viewMode]);
 
   const filteredMessages = useMemo(() => {
@@ -396,7 +403,7 @@ export default function ChatPanel({
 
   // On view switch: snapshot lastRead for divider + arm scroll trigger
   useEffect(() => {
-    if (channel === -1) {
+    if (viewKey === 'ch:-1') {
       // "All" view: no divider, just scroll to bottom
       setUnreadDividerTimestamp(0);
       setTriggerScrollToUnread((n) => n + 1);
@@ -405,8 +412,7 @@ export default function ChatPanel({
     const snapshot = persistedLastReadRef.current[viewKey] ?? 0;
     setUnreadDividerTimestamp(snapshot);
     setTriggerScrollToUnread((n) => n + 1);
-  }, [viewKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Intentionally reads persistedLastRead via ref (not dep) to avoid re-firing on scroll updates
+  }, [viewKey]);
 
   // Scroll tracking for scroll-to-bottom button + mark-as-read when at bottom
   const handleScroll = useCallback(() => {
@@ -482,6 +488,12 @@ export default function ChatPanel({
     window.addEventListener('keydown', handleKeys);
     return () => window.removeEventListener('keydown', handleKeys);
   }, []);
+
+  useEffect(() => {
+    if (showSearch) {
+      searchInputRef.current?.focus();
+    }
+  }, [showSearch]);
 
   const handleSend = async () => {
     if (!input.trim() || !isConnected || sending) return;
@@ -569,10 +581,10 @@ export default function ChatPanel({
     });
   }
 
-  /** Group reactions by emoji code for a given packetId */
-  function getGroupedReactions(packetId: number | undefined) {
-    if (!packetId) return [];
-    const reactions = reactionsByReplyId.get(packetId);
+  /** Group reactions by emoji code for a message key (packetId or timestamp fallback) */
+  function getGroupedReactions(messageKey: number | undefined) {
+    if (!messageKey) return [];
+    const reactions = reactionsByReplyId.get(messageKey);
     if (!reactions) return [];
 
     const grouped = new Map<number, string[]>();
@@ -615,6 +627,17 @@ export default function ChatPanel({
 
   const isDmMode = viewMode === 'dm' && activeDmNode != null;
   const dmNodeName = activeDmNode != null ? getDmLabel(activeDmNode) : '';
+  const composePlaceholder = useMemo(
+    () =>
+      isDmMode
+        ? `DM to ${dmNodeName}...`
+        : !isConnected
+          ? 'Connect to send messages'
+          : isMqttOnly
+            ? 'Type a message (via MQTT)...'
+            : 'Type a message...',
+    [isDmMode, dmNodeName, isConnected, isMqttOnly],
+  );
 
   return (
     <div className="flex flex-col h-full max-h-[calc(100vh-10rem)]">
@@ -624,6 +647,7 @@ export default function ChatPanel({
           Channels
         </span>
         <button
+          aria-label="All"
           onClick={() => {
             setChannel(-1);
             setViewMode('channels');
@@ -638,9 +662,14 @@ export default function ChatPanel({
         </button>
         {channels.map((ch) => {
           const unread = unreadCounts.get(ch.index) ?? 0;
+          const channelUnreadSuffix =
+            unread > 0 && !(viewMode === 'channels' && channel === ch.index)
+              ? ` ${unread > 99 ? '99+' : unread}`
+              : '';
           return (
             <button
               key={ch.index}
+              aria-label={`${ch.name}${channelUnreadSuffix}`}
               onClick={() => {
                 setChannel(ch.index);
                 setViewMode('channels');
@@ -653,10 +682,7 @@ export default function ChatPanel({
             >
               {ch.name}
               {unread > 0 && !(viewMode === 'channels' && channel === ch.index) && (
-                <span
-                  aria-label={`${unread > 99 ? '99+' : unread} unread messages`}
-                  className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1"
-                >
+                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
                   {unread > 99 ? '99+' : unread}
                 </span>
               )}
@@ -691,6 +717,30 @@ export default function ChatPanel({
             />
           </svg>
         </button>
+        {onGlobalSearch && (
+          <button
+            onClick={onGlobalSearch}
+            aria-label="Search all channels"
+            className="p-1.5 rounded-lg transition-colors text-muted hover:text-gray-300"
+            title="Search all channels (Cmd+Shift+F)"
+          >
+            <svg
+              className="w-4 h-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20M2 12h20"
+              />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Row 2 — DM tabs */}
@@ -706,22 +756,31 @@ export default function ChatPanel({
           openDmTabs.map((nodeNum) => (
             <div
               key={nodeNum}
-              className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full transition-colors cursor-pointer ${
+              className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full transition-colors ${
                 viewMode === 'dm' && activeDmNode === nodeNum
                   ? 'bg-purple-600 text-white'
                   : 'bg-secondary-dark text-muted hover:text-gray-200'
               }`}
-              onClick={() => {
-                setActiveDmNode(nodeNum);
-                setViewMode('dm');
-              }}
             >
-              <span>{getDmLabel(nodeNum)}</span>
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  closeDmTab(nodeNum);
+                type="button"
+                aria-label={getDmLabel(nodeNum)}
+                className={`min-w-0 truncate rounded-full px-0 py-0 text-left font-medium transition-colors ${
+                  viewMode === 'dm' && activeDmNode === nodeNum
+                    ? 'text-white'
+                    : 'text-muted hover:text-gray-200'
+                }`}
+                onClick={() => {
+                  setActiveDmNode(nodeNum);
+                  setViewMode('dm');
                 }}
+              >
+                {getDmLabel(nodeNum)}
+              </button>
+              <button
+                type="button"
+                onClick={() => closeDmTab(nodeNum)}
+                aria-label="x"
                 className="ml-0.5 text-muted hover:text-white text-[10px] leading-none"
                 title="Close DM"
               >
@@ -736,13 +795,14 @@ export default function ChatPanel({
       {showSearch && (
         <div className="mb-2">
           <input
+            ref={searchInputRef}
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search messages..."
-            aria-label="Search messages"
+            aria-label="Search messages..."
+            spellCheck={false}
             className="w-full px-3 py-1.5 bg-secondary-dark/80 rounded-lg text-gray-200 text-sm border border-gray-600/50 focus:border-brand-green/50 focus:outline-none"
-            autoFocus
           />
           {searchQuery && (
             <div className="text-xs text-muted mt-1">
@@ -779,7 +839,7 @@ export default function ChatPanel({
           filteredMessages.map((msg, i) => {
             const isOwn = msg.sender_id === myNodeNum;
             const isDm = !!msg.to;
-            const reactions = getGroupedReactions(msg.packetId);
+            const reactions = getGroupedReactions(msg.packetId ?? msg.timestamp);
             const showPicker = pickerOpenFor === (msg.packetId ?? -(i + 1));
             const pickerOpensAbove = i >= filteredMessages.length - 3;
 
@@ -801,7 +861,11 @@ export default function ChatPanel({
             const isUnreadStart = i === unreadStartIndex;
 
             return (
-              <div key={`${msg.timestamp}-${i}`}>
+              <div
+                key={
+                  msg.id != null ? `db-${msg.id}` : `${msg.timestamp}-${msg.packetId ?? 'x'}-${i}`
+                }
+              >
                 {daySeparator}
                 {isUnreadStart && (
                   <div ref={unreadDividerRef}>
@@ -851,9 +915,9 @@ export default function ChatPanel({
                       {/* Quoted reply preview */}
                       {msg.replyId &&
                         !msg.emoji &&
-                        messageByPacketId.has(msg.replyId) &&
+                        messageByReplyKey.has(msg.replyId) &&
                         (() => {
-                          const orig = messageByPacketId.get(msg.replyId)!;
+                          const orig = messageByReplyKey.get(msg.replyId)!;
                           return (
                             <div className="flex gap-1.5 mb-1.5 opacity-80">
                               <div className="w-0.5 rounded-full bg-gray-500 shrink-0" />
@@ -937,7 +1001,7 @@ export default function ChatPanel({
                     </div>
 
                     {/* Inline reaction trigger — visible on hover or focus-within */}
-                    {isConnected && msg.packetId && (
+                    {isConnected && (
                       <div className="opacity-0 group-hover/msg:opacity-100 group-focus-within/msg:opacity-100 flex gap-0.5 transition-all shrink-0">
                         {/* Reply */}
                         <button
@@ -1023,7 +1087,9 @@ export default function ChatPanel({
                         {REACTION_EMOJIS.slice(0, 6).map((re) => (
                           <button
                             key={re.code}
-                            onClick={() => handleReact(re.code, msg.packetId!, msg.channel)}
+                            onClick={() =>
+                              handleReact(re.code, msg.packetId ?? msg.timestamp, msg.channel)
+                            }
                             className="hover:scale-125 transition-transform text-lg px-0.5"
                             title={re.name}
                           >
@@ -1035,7 +1101,9 @@ export default function ChatPanel({
                         {REACTION_EMOJIS.slice(6).map((re) => (
                           <button
                             key={re.code}
-                            onClick={() => handleReact(re.code, msg.packetId!, msg.channel)}
+                            onClick={() =>
+                              handleReact(re.code, msg.packetId ?? msg.timestamp, msg.channel)
+                            }
                             className="hover:scale-125 transition-transform text-lg px-0.5"
                             title={re.name}
                           >
@@ -1156,25 +1224,24 @@ export default function ChatPanel({
         </div>
       )}
 
-      {/* Input area */}
+      {/* Input area — textarea so Chromium applies spellcheck (single-line inputs often skip it) */}
       <div className="flex gap-2 mt-2">
-        <input
+        <textarea
           ref={inputRef}
-          type="text"
+          rows={1}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          disabled={!isConnected || sending}
-          placeholder={
-            isDmMode
-              ? `DM to ${dmNodeName}...`
-              : !isConnected
-                ? 'Connect to send messages'
-                : isMqttOnly
-                  ? 'Type a message (via MQTT)...'
-                  : 'Type a message...'
+          spellCheck
+          lang={
+            typeof navigator !== 'undefined' && navigator.language ? navigator.language : undefined
           }
-          className={`flex-1 px-4 py-2.5 rounded-xl text-gray-200 border focus:outline-none disabled:opacity-50 transition-colors ${
+          enterKeyHint="send"
+          placeholder={composePlaceholder}
+          aria-label={composePlaceholder}
+          className={`flex-1 min-h-[42px] max-h-32 px-4 py-2.5 rounded-xl text-gray-200 border focus:outline-none transition-colors resize-none overflow-y-auto ${
+            !isConnected || sending ? 'opacity-60' : ''
+          } ${
             isDmMode
               ? 'bg-purple-900/20 border-purple-600/50 focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/30'
               : 'bg-secondary-dark/80 border-gray-600/50 focus:border-brand-green/50 focus:ring-1 focus:ring-brand-green/30'
@@ -1185,6 +1252,7 @@ export default function ChatPanel({
         <button
           onClick={() => setShowComposePicker((prev) => !prev)}
           disabled={!isConnected || sending}
+          aria-label="😊"
           className={`px-2.5 py-2.5 rounded-xl transition-colors disabled:opacity-50 ${
             showComposePicker
               ? 'bg-brand-green/20 text-bright-green'
@@ -1197,6 +1265,7 @@ export default function ChatPanel({
         <button
           onClick={handleSend}
           disabled={!isConnected || !input.trim() || sending}
+          aria-label={sending ? '...' : isDmMode ? 'DM' : 'Send'}
           className={`px-5 py-2.5 font-medium rounded-xl transition-colors ${
             isDmMode
               ? 'bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 disabled:text-muted text-white'

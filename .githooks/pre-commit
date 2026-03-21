@@ -2,6 +2,12 @@
 # Run format check, lint, and tests before every commit.
 # To skip in an emergency: git commit --no-verify
 
+# npm 11+ warns on unknown config keys; `devdir` is legacy (node-gyp) and is not an npm
+# option. Some environments set npm_config_devdir / NPM_CONFIG_DEVDIR — unset so hook
+# npm invocations do not spam: "Unknown env config devdir".
+unset npm_config_devdir 2>/dev/null
+unset NPM_CONFIG_DEVDIR 2>/dev/null
+
 # Capture paths already staged so we only re-stage those after format. Using
 # git add -u would stage every tracked modification and sweep in unstaged WIP.
 STAGED_LIST=$(mktemp)

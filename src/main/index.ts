@@ -1,9 +1,20 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Tray } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  MenuItem,
+  nativeImage,
+  type Session,
+  Tray,
+} from 'electron';
 import fs from 'fs';
 import net from 'net';
 import path from 'path';
 import { pathToFileURL } from 'url';
 
+import type { MQTTSettings } from '../renderer/lib/types';
 import {
   closeDatabase,
   deleteNodesBySource,
@@ -12,6 +23,8 @@ import {
   getDatabase,
   initDatabase,
   mergeDatabase,
+  searchMeshcoreMessages,
+  searchMessages,
 } from './database';
 import { getGpsFix } from './gps';
 import {
@@ -25,7 +38,9 @@ import {
   sanitizeLogMessage,
   setMainWindow,
 } from './log-service';
+import { MeshcoreMqttAdapter } from './meshcore-mqtt-adapter';
 import { MQTTManager } from './mqtt-manager';
+import { NobleBleManager, type NobleSessionId } from './noble-ble-manager';
 import { initUpdater } from './updater';
 
 // Route main-process console through log file + Log panel (must run before other code logs)
@@ -38,6 +53,12 @@ if (process.platform === 'linux' && process.env.MESH_CLIENT_DISABLE_GPU === '1')
 }
 
 const mqttManager = new MQTTManager();
+const meshcoreMqttAdapter = new MeshcoreMqttAdapter();
+const nobleBleManager = new NobleBleManager();
+
+function isAnyMqttConnected(): boolean {
+  return mqttManager.getStatus() === 'connected' || meshcoreMqttAdapter.getStatus() === 'connected';
+}
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -47,17 +68,16 @@ let trayContextMenu: Menu | null = null;
 let appMenu: Menu | null = null;
 let isConnected = false;
 let isQuitting = false;
+/** Second pass of `before-quit` after async Noble BLE teardown (see `before-quit` handler). */
+let nobleQuitRetry = false;
 
-// Pending Bluetooth callback from Chromium's Web Bluetooth API
-let pendingBluetoothCallback: ((deviceId: string) => void) | null = null;
-// Accumulated BLE devices for the current discovery session (merged across multiple select-bluetooth-device events)
-const bluetoothDiscoveryDevices = new Map<string, { deviceId: string; deviceName: string }>();
-// Pending Serial callback (mirrors the BLE pattern)
+// Pending Serial callback
 let pendingSerialCallback: ((portId: string) => void) | null = null;
-// Last discovery sets: only allow selection IPC to resolve callbacks with ids from these sets
+// Last serial port discovery set: only allow selection IPC to resolve with ids from this set
 // (empty string always allowed = cancel). Prevents arbitrary id injection from a compromised renderer.
-let lastBluetoothDeviceIds = new Set<string>();
 let lastSerialPortIds = new Set<string>();
+let hasInstalledOsmReferrerHook = false;
+const OSM_HTTP_REFERRER = 'https://meshtastic-client.app/';
 
 // ─── Global error handlers (prevent silent crashes in packaged app) ──
 process.on('uncaughtException', (error) => {
@@ -98,6 +118,10 @@ process.on('unhandledRejection', (reason) => {
     /* dialog may not be available during early startup */
   }
 });
+
+app.on('browser-window-created', () => {});
+
+process.on('exit', () => {});
 
 // ─── IPC validation helpers (main process boundary) ───────────────────
 const MAX_PAYLOAD_LENGTH = 1024 * 1024; // 1MB cap for message payload
@@ -194,6 +218,13 @@ function validateSaveMeshcoreMessage(msg: unknown): asserts msg is Record<string
     throw new Error('db:saveMeshcoreMessage: sender_name too long');
   if (m.status != null && typeof m.status === 'string' && m.status.length > MAX_STATUS_STRING)
     throw new Error('db:saveMeshcoreMessage: status too long');
+  const validReceivedVia = ['rf', 'mqtt', 'both'];
+  if (m.received_via != null) {
+    if (typeof m.received_via !== 'string' || m.received_via.length > 8)
+      throw new Error('db:saveMeshcoreMessage: received_via invalid');
+    if (!validReceivedVia.includes(m.received_via))
+      throw new Error('db:saveMeshcoreMessage: received_via must be rf, mqtt, or both');
+  }
 }
 
 function validateSaveMeshcoreContact(contact: unknown): asserts contact is Record<
@@ -235,6 +266,38 @@ function validateMqttSettings(settings: unknown): void {
     throw new Error('mqtt:connect: password must be a string');
   if (s.tlsInsecure != null && typeof s.tlsInsecure !== 'boolean')
     throw new Error('mqtt:connect: tlsInsecure must be a boolean');
+  if (s.useWebSocket != null && typeof s.useWebSocket !== 'boolean')
+    throw new Error('mqtt:connect: useWebSocket must be a boolean');
+  if (s.mqttTransportProtocol != null) {
+    if (s.mqttTransportProtocol !== 'meshtastic' && s.mqttTransportProtocol !== 'meshcore') {
+      throw new Error('mqtt:connect: mqttTransportProtocol must be meshtastic or meshcore');
+    }
+  }
+}
+
+const MAX_MESHCORE_MQTT_TEXT = 16000;
+
+function validateMqttPublishMeshcoreArgs(args: unknown): void {
+  if (!args || typeof args !== 'object')
+    throw new Error('mqtt:publishMeshcore: args must be an object');
+  const a = args as Record<string, unknown>;
+  if (typeof a.text !== 'string') throw new Error('mqtt:publishMeshcore: text must be a string');
+  if (a.text.length > MAX_MESHCORE_MQTT_TEXT)
+    throw new Error('mqtt:publishMeshcore: text too long');
+  const ch = Number(a.channelIdx);
+  if (!Number.isFinite(ch) || ch < 0 || ch > 255)
+    throw new Error('mqtt:publishMeshcore: channelIdx must be 0–255');
+  if (a.senderName != null && (typeof a.senderName !== 'string' || a.senderName.length > 200)) {
+    throw new Error('mqtt:publishMeshcore: senderName invalid');
+  }
+  if (a.senderNodeId != null) {
+    const id = Number(a.senderNodeId);
+    if (!Number.isFinite(id) || id < 0)
+      throw new Error('mqtt:publishMeshcore: senderNodeId invalid');
+  }
+  if (a.timestamp != null && !Number.isFinite(Number(a.timestamp))) {
+    throw new Error('mqtt:publishMeshcore: timestamp invalid');
+  }
 }
 
 function validateMqttPublishArgs(args: unknown): void {
@@ -267,14 +330,8 @@ function validateMqttPublishArgs(args: unknown): void {
   }
 }
 
-// Enable Web Bluetooth feature flag
-app.commandLine.appendSwitch('enable-features', 'WebBluetooth');
 // Enable Web Serial (experimental)
 app.commandLine.appendSwitch('enable-blink-features', 'Serial');
-// Linux: some Electron 28-30 builds require this for WebBluetooth to fire select-bluetooth-device
-if (process.platform === 'linux') {
-  app.commandLine.appendSwitch('enable-experimental-web-platform-features');
-}
 
 // ─── Icon Path Helper ──────────────────────────────────────────────
 /**
@@ -374,6 +431,7 @@ function setupTray(window: BrowserWindow) {
       click: () => {
         isQuitting = true;
         mqttManager.disconnect();
+        meshcoreMqttAdapter.disconnect();
         isConnected = false;
         mainWindow?.destroy();
         app.quit();
@@ -383,32 +441,101 @@ function setupTray(window: BrowserWindow) {
   tray.setContextMenu(trayContextMenu);
 }
 
-/** Set a minimal application menu on macOS so the native menu bridge has a stable model (avoids freed-model issues; the "representedObject is not a WeakPtrToElectronMenuModelAsNSObject" console warning when focusing text inputs is a known Electron/Chromium macOS quirk and harmless). */
+/**
+ * macOS: avoid native MenuItem `role:` entries (about/services/window/edit/etc.). Those map to
+ * AppKit NSMenuItem targets that still participate in responder / menu validation while typing
+ * in a web view and can log WeakPtrToElectronMenuModelAsNSObject. Use plain click handlers only.
+ * Cmd+C/V/X/Z still work in the page via Chromium. No menu bar Window group — use traffic lights.
+ */
 function setupAppMenu() {
   if (process.platform !== 'darwin') return;
   appMenu = Menu.buildFromTemplate([
     {
       label: app.name,
       submenu: [
-        { role: 'about' as const },
+        {
+          label: `About ${app.name}`,
+          click: () => {
+            const w = BrowserWindow.getFocusedWindow() ?? mainWindow;
+            const opts = {
+              type: 'info' as const,
+              title: app.name,
+              message: app.name,
+              detail: `Version ${app.getVersion()}`,
+            };
+            if (w) void dialog.showMessageBox(w, opts);
+            else void dialog.showMessageBox(opts);
+          },
+        },
         { type: 'separator' as const },
-        { role: 'services' as const },
+        {
+          label: 'Hide',
+          accelerator: 'Command+H',
+          click: () => app.hide(),
+        },
         { type: 'separator' as const },
-        { role: 'hide' as const },
-        { role: 'hideOthers' as const },
-        { role: 'unhide' as const },
-        { type: 'separator' as const },
-        { role: 'quit' as const },
+        {
+          label: 'Quit',
+          accelerator: 'Command+Q',
+          click: () => {
+            isQuitting = true;
+            mqttManager.disconnect();
+            meshcoreMqttAdapter.disconnect();
+            app.quit();
+          },
+        },
       ],
     },
-    { role: 'editMenu' as const },
-    { role: 'windowMenu' as const },
   ]);
   Menu.setApplicationMenu(appMenu);
 }
 
+/**
+ * Win/Linux: Hunspell only runs after languages are set (see Electron spellchecker tutorial).
+ * macOS: native checker; still ensure the session flag is on. Re-run after load in case
+ * dictionary lists populate asynchronously.
+ */
+function configureRendererSpellcheck(sess: Session): void {
+  try {
+    sess.setSpellCheckerEnabled(true);
+    if (process.platform === 'darwin') {
+      return;
+    }
+    const available = sess.availableSpellCheckerLanguages;
+    if (!Array.isArray(available) || available.length === 0) {
+      console.warn('[main] spellcheck: no dictionaries listed yet (retry after load)');
+      return;
+    }
+    const loc = app.getLocale();
+    const picked: string[] = [];
+    if (available.includes(loc)) {
+      picked.push(loc);
+    }
+    const region = loc.split(/[-_]/)[0];
+    if (region) {
+      for (const code of available) {
+        if ((code === region || code.startsWith(`${region}-`)) && !picked.includes(code)) {
+          picked.push(code);
+        }
+      }
+    }
+    if (picked.length === 0 && available.includes('en-US')) {
+      picked.push('en-US');
+    }
+    if (picked.length === 0) {
+      picked.push(available[0]);
+    }
+    sess.setSpellCheckerLanguages(picked.slice(0, 3));
+  } catch (e) {
+    console.warn(
+      '[main] configureRendererSpellcheck',
+      sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+    );
+  }
+}
+
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 900,
@@ -420,69 +547,72 @@ function createWindow() {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      // Exposes navigator.bluetooth.getDevices() so reconnectBle() can run without
-      // requestDevice() (which requires a user gesture). See electron/electron#31869.
+      // Inline misspelling marks and context-menu suggestions (all platforms). macOS app menu
+      // stays minimal (no role-based Edit menu) to reduce WeakPtr menu-bridge noise.
+      spellcheck: true,
       experimentalFeatures: true,
     },
   });
+  mainWindow = win;
 
-  // ─── Web Bluetooth: Device Selection ───────────────────────────────
-  // When the renderer calls navigator.bluetooth.requestDevice(),
-  // Chromium fires this event. We intercept it to build our own picker
-  // in the renderer instead of the (missing) native Chromium dialog.
-  // On Linux, Chromium can fire the event multiple times during discovery;
-  // if we overwrite the callback each time, the previous promise is rejected
-  // with "User cancelled". Retain the first callback and merge device lists
-  // from subsequent events so the picker updates without cancelling.
-  mainWindow.webContents.on('select-bluetooth-device', (event, devices, callback) => {
+  configureRendererSpellcheck(win.webContents.session);
+  win.webContents.once('did-finish-load', () => {
+    configureRendererSpellcheck(win.webContents.session);
+  });
+
+  // Electron does not show any context menu by default — we must call menu.popup().
+  // Spell suggestions only exist on this event (see spellchecker tutorial); always show
+  // cut/copy/paste for text fields so right-click works even with no misspelling.
+  win.webContents.on('context-menu', (event, params) => {
+    const isTextField =
+      params.isEditable ||
+      params.formControlType === 'text-area' ||
+      params.formControlType === 'input-text' ||
+      params.formControlType === 'input-search';
+    if (!isTextField) return;
+
     event.preventDefault();
+    const ef = params.editFlags;
+    const suggestions = params.dictionarySuggestions ?? [];
+    const spellOn = params.spellcheckEnabled !== false;
 
-    if (!pendingBluetoothCallback) {
-      pendingBluetoothCallback = callback;
-      bluetoothDiscoveryDevices.clear();
-      // Safety: auto-cancel if the callback is never resolved (e.g. renderer crash, unmount).
-      // This prevents blocking future BLE discovery sessions on Linux where multi-fire is common.
-      setTimeout(() => {
-        if (pendingBluetoothCallback === callback) {
-          console.warn('[IPC] BLE discovery callback stale after 60s — auto-cancelling');
-          pendingBluetoothCallback('');
-          pendingBluetoothCallback = null;
-          lastBluetoothDeviceIds.clear();
-          bluetoothDiscoveryDevices.clear();
-        }
-      }, 60_000);
-    } else {
-      // Stale callback from a previous session that never resolved (crash, throw, unmount).
-      // Replace it so this session's selection works correctly.
-      console.warn('[IPC] select-bluetooth-device: replacing stale pendingBluetoothCallback');
-      pendingBluetoothCallback = callback;
-      bluetoothDiscoveryDevices.clear();
-      // Safety: start a fresh 60s auto-cancel for the replacement callback.
-      // The old timer references the stale callback reference so it will not fire.
-      setTimeout(() => {
-        if (pendingBluetoothCallback === callback) {
-          console.warn(
-            '[IPC] BLE discovery replacement callback stale after 60s — auto-cancelling',
-          );
-          pendingBluetoothCallback('');
-          pendingBluetoothCallback = null;
-          lastBluetoothDeviceIds.clear();
-          bluetoothDiscoveryDevices.clear();
-        }
-      }, 60_000);
+    const menu = new Menu();
+    if (spellOn && suggestions.length > 0) {
+      for (const suggestion of suggestions) {
+        menu.append(
+          new MenuItem({
+            label: suggestion,
+            click: () => {
+              win.webContents.replaceMisspelling(suggestion);
+            },
+          }),
+        );
+      }
+      menu.append(new MenuItem({ type: 'separator' }));
     }
-    // Merge new devices into the accumulated list for this discovery session
-    for (const d of devices) {
-      bluetoothDiscoveryDevices.set(d.deviceId, {
-        deviceId: d.deviceId,
-        deviceName: d.deviceName || 'Unknown Device',
-      });
+    if (spellOn && params.misspelledWord) {
+      menu.append(
+        new MenuItem({
+          label: 'Add to dictionary',
+          click: () => {
+            void win.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord);
+          },
+        }),
+      );
+      menu.append(new MenuItem({ type: 'separator' }));
     }
-    lastBluetoothDeviceIds = new Set(bluetoothDiscoveryDevices.keys());
-    mainWindow?.webContents.send(
-      'bluetooth-devices-discovered',
-      Array.from(bluetoothDiscoveryDevices.values()),
-    );
+    menu.append(new MenuItem({ role: 'cut', enabled: ef.canCut }));
+    menu.append(new MenuItem({ role: 'copy', enabled: ef.canCopy }));
+    menu.append(new MenuItem({ role: 'paste', enabled: ef.canPaste }));
+    menu.append(new MenuItem({ type: 'separator' }));
+    menu.append(new MenuItem({ role: 'selectAll', enabled: ef.canSelectAll }));
+
+    menu.popup({
+      window: win,
+      x: params.x,
+      y: params.y,
+      ...(params.frame ? { frame: params.frame } : {}),
+    });
   });
 
   // ─── Web Serial: Port Selection ────────────────────────────────────
@@ -532,7 +662,7 @@ function createWindow() {
   mainWindow.webContents.session.setPermissionCheckHandler((_webContents, permission) => {
     const granted = permission === 'serial' || permission === 'geolocation';
     if (granted) {
-      console.log(`[permissions] checkHandler: ${sanitizeLogMessage(permission)} → granted`);
+      console.debug(`[permissions] checkHandler: ${sanitizeLogMessage(permission)} → granted`);
     }
     return granted;
   });
@@ -542,7 +672,7 @@ function createWindow() {
     (_webContents, permission, callback) => {
       const grant = permission === 'geolocation';
       if (grant) {
-        console.log(`[permissions] requestHandler: ${sanitizeLogMessage(permission)} → granted`);
+        console.debug(`[permissions] requestHandler: ${sanitizeLogMessage(permission)} → granted`);
       }
       callback(grant);
     },
@@ -559,11 +689,17 @@ function createWindow() {
     return false;
   });
 
-  // ─── Bluetooth Pairing ─────────────────────────────────────────────
-  mainWindow.webContents.session.setBluetoothPairingHandler((details, callback) => {
-    // Auto-confirm pairing (Meshtastic doesn't use PIN)
-    callback({ confirmed: true });
-  });
+  if (!hasInstalledOsmReferrerHook) {
+    hasInstalledOsmReferrerHook = true;
+    mainWindow.webContents.session.webRequest.onBeforeSendHeaders(
+      { urls: ['https://*.tile.openstreetmap.org/*'] },
+      (details, callback) => {
+        const nextHeaders = details.requestHeaders;
+        nextHeaders.Referer = OSM_HTTP_REFERRER;
+        callback({ requestHeaders: nextHeaders });
+      },
+    );
+  }
 
   // ─── Renderer crash / load failure detection ──────────────────────
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
@@ -613,49 +749,54 @@ function createWindow() {
   // Load the app
   if (process.env.VITE_DEV_SERVER_URL) {
     // Same startup diagnostics as packaged build so Log panel captures them in dev too
-    console.log('[Startup] dev server URL:', sanitizeLogMessage(process.env.VITE_DEV_SERVER_URL));
-    console.log('[Startup] app.isPackaged:', app.isPackaged);
-    console.log('[Startup] userData:', sanitizeLogMessage(app.getPath('userData')));
+    console.debug('[Startup] dev server URL:', sanitizeLogMessage(process.env.VITE_DEV_SERVER_URL));
+    console.debug('[Startup] app.isPackaged:', app.isPackaged);
+    console.debug('[Startup] userData:', sanitizeLogMessage(app.getPath('userData')));
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+
     mainWindow.webContents.openDevTools();
   } else {
     const indexPath = path.join(__dirname, '../../dist/renderer/index.html');
     const indexUrl = pathToFileURL(indexPath).toString();
     // Startup diagnostics for troubleshooting packaged app issues
-    console.log('[Startup] app.isPackaged:', app.isPackaged);
-    console.log('[Startup] __dirname:', sanitizeLogMessage(__dirname));
-    console.log('[Startup] Renderer path:', sanitizeLogMessage(indexPath));
-    console.log('[Startup] process.resourcesPath:', sanitizeLogMessage(process.resourcesPath));
-    console.log('[Startup] userData:', sanitizeLogMessage(app.getPath('userData')));
+    console.debug('[Startup] app.isPackaged:', app.isPackaged);
+    console.debug('[Startup] __dirname:', sanitizeLogMessage(__dirname));
+    console.debug('[Startup] Renderer path:', sanitizeLogMessage(indexPath));
+    console.debug('[Startup] process.resourcesPath:', sanitizeLogMessage(process.resourcesPath));
+    console.debug('[Startup] userData:', sanitizeLogMessage(app.getPath('userData')));
     // Use loadURL with an explicit HTTP referrer so OpenStreetMap tile requests
     // from the packaged app include a valid Referer header and comply with the
     // OSM tile usage policy for web-style traffic.
     mainWindow.loadURL(indexUrl, {
-      httpReferrer: 'https://meshtastic-client.app/',
+      httpReferrer: OSM_HTTP_REFERRER,
     });
   }
+
+  mainWindow.webContents.on('did-finish-load', () => {});
+  mainWindow.webContents.on('did-fail-load', () => {});
 
   mainWindow.on('closed', () => {
     setMainWindow(null);
     mainWindow = null;
   });
+  mainWindow.webContents.on('destroyed', () => {});
 
   // Handle window close event
-  const win = mainWindow;
   win.on('close', (event) => {
-    if (!isQuitting && (isConnected || mqttManager.getStatus() === 'connected')) {
+    if (!isQuitting && (isConnected || isAnyMqttConnected())) {
       event.preventDefault();
       if (process.platform === 'darwin') {
-        console.log('[main] window close event: hiding (macOS, device connected)');
+        console.debug('[main] window close event: hiding (macOS, device connected)');
         win.hide();
       } else {
-        console.log('[main] window close event: minimizing (device connected)');
+        console.debug('[main] window close event: minimizing (device connected)');
         win.minimize();
       }
     }
   });
 
   setupTray(mainWindow);
+
   initUpdater(mainWindow);
 }
 
@@ -668,31 +809,6 @@ ipcMain.on('set-tray-unread', (_event, count: unknown) => {
   if (process.platform === 'darwin') {
     app.dock?.setBadge(hasUnread ? String(n) : '');
   }
-});
-
-// ─── IPC: Bluetooth device selected by user ────────────────────────
-ipcMain.on('bluetooth-device-selected', (_event, deviceId: unknown) => {
-  if (!pendingBluetoothCallback) return;
-  const id = typeof deviceId === 'string' ? deviceId : '';
-  // Cancel is empty string; otherwise id must have been in the last discovery list
-  if (id !== '' && !lastBluetoothDeviceIds.has(id)) {
-    console.warn('[IPC] bluetooth-device-selected: ignoring unknown deviceId');
-    return;
-  }
-  pendingBluetoothCallback(id);
-  pendingBluetoothCallback = null;
-  lastBluetoothDeviceIds.clear();
-  bluetoothDiscoveryDevices.clear();
-});
-
-// ─── IPC: Cancel Bluetooth selection ────────────────────────────────
-ipcMain.on('bluetooth-device-cancelled', () => {
-  if (pendingBluetoothCallback) {
-    pendingBluetoothCallback(''); // Empty string cancels the request
-    pendingBluetoothCallback = null;
-  }
-  lastBluetoothDeviceIds.clear();
-  bluetoothDiscoveryDevices.clear();
 });
 
 // ─── IPC: Serial port selected by user ──────────────────────────────
@@ -719,12 +835,79 @@ ipcMain.on('serial-port-cancelled', () => {
 
 // ─── IPC: Connection status tracking (module-scope, not per-window) ─
 ipcMain.on('device-connected', () => {
-  console.log('[main] device-connected: isConnected = true');
+  console.debug('[main] device-connected: isConnected = true');
   isConnected = true;
 });
 ipcMain.on('device-disconnected', () => {
-  console.log('[main] device-disconnected: isConnected = false');
+  console.debug('[main] device-disconnected: isConnected = false');
   isConnected = false;
+});
+
+// ─── Noble BLE: Forward manager events to renderer ──────────────────
+nobleBleManager.on('adapterState', (state: string) => {
+  mainWindow?.webContents.send('noble-ble-adapter-state', state);
+});
+nobleBleManager.on('deviceDiscovered', (device: { deviceId: string; deviceName: string }) => {
+  mainWindow?.webContents.send('noble-ble-device-discovered', device);
+});
+nobleBleManager.on('connected', ({ sessionId }: { sessionId: NobleSessionId }) => {
+  mainWindow?.webContents.send('noble-ble-connected', { sessionId });
+});
+nobleBleManager.on('disconnected', ({ sessionId }: { sessionId: NobleSessionId }) => {
+  mainWindow?.webContents.send('noble-ble-disconnected', { sessionId });
+});
+nobleBleManager.on(
+  'fromRadio',
+  ({ sessionId, bytes }: { sessionId: NobleSessionId; bytes: Uint8Array }) => {
+    mainWindow?.webContents.send('noble-ble-from-radio', { sessionId, bytes });
+  },
+);
+
+// ─── Noble BLE: IPC command handlers ────────────────────────────────
+ipcMain.handle('noble-ble-start-scan', async (_event, sessionId: unknown) => {
+  if (sessionId !== 'meshtastic' && sessionId !== 'meshcore') {
+    throw new Error('noble-ble-start-scan: sessionId must be meshtastic or meshcore');
+  }
+  if (isQuitting) {
+    console.debug('[main] noble-ble-start-scan: ignoring (app is quitting)');
+    return;
+  }
+  await nobleBleManager.startScanning(sessionId);
+});
+ipcMain.handle('noble-ble-stop-scan', async (_event, sessionId: unknown) => {
+  if (sessionId !== 'meshtastic' && sessionId !== 'meshcore') {
+    throw new Error('noble-ble-stop-scan: sessionId must be meshtastic or meshcore');
+  }
+  await nobleBleManager.stopScanning(sessionId);
+});
+ipcMain.handle('noble-ble-connect', async (_event, sessionId: unknown, peripheralId: unknown) => {
+  if (sessionId !== 'meshtastic' && sessionId !== 'meshcore') {
+    throw new Error('noble-ble-connect: sessionId must be meshtastic or meshcore');
+  }
+  if (typeof peripheralId !== 'string')
+    throw new Error('noble-ble-connect: peripheralId must be a string');
+  if (isQuitting) {
+    console.debug(`[main] noble-ble-connect: ignoring session=${sessionId} (app is quitting)`);
+    return;
+  }
+  await nobleBleManager.connect(sessionId, peripheralId);
+});
+ipcMain.handle('noble-ble-disconnect', async (_event, sessionId: unknown) => {
+  if (sessionId !== 'meshtastic' && sessionId !== 'meshcore') {
+    throw new Error('noble-ble-disconnect: sessionId must be meshtastic or meshcore');
+  }
+  await nobleBleManager.disconnect(sessionId);
+});
+ipcMain.handle('noble-ble-to-radio', async (_event, sessionId: unknown, bytes: unknown) => {
+  if (sessionId !== 'meshtastic' && sessionId !== 'meshcore') {
+    throw new Error('noble-ble-to-radio: sessionId must be meshtastic or meshcore');
+  }
+  if (isQuitting) {
+    console.debug(`[main] noble-ble-to-radio: ignoring session=${sessionId} (app is quitting)`);
+    return;
+  }
+  const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes as Uint8Array);
+  await nobleBleManager.writeToRadio(sessionId, buf);
 });
 
 // ─── MQTT: Forward manager events to renderer ───────────────────────
@@ -749,12 +932,37 @@ mqttManager.on('message', (m) => {
   else console.debug('[main] mqtt:message dropped (mainWindow not ready)');
 });
 
+meshcoreMqttAdapter.on('status', (s) => {
+  if (mainWindow) mainWindow.webContents.send('mqtt:status', s);
+  else console.debug('[main] mqtt:status (meshcore) dropped (mainWindow not ready)', s);
+});
+meshcoreMqttAdapter.on('error', (msg) => {
+  if (mainWindow) mainWindow.webContents.send('mqtt:error', msg);
+  else console.debug('[main] mqtt:error (meshcore) dropped (mainWindow not ready)', msg);
+});
+meshcoreMqttAdapter.on('clientId', (id) => {
+  if (mainWindow) mainWindow.webContents.send('mqtt:clientId', id);
+  else console.debug('[main] mqtt:clientId (meshcore) dropped (mainWindow not ready)', id);
+});
+meshcoreMqttAdapter.on('chatMessage', (m) => {
+  if (mainWindow) mainWindow.webContents.send('mqtt:meshcore-chat', m);
+  else console.debug('[main] mqtt:meshcore-chat dropped (mainWindow not ready)');
+});
+
 // ─── IPC: MQTT connect/disconnect ───────────────────────────────────
 ipcMain.handle('mqtt:connect', async (_event, settings) => {
   try {
     console.debug('[IPC] mqtt:connect');
     validateMqttSettings(settings);
-    mqttManager.connect(settings);
+    const s = settings as { mqttTransportProtocol?: string };
+    const mode = s.mqttTransportProtocol === 'meshcore' ? 'meshcore' : 'meshtastic';
+    meshcoreMqttAdapter.disconnect();
+    mqttManager.disconnect();
+    if (mode === 'meshcore') {
+      meshcoreMqttAdapter.connect(settings as MQTTSettings);
+    } else {
+      mqttManager.connect(settings);
+    }
   } catch (err) {
     console.error(
       '[IPC] mqtt:connect failed:',
@@ -767,6 +975,7 @@ ipcMain.handle('mqtt:disconnect', async () => {
   try {
     console.debug('[IPC] mqtt:disconnect');
     mqttManager.disconnect();
+    meshcoreMqttAdapter.disconnect();
   } catch (err) {
     console.error(
       '[IPC] mqtt:disconnect failed:',
@@ -778,6 +987,9 @@ ipcMain.handle('mqtt:disconnect', async () => {
 ipcMain.handle('mqtt:getClientId', async () => {
   try {
     console.debug('[IPC] mqtt:getClientId');
+    if (meshcoreMqttAdapter.getStatus() === 'connected') {
+      return meshcoreMqttAdapter.getClientId();
+    }
     return mqttManager.getClientId();
   } catch (err) {
     console.error(
@@ -817,6 +1029,35 @@ ipcMain.handle('mqtt:publish', async (_event, args) => {
     throw err;
   }
 });
+
+ipcMain.handle('mqtt:publishMeshcore', async (_event, args) => {
+  try {
+    console.debug('[IPC] mqtt:publishMeshcore');
+    validateMqttPublishMeshcoreArgs(args);
+    const a = args as {
+      text: string;
+      channelIdx: number;
+      senderName?: string;
+      senderNodeId?: number;
+      timestamp?: number;
+    };
+    meshcoreMqttAdapter.publishChat({
+      v: 1,
+      text: a.text,
+      channelIdx: a.channelIdx,
+      senderName: a.senderName,
+      senderNodeId: a.senderNodeId,
+      timestamp: a.timestamp,
+    });
+  } catch (err) {
+    console.error(
+      '[IPC] mqtt:publishMeshcore failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
+});
+
 ipcMain.handle('mqtt:getCachedNodes', async () => {
   try {
     return mqttManager.getCachedNodes();
@@ -926,13 +1167,25 @@ ipcMain.handle('app:quit', async () => {
   isConnected = false;
   try {
     mqttManager.disconnect();
+
+    meshcoreMqttAdapter.disconnect();
+
+    await nobleBleManager.stopAllScanning();
+
+    closeDatabase();
+
+    nobleBleManager.releaseNobleProcessHandles();
+    tray?.destroy();
+    tray = null;
+    app.exit(0);
   } catch (err) {
     console.error(
       '[IPC] app:quit disconnect failed:',
       sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
     );
-  } finally {
     app.quit();
+  } finally {
+    // no-op: handled above
   }
 });
 
@@ -1100,7 +1353,7 @@ ipcMain.handle('db:clearMessages', () => {
   try {
     const db = getDatabase();
     const result = db.prepare('DELETE FROM messages').run();
-    console.log(`[IPC] db:clearMessages: deleted ${result.changes} messages`);
+    console.debug(`[IPC] db:clearMessages: deleted ${result.changes} messages`);
     return result;
   } catch (err) {
     console.error(
@@ -1115,7 +1368,7 @@ ipcMain.handle('db:clearNodes', () => {
   try {
     const db = getDatabase();
     const result = db.prepare('DELETE FROM nodes').run();
-    console.log(`[IPC] db:clearNodes: deleted ${result.changes} nodes`);
+    console.debug(`[IPC] db:clearNodes: deleted ${result.changes} nodes`);
     return result;
   } catch (err) {
     console.error(
@@ -1132,7 +1385,7 @@ ipcMain.handle('db:clearNodePositions', () => {
     const result = db
       .prepare('UPDATE nodes SET latitude = NULL, longitude = NULL, altitude = NULL')
       .run();
-    console.log(`[IPC] db:clearNodePositions: cleared positions for ${result.changes} nodes`);
+    console.debug(`[IPC] db:clearNodePositions: cleared positions for ${result.changes} nodes`);
     return result;
   } catch (err) {
     console.error(
@@ -1148,7 +1401,7 @@ ipcMain.handle('db:deleteNode', (_event, nodeId: number) => {
     const id = safeNonNegativeInt(nodeId);
     const db = getDatabase();
     const result = db.prepare('DELETE FROM nodes WHERE node_id = ?').run(id);
-    console.log(
+    console.debug(
       `[IPC] db:deleteNode: deleted node 0x${id.toString(16).toUpperCase()} (${result.changes} rows)`,
     );
     return result;
@@ -1166,7 +1419,7 @@ ipcMain.handle('db:deleteNodesByAge', (_event, days: number) => {
     if (typeof days !== 'number' || days < 1 || !isFinite(days)) return { changes: 0 };
     const cutoff = Math.floor(Date.now() / 1000) - days * 86400;
     const result = getDatabase().prepare('DELETE FROM nodes WHERE last_heard < ?').run(cutoff);
-    console.log(`[IPC] db:deleteNodesByAge: pruned ${result.changes} nodes older than ${days}d`);
+    console.debug(`[IPC] db:deleteNodesByAge: pruned ${result.changes} nodes older than ${days}d`);
     return result;
   } catch (err) {
     console.error(
@@ -1185,7 +1438,7 @@ ipcMain.handle('db:pruneNodesByCount', (_event, maxCount: number) => {
         'DELETE FROM nodes WHERE node_id NOT IN (SELECT node_id FROM nodes ORDER BY last_heard DESC LIMIT ?)',
       )
       .run(maxCount);
-    console.log(
+    console.debug(
       `[IPC] db:pruneNodesByCount: pruned ${result.changes} nodes, keeping top ${maxCount}`,
     );
     return result;
@@ -1209,7 +1462,7 @@ ipcMain.handle('db:deleteNodesBatch', (_event, nodeIds: number[]) => {
     const result = getDatabase()
       .prepare(`DELETE FROM nodes WHERE node_id IN (${placeholders})`)
       .run(...safe);
-    console.log(`[IPC] db:deleteNodesBatch: deleted ${result.changes} nodes`);
+    console.debug(`[IPC] db:deleteNodesBatch: deleted ${result.changes} nodes`);
     return result.changes;
   } catch (err) {
     console.error(
@@ -1224,7 +1477,7 @@ ipcMain.handle('db:clearMessagesByChannel', (_event, channel: number) => {
   try {
     const ch = safeNonNegativeInt(channel);
     const result = getDatabase().prepare('DELETE FROM messages WHERE channel = ?').run(ch);
-    console.log(
+    console.debug(
       `[IPC] db:clearMessagesByChannel: deleted ${result.changes} messages from channel ${ch}`,
     );
     return result;
@@ -1255,7 +1508,7 @@ ipcMain.handle('db:deleteNodesBySource', (_event, source: string) => {
       throw new Error('db:deleteNodesBySource: source must be a string');
     if (source.length > 64) throw new Error('db:deleteNodesBySource: source string too long');
     const changes = deleteNodesBySource(source);
-    console.log(
+    console.debug(
       `[IPC] db:deleteNodesBySource(${sanitizeLogMessage(source)}): pruned ${changes} nodes`,
     );
     return changes;
@@ -1271,7 +1524,7 @@ ipcMain.handle('db:deleteNodesBySource', (_event, source: string) => {
 ipcMain.handle('db:deleteNodesWithoutLongname', () => {
   try {
     const changes = deleteNodesWithoutLongname();
-    console.log(`[IPC] db:deleteNodesWithoutLongname: pruned ${changes} unnamed nodes`);
+    console.debug(`[IPC] db:deleteNodesWithoutLongname: pruned ${changes} unnamed nodes`);
     return changes;
   } catch (err) {
     console.error(
@@ -1473,23 +1726,55 @@ ipcMain.handle('db:getMeshcoreMessages', (_event, channelIdx?: number, limit = 2
   try {
     const safeLimit = Math.min(Math.max(1, Number(limit) || 200), 10000);
     const db = getDatabase();
+    // Order by row id (insert order at this client), not `timestamp`:
+    // outgoing messages use Date.now() while RF inbound uses the radio's clock; if the device
+    // time lags, ORDER BY timestamp DESC kept "recent" sends but dropped inbound rows from the
+    // LIMIT window. Reversed DESC→ASC yields oldest-first within the N most recently stored rows.
     if (channelIdx !== undefined && channelIdx !== null) {
       const ch = typeof channelIdx === 'number' ? Math.trunc(channelIdx) : 0;
-      return db
-        .prepare(
-          'SELECT * FROM meshcore_messages WHERE channel_idx = ? ORDER BY timestamp ASC LIMIT ?',
-        )
-        .all(ch, safeLimit);
+      const rows = db
+        .prepare('SELECT * FROM meshcore_messages WHERE channel_idx = ? ORDER BY id DESC LIMIT ?')
+        .all(ch, safeLimit) as Record<string, unknown>[];
+      rows.reverse();
+      return rows;
     }
-    return db
-      .prepare('SELECT * FROM meshcore_messages ORDER BY timestamp ASC LIMIT ?')
-      .all(safeLimit);
+    const rows = db
+      .prepare('SELECT * FROM meshcore_messages ORDER BY id DESC LIMIT ?')
+      .all(safeLimit) as Record<string, unknown>[];
+    rows.reverse();
+    return rows;
   } catch (err) {
     console.error(
       '[IPC] db:getMeshcoreMessages failed:',
       sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
     );
     throw err;
+  }
+});
+
+ipcMain.handle('db:searchMessages', (_event, query: string, limit?: number) => {
+  try {
+    if (typeof query !== 'string') return [];
+    return searchMessages(query, Math.min(limit ?? 50, 200));
+  } catch (err) {
+    console.error(
+      '[IPC] db:searchMessages failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    return [];
+  }
+});
+
+ipcMain.handle('db:searchMeshcoreMessages', (_event, query: string, limit?: number) => {
+  try {
+    if (typeof query !== 'string') return [];
+    return searchMeshcoreMessages(query, Math.min(limit ?? 50, 200));
+  } catch (err) {
+    console.error(
+      '[IPC] db:searchMeshcoreMessages failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    return [];
   }
 });
 
@@ -1509,12 +1794,23 @@ ipcMain.handle('db:saveMeshcoreMessage', (_event, message) => {
   try {
     validateSaveMeshcoreMessage(message);
     const m = message as Record<string, unknown>;
+    const replyId = m.reply_id != null ? Number(m.reply_id) : null;
+    if (replyId != null && (!Number.isFinite(replyId) || replyId < 0)) {
+      throw new Error('db:saveMeshcoreMessage: reply_id must be a non-negative finite number');
+    }
     const db = getDatabase();
+    const validReceivedVia = ['rf', 'mqtt', 'both'] as const;
+    const receivedViaRaw = m.received_via;
+    const received_via =
+      typeof receivedViaRaw === 'string' &&
+      (validReceivedVia as readonly string[]).includes(receivedViaRaw)
+        ? receivedViaRaw
+        : null;
     return db
       .prepare(
         'INSERT OR IGNORE INTO meshcore_messages ' +
-          '(sender_id, sender_name, payload, channel_idx, timestamp, status, packet_id, to_node) ' +
-          'VALUES (@sender_id, @sender_name, @payload, @channel_idx, @timestamp, @status, @packet_id, @to_node)',
+          '(sender_id, sender_name, payload, channel_idx, timestamp, status, packet_id, emoji, reply_id, to_node, received_via) ' +
+          'VALUES (@sender_id, @sender_name, @payload, @channel_idx, @timestamp, @status, @packet_id, @emoji, @reply_id, @to_node, @received_via)',
       )
       .run({
         sender_id: m.sender_id != null ? Number(m.sender_id) : null,
@@ -1524,7 +1820,10 @@ ipcMain.handle('db:saveMeshcoreMessage', (_event, message) => {
         timestamp: Number(m.timestamp),
         status: m.status != null ? String(m.status) : 'acked',
         packet_id: m.packet_id != null ? Number(m.packet_id) : null,
+        emoji: m.emoji != null ? safeNonNegativeInt(m.emoji) : null,
+        reply_id: replyId,
         to_node: m.to_node != null ? Number(m.to_node) : null,
+        received_via,
       });
   } catch (err) {
     console.error(
@@ -1582,6 +1881,47 @@ ipcMain.handle(
     } catch (err) {
       console.error(
         '[IPC] db:updateMeshcoreContactNickname failed:',
+        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+      );
+      throw err;
+    }
+  },
+);
+
+ipcMain.handle(
+  'db:updateMeshcoreContactFavorited',
+  (_event, nodeId: number, favorited: boolean, publicKeyHex?: string | null) => {
+    try {
+      const id = safeNonNegativeInt(nodeId);
+      if (typeof favorited !== 'boolean') {
+        throw new Error('db:updateMeshcoreContactFavorited: favorited must be a boolean');
+      }
+      if (publicKeyHex != null && typeof publicKeyHex !== 'string') {
+        throw new Error('db:updateMeshcoreContactFavorited: publicKeyHex must be a string or null');
+      }
+      if (publicKeyHex != null && publicKeyHex.length > 128) {
+        throw new Error('db:updateMeshcoreContactFavorited: publicKeyHex too long');
+      }
+      const db = getDatabase();
+      const run = db
+        .prepare('UPDATE meshcore_contacts SET favorited = ? WHERE node_id = ?')
+        .run(favorited ? 1 : 0, id);
+      if (run.changes > 0) return run;
+      const hex = publicKeyHex?.replace(/\s/g, '') ?? '';
+      if (!hex) {
+        throw new Error(
+          'db:updateMeshcoreContactFavorited: contact not in database; public_key required to create row',
+        );
+      }
+      db.prepare(
+        `INSERT INTO meshcore_contacts (node_id, public_key, favorited)
+         VALUES (?, ?, ?)
+         ON CONFLICT(node_id) DO UPDATE SET favorited = excluded.favorited`,
+      ).run(id, hex, favorited ? 1 : 0);
+      return { changes: 1 };
+    } catch (err) {
+      console.error(
+        '[IPC] db:updateMeshcoreContactFavorited failed:',
         sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
       );
       throw err;
@@ -1781,7 +2121,7 @@ ipcMain.handle('meshcore:tcp-connect', (_event, host: string, port: number) => {
     const socket = new net.Socket();
     meshcoreTcpSocket = socket;
     socket.connect(p, host, () => {
-      console.log('[IPC] meshcore:tcp-connect connected to', host, p);
+      console.debug('[IPC] meshcore:tcp-connect connected to', sanitizeLogMessage(host), p);
       if (!settled) {
         settled = true;
         resolve();
@@ -1790,7 +2130,8 @@ ipcMain.handle('meshcore:tcp-connect', (_event, host: string, port: number) => {
     socket.on('data', (data) => {
       mainWindow?.webContents.send('meshcore:tcp-data', Array.from(data));
     });
-    socket.on('close', () => {
+    socket.on('close', (hadError) => {
+      console.debug('[IPC] meshcore:tcp socket closed', hadError ? '(hadError)' : '(clean)');
       mainWindow?.webContents.send('meshcore:tcp-disconnected');
       if (meshcoreTcpSocket === socket) meshcoreTcpSocket = null;
     });
@@ -1807,17 +2148,26 @@ ipcMain.handle('meshcore:tcp-connect', (_event, host: string, port: number) => {
 
 ipcMain.handle('meshcore:tcp-write', (_event, bytes: number[]) => {
   if (!meshcoreTcpSocket) {
-    console.warn('[IPC] meshcore:tcp-write: no active socket, dropping write');
-    return;
+    const msg = 'meshcore:tcp-write: no active socket';
+    console.warn(`[IPC] ${msg}`);
+    return Promise.reject(new Error(msg));
   }
-  meshcoreTcpSocket.write(new Uint8Array(bytes), (err) => {
-    if (err) console.error('[IPC] meshcore:tcp-write error:', sanitizeLogMessage(err.message));
+  const sock = meshcoreTcpSocket;
+  return new Promise<void>((resolve, reject) => {
+    sock.write(new Uint8Array(bytes), (err) => {
+      if (err) {
+        console.error('[IPC] meshcore:tcp-write error:', sanitizeLogMessage(err.message));
+        reject(err);
+      } else {
+        resolve();
+      }
+    });
   });
 });
 
 ipcMain.handle('meshcore:tcp-disconnect', () => {
   if (meshcoreTcpSocket) {
-    console.log('[IPC] meshcore:tcp-disconnect');
+    console.debug('[IPC] meshcore:tcp-disconnect');
     meshcoreTcpSocket.destroy();
     meshcoreTcpSocket = null;
   }
@@ -1827,8 +2177,8 @@ ipcMain.handle('meshcore:tcp-disconnect', () => {
 app.whenReady().then(() => {
   try {
     initLogFile();
+
     initDatabase();
-    setupAppMenu();
     // Force the dock icon in development on macOS
     if (!app.isPackaged && process.platform === 'darwin') {
       const iconPath = path.join(
@@ -1838,6 +2188,8 @@ app.whenReady().then(() => {
       app.dock?.setIcon(iconPath);
     }
     createWindow();
+
+    setupAppMenu();
   } catch (error) {
     console.error(
       '[main] Fatal startup error:',
@@ -1869,13 +2221,63 @@ app.whenReady().then(() => {
   });
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
+  if (nobleQuitRetry) {
+    isQuitting = true;
+    closeDatabase();
+    return;
+  }
+
+  if (nobleBleManager.isBleSessionActive()) {
+    event.preventDefault();
+    void (async () => {
+      try {
+        await nobleBleManager.stopAllScanning();
+        await nobleBleManager.disconnectAll();
+      } catch (err) {
+        console.error(
+          '[main] Noble BLE shutdown failed:',
+          sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        );
+      } finally {
+        nobleQuitRetry = true;
+        app.quit();
+      }
+    })();
+    return;
+  }
+
   isQuitting = true;
   closeDatabase();
 });
 
+app.on('will-quit', () => {
+  try {
+    mqttManager.disconnect();
+    meshcoreMqttAdapter.disconnect();
+  } catch {
+    /* ignore */
+  }
+  if (meshcoreTcpSocket) {
+    try {
+      meshcoreTcpSocket.destroy();
+    } catch {
+      /* ignore */
+    }
+    meshcoreTcpSocket = null;
+  }
+  nobleBleManager.releaseNobleProcessHandles();
+  tray?.destroy();
+  tray = null;
+  // releaseNobleProcessHandles() above calls noble._bindings.stop() which releases the native
+  // BLEManager and its CBqueue GCD dispatch queue — without that, the process cannot exit on macOS.
+  app.exit(0);
+});
+
+app.on('quit', () => {});
+
 app.on('window-all-closed', () => {
-  const hasConnection = isConnected || mqttManager.getStatus() === 'connected';
+  const hasConnection = isConnected || isAnyMqttConnected();
   // On macOS: quit when user chose Quit, or when there's no connection (window closed with nothing to keep running for)
   if (process.platform !== 'darwin' || isQuitting || !hasConnection) {
     app.quit();

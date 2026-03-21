@@ -16,7 +16,7 @@ npm run lint      # Run ESLint (type-aware; see Code style below)
 npm run typecheck # TypeScript check (renderer + main/preload)
 npm run format    # Prettier write — ts, tsx, js, jsx, json, css, md
 npm run format:check   # Prettier check only (no writes)
-npm run rebuild   # Rebuild native modules (better-sqlite3) for current Electron
+npm run rebuild   # Rebuild native modules (@stoprocent/noble) for current Electron
 ```
 
 **Running CI locally:** With [act](https://github.com/nektos/act) installed, run `act --container-architecture linux/amd64` so Linux jobs use the correct architecture. The test-results artifact upload step is skipped when running under act (actor `nektos/act`); all other steps run as on GitHub.
@@ -36,11 +36,18 @@ After `npm install`, the repo’s git hooks are enabled (`core.hooksPath` → `.
 
 To skip the hook in an emergency: `git commit --no-verify`.
 
-If `better-sqlite3` or other native addons fail after changing Node or Electron versions, run `npm run rebuild` (same script as `postinstall`).
+If `@stoprocent/noble` or other native addons fail after changing Node or Electron versions, run `npm run rebuild` (same script as `postinstall`).
 
-**Windows**: If `dist:win` or `rebuild` fails with “space in the path” or `EPERM` unlink on `better_sqlite3.node`, try `npm run dist:win` again (beforeBuild clears `better-sqlite3/build` before the packaging rebuild), or `npm run dist:win:skip-rebuild` if postinstall already built the native module. If it still fails, use a path **without spaces**, close Electron/Node processes, and see README troubleshooting. For "Could not find any Python installation to use", install Python 3 and add it to PATH — see README Windows prerequisites and troubleshooting.
+**Windows**: If `dist:win` or `rebuild` fails with “space in the path” or `EPERM`, use a path **without spaces**, close Electron/Node processes, and see README troubleshooting. For “Could not find any Python installation to use”, install Python 3 and add it to PATH — see README Windows prerequisites and troubleshooting.
 
 **Linux sandbox / SIGILL**: If `npm install` fails with `electron exited with signal SIGILL`, use `MESHTASTIC_SKIP_ELECTRON_REBUILD=1 npm install`, then run `npm run rebuild` where the Electron binary runs (see README Linux troubleshooting).
+
+**npm 11 — `Unknown env config "devdir"`:** npm only recognizes its own config keys. `devdir` is a legacy node-gyp setting; if it appears in `~/.npmrc` or as `npm_config_devdir` / `NPM_CONFIG_DEVDIR` in the environment (some IDEs or sandboxes inject it), npm 11 prints a warning. Fix:
+
+1. Remove from npm user config if saved there: `npm config delete devdir` and `npm config delete devdir --global`.
+2. Optionally unset in your shell profile: `unset npm_config_devdir NPM_CONFIG_DEVDIR 2>/dev/null || true`.
+
+The repo’s **pre-commit** hook unsets those variables before running npm so local commits are quiet when the environment sets `devdir`.
 
 ## Code style
 
@@ -63,9 +70,11 @@ Run `npm run lint` before pushing. ESLint is configured with:
 
 **Dual-mode UI:** `App.tsx` chooses the active hook by protocol and renders the same shell (tabs, Log panel, status). Tab 6 is **Modules** (Meshtastic: `ConfigPanel`, `ModulePanel`) or **Repeaters** (MeshCore: `RepeatersPanel`). Panels such as `RadioPanel`, `ConnectionPanel`, and `NodeDetailModal` accept optional props (e.g. `onApplyLoraParams`, `onSetOwner`) that are set only for the active protocol; when adding protocol-specific UI, gate on `capabilities` or the presence of these handlers rather than on the protocol string.
 
-**MeshCore IPC channels:** Main-process TCP bridge for MeshCore uses `meshcore:tcp-connect`, `meshcore:tcp-write`, `meshcore:tcp-disconnect`, `meshcore:tcp-data` (renderer push), and `meshcore:tcp-disconnected` (renderer push). These are handled in `src/main/index.ts` and wired into the renderer via `window.electronAPI.meshcore.tcp.*` in the preload.
+**MeshCore IPC channels:** Main-process TCP bridge for MeshCore uses `meshcore:tcp-connect`, `meshcore:tcp-write`, `meshcore:tcp-disconnect`, `meshcore:tcp-data` (renderer push), and `meshcore:tcp-disconnected` (renderer push). These are handled in `src/main/index.ts` and wired into the renderer via `window.electronAPI.meshcore.tcp.*` in the preload. `meshcore:tcp-write` returns a `Promise` that resolves after the socket `write` callback succeeds and rejects if there is no active socket or the write fails (so callers can surface errors).
 
-**MeshCore database:** MeshCore contacts and messages are stored in `meshcore_contacts` and `meshcore_messages` (see `src/main/database.ts` for current schema version). The `saveMeshcoreContact` IPC does a full `INSERT OR REPLACE` (preserves `favorited`); `updateMeshcoreContactAdvert` does a targeted `UPDATE` of `last_advert`, `adv_lat`, `adv_lon` only — used by the periodic advert push event (128) to avoid overwriting contact metadata with partial data.
+**MeshCore MQTT:** Broker fields in the Connection tab (including **LetsMesh** / **Ripple Networks** / **Custom** presets in `ConnectionPanel.tsx`) must stay consistent with what `src/main/mqtt-manager.ts` and `src/main/meshcore-mqtt-adapter.ts` expect: `mqttTransportProtocol: 'meshcore'`, optional `useWebSocket` (e.g. LetsMesh on 443), and `tlsInsecure` when connecting to TLS brokers with non–public CAs (Ripple preset). Adding or changing a preset should be reflected in [README.md](README.md) and [docs/meshcore-meshtastic-parity.md](docs/meshcore-meshtastic-parity.md).
+
+**MeshCore database:** MeshCore contacts and messages are stored in `meshcore_contacts` and `meshcore_messages` (see `src/main/database.ts` for current schema version). The `saveMeshcoreContact` IPC does a full `INSERT OR REPLACE` (preserves `favorited`); `updateMeshcoreContactAdvert` does a targeted `UPDATE` of `last_advert`, `adv_lat`, `adv_lon` only — used by the periodic advert push event (128) to avoid overwriting contact metadata with partial data. `updateMeshcoreContactFavorited` sets `favorited` and can `INSERT` a minimal row when the contact is not yet in the table (requires `public_key` hex from the renderer). `meshcore_messages.received_via` stores how a message was observed (`rf`, `mqtt`, or `both`) for chat transport badges and history. The partial unique index on meshcore messages includes `payload` so distinct lines in the same second (same stub `sender_id` and channel) are not dropped by `INSERT OR IGNORE`.
 
 **Stores used by both protocols:** `positionHistoryStore` holds the 60-minute position trail and path-overlay visibility; `diagnosticsStore` holds `foreignLoraDetections` (cross-protocol foreign LoRa detection). MeshCore-only: `repeaterSignalStore` caches repeater status for the Repeaters panel. See `src/renderer/stores/`.
 
@@ -200,6 +209,8 @@ Current MeshCore-specific capabilities that differ from Meshtastic: `hasPerHopSn
 ## Accessibility Requirements
 
 Every interactive element added or modified must have an accessible label. This applies to all contributors — human and AI.
+
+**Electron (Chromium):** On this platform, `aria-label` on an element **replaces** the accessible name that would otherwise come from its text contents for assistive tech. **Every visible control should still have an explicit `aria-label`.** Set that label to the **same string a sighted user reads** (including punctuation, counts, and dynamic values). You can still use `<label htmlFor="…">` / `aria-labelledby` for association and tests; add a matching `aria-label` on the control when Electron would otherwise hide inner text from the accessible name. Icon-only controls use an `aria-label` that states the action in plain language (there is no conflicting visible text).
 
 ### Required ARIA/HTML for common patterns
 

@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
 
@@ -27,5 +27,28 @@ describe('ChatPanel accessibility', () => {
     );
     const results = await axe(container);
     expect(results).toHaveNoViolations();
+  });
+
+  it('shows RF transport badge for incoming messages with receivedVia rf', () => {
+    render(
+      <ToastProvider>
+        <ChatPanel
+          {...defaultProps}
+          myNodeNum={1}
+          messages={[
+            {
+              sender_id: 2,
+              sender_name: 'Other',
+              payload: 'Hello',
+              channel: 0,
+              timestamp: Date.now(),
+              status: 'acked',
+              receivedVia: 'rf',
+            },
+          ]}
+        />
+      </ToastProvider>,
+    );
+    expect(screen.getByTitle('Received via RF')).toBeInTheDocument();
   });
 });
