@@ -451,7 +451,7 @@ meshtastic-client/
 │   │   ├── meshcore-mqtt-adapter.ts  # MeshCore MQTT JSON v1 subscribe/publish
 │   │   ├── log-service.ts        # Log file, console patch, log panel IPC
 │   │   ├── sanitize-log-message.ts  # Log injection sanitization (CodeQL); use at call sites before appendLine
-│   │   ├── database.ts           # SQLite schema & migrations (WAL mode, user_version 16)
+│   │   ├── database.ts           # SQLite schema & migrations (WAL mode, user_version 17)
 │   │   ├── mqtt-manager.ts       # MQTT client: AES decrypt, dedup, protobuf decode (Meshtastic only)
 │   │   ├── updater.ts            # Auto-update checks via electron-updater
 │   │   └── gps.ts                # Main-process GPS helper

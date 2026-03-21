@@ -830,7 +830,11 @@ export default function ChatPanel({
             const isUnreadStart = i === unreadStartIndex;
 
             return (
-              <div key={`${msg.timestamp}-${i}`}>
+              <div
+                key={
+                  msg.id != null ? `db-${msg.id}` : `${msg.timestamp}-${msg.packetId ?? 'x'}-${i}`
+                }
+              >
                 {daySeparator}
                 {isUnreadStart && (
                   <div ref={unreadDividerRef}>

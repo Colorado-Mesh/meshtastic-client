@@ -504,6 +504,26 @@ function runMigrations(): void {
       throw new Error(`Migration v16 failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
+
+  if (userVersion < 17) {
+    try {
+      // Previous index (sender_id, timestamp, channel_idx) dropped distinct lines that shared
+      // those three fields — common for RF channel chat (second-resolution timestamps + stub ids).
+      db!.exec('DROP INDEX IF EXISTS idx_mc_msg_dedup');
+      db!.exec(
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_mc_msg_dedup ' +
+          'ON meshcore_messages(sender_id, timestamp, channel_idx, payload) ' +
+          'WHERE sender_id IS NOT NULL',
+      );
+      db!.pragma('user_version = 17');
+    } catch (e) {
+      console.error(
+        '[db] migration v17 failed',
+        sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+      );
+      throw new Error(`Migration v17 failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
 }
 
 /** Export DB to a file. Best-effort for very large databases; may take a long time with no progress callback. */

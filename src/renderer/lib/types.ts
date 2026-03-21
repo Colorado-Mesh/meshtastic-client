@@ -199,6 +199,8 @@ export interface ChatMessage {
   receivedVia?: 'rf' | 'mqtt' | 'both';
   // true for backlog messages (e.g. MeshCore MsgWaiting catch-up); excluded from unread counter
   isHistory?: boolean;
+  /** Full raw line from device/MQTT for dedupe only (not persisted); avoids collapsing same-second identical payloads. */
+  meshcoreDedupeKey?: string;
 }
 
 export interface TelemetryPoint {

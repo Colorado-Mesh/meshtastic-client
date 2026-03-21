@@ -434,26 +434,51 @@ function setupTray(window: BrowserWindow) {
   tray.setContextMenu(trayContextMenu);
 }
 
-/** Set a minimal application menu on macOS so the native menu bridge has a stable model (avoids freed-model issues; the "representedObject is not a WeakPtrToElectronMenuModelAsNSObject" console warning when focusing text inputs is a known Electron/Chromium macOS quirk and harmless). */
+/**
+ * macOS: avoid native MenuItem `role:` entries (about/services/window/edit/etc.). Those map to
+ * AppKit NSMenuItem targets that still participate in responder / menu validation while typing
+ * in a web view and can log WeakPtrToElectronMenuModelAsNSObject. Use plain click handlers only.
+ * Cmd+C/V/X/Z still work in the page via Chromium. No menu bar Window group — use traffic lights.
+ */
 function setupAppMenu() {
   if (process.platform !== 'darwin') return;
   appMenu = Menu.buildFromTemplate([
     {
       label: app.name,
       submenu: [
-        { role: 'about' as const },
+        {
+          label: `About ${app.name}`,
+          click: () => {
+            const w = BrowserWindow.getFocusedWindow() ?? mainWindow;
+            const opts = {
+              type: 'info' as const,
+              title: app.name,
+              message: app.name,
+              detail: `Version ${app.getVersion()}`,
+            };
+            if (w) void dialog.showMessageBox(w, opts);
+            else void dialog.showMessageBox(opts);
+          },
+        },
         { type: 'separator' as const },
-        { role: 'services' as const },
+        {
+          label: 'Hide',
+          accelerator: 'Command+H',
+          click: () => app.hide(),
+        },
         { type: 'separator' as const },
-        { role: 'hide' as const },
-        { role: 'hideOthers' as const },
-        { role: 'unhide' as const },
-        { type: 'separator' as const },
-        { role: 'quit' as const },
+        {
+          label: 'Quit',
+          accelerator: 'Command+Q',
+          click: () => {
+            isQuitting = true;
+            mqttManager.disconnect();
+            meshcoreMqttAdapter.disconnect();
+            app.quit();
+          },
+        },
       ],
     },
-    { role: 'editMenu' as const },
-    { role: 'windowMenu' as const },
   ]);
   Menu.setApplicationMenu(appMenu);
 }
@@ -471,11 +496,18 @@ function createWindow() {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // Reduces macOS native spellcheck / context menu bridge churn that can log
+      // WeakPtrToElectronMenuModelAsNSObject when focusing inputs (Electron/Chromium quirk).
+      spellcheck: false,
       // Exposes navigator.bluetooth.getDevices() so reconnectBle() can run without
       // requestDevice() (which requires a user gesture). See electron/electron#31869.
       experimentalFeatures: true,
     },
   });
+
+  if (process.platform === 'darwin') {
+    mainWindow.webContents.session.setSpellCheckerEnabled(false);
+  }
 
   // ─── Web Bluetooth: Device Selection ───────────────────────────────
   // When the renderer calls navigator.bluetooth.requestDevice(),
@@ -1595,17 +1627,23 @@ ipcMain.handle('db:getMeshcoreMessages', (_event, channelIdx?: number, limit = 2
   try {
     const safeLimit = Math.min(Math.max(1, Number(limit) || 200), 10000);
     const db = getDatabase();
+    // Order by row id (insert order at this client), not `timestamp`:
+    // outgoing messages use Date.now() while RF inbound uses the radio's clock; if the device
+    // time lags, ORDER BY timestamp DESC kept "recent" sends but dropped inbound rows from the
+    // LIMIT window. Reversed DESC→ASC yields oldest-first within the N most recently stored rows.
     if (channelIdx !== undefined && channelIdx !== null) {
       const ch = typeof channelIdx === 'number' ? Math.trunc(channelIdx) : 0;
-      return db
-        .prepare(
-          'SELECT * FROM meshcore_messages WHERE channel_idx = ? ORDER BY timestamp ASC LIMIT ?',
-        )
-        .all(ch, safeLimit);
+      const rows = db
+        .prepare('SELECT * FROM meshcore_messages WHERE channel_idx = ? ORDER BY id DESC LIMIT ?')
+        .all(ch, safeLimit) as Record<string, unknown>[];
+      rows.reverse();
+      return rows;
     }
-    return db
-      .prepare('SELECT * FROM meshcore_messages ORDER BY timestamp ASC LIMIT ?')
-      .all(safeLimit);
+    const rows = db
+      .prepare('SELECT * FROM meshcore_messages ORDER BY id DESC LIMIT ?')
+      .all(safeLimit) as Record<string, unknown>[];
+    rows.reverse();
+    return rows;
   } catch (err) {
     console.error(
       '[IPC] db:getMeshcoreMessages failed:',
@@ -1993,7 +2031,8 @@ ipcMain.handle('meshcore:tcp-connect', (_event, host: string, port: number) => {
     socket.on('data', (data) => {
       mainWindow?.webContents.send('meshcore:tcp-data', Array.from(data));
     });
-    socket.on('close', () => {
+    socket.on('close', (hadError) => {
+      console.debug('[IPC] meshcore:tcp socket closed', hadError ? '(hadError)' : '(clean)');
       mainWindow?.webContents.send('meshcore:tcp-disconnected');
       if (meshcoreTcpSocket === socket) meshcoreTcpSocket = null;
     });
@@ -2040,7 +2079,6 @@ app.whenReady().then(() => {
   try {
     initLogFile();
     initDatabase();
-    setupAppMenu();
     // Force the dock icon in development on macOS
     if (!app.isPackaged && process.platform === 'darwin') {
       const iconPath = path.join(
@@ -2050,6 +2088,7 @@ app.whenReady().then(() => {
       app.dock?.setIcon(iconPath);
     }
     createWindow();
+    setupAppMenu();
   } catch (error) {
     console.error(
       '[main] Fatal startup error:',
