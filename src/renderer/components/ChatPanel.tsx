@@ -225,7 +225,7 @@ export default function ChatPanel({
   const [showScrollButton, setShowScrollButton] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Two-section UI state — load DM tabs from localStorage for restart persistence
   const [viewMode, setViewMode] = useState<'channels' | 'dm'>('channels');
@@ -770,6 +770,7 @@ export default function ChatPanel({
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search messages..."
             aria-label="Search messages"
+            spellCheck={false}
             className="w-full px-3 py-1.5 bg-secondary-dark/80 rounded-lg text-gray-200 text-sm border border-gray-600/50 focus:border-brand-green/50 focus:outline-none"
             autoFocus
           />
@@ -1193,15 +1194,20 @@ export default function ChatPanel({
         </div>
       )}
 
-      {/* Input area */}
+      {/* Input area — textarea so Chromium applies spellcheck (single-line inputs often skip it) */}
       <div className="flex gap-2 mt-2">
-        <input
+        <textarea
           ref={inputRef}
-          type="text"
+          rows={1}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          disabled={!isConnected || sending}
+          spellCheck
+          lang={
+            typeof navigator !== 'undefined' && navigator.language ? navigator.language : undefined
+          }
+          enterKeyHint="send"
+          aria-label={isDmMode ? 'Direct message text' : 'Channel message text'}
           placeholder={
             isDmMode
               ? `DM to ${dmNodeName}...`
@@ -1211,7 +1217,9 @@ export default function ChatPanel({
                   ? 'Type a message (via MQTT)...'
                   : 'Type a message...'
           }
-          className={`flex-1 px-4 py-2.5 rounded-xl text-gray-200 border focus:outline-none disabled:opacity-50 transition-colors ${
+          className={`flex-1 min-h-[42px] max-h-32 px-4 py-2.5 rounded-xl text-gray-200 border focus:outline-none transition-colors resize-none overflow-y-auto ${
+            !isConnected || sending ? 'opacity-60' : ''
+          } ${
             isDmMode
               ? 'bg-purple-900/20 border-purple-600/50 focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/30'
               : 'bg-secondary-dark/80 border-gray-600/50 focus:border-brand-green/50 focus:ring-1 focus:ring-brand-green/30'

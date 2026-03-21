@@ -329,6 +329,7 @@ export default function ModulePanel({
             disabled={disabled || !cannedEnabled}
             rows={6}
             placeholder={'Hello\nOK\nOn my way\nNeed help'}
+            spellCheck={false}
             className="w-full px-3 py-2 bg-secondary-dark rounded-lg text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none disabled:opacity-50 font-mono text-xs resize-y"
           />
           <p className="text-xs text-muted">

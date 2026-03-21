@@ -1,4 +1,14 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Tray } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  MenuItem,
+  nativeImage,
+  type Session,
+  Tray,
+} from 'electron';
 import fs from 'fs';
 import net from 'net';
 import path from 'path';
@@ -483,8 +493,52 @@ function setupAppMenu() {
   Menu.setApplicationMenu(appMenu);
 }
 
+/**
+ * Win/Linux: Hunspell only runs after languages are set (see Electron spellchecker tutorial).
+ * macOS: native checker; still ensure the session flag is on. Re-run after load in case
+ * dictionary lists populate asynchronously.
+ */
+function configureRendererSpellcheck(sess: Session): void {
+  try {
+    sess.setSpellCheckerEnabled(true);
+    if (process.platform === 'darwin') {
+      return;
+    }
+    const available = sess.availableSpellCheckerLanguages;
+    if (!Array.isArray(available) || available.length === 0) {
+      console.warn('[main] spellcheck: no dictionaries listed yet (retry after load)');
+      return;
+    }
+    const loc = app.getLocale();
+    const picked: string[] = [];
+    if (available.includes(loc)) {
+      picked.push(loc);
+    }
+    const region = loc.split(/[-_]/)[0];
+    if (region) {
+      for (const code of available) {
+        if ((code === region || code.startsWith(`${region}-`)) && !picked.includes(code)) {
+          picked.push(code);
+        }
+      }
+    }
+    if (picked.length === 0 && available.includes('en-US')) {
+      picked.push('en-US');
+    }
+    if (picked.length === 0) {
+      picked.push(available[0]);
+    }
+    sess.setSpellCheckerLanguages(picked.slice(0, 3));
+  } catch (e) {
+    console.warn(
+      '[main] configureRendererSpellcheck',
+      sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+    );
+  }
+}
+
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 900,
@@ -496,18 +550,63 @@ function createWindow() {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      // Reduces macOS native spellcheck / context menu bridge churn that can log
-      // WeakPtrToElectronMenuModelAsNSObject when focusing inputs (Electron/Chromium quirk).
-      spellcheck: false,
+      // Inline misspelling marks and context-menu suggestions (all platforms). macOS app menu
+      // stays minimal (no role-based Edit menu) to reduce WeakPtr menu-bridge noise.
+      spellcheck: true,
       // Exposes navigator.bluetooth.getDevices() so reconnectBle() can run without
       // requestDevice() (which requires a user gesture). See electron/electron#31869.
       experimentalFeatures: true,
     },
   });
+  mainWindow = win;
 
-  if (process.platform === 'darwin') {
-    mainWindow.webContents.session.setSpellCheckerEnabled(false);
-  }
+  configureRendererSpellcheck(win.webContents.session);
+  win.webContents.once('did-finish-load', () => {
+    configureRendererSpellcheck(win.webContents.session);
+  });
+
+  // Spellcheck underlines come from Chromium; replacement suggestions only appear if we handle
+  // context-menu (see Electron spellchecker tutorial).
+  win.webContents.on('context-menu', (event, params) => {
+    if (!params.isEditable) return;
+    const suggestions = params.dictionarySuggestions ?? [];
+    const showSpell =
+      suggestions.length > 0 || Boolean(params.misspelledWord && params.misspelledWord.length > 0);
+    if (!showSpell) return;
+
+    event.preventDefault();
+    const menu = new Menu();
+    for (const suggestion of suggestions) {
+      menu.append(
+        new MenuItem({
+          label: suggestion,
+          click: () => {
+            win.webContents.replaceMisspelling(suggestion);
+          },
+        }),
+      );
+    }
+    if (suggestions.length > 0) {
+      menu.append(new MenuItem({ type: 'separator' }));
+    }
+    if (params.misspelledWord) {
+      menu.append(
+        new MenuItem({
+          label: 'Add to dictionary',
+          click: () => {
+            void win.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord);
+          },
+        }),
+      );
+      menu.append(new MenuItem({ type: 'separator' }));
+    }
+    menu.append(new MenuItem({ role: 'cut' }));
+    menu.append(new MenuItem({ role: 'copy' }));
+    menu.append(new MenuItem({ role: 'paste' }));
+    menu.append(new MenuItem({ type: 'separator' }));
+    menu.append(new MenuItem({ role: 'selectAll' }));
+    menu.popup({ window: win });
+  });
 
   // ─── Web Bluetooth: Device Selection ───────────────────────────────
   // When the renderer calls navigator.bluetooth.requestDevice(),
@@ -736,7 +835,6 @@ function createWindow() {
   });
 
   // Handle window close event
-  const win = mainWindow;
   win.on('close', (event) => {
     if (!isQuitting && (isConnected || isAnyMqttConnected())) {
       event.preventDefault();
