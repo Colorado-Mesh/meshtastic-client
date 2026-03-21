@@ -565,31 +565,37 @@ function createWindow() {
     configureRendererSpellcheck(win.webContents.session);
   });
 
-  // Spellcheck underlines come from Chromium; replacement suggestions only appear if we handle
-  // context-menu (see Electron spellchecker tutorial).
+  // Electron does not show any context menu by default — we must call menu.popup().
+  // Spell suggestions only exist on this event (see spellchecker tutorial); always show
+  // cut/copy/paste for text fields so right-click works even with no misspelling.
   win.webContents.on('context-menu', (event, params) => {
-    if (!params.isEditable) return;
-    const suggestions = params.dictionarySuggestions ?? [];
-    const showSpell =
-      suggestions.length > 0 || Boolean(params.misspelledWord && params.misspelledWord.length > 0);
-    if (!showSpell) return;
+    const isTextField =
+      params.isEditable ||
+      params.formControlType === 'text-area' ||
+      params.formControlType === 'input-text' ||
+      params.formControlType === 'input-search';
+    if (!isTextField) return;
 
     event.preventDefault();
+    const ef = params.editFlags;
+    const suggestions = params.dictionarySuggestions ?? [];
+    const spellOn = params.spellcheckEnabled !== false;
+
     const menu = new Menu();
-    for (const suggestion of suggestions) {
-      menu.append(
-        new MenuItem({
-          label: suggestion,
-          click: () => {
-            win.webContents.replaceMisspelling(suggestion);
-          },
-        }),
-      );
-    }
-    if (suggestions.length > 0) {
+    if (spellOn && suggestions.length > 0) {
+      for (const suggestion of suggestions) {
+        menu.append(
+          new MenuItem({
+            label: suggestion,
+            click: () => {
+              win.webContents.replaceMisspelling(suggestion);
+            },
+          }),
+        );
+      }
       menu.append(new MenuItem({ type: 'separator' }));
     }
-    if (params.misspelledWord) {
+    if (spellOn && params.misspelledWord) {
       menu.append(
         new MenuItem({
           label: 'Add to dictionary',
@@ -600,12 +606,18 @@ function createWindow() {
       );
       menu.append(new MenuItem({ type: 'separator' }));
     }
-    menu.append(new MenuItem({ role: 'cut' }));
-    menu.append(new MenuItem({ role: 'copy' }));
-    menu.append(new MenuItem({ role: 'paste' }));
+    menu.append(new MenuItem({ role: 'cut', enabled: ef.canCut }));
+    menu.append(new MenuItem({ role: 'copy', enabled: ef.canCopy }));
+    menu.append(new MenuItem({ role: 'paste', enabled: ef.canPaste }));
     menu.append(new MenuItem({ type: 'separator' }));
-    menu.append(new MenuItem({ role: 'selectAll' }));
-    menu.popup({ window: win });
+    menu.append(new MenuItem({ role: 'selectAll', enabled: ef.canSelectAll }));
+
+    menu.popup({
+      window: win,
+      x: params.x,
+      y: params.y,
+      ...(params.frame ? { frame: params.frame } : {}),
+    });
   });
 
   // ─── Web Bluetooth: Device Selection ───────────────────────────────
