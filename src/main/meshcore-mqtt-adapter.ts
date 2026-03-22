@@ -32,11 +32,18 @@ const MESHCORE_MQTT_CONNECT_ACK_MS = 30_000;
  */
 const MESHCORE_MQTT_KEEPALIVE_TCP_SEC = 60;
 /**
- * Shorter keepalive for WSS: first PINGREQ is scheduled at this interval. With 60s, the wire
- * can sit idle ~60s before a ping, which aligns with common proxy/LB idle timeouts and the
- * connection drops before MQTT keepalive runs. 30s keeps traffic below typical 60s idle cuts.
+ * MQTT keepalive (seconds) for WSS. mqtt.js fires Keepalive timeout at ~1.5× this value from the
+ * last reschedule; shorter values narrow the PINGRESP window (~1.5× keepalive). Idle proxies are
+ * kept hot via native WebSocket ping (`MESHCORE_MQTT_WSS_PING_MS`) and `reschedulePing` below.
  */
-const MESHCORE_MQTT_KEEPALIVE_WS_SEC = 30;
+const MESHCORE_MQTT_KEEPALIVE_WS_SEC = 60;
+/** Send WebSocket-level ping frames so LB/proxy idle timers see traffic before the first MQTT PINGREQ. */
+const MESHCORE_MQTT_WSS_PING_MS = 25_000;
+/**
+ * On some WSS paths, wire-level PINGRESP/SUBACK are not observed in time; periodic
+ * `reschedulePing(true)` resets mqtt.js KeepaliveManager without relying on inbound ACK callbacks.
+ */
+const MESHCORE_MQTT_RESCHEDULE_MS = 30_000;
 
 export class MeshcoreMqttAdapter extends EventEmitter {
   private client: mqtt.MqttClient | null = null;
@@ -48,6 +55,8 @@ export class MeshcoreMqttAdapter extends EventEmitter {
   private connectAbortByWatchdog = false;
   /** One-shot: log first inbound MQTT message for broker delivery diagnostics. */
   private firstMessageLogged = false;
+  private wssPingTimer: ReturnType<typeof setInterval> | null = null;
+  private keepaliveRescheduleTimer: ReturnType<typeof setInterval> | null = null;
 
   getStatus(): MQTTStatus {
     return this.status;
@@ -64,8 +73,40 @@ export class MeshcoreMqttAdapter extends EventEmitter {
     }
   }
 
+  private clearWssPing(): void {
+    if (this.wssPingTimer) {
+      clearInterval(this.wssPingTimer);
+      this.wssPingTimer = null;
+    }
+  }
+
+  private clearKeepaliveReschedule(): void {
+    if (this.keepaliveRescheduleTimer) {
+      clearInterval(this.keepaliveRescheduleTimer);
+      this.keepaliveRescheduleTimer = null;
+    }
+  }
+
+  /** Reset mqtt.js KeepaliveManager (WSS paths where wire PINGRESP/SUBACK are not observed in time). */
+  private startKeepaliveReschedule(): void {
+    this.clearKeepaliveReschedule();
+    this.keepaliveRescheduleTimer = setInterval(() => {
+      if (!this.client?.connected) return;
+      try {
+        this.client.reschedulePing(true);
+      } catch (e) {
+        console.debug(
+          '[MeshcoreMqttAdapter] reschedulePing failed',
+          sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+        );
+      }
+    }, MESHCORE_MQTT_RESCHEDULE_MS);
+  }
+
   disconnect(): void {
     this.clearConnectTimers();
+    this.clearWssPing();
+    this.clearKeepaliveReschedule();
     if (this.client) {
       try {
         this.client.removeAllListeners();
@@ -174,6 +215,14 @@ export class MeshcoreMqttAdapter extends EventEmitter {
             this.connectAbortByWatchdog = false;
             return;
           }
+          // Cascade after transport teardown (e.g. keepalive) — user already got `error`.
+          if (/^connection closed$/i.test(err.message.trim())) {
+            console.debug(
+              '[MeshcoreMqttAdapter] subscribe skipped (connection closed)',
+              sanitizeLogMessage(subTopic),
+            );
+            return;
+          }
           const detail = `Subscribe to ${subTopic} failed: ${err.message}`;
           console.warn('[MeshcoreMqttAdapter] subscribe warning', sanitizeLogMessage(detail));
           this.emit('subscribeWarning', detail);
@@ -181,6 +230,18 @@ export class MeshcoreMqttAdapter extends EventEmitter {
         }
         console.debug('[MeshcoreMqttAdapter] subscribe callback OK', sanitizeLogMessage(subTopic));
       });
+      if (settings.useWebSocket) {
+        this.clearWssPing();
+        this.wssPingTimer = setInterval(() => {
+          const s = this.client?.stream as { ping?: () => void } | undefined;
+          try {
+            s?.ping?.();
+          } catch {
+            // catch-no-log-ok ws ping after teardown
+          }
+        }, MESHCORE_MQTT_WSS_PING_MS);
+        this.startKeepaliveReschedule();
+      }
     });
     this.client.on('message', (topic, payload) => {
       if (!this.firstMessageLogged) {
@@ -215,6 +276,8 @@ export class MeshcoreMqttAdapter extends EventEmitter {
       }
     });
     this.client.on('close', () => {
+      this.clearWssPing();
+      this.clearKeepaliveReschedule();
       this.clearConnectTimers();
       if (this.status === 'connected' || this.status === 'connecting') {
         this.setStatus('disconnected');

@@ -15,7 +15,7 @@ That aligns with common tooling such as [meshcoretomqtt](https://github.com/Cisi
 
 ## WebSocket idle / keepalive
 
-MeshCore MQTT over WSS uses a **30s MQTT keepalive** (vs 60s on raw TCP) so the client sends MQTT `PINGREQ` sooner. Long idle periods with a 60s keepalive can hit **proxy or load-balancer idle timeouts** (~60s) before the first ping, which surfaces as **Keepalive timeout** in mqtt.js.
+MeshCore MQTT over WSS uses **60s MQTT keepalive** (same order of magnitude as raw TCP). mqtt.js’s internal deadline is about **1.5× the keepalive**. The client sends **WebSocket `ping` frames** for proxy/LB idle paths, and periodically calls mqtt.js **`reschedulePing(true)`** so the internal keepalive timer resets when **PINGRESP** / **SUBACK** are not observed in time on the WebSocket path.
 
 ## Debugging connection vs auth
 

@@ -40,8 +40,8 @@ const client = mqtt.connect({
   username,
   password,
   clean: true,
-  // Match meshcore-mqtt-adapter WSS: shorter keepalive so PING runs before typical proxy idle cuts.
-  keepalive: 30,
+  // Match meshcore-mqtt-adapter WSS MQTT keepalive (WS-level ping is app-only, not in probe).
+  keepalive: 60,
   reconnectPeriod: 0,
   connectTimeout: 15_000,
   protocolVersion: 4,
