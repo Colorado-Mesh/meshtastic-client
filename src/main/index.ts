@@ -6,13 +6,19 @@ import {
   Menu,
   MenuItem,
   nativeImage,
+  Notification,
+  powerMonitor,
+  powerSaveBlocker,
+  safeStorage,
   type Session,
+  shell,
   Tray,
 } from 'electron';
 import fs from 'fs';
 import net from 'net';
 import path from 'path';
 import { pathToFileURL } from 'url';
+import zlib from 'zlib';
 
 import type { MQTTSettings } from '../renderer/lib/types';
 import {
@@ -52,6 +58,14 @@ if (process.platform === 'linux' && process.env.MESH_CLIENT_DISABLE_GPU === '1')
   app.disableHardwareAcceleration();
 }
 
+// ─── Single instance lock ───────────────────────────────────────────
+// Must run before app.whenReady() to take effect. Second instance will
+// focus the existing window and exit.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+  process.exit(0);
+}
+
 const mqttManager = new MQTTManager();
 const meshcoreMqttAdapter = new MeshcoreMqttAdapter();
 const nobleBleManager = new NobleBleManager();
@@ -70,6 +84,70 @@ let isConnected = false;
 let isQuitting = false;
 /** Second pass of `before-quit` after async Noble BLE teardown (see `before-quit` handler). */
 let nobleQuitRetry = false;
+/** powerSaveBlocker ID while a device is connected; null when not active. */
+let powerSaveBlockerId: number | null = null;
+
+// ─── Windows taskbar overlay badge icon ────────────────────────────
+/** Build a minimal 16×16 RGBA PNG buffer for use as the Windows taskbar overlay icon. */
+function buildBadgePng(): Buffer {
+  const W = 16,
+    H = 16;
+  // CRC32 (used by PNG chunk format)
+  const crcTable = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    crcTable[i] = c;
+  }
+  function crc32(buf: Buffer): number {
+    let c = 0xffffffff;
+    for (const byte of buf) c = crcTable[(c ^ byte) & 0xff]! ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  }
+  function chunk(type: string, data: Buffer): Buffer {
+    const typeBytes = Buffer.from(type, 'ascii');
+    const lenBuf = Buffer.allocUnsafe(4);
+    lenBuf.writeUInt32BE(data.length, 0);
+    const crcBuf = Buffer.allocUnsafe(4);
+    crcBuf.writeUInt32BE(crc32(Buffer.concat([typeBytes, data])), 0);
+    return Buffer.concat([lenBuf, typeBytes, data, crcBuf]);
+  }
+  // IHDR: 16×16, 8-bit RGBA
+  const ihdr = Buffer.allocUnsafe(13);
+  ihdr.writeUInt32BE(W, 0);
+  ihdr.writeUInt32BE(H, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 6; // color type: RGBA
+  ihdr[10] = 0;
+  ihdr[11] = 0;
+  ihdr[12] = 0;
+  // Raw scanlines: filter byte (0) + RGBA per pixel — red with circular alpha mask
+  const rows: Buffer[] = [];
+  const cx = (W - 1) / 2,
+    cy = (H - 1) / 2,
+    r2 = (W / 2) * (W / 2);
+  for (let y = 0; y < H; y++) {
+    const row = Buffer.allocUnsafe(1 + W * 4);
+    row[0] = 0; // filter: None
+    for (let x = 0; x < W; x++) {
+      const off = 1 + x * 4;
+      const inside = (x - cx) * (x - cx) + (y - cy) * (y - cy) <= r2;
+      row[off] = 220; // R
+      row[off + 1] = 53; // G
+      row[off + 2] = 69; // B
+      row[off + 3] = inside ? 255 : 0; // A
+    }
+    rows.push(row);
+  }
+  const idat = zlib.deflateSync(Buffer.concat(rows));
+  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  return Buffer.concat([
+    sig,
+    chunk('IHDR', ihdr),
+    chunk('IDAT', idat),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
 
 // Pending Serial callback
 let pendingSerialCallback: ((portId: string) => void) | null = null;
@@ -431,6 +509,11 @@ function setupTray(window: BrowserWindow) {
     },
     { type: 'separator' },
     {
+      label: `About ${app.name}`,
+      click: () => void showAboutDialog(),
+    },
+    { type: 'separator' },
+    {
       label: 'Quit',
       click: () => {
         isQuitting = true;
@@ -445,11 +528,49 @@ function setupTray(window: BrowserWindow) {
   tray.setContextMenu(trayContextMenu);
 }
 
+async function showAboutDialog(): Promise<void> {
+  const w = BrowserWindow.getFocusedWindow() ?? mainWindow;
+  const detail = [
+    `Version ${app.getVersion()}`,
+    '',
+    'Cross-platform Meshtastic desktop client',
+    'BLE, Serial, HTTP, and MQTT support',
+    '',
+    'License: MIT',
+    'Author: Colorado Mesh',
+    '',
+    'Website:  https://coloradomesh.org/',
+    'GitHub:   https://github.com/Colorado-Mesh/mesh-client',
+    'Discord:  https://discord.com/invite/McChKR5NpS',
+  ].join('\n');
+
+  const opts = {
+    type: 'info' as const,
+    title: app.name,
+    message: app.name,
+    detail,
+    buttons: ['Close', 'Website', 'GitHub', 'Discord'],
+    defaultId: 0,
+    cancelId: 0,
+  };
+
+  const { response } = await (w ? dialog.showMessageBox(w, opts) : dialog.showMessageBox(opts));
+
+  const urls: (string | null)[] = [
+    null,
+    'https://coloradomesh.org/',
+    'https://github.com/Colorado-Mesh/mesh-client',
+    'https://discord.com/invite/McChKR5NpS',
+  ];
+  const url = urls[response];
+  if (url) void shell.openExternal(url);
+}
+
 /**
- * macOS: avoid native MenuItem `role:` entries (about/services/window/edit/etc.). Those map to
- * AppKit NSMenuItem targets that still participate in responder / menu validation while typing
- * in a web view and can log WeakPtrToElectronMenuModelAsNSObject. Use plain click handlers only.
- * Cmd+C/V/X/Z still work in the page via Chromium. No menu bar Window group — use traffic lights.
+ * macOS: set a minimal application menu so the native menu bridge has a stable model.
+ * `role: 'editMenu'` is required for Cmd+C/V/X/Z/A keyboard shortcuts — macOS routes
+ * these through AppKit, not Chromium. It may log WeakPtrToElectronMenuModelAsNSObject
+ * when focusing text inputs, but that warning is a known harmless Electron/Chromium quirk.
  */
 function setupAppMenu() {
   if (process.platform !== 'darwin') return;
@@ -459,17 +580,7 @@ function setupAppMenu() {
       submenu: [
         {
           label: `About ${app.name}`,
-          click: () => {
-            const w = BrowserWindow.getFocusedWindow() ?? mainWindow;
-            const opts = {
-              type: 'info' as const,
-              title: app.name,
-              message: app.name,
-              detail: `Version ${app.getVersion()}`,
-            };
-            if (w) void dialog.showMessageBox(w, opts);
-            else void dialog.showMessageBox(opts);
-          },
+          click: () => void showAboutDialog(),
         },
         { type: 'separator' as const },
         {
@@ -495,6 +606,7 @@ function setupAppMenu() {
         },
       ],
     },
+    { role: 'editMenu' as const },
   ]);
   Menu.setApplicationMenu(appMenu);
 }
@@ -810,6 +922,7 @@ function createWindow() {
 }
 
 // ─── Tray unread badge ──────────────────────────────────────────────
+let _cachedBadgeIcon: ReturnType<typeof nativeImage.createFromBuffer> | null = null;
 ipcMain.on('set-tray-unread', (_event, count: unknown) => {
   const n = Math.max(0, Math.min(Math.floor(Number(count)) || 0, 99999));
   const hasUnread = n > 0;
@@ -817,6 +930,15 @@ ipcMain.on('set-tray-unread', (_event, count: unknown) => {
   tray?.setToolTip(hasUnread ? `Mesh-Client (${n} unread)` : 'Mesh-Client');
   if (process.platform === 'darwin') {
     app.dock?.setBadge(hasUnread ? String(n) : '');
+  } else if (process.platform === 'linux') {
+    app.setBadgeCount(hasUnread ? n : 0);
+  } else if (process.platform === 'win32' && mainWindow) {
+    if (hasUnread) {
+      if (!_cachedBadgeIcon) _cachedBadgeIcon = nativeImage.createFromBuffer(buildBadgePng());
+      mainWindow.setOverlayIcon(_cachedBadgeIcon, `${n} unread messages`);
+    } else {
+      mainWindow.setOverlayIcon(null, '');
+    }
   }
 });
 
@@ -846,10 +968,19 @@ ipcMain.on('serial-port-cancelled', () => {
 ipcMain.on('device-connected', () => {
   console.debug('[main] device-connected: isConnected = true');
   isConnected = true;
+  if (powerSaveBlockerId === null) {
+    powerSaveBlockerId = powerSaveBlocker.start('prevent-app-suspension');
+    console.debug('[main] powerSaveBlocker started, id =', powerSaveBlockerId);
+  }
 });
 ipcMain.on('device-disconnected', () => {
   console.debug('[main] device-disconnected: isConnected = false');
   isConnected = false;
+  if (powerSaveBlockerId !== null && powerSaveBlocker.isStarted(powerSaveBlockerId)) {
+    powerSaveBlocker.stop(powerSaveBlockerId);
+    console.debug('[main] powerSaveBlocker stopped, id =', powerSaveBlockerId);
+  }
+  powerSaveBlockerId = null;
 });
 
 // ─── Noble BLE: Forward manager events to renderer ──────────────────
@@ -1171,6 +1302,49 @@ ipcMain.handle('gps:getFix', async () => {
 });
 
 // ─── IPC: Force quit (disconnect all, then quit) ────────────────────
+// ─── IPC: Native OS notification ───────────────────────────────────
+ipcMain.handle('notify:message', (_event, title: unknown, body: unknown) => {
+  if (typeof title !== 'string' || title.length > 128) return;
+  if (typeof body !== 'string' || body.length > 512) return;
+  if (Notification.isSupported()) {
+    new Notification({ title, body }).show();
+  }
+});
+
+// ─── IPC: Safe storage (OS-keychain-backed encryption) ─────────────
+ipcMain.handle('storage:isAvailable', () => safeStorage.isEncryptionAvailable());
+
+ipcMain.handle('storage:encrypt', (_event, plaintext: unknown) => {
+  if (typeof plaintext !== 'string' || plaintext.length > 4096)
+    throw new Error('storage:encrypt: invalid input');
+  if (!safeStorage.isEncryptionAvailable()) return null;
+  return safeStorage.encryptString(plaintext).toString('base64');
+});
+
+ipcMain.handle('storage:decrypt', (_event, ciphertext: unknown) => {
+  if (typeof ciphertext !== 'string' || ciphertext.length > 8192)
+    throw new Error('storage:decrypt: invalid input');
+  if (!safeStorage.isEncryptionAvailable()) return null;
+  try {
+    return safeStorage.decryptString(Buffer.from(ciphertext, 'base64'));
+  } catch {
+    // catch-no-log-ok: corrupted or wrong-key ciphertext; caller receives null
+    return null;
+  }
+});
+
+// ─── IPC: Login item (launch at startup) ───────────────────────────
+ipcMain.handle('app:getLoginItem', () => {
+  const settings = app.getLoginItemSettings();
+  return { openAtLogin: settings.openAtLogin };
+});
+
+ipcMain.handle('app:setLoginItem', (_event, openAtLogin: unknown) => {
+  if (typeof openAtLogin !== 'boolean')
+    throw new Error('app:setLoginItem: openAtLogin must be a boolean');
+  app.setLoginItemSettings({ openAtLogin });
+});
+
 ipcMain.handle('app:quit', async () => {
   isQuitting = true;
   isConnected = false;
@@ -2183,6 +2357,17 @@ ipcMain.handle('meshcore:tcp-disconnect', () => {
 });
 
 // ─── App lifecycle ─────────────────────────────────────────────────
+// ─── Second-instance handler ────────────────────────────────────────
+// Registered here (before whenReady) so it's ready before any second
+// instance can send its data.
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+});
+
 app.whenReady().then(() => {
   try {
     initLogFile();
@@ -2199,6 +2384,16 @@ app.whenReady().then(() => {
     createWindow();
 
     setupAppMenu();
+
+    // ─── Power monitor: notify renderer on suspend/resume ──────────
+    powerMonitor.on('suspend', () => {
+      console.debug('[main] System suspending');
+      mainWindow?.webContents.send('power:suspend');
+    });
+    powerMonitor.on('resume', () => {
+      console.debug('[main] System resumed');
+      mainWindow?.webContents.send('power:resume');
+    });
   } catch (error) {
     console.error(
       '[main] Fatal startup error:',
@@ -2281,6 +2476,10 @@ app.on('will-quit', () => {
     }
     meshcoreTcpSocket = null;
   }
+  if (powerSaveBlockerId !== null && powerSaveBlocker.isStarted(powerSaveBlockerId)) {
+    powerSaveBlocker.stop(powerSaveBlockerId);
+  }
+  powerSaveBlockerId = null;
   nobleBleManager.releaseNobleProcessHandles();
   tray?.destroy();
   tray = null;

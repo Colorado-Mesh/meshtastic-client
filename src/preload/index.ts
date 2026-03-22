@@ -315,6 +315,40 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setTrayUnread: (count: number) => ipcRenderer.send('set-tray-unread', count),
   quitApp: () => ipcRenderer.invoke('app:quit'),
 
+  // ─── Native OS notifications ───────────────────────────────────
+  notify: {
+    show: (title: string, body: string): Promise<void> =>
+      ipcRenderer.invoke('notify:message', title, body),
+  },
+
+  // ─── Safe storage (OS-keychain-backed encryption) ──────────────
+  safeStorage: {
+    encrypt: (plaintext: string): Promise<string | null> =>
+      ipcRenderer.invoke('storage:encrypt', plaintext),
+    decrypt: (ciphertext: string): Promise<string | null> =>
+      ipcRenderer.invoke('storage:decrypt', ciphertext),
+    isAvailable: (): Promise<boolean> => ipcRenderer.invoke('storage:isAvailable'),
+  },
+
+  // ─── App settings ──────────────────────────────────────────────
+  appSettings: {
+    getLoginItem: (): Promise<{ openAtLogin: boolean }> => ipcRenderer.invoke('app:getLoginItem'),
+    setLoginItem: (openAtLogin: boolean): Promise<void> =>
+      ipcRenderer.invoke('app:setLoginItem', openAtLogin),
+  },
+
+  // ─── Power events ──────────────────────────────────────────────
+  onPowerSuspend: (cb: () => void) => {
+    const handler = () => cb();
+    ipcRenderer.on('power:suspend', handler);
+    return () => ipcRenderer.off('power:suspend', handler);
+  },
+  onPowerResume: (cb: () => void) => {
+    const handler = () => cb();
+    ipcRenderer.on('power:resume', handler);
+    return () => ipcRenderer.off('power:resume', handler);
+  },
+
   // ─── MeshCore TCP bridge ────────────────────────────────────────
   meshcore: {
     tcp: {
