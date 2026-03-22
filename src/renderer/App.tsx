@@ -312,7 +312,12 @@ export default function App() {
         localStorage.getItem('mesh-client:adminSettings'),
         'App startup node pruning',
       ) ?? {};
-    const ops: Promise<unknown>[] = [];
+    const ops: Promise<unknown>[] = [
+      // One-time migration: rename legacy "RF !xxxxxxxx" stub nodes to "!xxxxxxxx"
+      window.electronAPI.db
+        .migrateRfStubNodes()
+        .catch((e) => console.warn('[App] startup migrateRfStubNodes failed', e)),
+    ];
     if (s.autoPruneEnabled) {
       const days =
         typeof s.autoPruneDays === 'number' && s.autoPruneDays > 0 ? s.autoPruneDays : 30;

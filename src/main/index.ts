@@ -29,6 +29,7 @@ import {
   getDatabase,
   initDatabase,
   mergeDatabase,
+  migrateRfStubNodes,
   searchMeshcoreMessages,
   searchMessages,
 } from './database';
@@ -1703,6 +1704,20 @@ ipcMain.handle('db:deleteNodesBySource', (_event, source: string) => {
   } catch (err) {
     console.error(
       '[IPC] db:deleteNodesBySource failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
+});
+
+ipcMain.handle('db:migrateRfStubNodes', () => {
+  try {
+    const changes = migrateRfStubNodes();
+    console.debug(`[IPC] db:migrateRfStubNodes: renamed ${changes} RF stub nodes`);
+    return changes;
+  } catch (err) {
+    console.error(
+      '[IPC] db:migrateRfStubNodes failed:',
       sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
     );
     throw err;

@@ -80,6 +80,7 @@ export interface ElectronAPI {
     getMessageChannels: () => Promise<unknown>;
     setNodeFavorited: (nodeId: number, favorited: boolean) => Promise<unknown>;
     deleteNodesBySource: (source: string) => Promise<unknown>;
+    migrateRfStubNodes: () => Promise<unknown>;
     deleteNodesWithoutLongname: () => Promise<unknown>;
     clearNodePositions: () => Promise<unknown>;
     updateMessageReceivedVia: (packetId: number) => Promise<unknown>;

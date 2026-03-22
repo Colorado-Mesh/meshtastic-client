@@ -46,13 +46,13 @@ describe('emptyNode', () => {
     expect(a.short_name).not.toBe(b.short_name);
   });
 
-  it('chat stub nodes use a non-pruned long_name format', () => {
+  it('chat stub nodes use the standard !hex long_name and an empty short_name', () => {
     const nodeId = 0x6985e7fc;
     const stub = createChatStubNode(nodeId, 'rf');
-    // deleteNodesWithoutLongname prunes NULL, empty, or exact "!%08x" names.
-    // Our stub must use a different pattern so chat-only nodes are preserved.
-    expect(stub.long_name).toBe('RF !6985e7fc');
-    expect(stub.long_name).not.toBe('!6985e7fc');
+    // deleteNodesWithoutLongname preserves nodes with a non-empty source, so
+    // stubs no longer need the old "RF !" prefix to survive startup pruning.
+    expect(stub.long_name).toBe('!6985e7fc');
+    expect(stub.short_name).toBe('');
   });
 
   it('chat stub nodes mark mqtt-only source correctly', () => {

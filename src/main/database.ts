@@ -680,11 +680,21 @@ export function deleteNodesBySource(source: string): number {
   return Number(result.changes);
 }
 
+export function migrateRfStubNodes(): number {
+  const db = getDatabase();
+  const result = db
+    .prepare(
+      "UPDATE nodes SET long_name = substr(long_name, 4), short_name = '' WHERE long_name LIKE 'RF !________'",
+    )
+    .run();
+  return Number(result.changes);
+}
+
 export function deleteNodesWithoutLongname(): number {
   const db = getDatabase();
   const result = db
     .prepare(
-      "DELETE FROM nodes WHERE long_name IS NULL OR TRIM(long_name) = '' OR long_name = printf('!%08x', node_id)",
+      "DELETE FROM nodes WHERE (long_name IS NULL OR TRIM(long_name) = '' OR long_name = printf('!%08x', node_id)) AND (source IS NULL OR TRIM(source) = '')",
     )
     .run();
   return Number(result.changes);

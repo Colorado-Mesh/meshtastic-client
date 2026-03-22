@@ -39,6 +39,10 @@ describe('deleteNodesWithoutLongname SQL', () => {
     expect(stmt).toContain("TRIM(long_name) = ''");
     expect(stmt).toContain("printf('!%08x', node_id)");
   });
+
+  it('preserves nodes with a non-empty source (stub nodes heard via rf/mqtt)', () => {
+    expect(DB_SOURCE).toMatch(/source IS NULL/);
+  });
 });
 
 /**

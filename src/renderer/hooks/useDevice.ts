@@ -237,7 +237,7 @@ export function useDevice() {
     if (node?.short_name) return node.short_name;
     if (node?.long_name)
       return node.long_name.length > 7 ? node.long_name.slice(0, 7) : node.long_name;
-    return `!${nodeNum.toString(16)}`;
+    return `!${nodeNum.toString(16).padStart(8, '0')}`;
   }, []);
 
   // Picker-style label: "icon_XXXX" (same format as BLE picker). If short_name
@@ -2387,10 +2387,8 @@ export function createChatStubNode(nodeId: number, source: 'rf' | 'mqtt'): MeshN
   const hex = nodeId.toString(16).padStart(8, '0');
   return {
     ...base,
-    // Use a non-pruned placeholder name so startup pruning
-    // (deleteNodesWithoutLongname) does not immediately remove
-    // chat-only nodes that have never sent NodeInfo.
-    long_name: `RF !${hex}`,
+    long_name: `!${hex}`,
+    short_name: '',
     source,
     heard_via_mqtt_only: source === 'mqtt',
     last_heard: Date.now(),

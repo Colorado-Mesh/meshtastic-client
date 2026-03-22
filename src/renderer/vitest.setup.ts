@@ -60,6 +60,7 @@ const electronAPIMock = {
     getMessageChannels: vi.fn().mockResolvedValue([]),
     setNodeFavorited: vi.fn().mockResolvedValue(undefined),
     deleteNodesBySource: vi.fn().mockResolvedValue(0),
+    migrateRfStubNodes: vi.fn().mockResolvedValue(0),
     deleteNodesWithoutLongname: vi.fn().mockResolvedValue(0),
     clearNodePositions: vi.fn().mockResolvedValue(undefined),
     updateMessageReceivedVia: vi.fn().mockResolvedValue(undefined),
