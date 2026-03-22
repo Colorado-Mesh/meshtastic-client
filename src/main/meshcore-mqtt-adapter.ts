@@ -101,6 +101,10 @@ export class MeshcoreMqttAdapter extends EventEmitter {
         sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
       );
       this.emit('error', err instanceof Error ? err.message : String(err));
+      // Unblock the UI immediately — 'close' may arrive many seconds later.
+      if (this.status === 'connecting') {
+        this.setStatus('disconnected');
+      }
     });
     this.client.on('close', () => {
       if (this.status === 'connected' || this.status === 'connecting') {

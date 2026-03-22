@@ -21,6 +21,7 @@ import { ToastProvider, useToast } from './components/Toast';
 import UpdateBanner from './components/UpdateBanner';
 import { useDevice } from './hooks/useDevice';
 import { useMeshCore } from './hooks/useMeshCore';
+import { generateLetsMeshJwt, isLetsMeshSettings, readMeshcoreIdentity } from './lib/letsMeshJwt';
 import { parseStoredJson } from './lib/parseStoredJson';
 import { useRadioProvider } from './lib/radio/providerFactory';
 import { applyThemeColors, loadThemeColors } from './lib/themeColors';
@@ -351,12 +352,29 @@ export default function App() {
         'App MQTT auto-launch',
       );
       if (settings?.autoLaunch) {
-        void window.electronAPI.mqtt
-          .connect({
-            ...settings,
-            mqttTransportProtocol: prot === 'meshcore' ? 'meshcore' : 'meshtastic',
-          })
-          .catch((e) => console.warn('[App] MQTT auto-launch connect failed', e));
+        const connectSettings = {
+          ...settings,
+          mqttTransportProtocol: (prot === 'meshcore' ? 'meshcore' : 'meshtastic') as
+            | 'meshcore'
+            | 'meshtastic',
+        };
+        const tryConnect = async () => {
+          if (prot === 'meshcore' && isLetsMeshSettings(connectSettings.server)) {
+            const identity = readMeshcoreIdentity();
+            if (identity?.private_key && connectSettings.username) {
+              try {
+                connectSettings.password = await generateLetsMeshJwt(
+                  identity.private_key,
+                  connectSettings.username,
+                );
+              } catch (e) {
+                console.warn('[App] LetsMesh JWT auto-launch generation failed', e);
+              }
+            }
+          }
+          await window.electronAPI.mqtt.connect(connectSettings);
+        };
+        void tryConnect().catch((e) => console.warn('[App] MQTT auto-launch connect failed', e));
       }
     } catch (e) {
       console.debug('[App] MQTT auto-launch startup', e);
