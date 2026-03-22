@@ -1,4 +1,4 @@
-# CodeQL config for meshtastic-client
+# CodeQL config for mesh-client
 #
 # js/http-to-file-access flags any taint from HTTP (e.g. updater fetch → console →
 # appendLine) reaching appendFile/writeFileSync. That rule targets backdoors that
@@ -11,7 +11,7 @@
 #
 # See: https://codeql.github.com/codeql-query-help/javascript/js-http-to-file-access/
 
-name: meshtastic-client CodeQL config
+name: mesh-client CodeQL config
 
 query-filters:
   - exclude:

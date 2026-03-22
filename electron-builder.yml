@@ -14,7 +14,7 @@ asarUnpack:
 publish:
   provider: github
   owner: Colorado-Mesh
-  repo: meshtastic-client
+  repo: mesh-client
 extraResources:
   - from: resources/icons/win/colorado-mesh.ico
     to: colorado-mesh.ico
