@@ -35,7 +35,6 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        # This will also compile the native better-sqlite3 module
         run: npm install
     
       - name: Rebuild native dependencies
