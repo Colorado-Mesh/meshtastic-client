@@ -13,7 +13,8 @@ function normalizePrefix(prefix: string): string {
   return p.endsWith('/') ? p.slice(0, -1) : p;
 }
 
-function buildMeshcoreUrl(settings: MQTTSettings): string {
+/** For debug logs only — actual connect uses the same option-object shape as MQTTManager. */
+function buildMeshcoreUrlForLog(settings: MQTTSettings): string {
   const host = settings.server.trim();
   if (settings.useWebSocket) {
     const scheme = settings.port === 443 || settings.tlsInsecure !== true ? 'wss' : 'ws';
@@ -29,6 +30,9 @@ export class MeshcoreMqttAdapter extends EventEmitter {
   private status: MQTTStatus = 'disconnected';
   private clientIdStr = '';
   private lastSettings: MQTTSettings | null = null;
+  private connectWatchdog: ReturnType<typeof setTimeout> | null = null;
+  /** True when the connect watchdog tore the client down — suppress noisy subscribe(err) after. */
+  private connectAbortByWatchdog = false;
 
   getStatus(): MQTTStatus {
     return this.status;
@@ -39,6 +43,10 @@ export class MeshcoreMqttAdapter extends EventEmitter {
   }
 
   disconnect(): void {
+    if (this.connectWatchdog) {
+      clearTimeout(this.connectWatchdog);
+      this.connectWatchdog = null;
+    }
     if (this.client) {
       try {
         this.client.removeAllListeners();
@@ -58,26 +66,97 @@ export class MeshcoreMqttAdapter extends EventEmitter {
   connect(settings: MQTTSettings): void {
     this.disconnect();
     this.lastSettings = settings;
-    const url = buildMeshcoreUrl(settings);
-    const opts: mqtt.IClientOptions = {
+    const clientId = `meshcore-mqtt-${Math.random().toString(36).slice(2, 10)}`;
+    const useTls = settings.port === 8883;
+    const rejectUnauthorizedTls = useTls ? !settings.tlsInsecure : false;
+    const logUrl = buildMeshcoreUrlForLog(settings);
+
+    // Match MQTTManager: WebSocket uses mqtt.connect({ protocol, host, port, path, … }) — not
+    // mqtt.connect(urlString, opts), which can hang or mis-handle TLS in Node mqtt.js.
+    let connectOpts: mqtt.IClientOptions = {
+      clientId,
       username: settings.username || undefined,
       password: settings.password || undefined,
+      clean: true,
+      keepalive: 60,
       reconnectPeriod: 0,
-      rejectUnauthorized: settings.tlsInsecure !== true,
+      connectTimeout: 10_000,
+      protocolVersion: 4,
     };
+    if (settings.useWebSocket) {
+      const wsScheme = settings.port === 443 || settings.tlsInsecure !== true ? 'wss' : 'ws';
+      connectOpts = {
+        ...connectOpts,
+        protocol: wsScheme as 'wss' | 'ws',
+        host: settings.server.trim(),
+        port: settings.port,
+        path: '/mqtt',
+        rejectUnauthorized: settings.port === 443 ? true : rejectUnauthorizedTls,
+      };
+    } else {
+      connectOpts = {
+        ...connectOpts,
+        host: settings.server.trim(),
+        port: settings.port,
+        protocol: useTls ? 'mqtts' : 'mqtt',
+        rejectUnauthorized: rejectUnauthorizedTls,
+      };
+    }
+
+    console.debug(
+      '[MeshcoreMqttAdapter] connect start',
+      sanitizeLogMessage(logUrl),
+      'ws:',
+      settings.useWebSocket,
+      'tlsInsecure:',
+      settings.tlsInsecure === true,
+    );
     this.setStatus('connecting');
-    this.client = mqtt.connect(url, opts);
+    this.connectAbortByWatchdog = false;
+    this.client = mqtt.connect(connectOpts);
+    this.connectWatchdog = setTimeout(() => {
+      this.connectWatchdog = null;
+      if (this.status !== 'connecting' || !this.client) return;
+      this.connectAbortByWatchdog = true;
+      const msg =
+        'MeshCore MQTT: connection timed out (no CONNACK/SUBACK within 10s). Check host, port, WebSocket path /mqtt, TLS, credentials, and topic prefix.';
+      console.error('[MeshcoreMqttAdapter]', sanitizeLogMessage(msg));
+      this.emit('error', msg);
+      try {
+        this.client.removeAllListeners();
+        this.client.end(true);
+      } catch {
+        // catch-no-log-ok forced end during stuck connect
+      }
+      this.client = null;
+      this.setStatus('disconnected');
+    }, 10_000);
+    const clearConnectWatchdog = () => {
+      if (this.connectWatchdog) {
+        clearTimeout(this.connectWatchdog);
+        this.connectWatchdog = null;
+      }
+    };
     this.client.on('connect', () => {
+      // Do not clear connectWatchdog here. mqtt.js emits `connect` after CONNACK; if subscribe
+      // never completes (no SUBACK), we must still hit the 10s watchdog and unblock the UI.
+      console.debug('[MeshcoreMqttAdapter] MQTT session established, subscribing…');
       this.clientIdStr = (this.client?.options.clientId as string) || '';
       const base = normalizePrefix(settings.topicPrefix || 'msh');
       const subTopic = `${base}/#`;
       this.client!.subscribe(subTopic, (err) => {
+        clearConnectWatchdog();
         if (err) {
+          if (this.connectAbortByWatchdog) {
+            this.connectAbortByWatchdog = false;
+            return;
+          }
           console.error('[MeshcoreMqttAdapter] subscribe failed', sanitizeLogMessage(err.message));
           this.setStatus('error');
           this.emit('error', `Subscribe failed: ${err.message}`);
           return;
         }
+        console.debug('[MeshcoreMqttAdapter] subscribed', sanitizeLogMessage(subTopic));
         this.setStatus('connected');
         this.emit('clientId', this.clientIdStr);
       });
@@ -96,6 +175,7 @@ export class MeshcoreMqttAdapter extends EventEmitter {
       this.emit('chatMessage', { topic, ...env });
     });
     this.client.on('error', (err) => {
+      clearConnectWatchdog();
       console.error(
         '[MeshcoreMqttAdapter] client error',
         sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
@@ -107,9 +187,13 @@ export class MeshcoreMqttAdapter extends EventEmitter {
       }
     });
     this.client.on('close', () => {
+      clearConnectWatchdog();
       if (this.status === 'connected' || this.status === 'connecting') {
         this.setStatus('disconnected');
       }
+    });
+    this.client.on('offline', () => {
+      console.warn('[MeshcoreMqttAdapter] client offline');
     });
   }
 
