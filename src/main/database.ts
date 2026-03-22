@@ -59,7 +59,7 @@ export function initDatabase(): void {
            WHERE packet_id IS NOT NULL`,
           )
           .run();
-        db!.pragma('user_version = 14');
+        db!.pragma('user_version = 17');
       } else {
         runMigrations();
       }
@@ -179,7 +179,7 @@ function createBaseTables(): void {
 
       CREATE INDEX IF NOT EXISTS idx_mc_msgs_ts ON meshcore_messages(timestamp);
       CREATE UNIQUE INDEX IF NOT EXISTS idx_mc_msg_dedup
-        ON meshcore_messages(sender_id, timestamp, channel_idx)
+        ON meshcore_messages(sender_id, timestamp, channel_idx, payload)
         WHERE sender_id IS NOT NULL;
 
       CREATE TABLE IF NOT EXISTS position_history (
