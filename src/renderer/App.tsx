@@ -1104,9 +1104,9 @@ export default function App() {
               </ErrorBoundary>
             </main>
 
-            {/* Footer */}
-            <footer className="px-4 py-1.5 bg-deep-black border-t border-gray-700 text-[11px] text-muted flex items-center justify-between shrink-0">
-              <span>
+            {/* Footer — same centering idea as header: 1fr | auto | 1fr so middle stays true center */}
+            <footer className="px-4 py-1.5 bg-deep-black border-t border-gray-700 text-[11px] text-muted grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-4 shrink-0">
+              <span className="min-w-0">
                 A Project by{' '}
                 <a
                   href="https://coloradomesh.org/"
@@ -1139,23 +1139,20 @@ export default function App() {
                 </a>
                 .
               </span>
-              {/* Keyboard shortcuts — centered in footer */}
               <button
+                type="button"
                 onClick={() => setShowShortcuts(true)}
-                aria-label="Shortcuts ?"
+                aria-label="Keyboard shortcuts (?)"
                 aria-haspopup="dialog"
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-slate-700 bg-slate-800/40 text-gray-500 hover:text-gray-300 hover:border-slate-600 transition-colors text-[11px] font-medium"
                 title="Keyboard shortcuts (?)"
+                className="shrink-0 justify-self-center inline-flex items-center gap-1 px-3 py-0.5 rounded-full border border-gray-600 text-xs font-mono text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors"
               >
-                Shortcuts{' '}
-                <kbd
-                  className="px-1 border border-slate-600 rounded bg-slate-700 text-slate-400 text-[10px] font-mono"
-                  aria-hidden="true"
-                >
+                Shortcuts
+                <span className="text-[10px] font-mono text-gray-400" aria-hidden="true">
                   ?
-                </kbd>
+                </span>
               </button>
-              <span>
+              <span className="justify-self-end text-right whitespace-nowrap tabular-nums">
                 {nodesForUi.size} {nodeCountLabel} | {device.messages.length} messages
               </span>
             </footer>
