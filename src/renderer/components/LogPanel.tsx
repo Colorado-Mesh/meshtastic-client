@@ -7,6 +7,7 @@ import {
 } from 'react';
 
 import { parseStoredJson } from '../lib/parseStoredJson';
+import type { MeshProtocol } from '../lib/types';
 
 const LOG_LEVEL_FILTERS_KEY = 'mesh-client:logLevelFilters';
 const LOG_PANEL_WIDTH_KEY = 'mesh-client:logPanelWidth';
@@ -68,12 +69,22 @@ function levelVisible(level: string, f: LevelFilters): boolean {
   return true;
 }
 
-/** Returns true for log entries that originated from a device library or device hook. */
-function isDeviceEntry(entry: LogEntry): boolean {
-  // Production builds: library chunks are named after their package
-  if (entry.source.includes('meshtastic') || entry.source.includes('meshcore')) return true;
-  // Dev mode + content fallback: match known SDK and device-hook log prefixes
+/** Returns true for log entries that originated from the given protocol's device library or hook. */
+function isDeviceEntry(entry: LogEntry, protocol?: MeshProtocol): boolean {
+  if (protocol === 'meshtastic') {
+    return (
+      entry.source.includes('meshtastic') ||
+      entry.message.includes('[iMeshDevice]') ||
+      entry.message.includes('[TransportNobleIpc]')
+    );
+  }
+  if (protocol === 'meshcore') {
+    return entry.source.includes('meshcore') || entry.message.includes('[useMeshCore]');
+  }
+  // No protocol: show all device entries (fallback)
   return (
+    entry.source.includes('meshtastic') ||
+    entry.source.includes('meshcore') ||
     entry.message.includes('[iMeshDevice]') ||
     entry.message.includes('[useMeshCore]') ||
     entry.message.includes('[TransportNobleIpc]')
@@ -109,8 +120,10 @@ export default function LogPanel({
   variant = 'sidebar',
   onClose,
   deviceLogs,
+  protocol,
 }: {
   deviceLogs?: LogEntry[];
+  protocol?: MeshProtocol;
   variant?: LogPanelVariant;
   onClose?: () => void;
 }) {
@@ -188,8 +201,8 @@ export default function LogPanel({
     setEntries([]);
   }, []);
 
-  const libraryEntries = entries.filter(isDeviceEntry);
-  const appEntries = entries.filter((e) => !isDeviceEntry(e));
+  const libraryEntries = entries.filter((e) => isDeviceEntry(e, protocol));
+  const appEntries = entries.filter((e) => !isDeviceEntry(e, protocol));
   const allDeviceLogs: LogEntry[] = [...(deviceLogs ?? []), ...libraryEntries].sort(
     (a, b) => a.ts - b.ts,
   );
