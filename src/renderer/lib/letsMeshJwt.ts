@@ -8,8 +8,25 @@ export const LETSMESH_HOST = LETSMESH_HOST_US;
 
 const LETSMESH_HOSTS = new Set([LETSMESH_HOST_US, LETSMESH_HOST_EU]);
 
+/**
+ * JWT `aud` for LetsMesh public MQTT (must match broker `AUTH_EXPECTED_AUDIENCE`).
+ * Regional broker hostnames (`mqtt-us-v1.…`, `mqtt-eu-v1.…`) still connect to that host; only the
+ * token claim uses this apex value. For private brokers, `aud` stays the server hostname.
+ * If a deployment uses a different audience, use Custom MQTT with a manually generated token.
+ */
+export const LETSMESH_JWT_AUDIENCE = 'letsmesh.net';
+
 export function isLetsMeshSettings(server: string): boolean {
   return LETSMESH_HOSTS.has(server.trim());
+}
+
+/** JWT `aud` for createAuthToken: LetsMesh presets use {@link LETSMESH_JWT_AUDIENCE}; otherwise the MQTT server host. */
+export function letsMeshJwtAudience(serverHost: string): string {
+  const h = serverHost.trim();
+  if (isLetsMeshSettings(h)) {
+    return LETSMESH_JWT_AUDIENCE;
+  }
+  return h;
 }
 
 // Read the identity cached by RadioPanel after a config-file import.
@@ -93,7 +110,7 @@ function meshcoreOrlpPrivateKeyHex(
 
 /**
  * Generate a LetsMesh MQTT password token compatible with meshcore-mqtt-broker / verifyAuthToken.
- * Uses broker hostname as JWT `aud` (must match server AUTH_EXPECTED_AUDIENCE when set).
+ * Uses {@link letsMeshJwtAudience} for `aud` (must match broker `AUTH_EXPECTED_AUDIENCE` when set).
  */
 export async function generateLetsMeshAuthToken(
   identity: { private_key?: string | number[]; public_key?: string | number[] },
@@ -105,10 +122,11 @@ export async function generateLetsMeshAuthToken(
   if (!priv) throw new Error('LetsMesh auth: private key missing or invalid');
   const { createAuthToken } = await import('@michaelhart/meshcore-decoder');
   const now = Math.floor(Date.now() / 1000);
+  const aud = letsMeshJwtAudience(serverHost);
   return createAuthToken(
     {
       publicKey: pub.toUpperCase(),
-      aud: serverHost.trim(),
+      aud,
       iat: now,
       exp: now + 3600,
     },

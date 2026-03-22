@@ -6,6 +6,7 @@ import {
   letsMeshMqttUsernameFromIdentity,
   readMeshcoreIdentity,
 } from '../lib/letsMeshJwt';
+import { meshcoreMqttUserFacingHint } from '../lib/meshcoreMqttUserHint';
 import { parseStoredJson } from '../lib/parseStoredJson';
 import { LAST_SERIAL_PORT_KEY } from '../lib/serialPortSignature';
 import type {
@@ -401,7 +402,7 @@ export default function ConnectionPanel({
   useEffect(() => {
     return window.electronAPI.mqtt.onError(({ error, protocol: mqttProtocol }) => {
       if (mqttProtocol !== protocol) return;
-      setMqttError(error);
+      setMqttError(protocol === 'meshcore' ? meshcoreMqttUserFacingHint(error) : error);
     });
   }, [protocol]);
   useEffect(() => {

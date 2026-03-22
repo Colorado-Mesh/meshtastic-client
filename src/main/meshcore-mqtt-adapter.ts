@@ -92,6 +92,8 @@ export class MeshcoreMqttAdapter extends EventEmitter {
         port: settings.port,
         path: '/mqtt',
         rejectUnauthorized: settings.port === 443 ? true : rejectUnauthorizedTls,
+        // Prefer IPv4 when DNS returns AAAA first but the path is broken (reduces WSS hangs).
+        wsOptions: { family: 4 },
       };
     } else {
       connectOpts = {
