@@ -645,7 +645,7 @@ Then run `npm install` again.
 
 1. **Use a path without spaces** (do this first, especially if Build Tools are already installed): Clone or move the repo to e.g. `C:\dev\meshcore` or `C:\src\meshcore`, then run `npm install` from there. This resolves the issue in most cases. See [dist:win fails](#distwin-fails-with-space-in-the-path-or-eperm-on-native-modules) for details.
 2. **Install Visual Studio Build Tools** (if not already): Download [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) and select the **"Desktop development with C++"** workload. After installation, close and reopen your terminal so environment variables are picked up.
-3. **If Build Tools are installed but node-gyp still fails** (and you cannot move the repo): Open **"Developer Command Prompt for VS"** or **"x64 Native Tools Command Prompt for VS"** from the Start menu, `cd` to your project folder, and run `npm install` there so the correct `cl.exe` and paths are in scope. Or set the version explicitly: `npm config set msvs_version 2022` (use your installed year/build).
+3. **If Build Tools are installed but node-gyp still fails** (and you cannot move the repo): Open **"Developer Command Prompt for VS"** or **"x64 Native Tools Command Prompt for VS"** from the Start menu, `cd` to your project folder, and run `npm install` there so the correct `cl.exe` and paths are in scope.
 
 ### Windows: "Could not find any Python installation to use" (e.g. when building `@serialport/bindings-cpp`)
 
