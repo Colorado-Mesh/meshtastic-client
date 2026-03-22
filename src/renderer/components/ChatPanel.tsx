@@ -3,6 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { parseStoredJson } from '../lib/parseStoredJson';
 import { emojiDisplayChar, emojiDisplayLabel } from '../lib/reactions';
 import type { ChatMessage, MeshNode } from '../lib/types';
+import { HelpTooltip } from './HelpTooltip';
 
 function StatusBadge({
   status,
@@ -47,10 +48,11 @@ function StatusBadge({
     status === 'sending' ? 'Sending...' : status === 'acked' ? 'Delivered' : failedReason
   }`;
   return (
-    <span className={`text-[10px] ${colorClass} cursor-help`} title={tooltip}>
-      {label}
-      {icon}
-    </span>
+    <HelpTooltip text={tooltip}>
+      <span className={`text-[10px] ${colorClass}`}>
+        {label} {icon}
+      </span>
+    </HelpTooltip>
   );
 }
 

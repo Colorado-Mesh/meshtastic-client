@@ -1,7 +1,11 @@
+import type { ReactNode } from 'react';
 import { useRef, useState } from 'react';
 
-export function HelpTooltip({ text }: { text: string }) {
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+const TOOLTIP_WIDTH = 256; // w-64
+const TOOLTIP_MARGIN = 8;
+
+export function HelpTooltip({ text, children }: { text: string; children?: ReactNode }) {
+  const [pos, setPos] = useState<{ top: number; left: number; below: boolean } | null>(null);
   const ref = useRef<HTMLSpanElement>(null);
   return (
     <span
@@ -9,18 +13,25 @@ export function HelpTooltip({ text }: { text: string }) {
       className="cursor-help inline-flex"
       onMouseEnter={() => {
         const r = ref.current?.getBoundingClientRect();
-        if (r) setPos({ top: r.top, left: r.left + r.width / 2 });
+        if (!r) return;
+        const centeredLeft = r.left + r.width / 2;
+        const clampedLeft = Math.max(
+          TOOLTIP_WIDTH / 2 + TOOLTIP_MARGIN,
+          Math.min(window.innerWidth - TOOLTIP_WIDTH / 2 - TOOLTIP_MARGIN, centeredLeft),
+        );
+        const below = r.top < 80;
+        setPos({ top: below ? r.bottom + 4 : r.top - 8, left: clampedLeft, below });
       }}
       onMouseLeave={() => setPos(null)}
     >
-      <span className="text-xs text-gray-500 select-none">ⓘ</span>
+      {children ?? <span className="text-xs text-gray-500 select-none">ⓘ</span>}
       {pos && (
         <span
           style={{
             position: 'fixed',
-            top: pos.top - 8,
+            top: pos.top,
             left: pos.left,
-            transform: 'translate(-50%, -100%)',
+            transform: pos.below ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
             zIndex: 9999,
           }}
           className="w-64 rounded bg-gray-800 border border-gray-600 px-2.5 py-1.5 text-xs text-gray-200 shadow-lg pointer-events-none"
