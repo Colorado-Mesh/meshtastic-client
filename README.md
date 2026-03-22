@@ -25,10 +25,17 @@ The official Meshtastic apps cover the basics, but desktop power users need more
 
 <table>
   <tr>
-    <td><img src="docs/images/node-list.png" height="200" alt="Node List"/></td>
+    <td><img src="docs/images/nodes.png" height="200" alt="Nodes"/></td>
     <td><img src="docs/images/map.png" height="200" alt="Map"/></td>
     <td><img src="docs/images/diagnostics.png" height="200" alt="Diagnostics"/></td>
     <td><img src="docs/images/node-detail.png" height="200" alt="Node Detail"/></td>
+  </tr>
+  <tr>
+    <td colspan="4" align="center">
+      <img src="docs/images/chat.png" height="200" alt="Chat"/>
+      <img src="docs/images/connection.png" height="200" alt="Connection"/>
+      <img src="docs/images/repeaters.png" height="200" alt="Repeaters"/>
+    </td>
   </tr>
 </table>
 
@@ -546,7 +553,7 @@ mesh-client/
 ├── patches/                     # patch-package patches (e.g. electron-builder)
 ├── docs/
 │   ├── accessibility-checklist.md
-│   └── images/                  # README screenshots (node-list, map, diagnostics, node-detail)
+│   └── images/                  # README screenshots (nodes, map, diagnostics, node-detail, chat, connection, repeaters)
 ├── release.sh                   # Release automation script
 ├── electron-builder.yml         # Distributable config (targets, icons, signing)
 ├── vite.config.ts               # Renderer build (Vite)
