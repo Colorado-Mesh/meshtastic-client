@@ -93,7 +93,9 @@ export default function UpdateBanner({
       )}
 
       {phase === 'error' && (
-        <span className="text-red-400">Update check failed — check your network connection</span>
+        <span className="text-red-400">
+          Update check failed — check your network and see the app logs for details
+        </span>
       )}
 
       {/* Dismiss — not shown during active download or the auto-dismissing up-to-date notice */}
