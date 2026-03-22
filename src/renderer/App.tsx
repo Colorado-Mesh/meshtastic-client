@@ -669,7 +669,13 @@ export default function App() {
                     />
                   ) : null}
                 </div>
-                <div id="panel-3" role="tabpanel" aria-labelledby="tab-3" hidden={activeTab !== 3}>
+                <div
+                  id="panel-3"
+                  role="tabpanel"
+                  aria-labelledby="tab-3"
+                  hidden={activeTab !== 3}
+                  className="h-full"
+                >
                   {activeTab === 3 ? (
                     <MapPanel
                       nodes={nodesForUi}
