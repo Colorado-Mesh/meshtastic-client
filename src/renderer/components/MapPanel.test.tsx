@@ -122,6 +122,22 @@ describe('MapPanel accessibility', () => {
     expect(decodedSvgs.some((svg) => !svg.includes('>R</text>'))).toBe(true);
   });
 
+  it('root element has h-full so Leaflet container receives a non-zero height', () => {
+    // Leaflet resolves height:100% on MapContainer against its parent's explicit height.
+    // If the root div loses h-full, MapContainer collapses to 0px and the map goes blank.
+    const { container } = render(
+      <MapPanel
+        nodes={new Map()}
+        myNodeNum={0}
+        locationFilter={defaultFilter}
+        ourPosition={null}
+        onLocateMe={vi.fn().mockResolvedValue(null)}
+      />,
+    );
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.className).toMatch(/\bh-full\b/);
+  });
+
   it('has no axe violations with empty nodes', async () => {
     const { container } = render(
       <MapPanel

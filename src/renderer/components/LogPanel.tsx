@@ -7,6 +7,7 @@ import {
 } from 'react';
 
 import { parseStoredJson } from '../lib/parseStoredJson';
+import type { MeshProtocol } from '../lib/types';
 
 const LOG_LEVEL_FILTERS_KEY = 'mesh-client:logLevelFilters';
 const LOG_PANEL_WIDTH_KEY = 'mesh-client:logPanelWidth';
@@ -68,11 +69,26 @@ function levelVisible(level: string, f: LevelFilters): boolean {
   return true;
 }
 
-function deviceLevelToString(level: number): string {
-  if (level >= 40) return 'error'; // CRITICAL(50) / ERROR(40)
-  if (level >= 30) return 'warn'; // WARNING(30)
-  if (level >= 20) return 'log'; // INFO(20)
-  return 'debug'; // DEBUG(10) / TRACE/UNSET(0)
+/** Returns true for log entries that originated from the given protocol's device library or hook. */
+function isDeviceEntry(entry: LogEntry, protocol?: MeshProtocol): boolean {
+  if (protocol === 'meshtastic') {
+    return (
+      entry.source.includes('meshtastic') ||
+      entry.message.includes('[iMeshDevice]') ||
+      entry.message.includes('[TransportNobleIpc]')
+    );
+  }
+  if (protocol === 'meshcore') {
+    return entry.source.includes('meshcore') || entry.message.includes('[useMeshCore]');
+  }
+  // No protocol: show all device entries (fallback)
+  return (
+    entry.source.includes('meshtastic') ||
+    entry.source.includes('meshcore') ||
+    entry.message.includes('[iMeshDevice]') ||
+    entry.message.includes('[useMeshCore]') ||
+    entry.message.includes('[TransportNobleIpc]')
+  );
 }
 
 function formatEntry(entry: LogEntry): string {
@@ -104,8 +120,10 @@ export default function LogPanel({
   variant = 'sidebar',
   onClose,
   deviceLogs,
+  protocol,
 }: {
-  deviceLogs?: { message: string; time: number; source: string; level: number }[];
+  deviceLogs?: LogEntry[];
+  protocol?: MeshProtocol;
   variant?: LogPanelVariant;
   onClose?: () => void;
 }) {
@@ -183,17 +201,16 @@ export default function LogPanel({
     setEntries([]);
   }, []);
 
+  const libraryEntries = entries.filter((e) => isDeviceEntry(e, protocol));
+  const appEntries = entries.filter((e) => !isDeviceEntry(e, protocol));
+  const allDeviceLogs: LogEntry[] = [...(deviceLogs ?? []), ...libraryEntries].sort(
+    (a, b) => a.ts - b.ts,
+  );
+
   const visibleLines: LogEntry[] =
     logSource === 'device'
-      ? (deviceLogs ?? [])
-          .map((d) => ({
-            ts: d.time,
-            level: deviceLevelToString(d.level),
-            source: d.source,
-            message: d.message,
-          }))
-          .filter((e) => levelVisible(e.level, levelFilters))
-      : entries.filter((e) => levelVisible(e.level, levelFilters));
+      ? allDeviceLogs.filter((e) => levelVisible(e.level, levelFilters))
+      : appEntries.filter((e) => levelVisible(e.level, levelFilters));
 
   const onResizeMouseDown = useCallback(
     (e: ReactMouseEvent) => {
@@ -304,18 +321,18 @@ export default function LogPanel({
             <button
               type="button"
               onClick={() => setLogSource('app')}
-              aria-label="App"
+              aria-label={`App (${appEntries.length})`}
               className={`px-2 py-0.5 text-[10px] rounded ${logSource === 'app' ? 'bg-brand-green/20 text-brand-green border border-brand-green/40' : 'bg-slate-800 text-gray-400 border border-gray-700'}`}
             >
-              App
+              App ({appEntries.length})
             </button>
             <button
               type="button"
               onClick={() => setLogSource('device')}
-              aria-label={`Device (${deviceLogs?.length ?? 0})`}
+              aria-label={`Device (${allDeviceLogs.length})`}
               className={`px-2 py-0.5 text-[10px] rounded ${logSource === 'device' ? 'bg-brand-green/20 text-brand-green border border-brand-green/40' : 'bg-slate-800 text-gray-400 border border-gray-700'}`}
             >
-              Device ({deviceLogs?.length ?? 0})
+              Device ({allDeviceLogs.length})
             </button>
           </div>
         </div>
@@ -370,12 +387,12 @@ export default function LogPanel({
         {visibleLines.length === 0 ? (
           <span className="text-muted">
             {logSource === 'app'
-              ? entries.length === 0
+              ? appEntries.length === 0
                 ? 'No app log lines yet.'
                 : !levelFilters.logInfo && !levelFilters.warnError && !levelFilters.debug
                   ? 'All level filters are off. Enable at least one under Show levels.'
                   : 'No app lines match the current filters.'
-              : (deviceLogs?.length ?? 0) === 0
+              : allDeviceLogs.length === 0
                 ? 'No device log lines yet.'
                 : !levelFilters.logInfo && !levelFilters.warnError && !levelFilters.debug
                   ? 'All level filters are off. Enable at least one under Show levels.'
