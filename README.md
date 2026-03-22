@@ -122,7 +122,7 @@ The official Meshtastic apps cover the basics, but desktop power users need more
 
 - **Log panel** (right rail) — live app log stream, optional debug toggle, export or delete the log file
 - Full keyboard navigation — press `?` for shortcut reference; `Cmd/Ctrl+1–8` switches tabs; `Cmd/Ctrl+[` switches to Meshtastic; `Cmd/Ctrl+]` switches to MeshCore; `Cmd/Ctrl+F` opens **chat search** across all channels (optional `user:name` and `channel:name` filters)
-- **Update notifications** — checks for new releases on startup (toggleable in App tab); shows "You're up to date" confirmation on manual check; dismissed versions are remembered across restarts; "Check for Updates…" in the macOS app menu; Windows/Linux download and install in-app, macOS opens the release page
+- **Updates** — permanent status in the footer (up to date, update available, errors, download progress, etc.); automatic check runs a few seconds after every launch; **Check for Updates…** in the app menu (macOS) or **Help** (Windows/Linux), or tap **Up to date** in the footer to re-check; Windows/Linux packaged builds can download in-app, macOS and dev builds open the GitHub release page
 - System tray with live unread badge; app stays accessible when window is closed
 - Persistent SQLite storage; DB export/import/clear in the App tab; Clear GPS Data and Reset Diagnostics without a full DB wipe
 
@@ -497,7 +497,7 @@ mesh-client/
 │       │   ├── NodeDetailModal.tsx   # Node info overlay; MeshCore: trace, repeater status, telemetry, neighbors
 │       │   ├── NodeInfoBody.tsx      # Shared node info content (modal + map popup)
 │       │   ├── KeyboardShortcutsModal.tsx
-│       │   ├── UpdateBanner.tsx      # In-app update notification
+│       │   ├── UpdateStatusIndicator.tsx # Footer update status
 │       │   ├── ErrorBoundary.tsx     # Top-level React error boundary
 │       │   ├── SignalBars.tsx        # Signal strength → bars for direct (0-hop) RF only
 │       │   ├── RefreshButton.tsx
@@ -847,9 +847,9 @@ Bare IPv6 addresses (e.g. `fe80::1`) must be wrapped in brackets when entered in
 
 **Fix**: None required — safe to ignore. Copy/paste and other edit actions still work.
 
-### Update check fails / no update banner
+### Update check fails / footer update status
 
-The app functions fully offline — this is not a critical error. If "Update check failed" appears in the console, verify network connectivity. Update checks are rate-limited by the GitHub API and may silently skip when the limit is reached.
+The app functions fully offline — this is not a critical error. If "Update check failed" appears in the console, verify network connectivity. Update checks are rate-limited by the GitHub API and may silently skip when the limit is reached. The footer shows **Update error** when a check fails; use **Check for updates** in the app menu or retry from the footer when applicable.
 
 ### Map tab without internet (offline / no WAN)
 
@@ -865,7 +865,7 @@ With **Wi‑Fi off** or **airplane mode** on, using a **packaged** build if poss
 
 1. Confirm the app **window loads** and core tabs work; connect via **USB serial** or **BLE** to a local radio if you need RF features.
 2. Open the **Map** tab: expect **missing or stale basemap tiles** as described above; **markers and trails** may still appear when position data exists.
-3. A non-fatal **update check** message in the console is expected without WAN; see **Update check fails / no update banner** above.
+3. A non-fatal **update check** message in the console is expected without WAN; see **Update check fails / footer update status** above.
 
 ### Diagnostics panel: "restored from last session" banner
 

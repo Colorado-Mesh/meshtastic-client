@@ -19,7 +19,7 @@ import SearchModal from './components/SearchModal';
 import { LinkIcon } from './components/SignalBars';
 import Tabs from './components/Tabs';
 import { ToastProvider, useToast } from './components/Toast';
-import UpdateBanner from './components/UpdateBanner';
+import UpdateStatusIndicator from './components/UpdateStatusIndicator';
 import { useDevice } from './hooks/useDevice';
 import { useMeshCore } from './hooks/useMeshCore';
 import {
@@ -90,37 +90,13 @@ export interface UpdateState {
   isPackaged?: boolean;
   isMac?: boolean;
   percent?: number;
-  dismissed: boolean;
 }
 
 const MESHTASTIC_UNREAD_KEY = 'mesh-client:meshtasticChatUnread';
 const MESHCORE_UNREAD_KEY = 'mesh-client:meshcoreChatUnread';
 const LOG_PANEL_VISIBLE_KEY = 'mesh-client:logPanelVisible';
-const UPDATE_SETTINGS_KEY = 'mesh-client:updateSettings';
-
-function readUpdateSettings(): { checkOnStartup: boolean; dismissedVersion?: string } {
-  try {
-    const raw = localStorage.getItem(UPDATE_SETTINGS_KEY);
-    const parsed = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
-    return {
-      checkOnStartup: parsed.checkOnStartup !== false,
-      dismissedVersion:
-        typeof parsed.dismissedVersion === 'string' ? parsed.dismissedVersion : undefined,
-    };
-  } catch {
-    // catch-no-log-ok localStorage JSON parse error — return safe defaults
-    return { checkOnStartup: true };
-  }
-}
-
-function saveUpdateSettings(patch: Partial<{ checkOnStartup: boolean; dismissedVersion: string }>) {
-  try {
-    const existing = readUpdateSettings();
-    localStorage.setItem(UPDATE_SETTINGS_KEY, JSON.stringify({ ...existing, ...patch }));
-  } catch {
-    // catch-no-log-ok localStorage quota or private mode — silently skip
-  }
-}
+/** Legacy key (pre–footer indicator): `checkOnStartup` / `dismissedVersion` — removed on launch so updates always check on startup. */
+const LEGACY_UPDATE_SETTINGS_KEY = 'mesh-client:updateSettings';
 
 function readLogPanelVisible(): boolean {
   try {
@@ -211,7 +187,7 @@ export default function App() {
   const prevMeshcoreMsgCountRef = useRef(0);
   const isMeshtasticInitialRef = useRef(true);
   const isMeshcoreInitialRef = useRef(true);
-  const [updateState, setUpdateState] = useState<UpdateState>({ phase: 'idle', dismissed: false });
+  const [updateState, setUpdateState] = useState<UpdateState>({ phase: 'idle' });
   const [telemetryNoticeDismissed, setTelemetryNoticeDismissed] = useState(false);
   const [useFahrenheit, setUseFahrenheit] = useState(
     () => localStorage.getItem('mesh-client:useFahrenheit') === 'true',
@@ -475,18 +451,16 @@ export default function App() {
   // ─── Auto-update event subscriptions ─────────────────────────────
   useEffect(() => {
     const offAvailable = window.electronAPI.update.onAvailable((info) => {
-      const { dismissedVersion } = readUpdateSettings();
       setUpdateState({
         phase: 'available',
         version: info.version,
         releaseUrl: info.releaseUrl,
         isPackaged: info.isPackaged,
         isMac: info.isMac,
-        dismissed: dismissedVersion === info.version,
       });
     });
     const offNotAvailable = window.electronAPI.update.onNotAvailable(() => {
-      setUpdateState((s) => ({ ...s, phase: 'up-to-date', dismissed: false }));
+      setUpdateState((s) => ({ ...s, phase: 'up-to-date' }));
     });
     const offProgress = window.electronAPI.update.onProgress((info) => {
       setUpdateState((s) => ({ ...s, phase: 'downloading', percent: info.percent }));
@@ -506,9 +480,17 @@ export default function App() {
     };
   }, []);
 
-  // ─── Auto-check for updates on startup (respects user preference) ────
+  // ─── Drop legacy update prefs (localStorage) — always check on startup below ───
   useEffect(() => {
-    if (!readUpdateSettings().checkOnStartup) return;
+    try {
+      localStorage.removeItem(LEGACY_UPDATE_SETTINGS_KEY);
+    } catch {
+      // catch-no-log-ok quota / private mode
+    }
+  }, []);
+
+  // ─── Auto-check for updates on startup ────
+  useEffect(() => {
     const t = setTimeout(() => window.electronAPI.update.check(), 5000);
     return () => clearTimeout(t);
   }, []);
@@ -805,20 +787,6 @@ export default function App() {
             </button>
           </div>
         )}
-
-        {/* Update Notification Banner */}
-        <UpdateBanner
-          updateState={updateState}
-          onDownload={() => window.electronAPI.update.download()}
-          onInstall={() => window.electronAPI.update.install()}
-          onViewRelease={() => window.electronAPI.update.openReleases(updateState.releaseUrl)}
-          onDismiss={() => {
-            setUpdateState((s) => {
-              if (s.version) saveUpdateSettings({ dismissedVersion: s.version });
-              return { ...s, dismissed: true };
-            });
-          }}
-        />
 
         <div className="flex flex-1 min-h-0 flex-col">
           <div className="flex flex-col flex-1 min-w-0 min-h-0">
@@ -1152,8 +1120,22 @@ export default function App() {
                   ?
                 </span>
               </button>
-              <span className="justify-self-end text-right whitespace-nowrap tabular-nums">
-                {nodesForUi.size} {nodeCountLabel} | {device.messages.length} messages
+              <span className="justify-self-end text-right whitespace-nowrap tabular-nums inline-flex items-center gap-2 flex-wrap justify-end">
+                <span>
+                  {nodesForUi.size} {nodeCountLabel} | {device.messages.length} messages
+                </span>
+                <UpdateStatusIndicator
+                  updateState={updateState}
+                  onCheck={() => {
+                    setUpdateState({ phase: 'idle' });
+                    void window.electronAPI.update.check();
+                  }}
+                  onDownload={() => window.electronAPI.update.download()}
+                  onInstall={() => window.electronAPI.update.install()}
+                  onViewRelease={() =>
+                    window.electronAPI.update.openReleases(updateState.releaseUrl)
+                  }
+                />
               </span>
             </footer>
           </div>
