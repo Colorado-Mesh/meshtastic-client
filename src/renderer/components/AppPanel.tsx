@@ -181,6 +181,7 @@ export default function AppPanel({
       const parsed = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
       return parsed.checkOnStartup !== false;
     } catch {
+      // catch-no-log-ok localStorage JSON parse error — return safe default
       return true;
     }
   });
@@ -195,7 +196,7 @@ export default function AppPanel({
         JSON.stringify({ ...existing, checkOnStartup: enabled }),
       );
     } catch {
-      // quota/private mode — silently skip
+      // catch-no-log-ok localStorage quota or private mode — silently skip
     }
   }, []);
 

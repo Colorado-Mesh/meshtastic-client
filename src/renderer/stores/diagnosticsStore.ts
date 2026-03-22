@@ -221,7 +221,7 @@ function clearPersistedDiagnosticRowsSnapshot(): void {
   try {
     localStorage.removeItem(DIAGNOSTIC_ROWS_STORAGE_KEY);
   } catch {
-    /* ignore */
+    // catch-no-log-ok localStorage unavailable — non-critical diagnostic row cleanup
   }
 }
 

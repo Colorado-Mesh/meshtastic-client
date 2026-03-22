@@ -58,7 +58,7 @@ function persistLevelFilters(f: LevelFilters): void {
   try {
     localStorage.setItem(LOG_LEVEL_FILTERS_KEY, JSON.stringify(f));
   } catch {
-    /* ignore */
+    // catch-no-log-ok localStorage quota or private mode — non-critical preference
   }
 }
 
@@ -102,6 +102,7 @@ function readPanelWidth(): number {
     if (!Number.isFinite(n)) return PANEL_WIDTH_DEFAULT;
     return Math.min(PANEL_WIDTH_MAX, Math.max(PANEL_WIDTH_MIN, n));
   } catch {
+    // catch-no-log-ok localStorage read error — return default width
     return PANEL_WIDTH_DEFAULT;
   }
 }
@@ -110,7 +111,7 @@ function persistPanelWidth(w: number): void {
   try {
     localStorage.setItem(LOG_PANEL_WIDTH_KEY, String(w));
   } catch {
-    /* ignore */
+    // catch-no-log-ok localStorage quota or private mode — non-critical preference
   }
 }
 
@@ -146,8 +147,8 @@ export default function LogPanel({
         if (recent.length > 0) {
           setEntries(recent.slice(-MAX_LINES) as LogEntry[]);
         }
-      } catch {
-        /* ignore */
+      } catch (e) {
+        console.debug('[LogPanel] getRecentLines IPC failed:', e);
       }
       if (cancelled) return;
       off = window.electronAPI.log.onLine((entry) => {

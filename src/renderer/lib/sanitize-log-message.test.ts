@@ -73,3 +73,14 @@ describe('log-injection check (main process)', () => {
     });
   });
 });
+
+describe('silent-catch check (main process + renderer)', () => {
+  it('no catch block swallows errors without logging or rethrowing', () => {
+    const projectRoot = path.resolve(import.meta.dirname ?? __dirname, '..', '..', '..');
+    execFileSync('node', [path.join(projectRoot, 'scripts', 'check-silent-catches.mjs')], {
+      encoding: 'utf8',
+      stdio: 'pipe',
+      cwd: projectRoot,
+    });
+  });
+});

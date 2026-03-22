@@ -649,7 +649,7 @@ export default function RadioPanel({
                 JSON.stringify({ public_key: cfg.public_key, private_key: cfg.private_key }),
               );
             } catch {
-              // ignore storage errors
+              // catch-no-log-ok localStorage quota or private mode — non-critical identity cache
             }
           }
 
@@ -839,6 +839,7 @@ export default function RadioPanel({
             await onSetOwner({ longName, shortName, isLicensed });
             setStatus('User applied successfully!');
           } catch (err) {
+            console.warn('[RadioPanel] setOwner failed:', err instanceof Error ? err.message : err);
             setStatus(`Failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
           } finally {
             setApplyingSection(null);
@@ -956,6 +957,10 @@ export default function RadioPanel({
               });
               setStatus('LoRa applied successfully!');
             } catch (err) {
+              console.warn(
+                '[RadioPanel] setLoRaConfig failed:',
+                err instanceof Error ? err.message : err,
+              );
               setStatus(`Failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
             } finally {
               setApplyingSection(null);

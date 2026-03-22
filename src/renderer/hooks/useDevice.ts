@@ -366,7 +366,7 @@ export function useDevice() {
         }, intervalSecs * 1000);
       }
     } catch {
-      /* ignore bad localStorage */
+      // catch-no-log-ok localStorage read for GPS interval setting — ignore parse errors
     }
   }, [stopGpsInterval]);
 
@@ -1072,7 +1072,7 @@ export function useDevice() {
               cache[btDevice.id] = shortName;
               localStorage.setItem(key, JSON.stringify(cache));
             } catch {
-              /* ignore */
+              // catch-no-log-ok localStorage write for BLE device name cache — non-critical
             }
           }
         }
@@ -2098,7 +2098,7 @@ export function useDevice() {
           staticLon = s.staticLon;
         }
       } catch {
-        /* ignore */
+        // catch-no-log-ok localStorage read for GPS settings — ignore parse errors
       }
       // When a static position is set, don't let device coords override it
       const devLat = staticLat != null ? undefined : myNode?.latitude;

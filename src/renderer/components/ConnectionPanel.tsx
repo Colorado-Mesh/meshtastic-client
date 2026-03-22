@@ -602,6 +602,7 @@ export default function ConnectionPanel({
       try {
         await window.electronAPI.startNobleBleScanning(protocol);
       } catch (err) {
+        console.warn('[ConnectionPanel] startNobleBleScanning failed:', err);
         setError(humanizeBleError(err));
         setConnecting(false);
         setConnectionStage('');

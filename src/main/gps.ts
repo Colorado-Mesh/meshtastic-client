@@ -38,6 +38,7 @@ function fetchIpEndpoint(url: string, extract: (data: unknown) => GpsFix | null)
   try {
     parsedUrl = new URL(url);
   } catch {
+    // catch-no-log-ok URL parse failure — propagated as rejected Promise to caller
     return Promise.reject(new Error('Invalid URL'));
   }
   if (!/^https?:$/i.test(parsedUrl.protocol)) {
@@ -63,6 +64,7 @@ function fetchIpEndpoint(url: string, extract: (data: unknown) => GpsFix | null)
           if (fix) resolve(fix);
           else reject(new Error('No latitude/longitude data found in response'));
         } catch (e) {
+          // catch-no-log-ok JSON parse error — sanitized and propagated via reject()
           const rawMessage = e instanceof Error ? e.message : String(e);
           const safeMessage = sanitizeLogMessage(rawMessage);
           reject(new Error('parse error: ' + safeMessage));

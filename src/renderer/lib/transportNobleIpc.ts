@@ -70,7 +70,7 @@ export class TransportNobleIpc implements Types.Transport {
       try {
         this._fromDeviceController.close();
       } catch {
-        // Controller may already be closed if stream was cancelled
+        // catch-no-log-ok ReadableStreamDefaultController already closed if stream was cancelled
       }
       this._fromDeviceController = null;
     }

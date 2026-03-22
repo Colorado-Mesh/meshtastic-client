@@ -480,6 +480,7 @@ export function useMeshCore() {
     try {
       return localStorage.getItem(MANUAL_CONTACTS_KEY) === 'true';
     } catch {
+      // catch-no-log-ok localStorage read error — return safe default
       return false;
     }
   });
@@ -1915,7 +1916,7 @@ export function useMeshCore() {
       try {
         localStorage.setItem(MANUAL_CONTACTS_KEY, String(manual));
       } catch {
-        /* ignore */
+        // catch-no-log-ok localStorage quota or private mode — non-critical setting
       }
     } catch (e) {
       console.warn('[useMeshCore] toggleManualAddContacts error', e);
@@ -1991,7 +1992,7 @@ export function useMeshCore() {
         const decoded = atob(s);
         if (decoded.length === 32) return Uint8Array.from(decoded, (c) => c.charCodeAt(0));
       } catch {
-        /* fall through */
+        // catch-no-log-ok atob decode attempt failed — falls through to return null
       }
       return null;
     }
@@ -2195,7 +2196,7 @@ export function useMeshCore() {
         staticLon = s.staticLon;
       }
     } catch {
-      /* ignore */
+      // catch-no-log-ok localStorage read for GPS settings — ignore parse errors
     }
     const pos = await resolveOurPosition(myNode?.latitude, myNode?.longitude, staticLat, staticLon);
     setOurPosition(pos);

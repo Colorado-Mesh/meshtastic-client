@@ -141,6 +141,7 @@ export default function RepeatersPanel({
           : `Imported ${result.imported} repeater${result.imported !== 1 ? 's' : ''}${result.skipped > 0 ? `, skipped ${result.skipped}` : ''}.`;
       addToast(msg, result.errors.length > 0 ? 'error' : 'success');
     } catch (e) {
+      console.warn('[RepeatersPanel] import failed:', e instanceof Error ? e.message : e);
       addToast(`Import failed: ${e instanceof Error ? e.message : String(e)}`, 'error');
     } finally {
       setImportLoading(false);
@@ -200,6 +201,7 @@ export default function RepeatersPanel({
     try {
       await onDeleteRepeater(nodeId);
     } catch (e) {
+      console.warn('[RepeatersPanel] deleteRepeater failed:', e instanceof Error ? e.message : e);
       addToast(`Remove failed: ${e instanceof Error ? e.message : String(e)}`, 'error');
     } finally {
       setDeleteLoadingSet((prev) => {
@@ -217,6 +219,7 @@ export default function RepeatersPanel({
       await onSendAdvert();
       addToast('Flood advert sent', 'success');
     } catch (e) {
+      console.warn('[RepeatersPanel] sendAdvert failed:', e instanceof Error ? e.message : e);
       addToast(`Advert failed: ${e instanceof Error ? e.message : String(e)}`, 'error');
     } finally {
       setAdvertLoading(false);
@@ -230,6 +233,7 @@ export default function RepeatersPanel({
       await onSyncClock();
       addToast('Clock synced', 'success');
     } catch (e) {
+      console.warn('[RepeatersPanel] syncClock failed:', e instanceof Error ? e.message : e);
       addToast(`Sync failed: ${e instanceof Error ? e.message : String(e)}`, 'error');
     } finally {
       setSyncClockLoading(false);
@@ -246,6 +250,7 @@ export default function RepeatersPanel({
     try {
       await onReboot?.();
     } catch (e) {
+      console.warn('[RepeatersPanel] reboot failed:', e instanceof Error ? e.message : e);
       addToast(`Reboot failed: ${e instanceof Error ? e.message : String(e)}`, 'error');
     } finally {
       setRebootLoading(false);

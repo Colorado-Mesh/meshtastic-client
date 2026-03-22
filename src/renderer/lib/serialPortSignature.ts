@@ -36,6 +36,7 @@ export function loadLastSerialPortSignature(): SerialPortSignature | null {
     if (!raw) return null;
     return JSON.parse(raw) as SerialPortSignature;
   } catch {
+    // catch-no-log-ok localStorage JSON parse error — return null (no saved signature)
     return null;
   }
 }
@@ -44,7 +45,7 @@ export function saveLastSerialPortSignature(sig: SerialPortSignature): void {
   try {
     localStorage.setItem(LAST_SERIAL_PORT_SIGNATURE_KEY, JSON.stringify(sig));
   } catch {
-    /* ignore */
+    // catch-no-log-ok localStorage quota or private mode — non-critical reconnect hint
   }
 }
 
@@ -80,7 +81,7 @@ export function persistSerialPortIdentity(port: SerialPort): void {
     try {
       localStorage.setItem(LAST_SERIAL_PORT_KEY, portId);
     } catch {
-      /* ignore */
+      // catch-no-log-ok localStorage quota or private mode — non-critical reconnect hint
     }
   }
 }

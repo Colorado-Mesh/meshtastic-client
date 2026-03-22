@@ -667,6 +667,7 @@ export class MQTTManager extends EventEmitter {
       const decipher = createDecipheriv('aes-128-ctr', key, nonce);
       return Buffer.concat([decipher.update(Buffer.from(encrypted)), decipher.final()]);
     } catch {
+      // catch-no-log-ok AES decrypt failed with this key — caller tries next key
       return null;
     }
   }

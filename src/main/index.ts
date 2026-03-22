@@ -91,7 +91,7 @@ process.on('uncaughtException', (error) => {
       `${error.message}\n\n${error.stack ?? ''}`,
     );
   } catch {
-    /* dialog may not be available during early startup */
+    // catch-no-log-ok dialog unavailable during early startup; error already logged above
   }
 });
 
@@ -115,7 +115,7 @@ process.on('unhandledRejection', (reason) => {
       `A promise rejected without a handler. Check the main process terminal for full details.\n\n${message.slice(0, 1500)}${message.length > 1500 ? '…' : ''}`,
     );
   } catch {
-    /* dialog may not be available during early startup */
+    // catch-no-log-ok dialog unavailable during early startup; rejection already logged above
   }
 });
 
@@ -723,7 +723,7 @@ function createWindow() {
         `The renderer process ended unexpectedly (${details.reason}, exit ${details.exitCode ?? 'n/a'}).\n\nRestart the application. If this keeps happening, export the log from the app (if still usable) or check the log file in your userData folder.`,
       );
     } catch {
-      /* dialog unavailable */
+      // catch-no-log-ok dialog unavailable; renderer-process-gone already logged
     }
   });
 
@@ -746,7 +746,7 @@ function createWindow() {
         `Could not load the application UI (code ${errorCode}: ${errorDesc}).\n\n${hint}\n\nURL: ${validatedURL}`,
       );
     } catch {
-      /* dialog unavailable */
+      // catch-no-log-ok dialog unavailable; did-fail-load already logged above
     }
   });
 

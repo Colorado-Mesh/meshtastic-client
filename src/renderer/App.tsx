@@ -86,6 +86,7 @@ function readUpdateSettings(): { checkOnStartup: boolean; dismissedVersion?: str
         typeof parsed.dismissedVersion === 'string' ? parsed.dismissedVersion : undefined,
     };
   } catch {
+    // catch-no-log-ok localStorage JSON parse error — return safe defaults
     return { checkOnStartup: true };
   }
 }
@@ -95,7 +96,7 @@ function saveUpdateSettings(patch: Partial<{ checkOnStartup: boolean; dismissedV
     const existing = readUpdateSettings();
     localStorage.setItem(UPDATE_SETTINGS_KEY, JSON.stringify({ ...existing, ...patch }));
   } catch {
-    // quota/private mode — silently skip
+    // catch-no-log-ok localStorage quota or private mode — silently skip
   }
 }
 

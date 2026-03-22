@@ -359,14 +359,14 @@ export class NobleBleManager extends EventEmitter {
           try {
             session.fromRadioChar.off('data', session.fromRadioDataHandler);
           } catch {
-            /* ignore */
+            // catch-no-log-ok BLE char listener cleanup on disconnect — already disconnected
           }
         }
         if (session.fromNumChar && session.fromNumDataHandler) {
           try {
             session.fromNumChar.off('data', session.fromNumDataHandler);
           } catch {
-            /* ignore */
+            // catch-no-log-ok BLE char listener cleanup on disconnect — already disconnected
           }
         }
         this.clearSessionState(session);
@@ -443,21 +443,21 @@ export class NobleBleManager extends EventEmitter {
         try {
           session.fromRadioChar.off('data', session.fromRadioDataHandler);
         } catch {
-          /* ignore */
+          // catch-no-log-ok BLE char listener cleanup in connect error path — error already logged
         }
       }
       if (session.fromNumChar && session.fromNumDataHandler) {
         try {
           session.fromNumChar.off('data', session.fromNumDataHandler);
         } catch {
-          /* ignore */
+          // catch-no-log-ok BLE char listener cleanup in connect error path — error already logged
         }
       }
       if (peripheral && session.connectedPeripheralDisconnectHandler) {
         try {
           peripheral.removeListener('disconnect', session.connectedPeripheralDisconnectHandler);
         } catch {
-          /* ignore */
+          // catch-no-log-ok peripheral listener cleanup in connect error path — error already logged
         }
       }
       this.clearSessionState(session);

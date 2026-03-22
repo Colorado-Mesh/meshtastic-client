@@ -53,7 +53,7 @@ export const usePositionHistoryStore = create<PositionHistoryState>((set, get) =
           console.warn('[positionHistory] DB write failed:', err);
         });
       } catch {
-        /* electronAPI may not be available in test/storybook contexts */
+        // catch-no-log-ok electronAPI not available in test/storybook contexts
       }
     }
     const newHistory = new Map(get().history);
@@ -82,7 +82,7 @@ export const usePositionHistoryStore = create<PositionHistoryState>((set, get) =
         JSON.stringify({ ...o, showMovementPaths: enabled }),
       );
     } catch {
-      /* ignore */
+      // catch-no-log-ok localStorage quota or private mode — non-critical setting
     }
     set({ showPaths: enabled });
   },
@@ -98,7 +98,7 @@ export const usePositionHistoryStore = create<PositionHistoryState>((set, get) =
         JSON.stringify({ ...o, positionHistoryWindowHours: hours }),
       );
     } catch {
-      /* ignore */
+      // catch-no-log-ok localStorage quota or private mode — non-critical setting
     }
     set({ historyWindowHours: hours });
     // Reload history from DB with the new window

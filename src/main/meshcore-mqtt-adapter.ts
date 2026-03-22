@@ -88,6 +88,7 @@ export class MeshcoreMqttAdapter extends EventEmitter {
       try {
         text = buf.toString('utf8');
       } catch {
+        // catch-no-log-ok invalid UTF-8 buffer — silently skip non-text MQTT payload
         return;
       }
       const env = tryParseMeshcoreMqttChatEnvelope(text.trim());

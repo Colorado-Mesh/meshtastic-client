@@ -187,7 +187,7 @@ export class NodeSqliteDB {
         try {
           this._run('ROLLBACK');
         } catch {
-          // ignore rollback errors
+          // catch-no-log-ok ROLLBACK attempt during transaction error — secondary failure, outer catch rethrows
         }
         throw err;
       }
