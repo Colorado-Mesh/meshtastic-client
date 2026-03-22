@@ -34,15 +34,15 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
+      - name: Install Linux build dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev rpm
+
       - name: Install dependencies
         run: npm install
-    
+
       - name: Rebuild native dependencies
         run: npm run rebuild
-
-      - name: Install Linux package build tools
-        if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y rpm
 
       - name: Build and Publish
         env:
