@@ -30,8 +30,11 @@ export function initDatabase(): void {
     // Restrict DB file to owner-only access (no-op on Windows)
     try {
       fs.chmodSync(dbPath, 0o600);
-    } catch {
-      /* Windows */
+    } catch (e) {
+      console.debug(
+        '[db] chmod failed (non-fatal, expected on Windows):',
+        e instanceof Error ? e.message : e,
+      ); // log-injection-ok OS-level error from fs.chmodSync, not user input
     }
     db.pragma('journal_mode = WAL');
     db.pragma('synchronous = NORMAL');

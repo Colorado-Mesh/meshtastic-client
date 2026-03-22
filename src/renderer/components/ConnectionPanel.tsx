@@ -395,9 +395,14 @@ export default function ConnectionPanel({
   useEffect(() => window.electronAPI.mqtt.onError(setMqttError), []);
   useEffect(() => {
     // Restore clientId if already connected when this component mounts (e.g. after tab switch)
-    window.electronAPI.mqtt.getClientId().then((id) => {
-      if (id) setMqttClientId(id);
-    });
+    window.electronAPI.mqtt
+      .getClientId()
+      .then((id) => {
+        if (id) setMqttClientId(id);
+      })
+      .catch((err) => {
+        console.warn('[ConnectionPanel] getClientId failed:', err);
+      });
     return window.electronAPI.mqtt.onClientId(setMqttClientId);
   }, []);
 
@@ -1055,7 +1060,11 @@ export default function ConnectionPanel({
             </span>
           </div>
           <button
-            onClick={() => window.electronAPI.mqtt.disconnect()}
+            onClick={() =>
+              window.electronAPI.mqtt.disconnect().catch((err: unknown) => {
+                console.warn('[ConnectionPanel] mqtt.disconnect failed:', err);
+              })
+            }
             className="w-full px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white text-sm font-medium rounded-lg transition-colors"
           >
             Disconnect
@@ -1340,10 +1349,14 @@ export default function ConnectionPanel({
           <div className="pt-1">
             <button
               onClick={() =>
-                window.electronAPI.mqtt.connect({
-                  ...activeMqttSettings,
-                  mqttTransportProtocol: protocol === 'meshcore' ? 'meshcore' : 'meshtastic',
-                })
+                window.electronAPI.mqtt
+                  .connect({
+                    ...activeMqttSettings,
+                    mqttTransportProtocol: protocol === 'meshcore' ? 'meshcore' : 'meshtastic',
+                  })
+                  .catch((err: unknown) => {
+                    console.warn('[ConnectionPanel] mqtt.connect failed:', err);
+                  })
               }
               disabled={mqttStatus === 'connecting'}
               className="w-full px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-40"

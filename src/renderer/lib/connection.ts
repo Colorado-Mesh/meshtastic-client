@@ -27,6 +27,9 @@ async function httpPreflightWithRetries(connectionUrl: string): Promise<void> {
       return;
     } catch (err) {
       lastErr = err instanceof Error ? err : new Error(String(err));
+      console.debug(
+        `[connection] HTTP preflight attempt ${attempt}/${HTTP_PREFLIGHT_RETRIES} failed: ${lastErr.message}`,
+      );
       if (attempt < HTTP_PREFLIGHT_RETRIES) {
         await new Promise((r) => setTimeout(r, HTTP_PREFLIGHT_RETRY_DELAY_MS));
       }

@@ -260,7 +260,8 @@ export class NobleBleManager extends EventEmitter {
           this.scanningActive = false;
           resolve();
         });
-      } catch {
+      } catch (err) {
+        console.debug('[NobleBleManager] stopScanning error (ignored):', err); // log-injection-ok noble internal error
         this.scanningActive = false;
         resolve();
       }
@@ -288,23 +289,32 @@ export class NobleBleManager extends EventEmitter {
       this.scanningActive = false;
       try {
         noble.stopScanning();
-      } catch {
-        /* ignore */
+      } catch (err) {
+        console.debug(
+          '[NobleBleManager] releaseNobleProcessHandles stopScanning error (ignored):',
+          err,
+        ); // log-injection-ok noble internal error
       }
     }
     try {
       noble.removeAllListeners('stateChange');
       noble.removeAllListeners('discover');
-    } catch {
-      /* ignore */
+    } catch (err) {
+      console.debug(
+        '[NobleBleManager] releaseNobleProcessHandles removeAllListeners error (ignored):',
+        err,
+      ); // log-injection-ok noble internal error
     }
     this.removeAllListeners();
     // Release the native BLEManager and its CBqueue dispatch queue (macOS only).
     // noble.stop() → _bindings.stop() → CFRelease(BLEManager) → CBCentralManager + dispatch queue released.
     try {
       noble.stop();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      console.debug(
+        '[NobleBleManager] releaseNobleProcessHandles noble.stop error (ignored):',
+        err,
+      ); // log-injection-ok noble internal error
     }
   }
 
@@ -428,6 +438,7 @@ export class NobleBleManager extends EventEmitter {
       this.requestFromRadioReadPump(sessionId);
       this.emit('connected', { sessionId });
     } catch (err) {
+      console.warn(`[BLE:${sessionId}] connect failed:`, err instanceof Error ? err.message : err); // log-injection-ok noble internal error
       if (session.fromRadioChar && session.fromRadioDataHandler) {
         try {
           session.fromRadioChar.off('data', session.fromRadioDataHandler);

@@ -457,7 +457,11 @@ export class MQTTManager extends EventEmitter {
         const parsed = JSON.parse(new TextDecoder().decode(cleanBytes));
         this.handleJsonMessage(parsed, topic);
       } catch {
-        // Silent: not valid JSON, skip
+        console.debug(
+          '[MQTT] non-JSON payload ignored, topic=%s bytes=%d',
+          topic,
+          cleanBytes.length,
+        );
       }
       return;
     }
@@ -689,6 +693,7 @@ export class MQTTManager extends EventEmitter {
         };
       } catch {
         // Wrong PSK produces garbage bytes that fail protobuf decode — try next key
+        console.debug('[MQTT] decrypt attempt failed (wrong key), trying next');
       }
     }
     return null;

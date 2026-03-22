@@ -591,8 +591,8 @@ export default function RadioPanel({
       reader.onload = async (ev) => {
         try {
           const cfg = JSON.parse(ev.target?.result as string);
-          console.log('[RadioPanel] parsed config JSON:', cfg);
-          console.log(
+          console.debug('[RadioPanel] parsed config JSON:', cfg);
+          console.debug(
             `[RadioPanel] current device state before import: radioFreqHz=${radioFreqHz} bandwidth=${bandwidth}`,
           );
 
@@ -608,7 +608,7 @@ export default function RadioPanel({
 
           if (cfg.radio_settings) {
             const rs = cfg.radio_settings;
-            console.log(
+            console.debug(
               `[RadioPanel] radio_settings from config: frequency=${rs.frequency} bandwidth=${rs.bandwidth} spreading_factor=${rs.spreading_factor} coding_rate=${rs.coding_rate} tx_power=${rs.tx_power}`,
             );
             // frequency: kHz in config file → Hz for state
@@ -635,7 +635,7 @@ export default function RadioPanel({
               importedTxPower = rs.tx_power;
               setTxPower(rs.tx_power);
             }
-            console.log(
+            console.debug(
               `[RadioPanel] extracted lora values: importedFreqHz=${importedFreqHz} importedBwKhz=${importedBwKhz} importedSf=${importedSf} importedCr=${importedCr} importedTxPower=${importedTxPower}`,
             );
           } else {
@@ -658,17 +658,17 @@ export default function RadioPanel({
           const notSupported: string[] = [];
 
           if (importedName && onSetOwner) {
-            console.log('[RadioPanel] calling onSetOwner with name:', importedName);
+            console.debug('[RadioPanel] calling onSetOwner with name:', importedName);
             try {
               await onSetOwner({ longName: importedName, shortName, isLicensed });
-              console.log('[RadioPanel] onSetOwner succeeded');
+              console.debug('[RadioPanel] onSetOwner succeeded');
               applied.push('name');
             } catch (e) {
               console.error('[RadioPanel] onSetOwner threw:', e);
               notSupported.push('name');
             }
           } else {
-            console.log(
+            console.debug(
               '[RadioPanel] skipping onSetOwner — name:',
               importedName,
               'handler:',
@@ -682,7 +682,7 @@ export default function RadioPanel({
             importedSf !== null &&
             importedCr !== null &&
             importedTxPower !== null;
-          console.log(
+          console.debug(
             '[RadioPanel] hasLoraData:',
             hasLoraData,
             'onApplyLoraParams:',
@@ -696,12 +696,12 @@ export default function RadioPanel({
               cr: importedCr!,
               txPower: importedTxPower!,
             };
-            console.log(
+            console.debug(
               `[RadioPanel] calling onApplyLoraParams with: freq=${loraPayload.freq} bw=${loraPayload.bw} sf=${loraPayload.sf} cr=${loraPayload.cr} txPower=${loraPayload.txPower}`,
             );
             try {
               await onApplyLoraParams(loraPayload);
-              console.log('[RadioPanel] onApplyLoraParams succeeded');
+              console.debug('[RadioPanel] onApplyLoraParams succeeded');
               applied.push('radio settings');
             } catch (e) {
               console.error('[RadioPanel] onApplyLoraParams threw:', e);

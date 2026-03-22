@@ -372,7 +372,11 @@ function buildTrayIcon(hasUnread: boolean): Electron.NativeImage {
     try {
       base = nativeImage.createFromPath(trayIconPath).resize({ width: 22, height: 22 });
     } catch (e) {
-      console.error('[main] tray icon load failed', e); // log-injection-ok: e is a local Error from nativeImage, not user input
+      console.error(
+        '[main] tray icon load failed:',
+        trayIconPath,
+        e instanceof Error ? e.message : e,
+      ); // log-injection-ok: e is a local Error from nativeImage, not user input
       base = nativeImage.createEmpty();
     }
   }
@@ -2260,14 +2264,20 @@ app.on('will-quit', () => {
   try {
     mqttManager.disconnect();
     meshcoreMqttAdapter.disconnect();
-  } catch {
-    /* ignore */
+  } catch (err) {
+    console.debug(
+      '[main] MQTT disconnect during will-quit (ignored):',
+      err instanceof Error ? err.message : err,
+    ); // log-injection-ok internal library error during cleanup
   }
   if (meshcoreTcpSocket) {
     try {
       meshcoreTcpSocket.destroy();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      console.debug(
+        '[main] TCP socket destroy during will-quit (ignored):',
+        err instanceof Error ? err.message : err,
+      ); // log-injection-ok internal Node.js socket error during cleanup
     }
     meshcoreTcpSocket = null;
   }

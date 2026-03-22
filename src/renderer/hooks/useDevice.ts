@@ -275,6 +275,7 @@ export function useDevice() {
     // If we were in "stale" state, recover to "configured"
     setState((s) => {
       if (s.status === 'stale') {
+        console.debug('[useDevice] watchdog: recovered from stale → configured');
         return { ...s, status: 'configured', lastDataReceived: Date.now() };
       }
       return s;
@@ -498,6 +499,7 @@ export function useDevice() {
         positionWarning?: string | null;
       };
       if (!nodeUpdate.node_id) return;
+      console.debug('[useDevice] MQTT node update: nodeId=%d', nodeUpdate.node_id);
 
       updateNodes((prev) => {
         const existing = prev.get(nodeUpdate.node_id) || emptyNode(nodeUpdate.node_id);
@@ -606,6 +608,7 @@ export function useDevice() {
       }
 
       // Packet ID dedup (catches our own uplink echoes)
+      console.debug('[useDevice] MQTT message: from=%d packetId=%d', msg.sender_id, packetId);
       if (packetId !== 0 && isDuplicate(packetId)) {
         useDiagnosticsStore.getState().recordDuplicate(msg.sender_id);
         // Upgrade receivedVia to 'both' if this packet was already saved via RF
@@ -689,6 +692,7 @@ export function useDevice() {
           isConfiguringRef.current = true;
           if (status === 6 && type === 'ble' && !configureTimeoutRef.current) {
             configureTimeoutRef.current = setTimeout(() => {
+              console.warn('[useDevice] configure timeout (BLE 30s) — forcing disconnect');
               const activeDevice = deviceRef.current;
               deviceRef.current = null;
               if (activeDevice) {
@@ -749,6 +753,7 @@ export function useDevice() {
 
       // ─── My node info ──────────────────────────────────────────
       const unsub2 = device.events.onMyNodeInfo.subscribe((info) => {
+        console.debug('[useDevice] onMyNodeInfo: myNodeNum=%d', info.myNodeNum);
         touchLastData();
         const virtualNodeId = getOrCreateVirtualNodeId();
         if (virtualNodeId !== info.myNodeNum) {
@@ -1610,6 +1615,9 @@ export function useDevice() {
     }));
 
     const delay = Math.min(2000 * Math.pow(2, reconnectAttemptRef.current - 1), 32000);
+    console.debug(
+      `[useDevice] reconnect: waiting ${delay}ms before attempt ${reconnectAttemptRef.current}/${MAX_RECONNECT_ATTEMPTS}`,
+    );
     await new Promise((r) => setTimeout(r, delay));
 
     // Check if user manually disconnected or started a new connection during the wait
