@@ -8,21 +8,21 @@ describe('emptyNode', () => {
     expect(node.long_name).toBe('!abcd1234');
   });
 
-  it('generates a short_name from the last 4 hex characters', () => {
+  it('uses an empty short_name until identity is received from the mesh', () => {
     const node = emptyNode(0xabcd1234);
-    expect(node.short_name).toBe('1234');
+    expect(node.short_name).toBe('');
   });
 
   it('zero-pads node IDs shorter than 8 hex digits', () => {
     const node = emptyNode(0x0000007f);
     expect(node.long_name).toBe('!0000007f');
-    expect(node.short_name).toBe('007f');
+    expect(node.short_name).toBe('');
   });
 
   it('handles the maximum 32-bit node ID', () => {
     const node = emptyNode(0xffffffff);
     expect(node.long_name).toBe('!ffffffff');
-    expect(node.short_name).toBe('ffff');
+    expect(node.short_name).toBe('');
   });
 
   it('sets node_id correctly', () => {
@@ -39,11 +39,12 @@ describe('emptyNode', () => {
     expect(node.longitude).toBe(0);
   });
 
-  it('produces different names for different node IDs', () => {
+  it('produces different long names for different node IDs', () => {
     const a = emptyNode(0xaaaaaaaa);
     const b = emptyNode(0xbbbbbbbb);
     expect(a.long_name).not.toBe(b.long_name);
-    expect(a.short_name).not.toBe(b.short_name);
+    expect(a.short_name).toBe('');
+    expect(b.short_name).toBe('');
   });
 
   it('chat stub nodes use the standard !hex long_name and an empty short_name', () => {

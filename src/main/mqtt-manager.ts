@@ -5,6 +5,7 @@ import { EventEmitter } from 'events';
 import * as mqtt from 'mqtt';
 
 import type { ChatMessage, MeshNode, MQTTSettings, MQTTStatus } from '../renderer/lib/types';
+import { meshtasticShortNameAfterClearingDefault } from '../shared/nodeNameUtils';
 import { sanitizeLogMessage } from './log-service';
 
 const { ServiceEnvelopeSchema } = MqttProto;
@@ -526,10 +527,16 @@ export class MQTTManager extends EventEmitter {
       try {
         const user = fromBinary(UserSchema, payload);
         const now = Date.now();
+        const long_name = user.longName || '';
+        const short_name = meshtasticShortNameAfterClearingDefault(
+          long_name,
+          user.shortName || '',
+          nodeId,
+        );
         const nodeUpdate: Partial<MeshNode> & { node_id: number; from_mqtt: boolean } = {
           node_id: nodeId,
-          long_name: user.longName || '',
-          short_name: user.shortName || '',
+          long_name,
+          short_name,
           hw_model: String(user.hwModel ?? ''),
           last_heard: now,
           from_mqtt: true,

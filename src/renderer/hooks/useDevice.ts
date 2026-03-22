@@ -3,6 +3,7 @@ import type { MeshDevice } from '@meshtastic/core';
 import { Channel as ProtobufChannel, Mesh, Portnums } from '@meshtastic/protobufs';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { meshtasticShortNameAfterClearingDefault } from '../../shared/nodeNameUtils';
 import {
   createBleConnection,
   createConnection,
@@ -422,8 +423,15 @@ export function useDevice() {
       .then((savedNodes) => {
         const nodeMap = new Map<number, MeshNode>();
         for (const n of savedNodes) {
+          const long_name = n.long_name ?? '';
           nodeMap.set(n.node_id, {
             ...n,
+            long_name,
+            short_name: meshtasticShortNameAfterClearingDefault(
+              long_name,
+              n.short_name ?? '',
+              n.node_id,
+            ),
             role: parseNodeRole(n.role),
             favorited: Boolean(n.favorited),
           });
@@ -540,6 +548,11 @@ export function useDevice() {
         } else if (nodeUpdate.positionWarning === null) {
           node.lastPositionWarning = undefined;
         }
+        node.short_name = meshtasticShortNameAfterClearingDefault(
+          node.long_name ?? '',
+          node.short_name ?? '',
+          node.node_id,
+        );
         updated.set(nodeUpdate.node_id, node);
         window.electronAPI.db.saveNode(node);
         return updated;
@@ -923,11 +936,17 @@ export function useDevice() {
         updateNodes((prev) => {
           const updated = new Map(prev);
           const existing = updated.get(packet.from) || emptyNode(packet.from);
+          const long_name = user.longName ?? existing.long_name;
+          const short_name = meshtasticShortNameAfterClearingDefault(
+            long_name,
+            user.shortName ?? existing.short_name,
+            packet.from,
+          );
           const node: MeshNode = {
             ...existing,
             node_id: packet.from,
-            long_name: user.longName ?? existing.long_name,
-            short_name: user.shortName ?? existing.short_name,
+            long_name,
+            short_name,
             hw_model: String(user.hwModel ?? existing.hw_model),
             // User packets are often replayed from the device DB at connect; do not
             // bump last_hear to now or offline nodes appear freshly heard.
@@ -1008,11 +1027,17 @@ export function useDevice() {
           const staleHopMs = 2 * 3_600_000; // align with nodeStatus STALE_MS
           const lastHeardStale = lastHeardMs > 0 && Date.now() - lastHeardMs > staleHopMs;
 
+          const long_name = info.user?.longName ?? existing.long_name;
+          const short_name = meshtasticShortNameAfterClearingDefault(
+            long_name,
+            info.user?.shortName ?? existing.short_name,
+            nodeNum,
+          );
           const node: MeshNode = {
             ...existing,
             node_id: nodeNum,
-            long_name: info.user?.longName ?? existing.long_name,
-            short_name: info.user?.shortName ?? existing.short_name,
+            long_name,
+            short_name,
             hw_model: String(info.user?.hwModel ?? existing.hw_model),
             snr: info.snr ?? existing.snr,
             battery: info.deviceMetrics?.batteryLevel ?? existing.battery,
@@ -2041,8 +2066,15 @@ export function useDevice() {
       .then((savedNodes) => {
         const nodeMap = new Map<number, MeshNode>();
         for (const n of savedNodes) {
+          const long_name = n.long_name ?? '';
           nodeMap.set(n.node_id, {
             ...n,
+            long_name,
+            short_name: meshtasticShortNameAfterClearingDefault(
+              long_name,
+              n.short_name ?? '',
+              n.node_id,
+            ),
             role: parseNodeRole(n.role),
             favorited: Boolean(n.favorited),
           });
@@ -2371,7 +2403,7 @@ export function emptyNode(nodeId: number): MeshNode {
   const hex = nodeId.toString(16).padStart(8, '0');
   return {
     node_id: nodeId,
-    short_name: hex.slice(-4),
+    short_name: '',
     long_name: `!${hex}`,
     hw_model: '',
     snr: 0,
