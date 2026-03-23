@@ -1164,7 +1164,14 @@ export default function App() {
                   }))
             }
             variant="overlay"
-            onClose={() => setLogPanelVisible(false)}
+            onClose={() => {
+              setLogPanelVisible(false);
+              try {
+                localStorage.setItem(LOG_PANEL_VISIBLE_KEY, 'false');
+              } catch (e) {
+                console.debug('[App] persist logPanelVisible', e);
+              }
+            }}
           />
         )}
 
