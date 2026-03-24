@@ -51,9 +51,11 @@ export const usePositionHistoryStore = create<PositionHistoryState>((set, get) =
       added = true;
       // Fire-and-forget DB write; never block the position update
       try {
-        window.electronAPI.db.savePositionHistory(nodeId, lat, lon, now, source).catch((err) => {
-          console.warn('[positionHistory] DB write failed:', err);
-        });
+        window.electronAPI.db
+          .savePositionHistory(nodeId, lat, lon, now, source)
+          .catch((err: unknown) => {
+            console.warn('[positionHistory] DB write failed:', err);
+          });
       } catch {
         // catch-no-log-ok electronAPI not available in test/storybook contexts
       }
@@ -69,7 +71,7 @@ export const usePositionHistoryStore = create<PositionHistoryState>((set, get) =
   clearHistory() {
     set({ history: new Map() });
     try {
-      window.electronAPI.db.clearPositionHistory().catch((err) => {
+      window.electronAPI.db.clearPositionHistory().catch((err: unknown) => {
         console.warn('[positionHistory] clearPositionHistory DB failed:', err);
       });
     } catch (e) {
@@ -107,7 +109,7 @@ export const usePositionHistoryStore = create<PositionHistoryState>((set, get) =
     }
     set({ historyWindowHours: hours });
     // Reload history from DB with the new window
-    get().loadHistoryFromDb();
+    void get().loadHistoryFromDb();
   },
 
   async loadHistoryFromDb() {

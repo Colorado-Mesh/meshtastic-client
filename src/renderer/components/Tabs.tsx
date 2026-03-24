@@ -219,7 +219,9 @@ export default function Tabs({ tabs, active, onChange, chatUnread = 0, disabledT
             aria-controls={`panel-${i}`}
             id={`tab-${i}`}
             disabled={isDisabled}
-            onClick={() => !isDisabled && onChange(i)}
+            onClick={() => {
+              if (!isDisabled) onChange(i);
+            }}
             title={isDisabled ? 'Not available in MeshCore mode' : undefined}
             className={`relative flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium transition-colors rounded-t-md ${
               isDisabled

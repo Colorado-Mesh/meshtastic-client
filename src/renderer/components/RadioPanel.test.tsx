@@ -107,7 +107,7 @@ describe('ConfigNumber NaN guard', () => {
         <ConfigNumber label="Test num" value={42} onChange={onChange} disabled={false} />
       </ToastProvider>,
     );
-    const input = document.querySelector('input[type="number"]') as HTMLInputElement;
+    const input = document.querySelector('input[type="number"]')!;
     const samples = ['', 'abc', 'NaN', 'not-a-number', '1e999'];
     for (const value of samples) {
       fireEvent.change(input, { target: { value } });

@@ -33,7 +33,9 @@ function ConfigToggle({
           type="button"
           role="switch"
           aria-checked={checked}
-          onClick={() => onChange(!checked)}
+          onClick={() => {
+            onChange(!checked);
+          }}
           disabled={disabled}
           className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none disabled:opacity-50 ${
             checked ? 'bg-readable-green' : 'bg-gray-600'
@@ -77,7 +79,9 @@ function ConfigNumber({
         <input
           type="number"
           value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
+          onChange={(e) => {
+            onChange(Number(e.target.value));
+          }}
           min={min}
           max={max}
           disabled={disabled}
@@ -113,14 +117,18 @@ function ConfigText({
         <input
           type={password && !show ? 'password' : 'text'}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => {
+            onChange(e.target.value);
+          }}
           disabled={disabled}
           className="flex-1 px-3 py-2 bg-secondary-dark rounded-lg text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none disabled:opacity-50"
         />
         {password && (
           <button
             type="button"
-            onClick={() => setShow((s) => !s)}
+            onClick={() => {
+              setShow((s) => !s);
+            }}
             className="px-2 py-2 text-xs text-muted hover:text-gray-300"
           >
             {show ? 'Hide' : 'Show'}
@@ -184,7 +192,7 @@ export default function ModulePanel({
   const [applyingSection, setApplyingSection] = useState<string | null>(null);
 
   // ─── Telemetry module ──────────────────────────────────────────
-  const telCfg = (moduleConfigs['telemetry'] as any) ?? {};
+  const telCfg = (moduleConfigs.telemetry as any) ?? {};
   const [telDeviceInterval, setTelDeviceInterval] = useState<number>(
     telCfg.deviceUpdateInterval ?? 1800,
   );
@@ -202,7 +210,7 @@ export default function ModulePanel({
   );
 
   // ─── MQTT relay module ─────────────────────────────────────────
-  const mqttCfg = (moduleConfigs['mqtt'] as any) ?? {};
+  const mqttCfg = (moduleConfigs.mqtt as any) ?? {};
   const [mqttEnabled, setMqttEnabled] = useState<boolean>(mqttCfg.enabled ?? false);
   const [mqttAddress, setMqttAddress] = useState<string>(mqttCfg.address ?? '');
   const [mqttUsername, setMqttUsername] = useState<string>(mqttCfg.username ?? '');
@@ -216,24 +224,24 @@ export default function ModulePanel({
   );
 
   // ─── Canned messages ──────────────────────────────────────────
-  const cannedCfg = (moduleConfigs['cannedMessage'] as any) ?? {};
+  const cannedCfg = (moduleConfigs.cannedMessage as any) ?? {};
   const [cannedEnabled, setCannedEnabled] = useState<boolean>(cannedCfg.enabled ?? false);
   const [cannedText, setCannedText] = useState<string>(cannedCfg.messages ?? '');
 
   // ─── Serial module ─────────────────────────────────────────────
-  const serialCfg = (moduleConfigs['serial'] as any) ?? {};
+  const serialCfg = (moduleConfigs.serial as any) ?? {};
   const [serialEnabled, setSerialEnabled] = useState<boolean>(serialCfg.enabled ?? false);
   const [serialEcho, setSerialEcho] = useState<boolean>(serialCfg.echo ?? false);
   const [serialBaud, setSerialBaud] = useState<number>(serialCfg.baud ?? 38400);
 
   // ─── Range test module ─────────────────────────────────────────
-  const rangeCfg = (moduleConfigs['rangeTest'] as any) ?? {};
+  const rangeCfg = (moduleConfigs.rangeTest as any) ?? {};
   const [rangeEnabled, setRangeEnabled] = useState<boolean>(rangeCfg.enabled ?? false);
   const [rangeSenderInterval, setRangeSenderInterval] = useState<number>(rangeCfg.sender ?? 0);
   const [rangeSave, setRangeSave] = useState<boolean>(rangeCfg.save ?? false);
 
   // ─── Store and Forward module ──────────────────────────────────
-  const sfCfg = (moduleConfigs['storeForward'] as any) ?? {};
+  const sfCfg = (moduleConfigs.storeForward as any) ?? {};
   const [sfEnabled, setSfEnabled] = useState<boolean>(sfCfg.enabled ?? false);
   const [sfHeartbeat, setSfHeartbeat] = useState<boolean>(sfCfg.heartbeat ?? false);
   const [sfNumRecords, setSfNumRecords] = useState<number>(sfCfg.numRecords ?? 0);
@@ -241,7 +249,7 @@ export default function ModulePanel({
   const [sfHistoryWindow, setSfHistoryWindow] = useState<number>(sfCfg.historyReturnWindow ?? 7200);
 
   // ─── Detection sensor module ──────────────────────────────────
-  const detectCfg = (moduleConfigs['detectionSensor'] as any) ?? {};
+  const detectCfg = (moduleConfigs.detectionSensor as any) ?? {};
   const [detectEnabled, setDetectEnabled] = useState<boolean>(detectCfg.enabled ?? false);
   const [detectName, setDetectName] = useState<string>(detectCfg.name ?? '');
   const [detectMinBroadcast, setDetectMinBroadcast] = useState<number>(
@@ -252,7 +260,7 @@ export default function ModulePanel({
   );
 
   // ─── Pax counter module ────────────────────────────────────────
-  const paxCfg = (moduleConfigs['paxcounter'] as any) ?? {};
+  const paxCfg = (moduleConfigs.paxcounter as any) ?? {};
   const [paxEnabled, setPaxEnabled] = useState<boolean>(paxCfg.enabled ?? false);
   const [paxInterval, setPaxInterval] = useState<number>(paxCfg.paxcounterUpdateInterval ?? 0);
 
@@ -271,7 +279,7 @@ export default function ModulePanel({
   };
 
   return (
-    <div className="max-w-lg mx-auto space-y-4">
+    <div className="max-w-5xl mx-auto space-y-4">
       <h2 className="text-xl font-semibold text-gray-200">Module Configuration</h2>
 
       {!isConnected && (
@@ -328,7 +336,9 @@ export default function ModulePanel({
           <textarea
             id="module-canned-messages"
             value={cannedText}
-            onChange={(e) => setCannedText(e.target.value)}
+            onChange={(e) => {
+              setCannedText(e.target.value);
+            }}
             disabled={disabled || !cannedEnabled}
             rows={6}
             placeholder={'Hello\nOK\nOn my way\nNeed help'}
@@ -573,7 +583,9 @@ export default function ModulePanel({
           <select
             id="module-serial-baud"
             value={serialBaud}
-            onChange={(e) => setSerialBaud(Number(e.target.value))}
+            onChange={(e) => {
+              setSerialBaud(Number(e.target.value));
+            }}
             disabled={disabled || !serialEnabled}
             className="w-full px-3 py-2 bg-secondary-dark rounded-lg text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none disabled:opacity-50"
           >

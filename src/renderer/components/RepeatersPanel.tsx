@@ -364,7 +364,9 @@ export default function RepeatersPanel({
             <button
               onClick={() => void handleReboot()}
               disabled={!isConnected || rebootLoading}
-              onBlur={() => setRebootConfirm(false)}
+              onBlur={() => {
+                setRebootConfirm(false);
+              }}
               className="px-3 py-1 rounded text-xs font-medium bg-red-900/60 text-red-300 border border-red-700 hover:bg-red-800/60 transition-colors disabled:opacity-40"
             >
               {rebootLoading ? (
@@ -473,12 +475,14 @@ export default function RepeatersPanel({
                         {formatRelativeTime(node.last_heard)}
                       </td>
                       <td className="py-2 pr-4">{node.snr != null ? node.snr.toFixed(1) : '—'}</td>
-                      <td className="py-2 pr-4">{node.rssi != null ? node.rssi : '—'}</td>
+                      <td className="py-2 pr-4">{node.rssi ?? '—'}</td>
                       <td className="py-2 pr-4">
                         {traceResult ? (
                           hasTraceResult ? (
                             <button
-                              onClick={() => togglePath(node.node_id)}
+                              onClick={() => {
+                                togglePath(node.node_id);
+                              }}
                               className="text-blue-400 hover:text-blue-300 underline decoration-dotted"
                               title="Click to view path SNR detail"
                             >

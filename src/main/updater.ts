@@ -88,7 +88,9 @@ export function initUpdater(win: BrowserWindow): void {
         send('update:error', { message: msg });
       }
     };
-    checkNow = doCheck;
+    checkNow = () => {
+      void doCheck();
+    };
 
     // Auto-check on startup is triggered from the renderer (respects user preference).
     ipcMain.handle('update:check', doCheck);
@@ -140,7 +142,7 @@ export function initUpdater(win: BrowserWindow): void {
         } else {
           send('update:not-available');
         }
-      } catch (e) {
+      } catch (e: unknown) {
         console.warn(
           '[updater] GitHub API fetch failed:',
           sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
@@ -148,7 +150,9 @@ export function initUpdater(win: BrowserWindow): void {
         send('update:error', { message: 'Update check failed — check network connection' });
       }
     };
-    checkNow = doCheck;
+    checkNow = () => {
+      void doCheck();
+    };
 
     // Auto-check on startup is triggered from the renderer (respects user preference).
     // In dev mode, download/install are no-ops; just expose the handlers.

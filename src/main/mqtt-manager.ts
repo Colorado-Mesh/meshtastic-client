@@ -108,7 +108,7 @@ export class MQTTManager extends EventEmitter {
     if (settings.useWebSocket) {
       const wsScheme = settings.port === 443 || settings.tlsInsecure !== true ? 'wss' : 'ws';
       connectOpts = {
-        protocol: wsScheme as 'wss' | 'ws',
+        protocol: wsScheme,
         host: settings.server.trim(),
         port: settings.port,
         path: '/mqtt',
@@ -245,9 +245,9 @@ export class MQTTManager extends EventEmitter {
     const packetId = (Math.random() * 0xffffffff) >>> 0;
     this.seenPacketIds.set(packetId, Date.now() + DEDUP_TTL_MS);
 
-    const fromId = Number(from) >>> 0;
-    const toId = Number(to) >>> 0;
-    const channelId = Number(channel) >>> 0;
+    const fromId = from >>> 0;
+    const toId = to >>> 0;
+    const channelId = channel >>> 0;
 
     const nonce = Buffer.alloc(16, 0);
     nonce.writeUInt32LE(packetId >>> 0, 0);
@@ -290,9 +290,9 @@ export class MQTTManager extends EventEmitter {
       replyId,
     } = options;
 
-    const fromId = Number(from) >>> 0;
-    const destId = Number(destination) >>> 0;
-    const channelId = Number(channel) >>> 0;
+    const fromId = from >>> 0;
+    const destId = destination >>> 0;
+    const channelId = channel >>> 0;
 
     const data = create(DataSchema, {
       portnum: PortNum.TEXT_MESSAGE_APP,
@@ -482,13 +482,13 @@ export class MQTTManager extends EventEmitter {
       const payloadCase = packet.payloadVariant?.case;
 
       if (payloadCase === 'decoded') {
-        const decoded = packet.payloadVariant!.value as {
+        const decoded = packet.payloadVariant.value as {
           portnum?: number;
           payload?: Uint8Array;
         };
         this.handleDecoded(nodeId, packetId, decoded);
       } else if (payloadCase === 'encrypted') {
-        const encrypted = packet.payloadVariant!.value as Uint8Array;
+        const encrypted = packet.payloadVariant.value;
         const decodedData = this.tryDecryptAllKeys(encrypted, packetId, nodeId);
         if (decodedData) {
           this.handleDecoded(nodeId, packetId, decodedData);
@@ -672,7 +672,7 @@ export class MQTTManager extends EventEmitter {
       // AES-128-CTR nonce: packetId (4 bytes LE) + from (4 bytes LE) + 8 zero bytes
       const nonce = Buffer.alloc(16, 0);
       nonce.writeUInt32LE(packetId >>> 0, 0);
-      nonce.writeUInt32LE(Number(from) >>> 0, 4);
+      nonce.writeUInt32LE(from >>> 0, 4);
       const decipher = createDecipheriv('aes-128-ctr', key, nonce);
       return Buffer.concat([decipher.update(Buffer.from(encrypted)), decipher.final()]);
     } catch {

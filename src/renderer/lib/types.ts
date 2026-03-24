@@ -248,6 +248,7 @@ export interface NobleBleDevice {
   deviceName: string;
 }
 export type NobleBleSessionId = 'meshtastic' | 'meshcore';
+export type NobleBleConnectResult = { ok: true } | { ok: false; error: string };
 
 export interface SerialPortInfo {
   portId: string;
@@ -457,7 +458,10 @@ declare global {
       ) => () => void;
       startNobleBleScanning: (sessionId: NobleBleSessionId) => Promise<void>;
       stopNobleBleScanning: (sessionId: NobleBleSessionId) => Promise<void>;
-      connectNobleBle: (sessionId: NobleBleSessionId, peripheralId: string) => Promise<void>;
+      connectNobleBle: (
+        sessionId: NobleBleSessionId,
+        peripheralId: string,
+      ) => Promise<NobleBleConnectResult>;
       disconnectNobleBle: (sessionId: NobleBleSessionId) => Promise<void>;
       nobleBleToRadio: (sessionId: NobleBleSessionId, bytes: Uint8Array) => Promise<void>;
       onSerialPortsDiscovered: (cb: (ports: SerialPortInfo[]) => void) => () => void;

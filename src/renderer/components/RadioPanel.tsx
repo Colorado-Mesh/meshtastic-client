@@ -177,7 +177,9 @@ function ConfigToggle({
       <div className="flex items-center justify-between">
         <label className="text-sm text-muted">{label}</label>
         <button
-          onClick={() => onChange(!checked)}
+          onClick={() => {
+            onChange(!checked);
+          }}
           disabled={disabled}
           className={`relative w-10 h-5 rounded-full transition-colors disabled:opacity-50 ${
             checked ? 'bg-brand-green' : 'bg-gray-600'
@@ -405,7 +407,9 @@ function WifiPasswordField({
           id={wifiPwdId}
           type={show ? 'text' : 'password'}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => {
+            onChange(e.target.value);
+          }}
           disabled={disabled}
           placeholder="Password"
           maxLength={64}
@@ -413,7 +417,9 @@ function WifiPasswordField({
         />
         <button
           type="button"
-          onClick={() => setShow((s) => !s)}
+          onClick={() => {
+            setShow((s) => !s);
+          }}
           disabled={disabled}
           className="px-2 py-2 text-xs text-muted hover:text-gray-300 disabled:opacity-50"
         >
@@ -755,7 +761,7 @@ export default function RadioPanel({
   }, [addToast, onSetOwner, onApplyLoraParams, shortName, isLicensed, bandwidth, radioFreqHz]);
 
   return (
-    <div className="max-w-lg mx-auto space-y-4">
+    <div className="max-w-5xl mx-auto space-y-4">
       <h2 className="text-xl font-semibold text-gray-200">Radio Configuration</h2>
 
       {capabilities?.protocol === 'meshcore' && (
@@ -876,13 +882,13 @@ export default function RadioPanel({
             id="radio-long-name"
             type="text"
             value={longName}
-            onChange={(e) =>
+            onChange={(e) => {
               setLongName(
                 capabilities?.protocol === 'meshcore'
                   ? e.target.value
                   : e.target.value.slice(0, 39),
-              )
-            }
+              );
+            }}
             maxLength={capabilities?.protocol === 'meshcore' ? undefined : 39}
             disabled={disabled}
             placeholder="Your Name"
@@ -904,7 +910,9 @@ export default function RadioPanel({
                 id="radio-short-name"
                 type="text"
                 value={shortName}
-                onChange={(e) => setShortName(e.target.value.slice(0, 4))}
+                onChange={(e) => {
+                  setShortName(e.target.value.slice(0, 4));
+                }}
                 maxLength={4}
                 disabled={disabled}
                 placeholder="NAME"
@@ -1178,7 +1186,9 @@ export default function RadioPanel({
                 min={1}
                 max={7}
                 value={hopLimit}
-                onChange={(e) => setHopLimit(Number(e.target.value))}
+                onChange={(e) => {
+                  setHopLimit(Number(e.target.value));
+                }}
                 disabled={disabled || applyingSection !== null}
                 className="flex-1 accent-green-500 disabled:opacity-50"
               />
@@ -1320,7 +1330,9 @@ export default function RadioPanel({
                 type="text"
                 inputMode="decimal"
                 value={latStr}
-                onChange={(e) => setLatStr(e.target.value)}
+                onChange={(e) => {
+                  setLatStr(e.target.value);
+                }}
                 disabled={disabled || applyingSection !== null}
                 placeholder="0.000000"
                 className="w-36 px-3 py-2 bg-secondary-dark rounded-lg text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none disabled:opacity-50"
@@ -1335,7 +1347,9 @@ export default function RadioPanel({
                 type="text"
                 inputMode="decimal"
                 value={lonStr}
-                onChange={(e) => setLonStr(e.target.value)}
+                onChange={(e) => {
+                  setLonStr(e.target.value);
+                }}
                 disabled={disabled || applyingSection !== null}
                 placeholder="0.000000"
                 className="w-36 px-3 py-2 bg-secondary-dark rounded-lg text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none disabled:opacity-50"
@@ -1350,7 +1364,9 @@ export default function RadioPanel({
                 type="text"
                 inputMode="decimal"
                 value={altStr}
-                onChange={(e) => setAltStr(e.target.value)}
+                onChange={(e) => {
+                  setAltStr(e.target.value);
+                }}
                 disabled={disabled || applyingSection !== null}
                 placeholder="0"
                 className="w-36 px-3 py-2 bg-secondary-dark rounded-lg text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none disabled:opacity-50"
@@ -1516,7 +1532,9 @@ export default function RadioPanel({
               id="radio-wifi-ssid"
               type="text"
               value={wifiSsid}
-              onChange={(e) => setWifiSsid(e.target.value)}
+              onChange={(e) => {
+                setWifiSsid(e.target.value);
+              }}
               disabled={disabled || !wifiEnabled || applyingSection !== null}
               placeholder="Network name"
               maxLength={33}
@@ -1536,7 +1554,9 @@ export default function RadioPanel({
               id="radio-ntp-server"
               type="text"
               value={ntpServer}
-              onChange={(e) => setNtpServer(e.target.value)}
+              onChange={(e) => {
+                setNtpServer(e.target.value);
+              }}
               disabled={disabled || applyingSection !== null}
               placeholder="0.pool.ntp.org"
               className="w-full px-3 py-2 bg-secondary-dark rounded-lg text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none disabled:opacity-50"
@@ -1581,7 +1601,7 @@ export default function RadioPanel({
         </h3>
         <div className="grid grid-cols-2 gap-2">
           <button
-            onClick={() =>
+            onClick={() => {
               executeWithConfirmation({
                 name: 'Reboot',
                 title: 'Reboot Device',
@@ -1589,8 +1609,8 @@ export default function RadioPanel({
                   'This will reboot the connected Meshtastic device. It will briefly go offline during restart.',
                 confirmLabel: 'Reboot',
                 action: () => onReboot(2),
-              })
-            }
+              });
+            }}
             disabled={!isConnected}
             className="px-4 py-3 bg-secondary-dark text-gray-300 hover:bg-gray-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
           >
@@ -1599,7 +1619,7 @@ export default function RadioPanel({
 
           {capabilities?.hasShutdown !== false && (
             <button
-              onClick={() =>
+              onClick={() => {
                 executeWithConfirmation({
                   name: 'Shutdown',
                   title: 'Shutdown Device',
@@ -1607,8 +1627,8 @@ export default function RadioPanel({
                     'This will power off the connected device. You will need to physically power it back on.',
                   confirmLabel: 'Shutdown',
                   action: () => onShutdown(2),
-                })
-              }
+                });
+              }}
               disabled={!isConnected}
               className="px-4 py-3 bg-secondary-dark text-gray-300 hover:bg-gray-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
             >
@@ -1618,7 +1638,7 @@ export default function RadioPanel({
 
           {capabilities?.hasNodeDbReset !== false && (
             <button
-              onClick={() =>
+              onClick={() => {
                 executeWithConfirmation({
                   name: 'Reset NodeDB',
                   title: 'Reset Node Database',
@@ -1626,8 +1646,8 @@ export default function RadioPanel({
                     "This will clear the device's internal node database. The device will re-discover nodes over time.",
                   confirmLabel: 'Reset NodeDB',
                   action: () => onResetNodeDb(),
-                })
-              }
+                });
+              }}
               disabled={!isConnected}
               className="px-4 py-3 bg-secondary-dark text-gray-300 hover:bg-gray-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
             >
@@ -1636,7 +1656,7 @@ export default function RadioPanel({
           )}
 
           <button
-            onClick={() =>
+            onClick={() => {
               executeWithConfirmation({
                 name: 'Reboot to OTA',
                 title: 'Reboot to OTA',
@@ -1644,8 +1664,8 @@ export default function RadioPanel({
                   'This will reboot the device into OTA (Over The Air) firmware update mode.',
                 confirmLabel: 'Reboot to OTA',
                 action: () => onRebootOta?.(10) ?? Promise.resolve(),
-              })
-            }
+              });
+            }}
             disabled={!isConnected || !onRebootOta}
             className="px-4 py-3 bg-secondary-dark text-gray-300 hover:bg-gray-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
           >
@@ -1653,7 +1673,7 @@ export default function RadioPanel({
           </button>
 
           <button
-            onClick={() =>
+            onClick={() => {
               executeWithConfirmation({
                 name: 'Enter DFU Mode',
                 title: 'Enter DFU Mode',
@@ -1661,8 +1681,8 @@ export default function RadioPanel({
                   'This will reboot the device into Device Firmware Update (DFU) mode for firmware flashing.',
                 confirmLabel: 'Enter DFU',
                 action: () => onEnterDfu?.() ?? Promise.resolve(),
-              })
-            }
+              });
+            }}
             disabled={!isConnected || !onEnterDfu}
             className="px-4 py-3 bg-secondary-dark text-gray-300 hover:bg-gray-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
           >
@@ -1680,7 +1700,7 @@ export default function RadioPanel({
               These actions are permanent and cannot be undone.
             </p>
             <button
-              onClick={() =>
+              onClick={() => {
                 executeWithConfirmation({
                   name: 'Factory Reset',
                   title: '⚠ Factory Reset',
@@ -1689,15 +1709,15 @@ export default function RadioPanel({
                   confirmLabel: 'Factory Reset',
                   danger: true,
                   action: () => onFactoryReset(),
-                })
-              }
+                });
+              }}
               disabled={!isConnected}
               className="w-full px-4 py-3 bg-red-900/50 text-red-300 hover:bg-red-900/70 border border-red-800 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
             >
               Factory Reset Device
             </button>
             <button
-              onClick={() =>
+              onClick={() => {
                 executeWithConfirmation({
                   name: 'Factory Reset Config',
                   title: '⚠ Factory Reset Config',
@@ -1706,8 +1726,8 @@ export default function RadioPanel({
                   confirmLabel: 'Reset Config',
                   danger: true,
                   action: () => onFactoryResetConfig?.() ?? Promise.resolve(),
-                })
-              }
+                });
+              }}
               disabled={!isConnected || !onFactoryResetConfig}
               className="w-full px-4 py-3 bg-red-900/40 text-red-300 hover:bg-red-900/60 border border-red-800/60 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
             >
@@ -1725,7 +1745,9 @@ export default function RadioPanel({
           confirmLabel={pendingAction.confirmLabel}
           danger={pendingAction.danger}
           onConfirm={handleConfirm}
-          onCancel={() => setPendingAction(null)}
+          onCancel={() => {
+            setPendingAction(null);
+          }}
         />
       )}
     </div>
@@ -1949,7 +1971,9 @@ function ChannelSection({
             return (
               <button
                 key={i}
-                onClick={() => setSelectedIndex(i)}
+                onClick={() => {
+                  setSelectedIndex(i);
+                }}
                 className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors ${
                   isSelected
                     ? 'bg-gray-700 border border-gray-500'
@@ -2006,7 +2030,9 @@ function ChannelSection({
                 id="radio-mt-ch-name"
                 type="text"
                 value={editName}
-                onChange={(e) => setEditName(e.target.value)}
+                onChange={(e) => {
+                  setEditName(e.target.value);
+                }}
                 maxLength={11}
                 disabled={disabled}
                 placeholder={selectedIndex === 0 ? 'Primary' : 'Channel name'}
@@ -2023,7 +2049,9 @@ function ChannelSection({
                 <select
                   id="radio-mt-ch-role"
                   value={editRole}
-                  onChange={(e) => setEditRole(Number(e.target.value))}
+                  onChange={(e) => {
+                    setEditRole(Number(e.target.value));
+                  }}
                   disabled={disabled}
                   className="w-full px-2 py-1.5 bg-secondary-dark rounded text-sm text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none disabled:opacity-50"
                 >
@@ -2044,7 +2072,9 @@ function ChannelSection({
               <select
                 id="radio-mt-ch-key-size"
                 value={editKeySize}
-                onChange={(e) => handleKeySizeChange(e.target.value as KeySize)}
+                onChange={(e) => {
+                  handleKeySizeChange(e.target.value as KeySize);
+                }}
                 disabled={disabled}
                 className="w-full px-2 py-1.5 bg-secondary-dark rounded text-sm text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none disabled:opacity-50"
               >
@@ -2079,11 +2109,11 @@ function ChannelSection({
                 />
                 {isAesKey && (
                   <button
-                    onClick={() =>
+                    onClick={() => {
                       setEditPskB64(
                         pskToBase64(generateRandomPsk(editKeySize === 'aes128' ? 16 : 32)),
-                      )
-                    }
+                      );
+                    }}
                     disabled={disabled}
                     className="px-2 py-1.5 text-xs bg-secondary-dark text-muted hover:text-gray-200 rounded border border-gray-600 disabled:opacity-50 whitespace-nowrap"
                     title="Generate random key"
@@ -2122,7 +2152,9 @@ function ChannelSection({
                 id="radio-mt-ch-pos-precision"
                 type="number"
                 value={editPosPrecision}
-                onChange={(e) => setEditPosPrecision(Number(e.target.value))}
+                onChange={(e) => {
+                  setEditPosPrecision(Number(e.target.value));
+                }}
                 min={0}
                 max={32}
                 disabled={disabled}
@@ -2213,7 +2245,7 @@ function MeshcoreChannelSection({
   function openEdit(ch: { index: number; name: string; secret: Uint8Array }) {
     setEditingIdx(ch.index);
     setEditName(ch.name);
-    setEditKeyHex(ch.secret && ch.secret.length === 16 ? bytesToHex(ch.secret) : '');
+    setEditKeyHex(ch.secret?.length === 16 ? bytesToHex(ch.secret) : '');
     setAddingNew(false);
   }
 
@@ -2301,14 +2333,14 @@ function MeshcoreChannelSection({
                   {revealed ? bytesToHex(ch.secret) : '••••••••••••••••'}
                 </span>
                 <button
-                  onClick={() =>
+                  onClick={() => {
                     setRevealedIdx((prev) => {
                       const next = new Set(prev);
                       if (next.has(ch.index)) next.delete(ch.index);
                       else next.add(ch.index);
                       return next;
-                    })
-                  }
+                    });
+                  }}
                   className="text-xs text-muted hover:text-gray-300 px-1"
                   title={revealed ? 'Hide key' : 'Reveal key'}
                 >
@@ -2335,7 +2367,9 @@ function MeshcoreChannelSection({
                       Confirm
                     </button>
                     <button
-                      onClick={() => setConfirmDeleteIdx(null)}
+                      onClick={() => {
+                        setConfirmDeleteIdx(null);
+                      }}
                       className="text-xs text-muted hover:text-gray-300"
                     >
                       Cancel
@@ -2343,7 +2377,9 @@ function MeshcoreChannelSection({
                   </span>
                 ) : (
                   <button
-                    onClick={() => setConfirmDeleteIdx(ch.index)}
+                    onClick={() => {
+                      setConfirmDeleteIdx(ch.index);
+                    }}
                     disabled={disabled || saving}
                     className="text-xs text-red-500 hover:text-red-400 disabled:opacity-50 px-1"
                   >
@@ -2374,7 +2410,9 @@ function MeshcoreChannelSection({
                   id="radio-mc-ch-idx"
                   type="number"
                   value={newIdx}
-                  onChange={(e) => setNewIdx(e.target.value)}
+                  onChange={(e) => {
+                    setNewIdx(e.target.value);
+                  }}
                   min={0}
                   max={7}
                   disabled={disabled}
@@ -2391,7 +2429,9 @@ function MeshcoreChannelSection({
                 id="radio-mc-ch-name"
                 type="text"
                 value={editName}
-                onChange={(e) => setEditName(e.target.value)}
+                onChange={(e) => {
+                  setEditName(e.target.value);
+                }}
                 maxLength={11}
                 disabled={disabled}
                 className="w-full px-2 py-1.5 bg-secondary-dark rounded text-sm text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none disabled:opacity-50"
@@ -2411,7 +2451,9 @@ function MeshcoreChannelSection({
                 id="radio-mc-ch-key"
                 type="text"
                 value={editKeyHex}
-                onChange={(e) => setEditKeyHex(e.target.value.toLowerCase())}
+                onChange={(e) => {
+                  setEditKeyHex(e.target.value.toLowerCase());
+                }}
                 maxLength={32}
                 placeholder="00000000000000000000000000000000"
                 disabled={disabled}

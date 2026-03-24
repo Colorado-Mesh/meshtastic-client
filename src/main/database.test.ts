@@ -34,7 +34,7 @@ describe('deleteNodesWithoutLongname SQL', () => {
   });
 
   it('all three conditions appear in the same DELETE statement', () => {
-    const match = DB_SOURCE.match(/DELETE FROM nodes[^;]*long_name[^;]*/s);
+    const match = /DELETE FROM nodes[^;]*long_name[^;]*/s.exec(DB_SOURCE);
     expect(match).not.toBeNull();
     const stmt = match![0];
     expect(stmt).toContain('long_name IS NULL');
@@ -62,13 +62,13 @@ describe('migrateRfStubNodes SQL', () => {
   });
 
   it('strips the 3-char "RF " prefix via substr(long_name, 4)', () => {
-    const match = DB_SOURCE.match(/UPDATE nodes[^;]*RF[^;]*/s);
+    const match = /UPDATE nodes[^;]*RF[^;]*/s.exec(DB_SOURCE);
     expect(match).not.toBeNull();
     expect(match![0]).toContain('substr(long_name, 4)');
   });
 
   it('clears short_name on migrated stub nodes', () => {
-    const match = DB_SOURCE.match(/UPDATE nodes[^;]*RF[^;]*/s);
+    const match = /UPDATE nodes[^;]*RF[^;]*/s.exec(DB_SOURCE);
     expect(match).not.toBeNull();
     expect(match![0]).toContain("short_name = ''");
   });

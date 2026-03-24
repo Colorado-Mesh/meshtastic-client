@@ -55,6 +55,7 @@ Run `npm run lint` before pushing. ESLint is configured with:
 
 - **Import order** — `eslint-plugin-simple-import-sort` on imports and exports; no duplicate imports; newline after imports.
 - **Type-only imports** — `@typescript-eslint/consistent-type-imports` (use `import type { … }` where appropriate).
+- **TypeScript (type-aware)** — `eslint.config.mjs` enables `typescript-eslint` `recommendedTypeChecked`, `stylisticTypeChecked`, and `strictTypeChecked` using both `tsconfig.json` and `tsconfig.main.json`. Renderer TSX adds `eslint-plugin-react` (jsx-runtime), `eslint-plugin-jsx-a11y`, and `react-hooks`. `scripts/**` uses `disableTypeChecked` so one-off scripts are not tied to the full program. A few strict rules are intentionally relaxed to keep signal high without churn (see the file): e.g. `no-unsafe-*` off at the project level, `no-unnecessary-condition` off for DOM/runtime patterns, `no-misused-promises` with `checksVoidReturn.attributes: false` for React event handlers, and `prefer-nullish-coalescing` with `ignorePrimitives` / mixed logical expressions.
 - **Renderer only** — `react-hooks/exhaustive-deps` is an **error**; fix dependency arrays rather than disabling. **Exception:** If an effect must _not_ re-run when a dependency changes (e.g. intentional one-shot on mount, or avoiding stale closure without widening deps), you may use `eslint-disable-next-line react-hooks/exhaustive-deps` **only** with an inline comment on the same line or immediately above explaining why (what is intentionally omitted and why). Prefer refs or splitting effects first; disable as a last resort.
 - **Ignored by lint** — `scripts/**`, `dist-electron/**`, and `*.config.*` files are excluded; change those configs only when needed.
 
@@ -68,7 +69,7 @@ Run `npm run lint` before pushing. ESLint is configured with:
 - `useMeshCore.ts` — MeshCore-specific; uses `@liamcottle/meshcore.js`; connections created inside the hook (BLE, Web Serial, or TCP via main-process IPC). No use of `connection.ts`.
 - `useRadioProvider(protocol)` — returns a memoized `ProtocolCapabilities` object; pass this down into components and engines rather than comparing `protocol === 'meshcore'` strings everywhere.
 
-**Dual-mode UI:** `App.tsx` chooses the active hook by protocol and renders the same shell (tabs, Log panel, status). Tab 6 is **Modules** (Meshtastic: `ConfigPanel`, `ModulePanel`) or **Repeaters** (MeshCore: `RepeatersPanel`). Panels such as `RadioPanel`, `ConnectionPanel`, and `NodeDetailModal` accept optional props (e.g. `onApplyLoraParams`, `onSetOwner`) that are set only for the active protocol; when adding protocol-specific UI, gate on `capabilities` or the presence of these handlers rather than on the protocol string.
+**Dual-mode UI:** `App.tsx` chooses the active hook by protocol and renders the same shell (tabs, Log panel, status). Tab 5 is **Modules** (Meshtastic: `ModulePanel`) or **Repeaters** (MeshCore: `RepeatersPanel`). Panels such as `RadioPanel`, `ConnectionPanel`, and `NodeDetailModal` accept optional props (e.g. `onApplyLoraParams`, `onSetOwner`) that are set only for the active protocol; when adding protocol-specific UI, gate on `capabilities` or the presence of these handlers rather than on the protocol string.
 
 **MeshCore IPC channels:** Main-process TCP bridge for MeshCore uses `meshcore:tcp-connect`, `meshcore:tcp-write`, `meshcore:tcp-disconnect`, `meshcore:tcp-data` (renderer push), and `meshcore:tcp-disconnected` (renderer push). These are handled in `src/main/index.ts` and wired into the renderer via `window.electronAPI.meshcore.tcp.*` in the preload. `meshcore:tcp-write` returns a `Promise` that resolves after the socket `write` callback succeeds and rejects if there is no active socket or the write fails (so callers can surface errors).
 
@@ -82,7 +83,7 @@ Run `npm run lint` before pushing. ESLint is configured with:
 
 This subsection is a contributor reference for working on MeshCore-specific features. Read it alongside `src/renderer/hooks/useMeshCore.ts`.
 
-**BLE:** The app retries BLE connect once on "Connection already in progress" or "disconnected during GATT init" (see `useMeshCore.ts`). The ideal fix is for `@liamcottle/meshcore.js` to perform the first BLE write only after `gatt.connect()` has resolved; contributors can consider opening an issue or PR upstream for that behavior.
+**BLE:** In the main process, `NobleBleManager` (`src/main/noble-ble-manager.ts`) serializes BLE connects across Meshtastic and MeshCore sessions. If you connect the **same** peripheral for one protocol while the other protocol still holds the GATT link, the manager **disconnects the other session first** and then connects the requested session (so you do not need to disconnect manually in the UI). The renderer retries MeshCore BLE once on "Connection already in progress" or "disconnected during GATT init" (see `useMeshCore.ts`). The ideal fix is for `@liamcottle/meshcore.js` to perform the first BLE write only after `gatt.connect()` has resolved; contributors can consider opening an issue or PR upstream for that behavior.
 
 #### `useMeshCore` — state and refs
 
@@ -307,6 +308,16 @@ GitHub Code scanning (CodeQL) reports **log injection** when user-controlled or 
 - **Local check:** Run `npm run check:log-injection` to scan `src/main` for unsanitized `console.*(..., err|e|error|reason)` patterns. To suppress a false positive, add `// log-injection-ok` with a short reason on the same line as the console call.
 - **Checks:** Code scanning runs on push (GitHub default setup). If you add or change code that feeds into the log pipeline, ensure the **first** use of untrusted data in that path is wrapped in `sanitizeLogMessage()` at the call site.
 - **Tests:** When adding or changing code that feeds into the log pipeline (e.g. new call sites of `appendLine`, `console.*` in main, or renderer→main log forwarding), add or extend tests so that log injection is caught by the suite. Pre-commit runs `npm run test:run`, which includes `src/renderer/lib/sanitize-log-message.test.ts`: that file tests both `sanitizeLogMessage` and `sanitizeForLogSink` (used by the console overrides in log-service) and runs the log-injection script so that regressions fail the test run. Add or extend tests there (or equivalent) so regressions are caught. AI and reviewers should ensure such tests exist or are added.
+
+### Network data written to file (CodeQL js/http-to-file-access)
+
+Code scanning may report this query on `fs.promises.appendFile` / `fs.writeFileSync` in `src/main/log-service.ts` when taint from HTTP responses reaches the **data argument** of those calls. The query does not model `sanitizeLogPayloadForDisk` as a barrier. We still route every log payload through that helper before disk I/O.
+
+**Suppressions:** `// codeql[js/http-to-file-access]` does **not** clear these alerts on GitHub: path-problem results anchor on a sub-expression (the data argument), while CodeQL’s suppression matcher expects whole-line locations. Do not rely on inline comments for this rule.
+
+**Configuration:** `.github/codeql/codeql-config.yml` excludes `js/http-to-file-access` when analysis is run with that config (**advanced** CodeQL + `config-file` on `github/codeql-action/init`). **Default setup does not load the file**, so you may still see alerts until you dismiss them in the Security / PR UI (document why) or switch to advanced setup. See `.github/codeql/README.md`.
+
+**Pre-commit:** `src/main/log-service.contract.test.ts` locks disk-write wiring (`sanitizeLogPayloadForDisk`, `data` / `diskLine` at the sinks).
 
 ### Silent-catch check
 

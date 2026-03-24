@@ -50,9 +50,9 @@ function readLevelFilters(): LevelFilters {
   const o = parseStoredJson<Record<string, boolean>>(raw, 'LogPanel readLevelFilters');
   if (!o) return { ...DEFAULT_LEVEL_FILTERS };
   return {
-    logInfo: o.logInfo !== false,
-    warnError: o.warnError !== false,
-    debug: o.debug === true,
+    logInfo: o.logInfo,
+    warnError: o.warnError,
+    debug: o.debug,
   };
 }
 
@@ -156,7 +156,7 @@ export default function LogPanel({
   useEffect(() => {
     let off: (() => void) | null = null;
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
         const recent = await window.electronAPI.log.getRecentLines();
         if (cancelled) return;
@@ -317,7 +317,9 @@ export default function LogPanel({
                 id="log-filter-loginfo"
                 type="checkbox"
                 checked={levelFilters.logInfo}
-                onChange={(e) => setFilter('logInfo', e.target.checked)}
+                onChange={(e) => {
+                  setFilter('logInfo', e.target.checked);
+                }}
                 aria-label="Log / Info"
                 className="rounded border-gray-600"
               />
@@ -330,7 +332,9 @@ export default function LogPanel({
                 id="log-filter-warn"
                 type="checkbox"
                 checked={levelFilters.warnError}
-                onChange={(e) => setFilter('warnError', e.target.checked)}
+                onChange={(e) => {
+                  setFilter('warnError', e.target.checked);
+                }}
                 aria-label="Warn / Error"
                 className="rounded border-gray-600"
               />
@@ -343,7 +347,9 @@ export default function LogPanel({
                 id="log-filter-debug"
                 type="checkbox"
                 checked={levelFilters.debug}
-                onChange={(e) => setFilter('debug', e.target.checked)}
+                onChange={(e) => {
+                  setFilter('debug', e.target.checked);
+                }}
                 aria-label="Debug"
                 className="rounded border-gray-600"
               />
@@ -361,7 +367,9 @@ export default function LogPanel({
           <div className="flex gap-1 ml-auto">
             <button
               type="button"
-              onClick={() => setLogSource('app')}
+              onClick={() => {
+                setLogSource('app');
+              }}
               aria-label={`App (${appEntries.length})`}
               className={`px-2 py-0.5 text-[10px] rounded ${logSource === 'app' ? 'bg-brand-green/20 text-brand-green border border-brand-green/40' : 'bg-slate-800 text-gray-400 border border-gray-700'}`}
             >
@@ -369,7 +377,9 @@ export default function LogPanel({
             </button>
             <button
               type="button"
-              onClick={() => setLogSource('device')}
+              onClick={() => {
+                setLogSource('device');
+              }}
               aria-label={`Device (${allDeviceLogs.length})`}
               className={`px-2 py-0.5 text-[10px] rounded ${logSource === 'device' ? 'bg-brand-green/20 text-brand-green border border-brand-green/40' : 'bg-slate-800 text-gray-400 border border-gray-700'}`}
             >

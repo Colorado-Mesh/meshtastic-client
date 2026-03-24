@@ -27,7 +27,7 @@ import fs from 'fs';
 const _warnSave = process.emitWarning;
 
 (process as any).emitWarning = (warning: string | Error, ...args: unknown[]) => {
-  const msg = typeof warning === 'string' ? warning : ((warning as Error).message ?? '');
+  const msg = typeof warning === 'string' ? warning : (warning.message ?? '');
   if (msg.includes('SQLite is an experimental feature')) return;
 
   return (_warnSave as any).call(process, warning, ...args);
@@ -213,7 +213,7 @@ export class NodeSqliteDB {
    * Removes an existing file at destPath first (VACUUM INTO requires a
    * non-existent destination).
    */
-  async backup(destPath: string): Promise<void> {
+  backup(destPath: string): void {
     if (fs.existsSync(destPath)) {
       fs.unlinkSync(destPath);
     }

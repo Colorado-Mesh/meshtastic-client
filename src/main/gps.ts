@@ -114,7 +114,11 @@ const GPS_SYSTEM_CHECK_TIMEOUT_MS = 5000;
 function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
   return Promise.race([
     promise,
-    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+    new Promise<T>((resolve) =>
+      setTimeout(() => {
+        resolve(fallback);
+      }, ms),
+    ),
   ]);
 }
 

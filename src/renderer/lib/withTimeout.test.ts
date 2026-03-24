@@ -32,7 +32,7 @@ describe('withTimeout', () => {
     vi.useFakeTimers();
     try {
       const p = withTimeout(Promise.reject(new Error('boom')), 5000, 'fail-fast');
-      const result = p.catch((e: Error) => e.message);
+      const result = p.catch((e: unknown) => (e instanceof Error ? e.message : String(e)));
       await vi.runAllTimersAsync();
       await expect(result).resolves.toBe('boom');
       expect(vi.getTimerCount()).toBe(0);

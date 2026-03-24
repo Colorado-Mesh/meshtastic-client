@@ -65,11 +65,11 @@ describe('ConnectionPanel hardware event wiring', () => {
 
     const device: NobleBleDevice = { deviceId: 'ble-001', deviceName: 'Test Radio' };
     // Must not throw — validates payload shape is consumed correctly
-    expect(() =>
+    expect(() => {
       act(() => {
-        registeredCb!(device);
-      }),
-    ).not.toThrow();
+        registeredCb(device);
+      });
+    }).not.toThrow();
   });
 
   it('deduplicates BLE devices by deviceId on repeated discovery', () => {
@@ -185,11 +185,11 @@ describe('ConnectionPanel hardware event wiring', () => {
       },
     ];
     // Must not throw — validates payload shape including optional fields
-    expect(() =>
+    expect(() => {
       act(() => {
-        registeredCb!(ports);
-      }),
-    ).not.toThrow();
+        registeredCb(ports);
+      });
+    }).not.toThrow();
   });
 
   it('onSerialPortsDiscovered handles empty port list without crashing', () => {
@@ -197,11 +197,11 @@ describe('ConnectionPanel hardware event wiring', () => {
 
     const registeredCb = vi.mocked(window.electronAPI.onSerialPortsDiscovered).mock.calls[0]?.[0];
     expect(registeredCb).toBeDefined();
-    expect(() =>
+    expect(() => {
       act(() => {
-        registeredCb!([]);
-      }),
-    ).not.toThrow();
+        registeredCb([]);
+      });
+    }).not.toThrow();
   });
 
   it('unsubscribes onSerialPortsDiscovered listener on unmount', () => {

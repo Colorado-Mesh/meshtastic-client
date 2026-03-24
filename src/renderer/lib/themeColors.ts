@@ -104,7 +104,7 @@ const BARE_HEX6 = /^[0-9a-fA-F]{6}$/;
 export function normalizeHex(input: string): string | null {
   let s = input.trim();
   if (!s) return null;
-  if (s[0] !== '#') {
+  if (!s.startsWith('#')) {
     if (BARE_HEX3.test(s) || BARE_HEX6.test(s)) s = `#${s}`;
     else return null;
   }

@@ -55,7 +55,7 @@ describe('NobleBleManager.connect — per-session UUID selection (regression)', 
 
   it('does not assign fromNumChar for meshcore sessions (NUS has no equivalent)', () => {
     // The meshcore branch must not set fromNumChar — it only maps RX and TX
-    const meshcoreBranchMatch = SOURCE.match(/if\s*\(isMeshcore\)\s*\{([^}]+)\}/s);
+    const meshcoreBranchMatch = /if\s*\(isMeshcore\)\s*\{([^}]+)\}/s.exec(SOURCE);
     expect(meshcoreBranchMatch).not.toBeNull();
     const meshcoreBranch = meshcoreBranchMatch![1];
     expect(meshcoreBranch).not.toContain('fromNumChar');
@@ -76,7 +76,7 @@ describe('NobleBleManager — notify-only fromRadio read pump suppression (regre
 
   it('clearSessionState resets fromRadioNotifyOnly to false', () => {
     // The flag must be reset on disconnect so a reconnect starts clean
-    const fnMatch = SOURCE.match(/private clearSessionState\([\s\S]+?\n {2}\}/);
+    const fnMatch = /private clearSessionState\([\s\S]+?\n {2}\}/.exec(SOURCE);
     expect(fnMatch).not.toBeNull();
     expect(fnMatch![0]).toContain('fromRadioNotifyOnly = false');
   });
@@ -122,7 +122,7 @@ describe('NobleBleManager — Linux/BlueZ adapter init race (regression)', () =>
 
   it('startScanning awaits waitForAdapterReady before throwing the adapter-not-ready error', () => {
     // Extract the startScanning method body (up to the next method declaration)
-    const fnMatch = SOURCE.match(/async startScanning\b[\s\S]+?(?=\n {2}async stopScanning)/);
+    const fnMatch = /async startScanning\b[\s\S]+?(?=\n {2}async stopScanning)/.exec(SOURCE);
     expect(fnMatch).not.toBeNull();
     const body = fnMatch![0];
     const waitIdx = body.indexOf('waitForAdapterReady');
@@ -138,6 +138,14 @@ describe('NobleBleManager — Linux/BlueZ adapter init race (regression)', () =>
     expect(SOURCE).toMatch(
       /doStartScanning[\s\S]{0,200}if \(this\.scanningActive\) return Promise\.resolve\(\)/,
     );
+  });
+});
+
+describe('NobleBleManager.connect — release other session on same peripheral (regression)', () => {
+  it('disconnects the other protocol session instead of throwing already in use', () => {
+    expect(SOURCE).toContain('releasedOtherSession');
+    expect(SOURCE).toContain('await this.disconnect(otherSessionId)');
+    expect(SOURCE).not.toContain('already in use by the');
   });
 });
 

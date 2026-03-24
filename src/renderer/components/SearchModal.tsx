@@ -31,12 +31,12 @@ function parseOperators(raw: string): {
   let userFilter = '';
   let channelFilter = '';
 
-  const userMatch = raw.match(/\buser:(\S+)/i);
+  const userMatch = /\buser:(\S+)/i.exec(raw);
   if (userMatch) {
     userFilter = userMatch[1].toLowerCase();
     baseQuery = baseQuery.replace(userMatch[0], '').trim();
   }
-  const channelMatch = raw.match(/\bchannel:(\S+)/i);
+  const channelMatch = /\bchannel:(\S+)/i.exec(raw);
   if (channelMatch) {
     channelFilter = channelMatch[1].toLowerCase();
     baseQuery = baseQuery.replace(channelMatch[0], '').trim();
@@ -75,7 +75,9 @@ export default function SearchModal({
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    return () => {
+      window.removeEventListener('keydown', handler);
+    };
   }, [isOpen, onClose]);
 
   // Debounced search
@@ -86,35 +88,37 @@ export default function SearchModal({
       setResults([]);
       return;
     }
-    debounceRef.current = setTimeout(async () => {
-      if (!baseQuery && !userFilter && !channelFilter) return;
-      setLoading(true);
-      try {
-        let raw: unknown[];
-        if (protocol === 'meshcore') {
-          raw = await window.electronAPI.db.searchMeshcoreMessages(baseQuery || ' ', 100);
-        } else {
-          raw = await window.electronAPI.db.searchMessages(baseQuery || ' ', 100);
+    debounceRef.current = setTimeout(() => {
+      void (async () => {
+        if (!baseQuery && !userFilter && !channelFilter) return;
+        setLoading(true);
+        try {
+          let raw: unknown[];
+          if (protocol === 'meshcore') {
+            raw = await window.electronAPI.db.searchMeshcoreMessages(baseQuery || ' ', 100);
+          } else {
+            raw = await window.electronAPI.db.searchMessages(baseQuery || ' ', 100);
+          }
+          let items = (raw as SearchResult[]).map((r) => ({
+            ...r,
+            channel: r.channel_idx ?? r.channel ?? 0,
+          }));
+          if (userFilter) {
+            items = items.filter((r) => (r.sender_name ?? '').toLowerCase().includes(userFilter));
+          }
+          if (channelFilter) {
+            items = items.filter((r) => {
+              const ch = channels.find((c) => c.index === r.channel);
+              return (ch?.name ?? String(r.channel)).toLowerCase().includes(channelFilter);
+            });
+          }
+          setResults(items);
+        } catch (e) {
+          console.warn('[SearchModal] search error', e);
+        } finally {
+          setLoading(false);
         }
-        let items = (raw as SearchResult[]).map((r) => ({
-          ...r,
-          channel: r.channel_idx ?? r.channel ?? 0,
-        }));
-        if (userFilter) {
-          items = items.filter((r) => (r.sender_name ?? '').toLowerCase().includes(userFilter));
-        }
-        if (channelFilter) {
-          items = items.filter((r) => {
-            const ch = channels.find((c) => c.index === r.channel);
-            return (ch?.name ?? String(r.channel)).toLowerCase().includes(channelFilter);
-          });
-        }
-        setResults(items);
-      } catch (e) {
-        console.warn('[SearchModal] search error', e);
-      } finally {
-        setLoading(false);
-      }
+      })();
     }, 300);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -179,7 +183,9 @@ export default function SearchModal({
             ref={inputRef}
             type="text"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value);
+            }}
             placeholder="Search all messages… (user:name, channel:name)"
             spellCheck={false}
             className="flex-1 bg-transparent text-gray-200 text-sm focus:outline-none placeholder-gray-500"
@@ -208,7 +214,9 @@ export default function SearchModal({
           {results.map((r) => (
             <button
               key={r.id}
-              onClick={() => handleResultClick(r)}
+              onClick={() => {
+                handleResultClick(r);
+              }}
               className="w-full text-left px-4 py-3 border-b border-gray-800 hover:bg-gray-800/60 transition-colors"
             >
               <div className="flex items-center gap-2 mb-0.5">

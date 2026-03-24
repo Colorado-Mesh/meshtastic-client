@@ -6,7 +6,7 @@ import { withTimeout } from '../shared/withTimeout';
 import { sanitizeLogMessage } from './log-service';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const noble = require('@stoprocent/noble') as any;
+const noble = require('@stoprocent/noble');
 
 // Meshtastic BLE GATT UUIDs (from @meshtastic/transport-web-bluetooth)
 const SERVICE_UUID = '6ba1b21815a8461f9fa85dcae273eafd';
@@ -50,11 +50,12 @@ export interface NobleBleDevice {
 export type NobleSessionId = 'meshtastic' | 'meshcore';
 
 interface NobleBleSession {
-  connectedPeripheral: any | null;
+  // Noble GATT objects from @stoprocent/noble — typed as any (no stable TS surface); avoid `any | null` (redundant union).
+  connectedPeripheral: any;
   connectedPeripheralDisconnectHandler: (() => void) | null;
-  toRadioChar: any | null;
-  fromRadioChar: any | null;
-  fromNumChar: any | null;
+  toRadioChar: any;
+  fromRadioChar: any;
+  fromNumChar: any;
   fromRadioDataHandler: ((data: Buffer, isNotification: boolean) => void) | null;
   fromNumDataHandler: ((data: Buffer) => void) | null;
   readPumpActive: boolean;
@@ -100,7 +101,7 @@ export class NobleBleManager extends EventEmitter {
       this.adapterReady = state === 'poweredOn';
       this.emit('adapterState', state);
       if (this.adapterReady && this.scanRequesters.size > 0) {
-        void this.doStartScanning().catch((err) => {
+        void this.doStartScanning().catch((err: unknown) => {
           console.error('[NobleBleManager] deferred startScanning error:', err); // log-injection-ok noble internal error
         });
       }
@@ -532,32 +533,40 @@ export class NobleBleManager extends EventEmitter {
       );
 
       if (peripheral.state === 'connected') {
-        // Check if any other session already owns this peripheral. If so, refuse to connect
-        // rather than destructively disconnecting the other session's active GATT link.
+        let releasedOtherSession = false;
         for (const [otherSessionId, otherSession] of this.sessions.entries()) {
           if (
             otherSessionId !== sessionId &&
             otherSession.connectedPeripheral?.id === peripheral.id
           ) {
-            throw new Error(
-              `Peripheral ${peripheral.id} is already in use by the ${otherSessionId} session`,
+            console.debug(
+              `[BLE:${sessionId}] peripheral ${peripheral.id} owned by ${otherSessionId} — disconnecting other session so this session can connect`,
             );
+            await this.disconnect(otherSessionId);
+            releasedOtherSession = true;
+            break;
           }
         }
         // Peripheral is connected in noble's internal state but not claimed by any session
         // (e.g. leftover from a previous crashed session). Disconnect before reconnecting.
         // NOTE: register onDisconnected AFTER this cleanup so the pre-connect disconnectAsync()
         // does not prematurely trigger the handler and wipe the new session state.
-        console.warn(
-          `[BLE:${sessionId}] peripheral already connected in noble — disconnecting before reconnect`,
-        );
-        try {
-          await withTimeout(peripheral.disconnectAsync(), 5000, 'BLE pre-connect disconnectAsync');
-        } catch (err) {
-          console.debug(
-            `[BLE:${sessionId}] pre-connect disconnect error (ignored):`,
-            sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        if (peripheral.state === 'connected' && !releasedOtherSession) {
+          console.warn(
+            `[BLE:${sessionId}] peripheral already connected in noble — disconnecting before reconnect`,
           );
+          try {
+            await withTimeout(
+              peripheral.disconnectAsync(),
+              5000,
+              'BLE pre-connect disconnectAsync',
+            );
+          } catch (err) {
+            console.debug(
+              `[BLE:${sessionId}] pre-connect disconnect error (ignored):`,
+              sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+            );
+          }
         }
       }
 
@@ -748,7 +757,7 @@ export class NobleBleManager extends EventEmitter {
       releaseQueue();
       // If any session was scanning when we stopped for this connect, restart the scan now.
       if (this.scanRequesters.size > 0 && this.adapterReady && !this.scanningActive) {
-        void this.doStartScanning().catch((err) => {
+        void this.doStartScanning().catch((err: unknown) => {
           console.error('[NobleBleManager] post-connect scan restart error:', err); // log-injection-ok noble internal error
         });
       }
@@ -757,7 +766,7 @@ export class NobleBleManager extends EventEmitter {
 
   isConnected(sessionId: NobleSessionId): boolean {
     const session = this.sessions.get(sessionId);
-    return session != null && session.toRadioChar != null;
+    return session?.toRadioChar != null;
   }
 
   async writeToRadio(sessionId: NobleSessionId, data: Buffer): Promise<void> {

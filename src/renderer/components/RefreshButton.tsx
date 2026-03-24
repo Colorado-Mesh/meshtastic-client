@@ -23,7 +23,7 @@ export default function RefreshButton({
       await Promise.all([
         // Race the actual refresh against a hard timeout — whichever finishes first
         Promise.race([
-          onRefresh().catch((err) => {
+          onRefresh().catch((err: unknown) => {
             console.debug('[RefreshButton] onRefresh failed', err);
           }),
           new Promise<void>((r) => setTimeout(r, HARD_TIMEOUT_MS)),

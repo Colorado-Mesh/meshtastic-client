@@ -109,7 +109,7 @@ function buildBadgePng(): Buffer {
   }
   function crc32(buf: Buffer): number {
     let c = 0xffffffff;
-    for (const byte of buf) c = crcTable[(c ^ byte) & 0xff]! ^ (c >>> 8);
+    for (const byte of buf) c = crcTable[(c ^ byte) & 0xff] ^ (c >>> 8);
     return (c ^ 0xffffffff) >>> 0;
   }
   function chunk(type: string, data: Buffer): Buffer {
@@ -626,7 +626,9 @@ function setupAppMenu() {
           {
             label: 'Hide',
             accelerator: 'Command+H',
-            click: () => app.hide(),
+            click: () => {
+              app.hide();
+            },
           },
           { type: 'separator' as const },
           {
@@ -767,7 +769,7 @@ function createWindow() {
     event.preventDefault();
     const ef = params.editFlags;
     const suggestions = params.dictionarySuggestions ?? [];
-    const spellOn = params.spellcheckEnabled !== false;
+    const spellOn = params.spellcheckEnabled;
 
     const menu = new Menu();
     if (spellOn && suggestions.length > 0) {
@@ -915,7 +917,7 @@ function createWindow() {
     console.error(
       '[main] Failed to load:',
       errorCode,
-      sanitizeLogMessage(String(errorDesc)),
+      sanitizeLogMessage(errorDesc),
       sanitizeLogMessage(validatedURL),
     );
     // ERR_ABORTED (-3) often means navigation was cancelled; avoid noisy dialog
@@ -945,7 +947,7 @@ function createWindow() {
     console.debug('[Startup] dev server URL:', sanitizeLogMessage(process.env.VITE_DEV_SERVER_URL));
     console.debug('[Startup] app.isPackaged:', app.isPackaged);
     console.debug('[Startup] userData:', sanitizeLogMessage(app.getPath('userData')));
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+    void mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
 
     mainWindow.webContents.openDevTools();
   } else {
@@ -960,7 +962,7 @@ function createWindow() {
     // Use loadURL with an explicit HTTP referrer so OpenStreetMap tile requests
     // from the packaged app include a valid Referer header and comply with the
     // OSM tile usage policy for web-style traffic.
-    mainWindow.loadURL(indexUrl, {
+    void mainWindow.loadURL(indexUrl, {
       httpReferrer: OSM_HTTP_REFERRER,
     });
   }
@@ -1015,7 +1017,7 @@ ipcMain.on('set-tray-unread', (_event, count: unknown) => {
     app.setBadgeCount(hasUnread ? n : 0);
   } else if (process.platform === 'win32' && mainWindow) {
     if (hasUnread) {
-      if (!_cachedBadgeIcon) _cachedBadgeIcon = nativeImage.createFromBuffer(buildBadgePng());
+      _cachedBadgeIcon ??= nativeImage.createFromBuffer(buildBadgePng());
       mainWindow.setOverlayIcon(_cachedBadgeIcon, `${n} unread messages`);
     } else {
       mainWindow.setOverlayIcon(null, '');
@@ -1109,9 +1111,18 @@ ipcMain.handle('noble-ble-connect', async (_event, sessionId: unknown, periphera
     throw new Error('noble-ble-connect: peripheralId must be a string');
   if (isQuitting) {
     console.debug(`[main] noble-ble-connect: ignoring session=${sessionId} (app is quitting)`);
-    return;
+    return { ok: false as const, error: 'App is quitting' };
   }
-  await nobleBleManager.connect(sessionId, peripheralId);
+  try {
+    await nobleBleManager.connect(sessionId, peripheralId);
+    return { ok: true as const };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.debug(
+      `[main] noble-ble-connect failed: session=${sessionId} peripheral=${peripheralId} message=${sanitizeLogMessage(message)}`,
+    );
+    return { ok: false as const, error: sanitizeLogMessage(message) };
+  }
 });
 ipcMain.handle('noble-ble-disconnect', async (_event, sessionId: unknown) => {
   if (sessionId !== 'meshtastic' && sessionId !== 'meshcore') {
@@ -1141,7 +1152,7 @@ ipcMain.handle('noble-ble-to-radio', async (_event, sessionId: unknown, bytes: u
   if (result === 'ignored-expected-disconnect') {
     console.debug(
       '[main] noble-ble-to-radio: disconnected during write, ignoring session=',
-      sanitizeLogMessage(String(sessionId)),
+      sanitizeLogMessage(sessionId),
     );
   }
 });
@@ -1221,7 +1232,7 @@ meshcoreMqttAdapter.on('chatMessage', (m) => {
 });
 
 // ─── IPC: MQTT connect/disconnect ───────────────────────────────────
-ipcMain.handle('mqtt:connect', async (_event, settings) => {
+ipcMain.handle('mqtt:connect', (_event, settings) => {
   try {
     console.debug('[IPC] mqtt:connect');
     validateMqttSettings(settings);
@@ -1244,7 +1255,7 @@ ipcMain.handle('mqtt:connect', async (_event, settings) => {
     throw err;
   }
 });
-ipcMain.handle('mqtt:disconnect', async (_event, protocol?: 'meshtastic' | 'meshcore') => {
+ipcMain.handle('mqtt:disconnect', (_event, protocol?: 'meshtastic' | 'meshcore') => {
   try {
     console.debug('[IPC] mqtt:disconnect', protocol ?? 'both');
     if (!protocol || protocol === 'meshtastic') mqttManager.disconnect();
@@ -1257,7 +1268,7 @@ ipcMain.handle('mqtt:disconnect', async (_event, protocol?: 'meshtastic' | 'mesh
     throw err;
   }
 });
-ipcMain.handle('mqtt:getClientId', async (_event, protocol?: 'meshtastic' | 'meshcore') => {
+ipcMain.handle('mqtt:getClientId', (_event, protocol?: 'meshtastic' | 'meshcore') => {
   try {
     console.debug('[IPC] mqtt:getClientId', protocol);
     if (protocol === 'meshcore') return meshcoreMqttAdapter.getClientId();
@@ -1273,7 +1284,7 @@ ipcMain.handle('mqtt:getClientId', async (_event, protocol?: 'meshtastic' | 'mes
     throw err;
   }
 });
-ipcMain.handle('mqtt:publish', async (_event, args) => {
+ipcMain.handle('mqtt:publish', (_event, args) => {
   try {
     console.debug('[IPC] mqtt:publish');
     validateMqttPublishArgs(args);
@@ -1304,7 +1315,7 @@ ipcMain.handle('mqtt:publish', async (_event, args) => {
   }
 });
 
-ipcMain.handle('mqtt:publishMeshcore', async (_event, args) => {
+ipcMain.handle('mqtt:publishMeshcore', (_event, args) => {
   try {
     console.debug('[IPC] mqtt:publishMeshcore');
     validateMqttPublishMeshcoreArgs(args);
@@ -1332,7 +1343,7 @@ ipcMain.handle('mqtt:publishMeshcore', async (_event, args) => {
   }
 });
 
-ipcMain.handle('mqtt:publishMeshcorePacketLog', async (_event, args) => {
+ipcMain.handle('mqtt:publishMeshcorePacketLog', (_event, args) => {
   try {
     console.debug('[IPC] mqtt:publishMeshcorePacketLog');
     validateMqttPublishMeshcorePacketLogArgs(args);
@@ -1352,7 +1363,7 @@ ipcMain.handle('mqtt:publishMeshcorePacketLog', async (_event, args) => {
   }
 });
 
-ipcMain.handle('mqtt:getCachedNodes', async () => {
+ipcMain.handle('mqtt:getCachedNodes', () => {
   try {
     return mqttManager.getCachedNodes();
   } catch (err) {
@@ -1363,7 +1374,7 @@ ipcMain.handle('mqtt:getCachedNodes', async () => {
     throw err;
   }
 });
-ipcMain.handle('mqtt:publishNodeInfo', async (_event, args) => {
+ipcMain.handle('mqtt:publishNodeInfo', (_event, args) => {
   try {
     const a = args as {
       from: number;
@@ -1400,7 +1411,7 @@ ipcMain.handle('mqtt:publishNodeInfo', async (_event, args) => {
     throw err;
   }
 });
-ipcMain.handle('mqtt:publishPosition', async (_event, args) => {
+ipcMain.handle('mqtt:publishPosition', (_event, args) => {
   try {
     const a = args as {
       from: number;
@@ -1562,10 +1573,10 @@ ipcMain.handle('db:saveMessage', (_event, message) => {
     const validReceivedVia = ['rf', 'mqtt', 'both'];
     return stmt.run({
       sender_id: safeNonNegativeInt(message.sender_id),
-      sender_name: String(message.sender_name),
+      sender_name: message.sender_name,
       payload: message.payload,
       channel: safeNonNegativeInt(message.channel),
-      timestamp: Number(message.timestamp),
+      timestamp: message.timestamp,
       packet_id: message.packetId != null ? safeNonNegativeInt(message.packetId) : null,
       status: message.status ?? null,
       error: message.error ?? null,
@@ -1982,7 +1993,7 @@ ipcMain.handle('db:export', async () => {
       filters: [{ name: 'SQLite Database', extensions: ['db'] }],
     });
     if (!result.canceled && result.filePath) {
-      await exportDatabase(result.filePath);
+      exportDatabase(result.filePath);
       return result.filePath;
     }
     return null;
@@ -2195,11 +2206,11 @@ ipcMain.handle('db:saveMeshcoreMessage', (_event, message) => {
       )
       .run({
         sender_id: m.sender_id != null ? Number(m.sender_id) : null,
-        sender_name: m.sender_name != null ? String(m.sender_name) : null,
+        sender_name: typeof m.sender_name === 'string' ? m.sender_name : null,
         payload: m.payload as string,
         channel_idx: m.channel_idx != null ? Math.trunc(Number(m.channel_idx)) : 0,
-        timestamp: Number(m.timestamp),
-        status: m.status != null ? String(m.status) : 'acked',
+        timestamp: m.timestamp,
+        status: typeof m.status === 'string' ? m.status : 'acked',
         packet_id: m.packet_id != null ? Number(m.packet_id) : null,
         emoji: m.emoji != null ? safeNonNegativeInt(m.emoji) : null,
         reply_id: replyId,
@@ -2231,14 +2242,14 @@ ipcMain.handle('db:saveMeshcoreContact', (_event, contact) => {
       .run({
         node_id: Number(c.node_id),
         public_key: c.public_key as string,
-        adv_name: c.adv_name != null ? String(c.adv_name) : null,
+        adv_name: typeof c.adv_name === 'string' ? c.adv_name : null,
         contact_type: c.contact_type != null ? Number(c.contact_type) : 0,
         last_advert: c.last_advert != null ? Number(c.last_advert) : null,
         adv_lat: c.adv_lat != null ? Number(c.adv_lat) : null,
         adv_lon: c.adv_lon != null ? Number(c.adv_lon) : null,
         last_snr: c.last_snr != null ? Number(c.last_snr) : null,
         last_rssi: c.last_rssi != null ? Number(c.last_rssi) : null,
-        nickname: c.nickname != null ? String(c.nickname) : null,
+        nickname: typeof c.nickname === 'string' ? c.nickname : null,
       });
   } catch (err) {
     console.error(
@@ -2333,7 +2344,7 @@ ipcMain.handle('meshcore:openJsonFile', async () => {
 
 ipcMain.handle('db:updateMeshcoreMessageStatus', (_event, packetId: number, status: string) => {
   try {
-    const pid = Number(packetId);
+    const pid = packetId;
     if (!Number.isFinite(pid)) throw new Error('db:updateMeshcoreMessageStatus: invalid packetId');
     if (typeof status !== 'string' || status.length > MAX_STATUS_STRING)
       throw new Error('db:updateMeshcoreMessageStatus: invalid status');
@@ -2486,7 +2497,7 @@ const MAX_TCP_HOST_LENGTH = 253;
 ipcMain.handle('meshcore:tcp-connect', (_event, host: string, port: number) => {
   return new Promise<void>((resolve, reject) => {
     let settled = false;
-    const p = Number(port);
+    const p = port;
     if (!Number.isInteger(p) || p < 1 || p > 65535) {
       reject(new Error('Invalid port'));
       return;
@@ -2573,7 +2584,7 @@ app.on('second-instance', () => {
   }
 });
 
-app.whenReady().then(() => {
+void app.whenReady().then(() => {
   try {
     initLogFile();
 

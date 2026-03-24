@@ -519,7 +519,6 @@ mesh-client/
 │       │   ├── NodeListPanel.tsx     # Node browser with online/stale/offline/MQTT filter
 │       │   ├── MapPanel.tsx          # Node positions on OpenStreetMap (Leaflet)
 │       │   ├── TelemetryPanel.tsx    # Battery/voltage/SNR charts (Recharts)
-│       │   ├── ConfigPanel.tsx       # Meshtastic: device & channel configuration editor
 │       │   ├── ModulePanel.tsx       # Meshtastic: modules tab (telemetry, MQTT, etc.)
 │       │   ├── ConnectionPanel.tsx   # BLE/Serial/HTTP/MQTT; protocol toggle; MeshCore manual contact toggle
 │       │   ├── DiagnosticsPanel.tsx  # Health band + counts, diagnosticRows table, halos, max age
@@ -602,7 +601,7 @@ mesh-client/
 ├── vitest.config.ts             # Test runner config
 ├── tsconfig.json                # Base TypeScript config (renderer)
 ├── tsconfig.main.json           # TypeScript config for main/preload
-├── eslint.config.mjs
+├── eslint.config.mjs            # Flat ESLint 9; type-aware TypeScript + React (details in CONTRIBUTING.md)
 ├── postcss.config.cjs
 └── package.json
 ```

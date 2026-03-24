@@ -25,9 +25,13 @@ export function HelpTooltip({ text, children }: { text: string; children?: React
       // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- keyboard focus shows same tooltip as hover
       tabIndex={0}
       onMouseEnter={updatePosition}
-      onMouseLeave={() => setPos(null)}
+      onMouseLeave={() => {
+        setPos(null);
+      }}
       onFocus={updatePosition}
-      onBlur={() => setPos(null)}
+      onBlur={() => {
+        setPos(null);
+      }}
     >
       {children ?? <span className="text-xs text-gray-500 select-none">ⓘ</span>}
       {pos && (

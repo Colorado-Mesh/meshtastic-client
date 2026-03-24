@@ -114,7 +114,7 @@ export default function NodeInfoBody({
           ? 'text-red-400'
           : 'text-muted';
 
-  const isOurNode = homeNode != null && node.node_id === homeNode.node_id;
+  const isOurNode = node.node_id === homeNode?.node_id;
   const showSnr = snrMeaningfulForNodeDiagnostics(node) || isOurNode;
   const showLastHopSnr =
     !isOurNode &&
@@ -389,7 +389,9 @@ export default function NodeInfoBody({
               return (
                 <div className="mt-1.5">
                   <button
-                    onClick={() => setPathHistoryOpen((o) => !o)}
+                    onClick={() => {
+                      setPathHistoryOpen((o) => !o);
+                    }}
                     className="text-[10px] text-gray-500 hover:text-gray-300 transition-colors flex items-center gap-1"
                   >
                     <span>{pathHistoryOpen ? '▾' : '▸'}</span>

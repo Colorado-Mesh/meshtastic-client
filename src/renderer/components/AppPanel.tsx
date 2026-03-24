@@ -209,8 +209,9 @@ export default function AppPanel({
     onLocationFilterChange,
   ]);
 
-  const updateSetting = <K extends keyof AdminSettings>(key: K, value: AdminSettings[K]) =>
+  const updateSetting = <K extends keyof AdminSettings>(key: K, value: AdminSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
+  };
 
   // ─── GPS refresh settings ────────────────────────────────────
   const [gpsRefreshInterval, setGpsRefreshInterval] = useState<number>(() => {
@@ -333,7 +334,7 @@ export default function AppPanel({
       .then((rows) => {
         setMsgChannels(rows.map((r) => r.channel));
       })
-      .catch((e) => {
+      .catch((e: unknown) => {
         console.debug('[AppPanel] getMessageChannels', e);
       });
   }, []);
@@ -378,7 +379,7 @@ export default function AppPanel({
   }, [pendingAction, addToast, onNodesPruned, onMessagesPruned]);
 
   return (
-    <div className="max-w-lg mx-auto space-y-6">
+    <div className="max-w-5xl mx-auto space-y-6">
       <h2 className="text-xl font-semibold text-gray-200">App Settings</h2>
 
       {/* Log panel visibility */}
@@ -391,7 +392,9 @@ export default function AppPanel({
                 id="log-panel-visible-checkbox"
                 type="checkbox"
                 checked={logPanelVisible}
-                onChange={(e) => onLogPanelVisibleChange(e.target.checked)}
+                onChange={(e) => {
+                  onLogPanelVisibleChange(e.target.checked);
+                }}
                 aria-label="Show log panel (right side)"
                 className="rounded border-gray-600"
               />
@@ -409,82 +412,6 @@ export default function AppPanel({
           </div>
         </div>
       )}
-
-      {/* Appearance / color scheme */}
-      <div className="space-y-2">
-        <h3 className="text-sm font-medium text-muted">Appearance</h3>
-        <div className="bg-secondary-dark rounded-lg p-4 space-y-4">
-          <p className="text-xs text-muted leading-relaxed">
-            Override the app color scheme with hex values. Changes apply immediately and persist
-            across restarts. Invalid hex is not saved.
-          </p>
-          {THEME_TOKEN_META.map((meta) => {
-            const hex = themeColors[meta.key];
-            return (
-              <div
-                key={meta.key}
-                className="space-y-2 pb-3 border-b border-gray-700 last:border-0 last:pb-0"
-              >
-                <div className="flex items-center gap-2">
-                  <span
-                    className="w-8 h-8 rounded border border-gray-600 shrink-0"
-                    style={{ backgroundColor: hex }}
-                    aria-hidden="true"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div
-                      id={`theme-color-heading-${meta.key}`}
-                      className="text-sm font-medium text-gray-200"
-                    >
-                      {meta.label}
-                    </div>
-                    <p className="text-xs text-muted">{meta.description}</p>
-                    <p className="text-xs font-mono text-gray-400 mt-1">Current: {hex}</p>
-                  </div>
-                </div>
-                {/* Preset buttons only — no text input (Electron macOS representedObject warnings). */}
-                <div
-                  className="flex flex-wrap gap-1.5 pl-10"
-                  role="group"
-                  aria-labelledby={`theme-color-heading-${meta.key}`}
-                >
-                  {THEME_COLOR_PRESETS.map((p) => {
-                    const selected = p.hex === hex;
-                    return (
-                      <button
-                        key={`${meta.key}-${p.hex}`}
-                        type="button"
-                        title={p.label}
-                        aria-label={`${p.label} ${p.hex}`}
-                        aria-pressed={selected}
-                        onClick={() => commitThemeColor(meta.key, p.hex)}
-                        className={`w-7 h-7 rounded border shrink-0 transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-brand-green/50 ${
-                          selected
-                            ? 'ring-2 ring-brand-green ring-offset-1 ring-offset-secondary-dark'
-                            : 'border-gray-600'
-                        }`}
-                        style={{ backgroundColor: p.hex }}
-                      />
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-          <button
-            type="button"
-            onClick={() => {
-              resetThemeColors();
-              setThemeColors({ ...DEFAULT_THEME_COLORS });
-              addToast('Colors reset to app defaults.', 'success');
-            }}
-            aria-label="Reset all colors to defaults"
-            className="w-full px-3 py-2 bg-secondary-dark hover:bg-gray-600 text-gray-300 rounded-lg text-sm font-medium transition-colors"
-          >
-            Reset all colors to defaults
-          </button>
-        </div>
-      </div>
 
       {/* GPS / Location */}
       <div className="space-y-3">
@@ -520,7 +447,9 @@ export default function AppPanel({
                 min={-90}
                 max={90}
                 value={staticLatInput}
-                onChange={(e) => setStaticLatInput(e.target.value)}
+                onChange={(e) => {
+                  setStaticLatInput(e.target.value);
+                }}
                 placeholder="e.g. 40.12345"
                 aria-label={`Lat: ${staticLatInput || 'e.g. 40.12345'}`}
                 className="flex-1 px-2 py-1 bg-deep-black border border-gray-600 rounded text-gray-200 text-sm focus:border-brand-green focus:outline-none"
@@ -535,7 +464,9 @@ export default function AppPanel({
                 min={-180}
                 max={180}
                 value={staticLonInput}
-                onChange={(e) => setStaticLonInput(e.target.value)}
+                onChange={(e) => {
+                  setStaticLonInput(e.target.value);
+                }}
                 placeholder="e.g. -105.12345"
                 aria-label={`Lon: ${staticLonInput || 'e.g. -105.12345'}`}
                 className="flex-1 px-2 py-1 bg-deep-black border border-gray-600 rounded text-gray-200 text-sm focus:border-brand-green focus:outline-none"
@@ -568,7 +499,9 @@ export default function AppPanel({
             <select
               id="apppanel-gps-interval"
               value={gpsRefreshInterval}
-              onChange={(e) => handleGpsIntervalChange(Number(e.target.value))}
+              onChange={(e) => {
+                handleGpsIntervalChange(Number(e.target.value));
+              }}
               disabled={hasStaticPosition}
               aria-label={`Auto-refresh interval: ${GPS_REFRESH_INTERVAL_LABELS[gpsRefreshInterval] ?? gpsRefreshInterval}`}
               className={`px-2 py-1 bg-deep-black border border-gray-600 rounded text-gray-200 text-sm focus:border-brand-green focus:outline-none ${hasStaticPosition ? 'opacity-40 cursor-not-allowed' : ''}`}
@@ -609,7 +542,9 @@ export default function AppPanel({
               type="checkbox"
               id="distanceFilter"
               checked={settings.distanceFilterEnabled}
-              onChange={(e) => updateSetting('distanceFilterEnabled', e.target.checked)}
+              onChange={(e) => {
+                updateSetting('distanceFilterEnabled', e.target.checked);
+              }}
               aria-label="Filter distant nodes from map and node list"
               className="accent-brand-green"
             />
@@ -626,9 +561,9 @@ export default function AppPanel({
               type="number"
               min={1}
               value={settings.distanceFilterMax}
-              onChange={(e) =>
-                updateSetting('distanceFilterMax', Math.max(1, parseInt(e.target.value) || 1))
-              }
+              onChange={(e) => {
+                updateSetting('distanceFilterMax', Math.max(1, parseInt(e.target.value) || 1));
+              }}
               disabled={!settings.distanceFilterEnabled}
               aria-label={`Max distance: ${settings.distanceFilterMax}`}
               className="w-24 px-2 py-1 bg-deep-black border border-gray-600 rounded text-gray-200 text-sm text-right focus:border-brand-green focus:outline-none disabled:opacity-40"
@@ -639,7 +574,9 @@ export default function AppPanel({
             <select
               id="apppanel-distance-unit"
               value={settings.distanceUnit}
-              onChange={(e) => updateSetting('distanceUnit', e.target.value as 'miles' | 'km')}
+              onChange={(e) => {
+                updateSetting('distanceUnit', e.target.value as 'miles' | 'km');
+              }}
               disabled={!settings.distanceFilterEnabled}
               aria-label={`Unit: ${settings.distanceUnit}`}
               className="px-2 py-1 bg-deep-black border border-gray-600 rounded text-gray-200 text-sm focus:border-brand-green focus:outline-none disabled:opacity-40"
@@ -652,8 +589,7 @@ export default function AppPanel({
             (() => {
               const homeNode = myNodeNum != null ? nodes.get(myNodeNum) : undefined;
               const homeHasLocation =
-                homeNode &&
-                homeNode.latitude != null &&
+                homeNode?.latitude != null &&
                 homeNode.latitude !== 0 &&
                 homeNode.longitude != null &&
                 homeNode.longitude !== 0;
@@ -669,7 +605,9 @@ export default function AppPanel({
               type="checkbox"
               id="filterMqttOnly"
               checked={settings.filterMqttOnly}
-              onChange={(e) => updateSetting('filterMqttOnly', e.target.checked)}
+              onChange={(e) => {
+                updateSetting('filterMqttOnly', e.target.checked);
+              }}
               aria-label="Hide MQTT-only nodes from map and node list"
               className="accent-brand-green"
             />
@@ -682,7 +620,9 @@ export default function AppPanel({
               type="checkbox"
               id="showMovementPaths"
               checked={showPaths}
-              onChange={(e) => setShowPaths(e.target.checked)}
+              onChange={(e) => {
+                setShowPaths(e.target.checked);
+              }}
               aria-label="Show movement paths"
               className="accent-brand-green"
             />
@@ -697,7 +637,9 @@ export default function AppPanel({
             <select
               id="apppanel-history-window"
               value={historyWindowHours}
-              onChange={(e) => setHistoryWindow(Number(e.target.value))}
+              onChange={(e) => {
+                setHistoryWindow(Number(e.target.value));
+              }}
               aria-label={`Position history window: ${HISTORY_WINDOW_LABELS[historyWindowHours] ?? historyWindowHours}`}
               className="px-2 py-1 bg-deep-black border border-gray-600 rounded text-gray-200 text-sm focus:border-brand-green focus:outline-none"
             >
@@ -721,7 +663,9 @@ export default function AppPanel({
               type="checkbox"
               id="autoPrune"
               checked={settings.autoPruneEnabled}
-              onChange={(e) => updateSetting('autoPruneEnabled', e.target.checked)}
+              onChange={(e) => {
+                updateSetting('autoPruneEnabled', e.target.checked);
+              }}
               aria-label="Auto-prune on startup, older than"
               className="accent-brand-green"
             />
@@ -737,9 +681,9 @@ export default function AppPanel({
               type="number"
               min={1}
               value={settings.autoPruneDays}
-              onChange={(e) =>
-                updateSetting('autoPruneDays', Math.max(1, parseInt(e.target.value) || 1))
-              }
+              onChange={(e) => {
+                updateSetting('autoPruneDays', Math.max(1, parseInt(e.target.value) || 1));
+              }}
               disabled={!settings.autoPruneEnabled}
               aria-labelledby="apppanel-auto-prune-label"
               aria-label={`Auto-prune on startup, older than ${settings.autoPruneDays} days`}
@@ -755,7 +699,9 @@ export default function AppPanel({
                 type="checkbox"
                 id="pruneEmptyNames"
                 checked={settings.pruneEmptyNamesEnabled}
-                onChange={(e) => updateSetting('pruneEmptyNamesEnabled', e.target.checked)}
+                onChange={(e) => {
+                  updateSetting('pruneEmptyNamesEnabled', e.target.checked);
+                }}
                 aria-label="Remove unnamed nodes on startup"
                 className="accent-brand-green"
               />
@@ -778,7 +724,9 @@ export default function AppPanel({
               type="checkbox"
               id="nodeCap"
               checked={settings.nodeCapEnabled}
-              onChange={(e) => updateSetting('nodeCapEnabled', e.target.checked)}
+              onChange={(e) => {
+                updateSetting('nodeCapEnabled', e.target.checked);
+              }}
               aria-label="Cap total nodes, keep newest"
               className="accent-brand-green"
             />
@@ -794,9 +742,9 @@ export default function AppPanel({
               type="number"
               min={1}
               value={settings.nodeCapCount}
-              onChange={(e) =>
-                updateSetting('nodeCapCount', Math.max(1, parseInt(e.target.value) || 1))
-              }
+              onChange={(e) => {
+                updateSetting('nodeCapCount', Math.max(1, parseInt(e.target.value) || 1));
+              }}
               disabled={!settings.nodeCapEnabled}
               aria-labelledby="apppanel-node-cap-label"
               aria-label={`Cap total nodes, keep newest ${settings.nodeCapCount} nodes`}
@@ -817,7 +765,9 @@ export default function AppPanel({
               type="checkbox"
               id="messageLimit"
               checked={settings.messageLimitEnabled}
-              onChange={(e) => updateSetting('messageLimitEnabled', e.target.checked)}
+              onChange={(e) => {
+                updateSetting('messageLimitEnabled', e.target.checked);
+              }}
               aria-label="Limit messages loaded"
               className="accent-brand-green"
             />
@@ -834,12 +784,12 @@ export default function AppPanel({
               min={1}
               max={10000}
               value={settings.messageLimitCount}
-              onChange={(e) =>
+              onChange={(e) => {
                 updateSetting(
                   'messageLimitCount',
                   Math.max(1, Math.min(10000, parseInt(e.target.value) || 1000)),
-                )
-              }
+                );
+              }}
               disabled={!settings.messageLimitEnabled}
               aria-labelledby="apppanel-message-limit-label"
               aria-label={`Limit messages loaded ${settings.messageLimitCount} messages`}
@@ -907,6 +857,97 @@ export default function AppPanel({
         </div>
       </div>
 
+      {/* Appearance — collapsible; preset-only colors (no text input — Electron macOS menu warnings). */}
+      <div className="space-y-2">
+        <h3 className="text-sm font-medium text-muted">Appearance</h3>
+        <details className="group bg-secondary-dark rounded-lg border border-gray-700">
+          <summary className="px-4 py-3 cursor-pointer text-sm font-medium text-gray-200 flex items-center justify-between gap-2 hover:bg-gray-800/40 rounded-lg list-none [&::-webkit-details-marker]:hidden">
+            <span>Color scheme</span>
+            <svg
+              className="w-4 h-4 text-muted shrink-0 group-open:rotate-180 transition-transform"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 9l-7 7-7-7"
+              />
+            </svg>
+          </summary>
+          <div className="px-4 pb-4 pt-1 space-y-3 border-t border-gray-700">
+            <p className="text-xs text-muted">
+              Changes apply immediately and persist. Hover a token name for where it is used.
+            </p>
+            {THEME_TOKEN_META.map((meta) => {
+              const hex = themeColors[meta.key];
+              return (
+                <div
+                  key={meta.key}
+                  className="flex flex-wrap items-center gap-2 pb-2 border-b border-gray-600/80 last:border-0 last:pb-0"
+                >
+                  <span
+                    className="w-6 h-6 rounded border border-gray-600 shrink-0"
+                    style={{ backgroundColor: hex }}
+                    title={hex}
+                    aria-hidden="true"
+                  />
+                  <div
+                    id={`theme-color-heading-${meta.key}`}
+                    className="text-sm font-medium text-gray-200 shrink-0 min-w-[6.5rem] max-w-[9rem]"
+                    title={meta.description}
+                  >
+                    {meta.label}
+                  </div>
+                  <div
+                    className="flex flex-nowrap gap-1 overflow-x-auto max-w-full min-w-0 flex-1 py-0.5 [scrollbar-width:thin]"
+                    role="group"
+                    aria-labelledby={`theme-color-heading-${meta.key}`}
+                  >
+                    {THEME_COLOR_PRESETS.map((p) => {
+                      const selected = p.hex === hex;
+                      return (
+                        <button
+                          key={`${meta.key}-${p.hex}`}
+                          type="button"
+                          title={p.label}
+                          aria-label={`${p.label} ${p.hex}`}
+                          aria-pressed={selected}
+                          onClick={() => {
+                            commitThemeColor(meta.key, p.hex);
+                          }}
+                          className={`w-6 h-6 rounded border shrink-0 transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-brand-green/50 ${
+                            selected
+                              ? 'ring-2 ring-brand-green ring-offset-1 ring-offset-secondary-dark'
+                              : 'border-gray-600'
+                          }`}
+                          style={{ backgroundColor: p.hex }}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => {
+                resetThemeColors();
+                setThemeColors({ ...DEFAULT_THEME_COLORS });
+                addToast('Colors reset to app defaults.', 'success');
+              }}
+              aria-label="Reset all colors to defaults"
+              className="w-full px-3 py-2 bg-deep-black hover:bg-gray-700 text-gray-300 rounded-lg text-sm font-medium transition-colors border border-gray-600"
+            >
+              Reset all colors to defaults
+            </button>
+          </div>
+        </details>
+      </div>
+
       {/* Danger Zone — all destructive actions at bottom, red styling */}
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-red-400">Danger Zone</h3>
@@ -927,7 +968,7 @@ export default function AppPanel({
             <button
               type="button"
               aria-label="Reset Diagnostics"
-              onClick={() =>
+              onClick={() => {
                 executeWithConfirmation({
                   name: 'Reset Diagnostics',
                   title: 'Reset Diagnostics',
@@ -936,10 +977,11 @@ export default function AppPanel({
                   confirmLabel: 'Reset Diagnostics',
                   danger: true,
                   action: async () => {
+                    await Promise.resolve();
                     clearDiagnostics();
                   },
-                })
-              }
+                });
+              }}
               className="w-full px-4 py-2.5 bg-red-900/50 text-red-300 hover:bg-red-900/70 border border-red-800 rounded-lg text-sm font-medium transition-colors"
             >
               Reset Diagnostics
@@ -957,7 +999,7 @@ export default function AppPanel({
             <button
               type="button"
               aria-label="Clear GPS Data"
-              onClick={() =>
+              onClick={() => {
                 executeWithConfirmation({
                   name: 'Clear GPS Data',
                   title: 'Clear GPS Data',
@@ -968,8 +1010,8 @@ export default function AppPanel({
                   action: async () => {
                     await window.electronAPI.db.clearNodePositions();
                   },
-                })
-              }
+                });
+              }}
               className="w-full px-4 py-2.5 bg-red-900/50 text-red-300 hover:bg-red-900/70 border border-red-800 rounded-lg text-sm font-medium transition-colors"
             >
               Clear GPS Data
@@ -987,7 +1029,7 @@ export default function AppPanel({
             <button
               type="button"
               aria-label="Clear Position History"
-              onClick={() =>
+              onClick={() => {
                 executeWithConfirmation({
                   name: 'Clear Position History',
                   title: 'Clear Position History',
@@ -996,10 +1038,11 @@ export default function AppPanel({
                   confirmLabel: 'Clear Position History',
                   danger: true,
                   action: async () => {
+                    await Promise.resolve();
                     clearHistory();
                   },
-                })
-              }
+                });
+              }}
               className="w-full px-4 py-2.5 bg-red-900/50 text-red-300 hover:bg-red-900/70 border border-red-800 rounded-lg text-sm font-medium transition-colors"
             >
               Clear Position History
@@ -1018,7 +1061,9 @@ export default function AppPanel({
                 type="number"
                 min={1}
                 value={deleteAgeDays}
-                onChange={(e) => setDeleteAgeDays(Math.max(1, parseInt(e.target.value) || 1))}
+                onChange={(e) => {
+                  setDeleteAgeDays(Math.max(1, parseInt(e.target.value) || 1));
+                }}
                 aria-label={`Delete nodes last heard more than ${deleteAgeDays} days`}
                 className="w-20 px-2 py-1 bg-deep-black border border-red-800/60 rounded text-gray-200 text-sm text-right focus:border-red-500 focus:outline-none"
               />
@@ -1026,7 +1071,7 @@ export default function AppPanel({
               <button
                 type="button"
                 aria-label="Delete Old Nodes"
-                onClick={() =>
+                onClick={() => {
                   executeWithConfirmation({
                     name: 'Delete Old Nodes',
                     title: 'Delete Old Nodes',
@@ -1036,8 +1081,8 @@ export default function AppPanel({
                     action: async () => {
                       await window.electronAPI.db.deleteNodesByAge(deleteAgeDays);
                     },
-                  })
-                }
+                  });
+                }}
                 className="px-3 py-1.5 bg-red-900/50 text-red-300 hover:bg-red-900/70 border border-red-800 rounded text-sm font-medium transition-colors whitespace-nowrap"
               >
                 Delete Old Nodes
@@ -1046,7 +1091,7 @@ export default function AppPanel({
             <button
               type="button"
               aria-label="Prune MQTT-only Nodes"
-              onClick={() =>
+              onClick={() => {
                 executeWithConfirmation({
                   name: 'Prune MQTT-only Nodes',
                   title: 'Prune MQTT-only Nodes',
@@ -1057,8 +1102,8 @@ export default function AppPanel({
                   action: async () => {
                     await window.electronAPI.db.deleteNodesBySource('mqtt');
                   },
-                })
-              }
+                });
+              }}
               className="w-full px-4 py-2.5 bg-red-900/50 text-red-300 hover:bg-red-900/70 border border-red-800 rounded-lg text-sm font-medium transition-colors text-left"
             >
               Prune MQTT-only Nodes
@@ -1066,7 +1111,7 @@ export default function AppPanel({
             <button
               type="button"
               aria-label="Prune Unnamed Nodes"
-              onClick={() =>
+              onClick={() => {
                 executeWithConfirmation({
                   name: 'Prune Unnamed Nodes',
                   title: 'Prune Unnamed Nodes',
@@ -1077,8 +1122,8 @@ export default function AppPanel({
                   action: async () => {
                     await window.electronAPI.db.deleteNodesWithoutLongname();
                   },
-                })
-              }
+                });
+              }}
               className="w-full px-4 py-2.5 bg-red-900/50 text-red-300 hover:bg-red-900/70 border border-red-800 rounded-lg text-sm font-medium transition-colors text-left"
             >
               Prune Unnamed Nodes
@@ -1168,7 +1213,7 @@ export default function AppPanel({
             <button
               type="button"
               aria-label={`Clear All Nodes (${nodes.size})`}
-              onClick={() =>
+              onClick={() => {
                 executeWithConfirmation({
                   name: 'Clear Nodes',
                   title: 'Clear Nodes',
@@ -1178,8 +1223,8 @@ export default function AppPanel({
                   action: async () => {
                     await window.electronAPI.db.clearNodes();
                   },
-                })
-              }
+                });
+              }}
               className="w-full px-4 py-2.5 bg-red-900/50 text-red-300 hover:bg-red-900/70 border border-red-800 rounded-lg text-sm font-medium transition-colors"
             >
               Clear All Nodes ({nodes.size})
@@ -1198,7 +1243,9 @@ export default function AppPanel({
               <select
                 id="apppanel-clear-channel"
                 value={clearChannelTarget}
-                onChange={(e) => setClearChannelTarget(parseInt(e.target.value))}
+                onChange={(e) => {
+                  setClearChannelTarget(parseInt(e.target.value));
+                }}
                 aria-label="Channel:"
                 className="flex-1 px-3 py-1.5 bg-deep-black border border-red-800/60 rounded-lg text-gray-200 text-sm focus:border-red-500 focus:outline-none"
               >
@@ -1248,7 +1295,7 @@ export default function AppPanel({
               <button
                 type="button"
                 aria-label="Clear All Repeaters"
-                onClick={() =>
+                onClick={() => {
                   executeWithConfirmation({
                     name: 'Clear All Repeaters',
                     title: 'Clear All Repeaters',
@@ -1257,8 +1304,8 @@ export default function AppPanel({
                     confirmLabel: 'Clear All Repeaters',
                     danger: true,
                     action: onClearMeshcoreRepeaters,
-                  })
-                }
+                  });
+                }}
                 className="w-full px-4 py-3 bg-red-900/50 text-red-300 hover:bg-red-900/70 border border-red-800 rounded-lg text-sm font-medium transition-colors"
               >
                 Clear All Repeaters
@@ -1274,7 +1321,7 @@ export default function AppPanel({
             <button
               type="button"
               aria-label="Clear All Local Data & Cache"
-              onClick={() =>
+              onClick={() => {
                 executeWithConfirmation({
                   name: 'Clear All Data',
                   title: '⚠ Clear All Local Data',
@@ -1287,8 +1334,8 @@ export default function AppPanel({
                     await window.electronAPI.db.clearNodes();
                     await window.electronAPI.clearSessionData();
                   },
-                })
-              }
+                });
+              }}
               className="w-full px-4 py-3 bg-red-900/50 text-red-300 hover:bg-red-900/70 border border-red-800 rounded-lg text-sm font-medium transition-colors"
             >
               Clear All Local Data &amp; Cache
@@ -1305,7 +1352,9 @@ export default function AppPanel({
           confirmLabel={pendingAction.confirmLabel}
           danger={pendingAction.danger}
           onConfirm={handleConfirm}
-          onCancel={() => setPendingAction(null)}
+          onCancel={() => {
+            setPendingAction(null);
+          }}
         />
       )}
     </div>

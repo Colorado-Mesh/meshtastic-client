@@ -67,7 +67,7 @@ function getOrCreateVirtualNodeId(): number {
     if (n > 0 && n < 0xffffffff) return n;
   }
   let id: number;
-  if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+  if (typeof window !== 'undefined') {
     const buf = new Uint32Array(1);
     window.crypto.getRandomValues(buf);
     // Limit to 0x0FFFFFFF to stay consistent with the previous range, then make it > 0
@@ -119,7 +119,9 @@ export function useDevice() {
   // ─── GPS tracking ─────────────────────────────────────────────
   const deviceGpsModeRef = useRef<number>(0); // 0=DISABLED,1=ENABLED,2=NOT_PRESENT
   const gpsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const refreshOurPositionRef = useRef<() => Promise<OurPosition | null>>(async () => null);
+  const refreshOurPositionRef = useRef<() => Promise<OurPosition | null>>(() =>
+    Promise.resolve(null),
+  );
 
   // ─── MQTT session tracking ────────────────────────────────────
   // Tracks current MQTT connection status in a ref for use in callbacks
@@ -206,7 +208,7 @@ export function useDevice() {
         const created = createChatStubNode(nodeNum, source);
         const next = new Map(prev);
         next.set(nodeNum, created);
-        window.electronAPI.db.saveNode(created);
+        void window.electronAPI.db.saveNode(created);
         return next;
       });
     },
@@ -290,7 +292,7 @@ export function useDevice() {
     const intervalMs = connectionType === 'http' ? HTTP_POLL_INTERVAL_MS : POLL_INTERVAL_MS;
     pollRef.current = setInterval(() => {
       if (nodesRef.current.get(myNodeNumRef.current)?.role === ROLE_CLIENT_MUTE) return;
-      deviceRef.current?.requestPosition(0xffffffff).catch((e) => {
+      deviceRef.current?.requestPosition(0xffffffff).catch((e: unknown) => {
         console.debug('[useDevice] requestPosition poll', e);
       });
     }, intervalMs);
@@ -363,7 +365,7 @@ export function useDevice() {
       const intervalSecs = gpsParsed?.refreshInterval ?? 0;
       if (intervalSecs > 0) {
         gpsIntervalRef.current = setInterval(() => {
-          refreshOurPositionRef.current().catch((err) => {
+          refreshOurPositionRef.current().catch((err: unknown) => {
             console.error('[useDevice] GPS interval refresh error:', err);
           });
         }, intervalSecs * 1000);
@@ -416,7 +418,7 @@ export function useDevice() {
           }
         }
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         console.error('[useDevice] Failed to load messages:', err);
         setMessages([]);
       });
@@ -441,7 +443,7 @@ export function useDevice() {
         nodesRef.current = nodeMap;
         setNodes(nodeMap);
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         console.error('[useDevice] Failed to load nodes:', err);
       });
   }, []);
@@ -450,8 +452,8 @@ export function useDevice() {
   useEffect(() => {
     const unsubStatus = window.electronAPI.mqtt.onStatus(({ status: s, protocol }) => {
       if (protocol !== 'meshtastic') return;
-      mqttStatusRef.current = s as MQTTStatus;
-      setMqttStatus(s as MQTTStatus);
+      mqttStatusRef.current = s;
+      setMqttStatus(s);
       if (s !== 'connected') {
         setMessages((prev) =>
           prev.map((m) =>
@@ -464,7 +466,7 @@ export function useDevice() {
         const virtualId = getOrCreateVirtualNodeId();
         updateNodes((prev) => {
           const updated = new Map(prev);
-          const existing = updated.get(virtualId) || emptyNode(virtualId);
+          const existing = updated.get(virtualId) ?? emptyNode(virtualId);
           updated.set(virtualId, {
             ...existing,
             node_id: virtualId,
@@ -491,7 +493,9 @@ export function useDevice() {
               shortName: 'MQTT',
               channelName: 'LongFast',
             })
-            .catch((e) => console.debug('[useDevice] MQTT presence publish failed', e));
+            .catch((e: unknown) => {
+              console.debug('[useDevice] MQTT presence publish failed', e);
+            });
         };
         setTimeout(sendPresence, 10_000);
         mqttPresenceIntervalRef.current = setInterval(sendPresence, 5 * 60 * 1000);
@@ -513,7 +517,7 @@ export function useDevice() {
       console.debug('[useDevice] MQTT node update: nodeId=%d', nodeUpdate.node_id);
 
       updateNodes((prev) => {
-        const existing = prev.get(nodeUpdate.node_id) || emptyNode(nodeUpdate.node_id);
+        const existing = prev.get(nodeUpdate.node_id) ?? emptyNode(nodeUpdate.node_id);
         const heardViaRF = rfHeardNodeIds.current.has(nodeUpdate.node_id);
         const updated = new Map(prev);
         const node: MeshNode = {
@@ -556,7 +560,7 @@ export function useDevice() {
           node.node_id,
         );
         updated.set(nodeUpdate.node_id, node);
-        window.electronAPI.db.saveNode(node);
+        void window.electronAPI.db.saveNode(node);
         return updated;
       });
       const updatedMqttNode = nodesRef.current.get(nodeUpdate.node_id);
@@ -586,7 +590,7 @@ export function useDevice() {
       const cleanedReplyId = raw.replyId != null && raw.replyId !== 0 ? raw.replyId : undefined;
       const cleanedEmoji = raw.emoji != null && raw.emoji !== 0 ? raw.emoji : undefined;
 
-      let cleanedPayload = raw.payload as string;
+      let cleanedPayload = raw.payload;
       if (typeof cleanedPayload === 'string') {
         const trimmed = cleanedPayload.trim();
         if (trimmed === '0') {
@@ -635,7 +639,7 @@ export function useDevice() {
               : m,
           ),
         );
-        if (packetId !== 0) window.electronAPI.db.updateMessageReceivedVia(packetId);
+        if (packetId !== 0) void window.electronAPI.db.updateMessageReceivedVia(packetId);
         return;
       }
 
@@ -651,7 +655,7 @@ export function useDevice() {
         if (isDup) return prev;
         return [...prev, mqttMsg];
       });
-      window.electronAPI.db.saveMessage(mqttMsg);
+      void window.electronAPI.db.saveMessage(mqttMsg);
     });
 
     return () => {
@@ -677,7 +681,7 @@ export function useDevice() {
       const device = deviceRef.current;
       deviceRef.current = null;
       if (device) {
-        safeDisconnect(device).catch((e) => {
+        safeDisconnect(device).catch((e: unknown) => {
           console.debug('[useDevice] unmount safeDisconnect', e);
         });
       }
@@ -712,7 +716,7 @@ export function useDevice() {
               const activeDevice = deviceRef.current;
               deviceRef.current = null;
               if (activeDevice) {
-                void safeDisconnect(activeDevice).catch((e) => {
+                void safeDisconnect(activeDevice).catch((e: unknown) => {
                   console.debug('[useDevice] configure timeout safeDisconnect', e);
                 });
               }
@@ -737,7 +741,7 @@ export function useDevice() {
           lastDataReceivedRef.current = Date.now();
           startPolling(type);
           startWatchdog();
-          refreshOurPositionRef.current();
+          void refreshOurPositionRef.current();
           startGpsInterval();
         }
 
@@ -773,7 +777,7 @@ export function useDevice() {
         touchLastData();
         const virtualNodeId = getOrCreateVirtualNodeId();
         if (virtualNodeId !== info.myNodeNum) {
-          window.electronAPI.db.deleteNode(virtualNodeId).catch((e) => {
+          window.electronAPI.db.deleteNode(virtualNodeId).catch((e: unknown) => {
             console.debug('[useDevice] deleteNode virtual', e);
           });
         }
@@ -790,7 +794,7 @@ export function useDevice() {
           } else {
             const selfNode = { ...existing, hops_away: 0 };
             updated.set(info.myNodeNum, selfNode);
-            window.electronAPI.db.saveNode(selfNode);
+            void window.electronAPI.db.saveNode(selfNode);
           }
           return updated;
         });
@@ -854,7 +858,7 @@ export function useDevice() {
                 : m,
             ),
           );
-          window.electronAPI.db.updateMessageReceivedVia(rfDedupPacketId);
+          void window.electronAPI.db.updateMessageReceivedVia(rfDedupPacketId);
           return;
         }
 
@@ -888,7 +892,7 @@ export function useDevice() {
           }
           return [...prev, rfMsg];
         });
-        window.electronAPI.db.saveMessage(rfMsg);
+        void window.electronAPI.db.saveMessage(rfMsg);
 
         // Gateway uplink: forward RF messages to MQTT if uplinkEnabled for this channel
         // Skip our own echoes, reactions, and DMs (privacy)
@@ -904,7 +908,7 @@ export function useDevice() {
                 channelName: 'LongFast',
               })
               .then(isDuplicate)
-              .catch((e) => {
+              .catch((e: unknown) => {
                 console.debug('[useDevice] MQTT publish echo register non-fatal', e);
               });
           }
@@ -937,7 +941,7 @@ export function useDevice() {
         };
         updateNodes((prev) => {
           const updated = new Map(prev);
-          const existing = updated.get(packet.from) || emptyNode(packet.from);
+          const existing = updated.get(packet.from) ?? emptyNode(packet.from);
           const long_name = user.longName ?? existing.long_name;
           const short_name = meshtasticShortNameAfterClearingDefault(
             long_name,
@@ -957,7 +961,7 @@ export function useDevice() {
             source: 'rf',
           };
           updated.set(packet.from, node);
-          window.electronAPI.db.saveNode(node);
+          void window.electronAPI.db.saveNode(node);
           return updated;
         });
         if (packet.from === myNodeNumRef.current) {
@@ -1002,7 +1006,7 @@ export function useDevice() {
 
         updateNodes((prev) => {
           const updated = new Map(prev);
-          const existing = updated.get(nodeNum) || emptyNode(nodeNum);
+          const existing = updated.get(nodeNum) ?? emptyNode(nodeNum);
 
           let newLat = existing.latitude;
           let newLon = existing.longitude;
@@ -1067,7 +1071,7 @@ export function useDevice() {
             lastPositionWarning: posWarn,
           };
           updated.set(nodeNum, node);
-          window.electronAPI.db.saveNode(node);
+          void window.electronAPI.db.saveNode(node);
           return updated;
         });
         if (
@@ -1134,7 +1138,7 @@ export function useDevice() {
         if (!r.valid) {
           updateNodes((prev) => {
             const updated = new Map(prev);
-            const existing = updated.get(packet.from) || emptyNode(packet.from);
+            const existing = updated.get(packet.from) ?? emptyNode(packet.from);
             // Don't flag our own node if we have valid fallback coords
             if (
               packet.from === myNodeNumRef.current &&
@@ -1150,7 +1154,7 @@ export function useDevice() {
 
         updateNodes((prev) => {
           const updated = new Map(prev);
-          const existing = updated.get(packet.from) || emptyNode(packet.from);
+          const existing = updated.get(packet.from) ?? emptyNode(packet.from);
 
           const node: MeshNode = {
             ...existing,
@@ -1162,7 +1166,7 @@ export function useDevice() {
             lastPositionWarning: undefined,
           };
           updated.set(packet.from, node);
-          window.electronAPI.db.saveNode(node);
+          void window.electronAPI.db.saveNode(node);
           return updated;
         });
         usePositionHistoryStore.getState().recordPosition(packet.from, lat, lon);
@@ -1265,7 +1269,7 @@ export function useDevice() {
                 num_packets_tx: ls.numPacketsTx ?? existing.num_packets_tx,
               };
               updated.set(myNodeNumRef.current, node);
-              window.electronAPI.db.saveNode(node);
+              void window.electronAPI.db.saveNode(node);
             }
             return updated;
           });
@@ -1391,7 +1395,7 @@ export function useDevice() {
                 // replayed/history; SNR/RSSI alone is not proof of a fresh hear.
               };
               updated.set(mp.from!, node);
-              window.electronAPI.db.saveNode(node);
+              void window.electronAPI.db.saveNode(node);
             }
             return updated;
           });
@@ -1461,7 +1465,7 @@ export function useDevice() {
 
       // ─── Queue status ──────────────────────────────────────────
       const unsubQueue = device.events.onQueueStatus.subscribe((qs) => {
-        setQueueStatus({ free: Number(qs.free), maxlen: Number(qs.maxlen), res: Number(qs.res) });
+        setQueueStatus({ free: qs.free, maxlen: qs.maxlen, res: qs.res });
       });
       unsubscribesRef.current.push(unsubQueue);
 
@@ -1616,12 +1620,12 @@ export function useDevice() {
     const oldDevice = deviceRef.current;
     deviceRef.current = null;
     if (oldDevice)
-      safeDisconnect(oldDevice).catch((e) => {
+      safeDisconnect(oldDevice).catch((e: unknown) => {
         console.debug('[useDevice] handleConnectionLost safeDisconnect', e);
       });
 
     // Begin reconnection
-    attemptReconnectRef.current();
+    void attemptReconnectRef.current();
   }, [clearConfigureTimeout, cleanupSubscriptions, stopPolling, stopWatchdog, stopGpsInterval]);
 
   // Keep the ref in sync
@@ -1672,7 +1676,7 @@ export function useDevice() {
       }
       deviceRef.current = device;
       wireSubscriptions(device, params.type);
-      device.configure();
+      void device.configure();
 
       // Success
       console.debug(`[useDevice] Reconnect succeeded on attempt ${reconnectAttemptRef.current}`);
@@ -1681,7 +1685,7 @@ export function useDevice() {
     } catch (err) {
       console.warn(`[Meshtastic] Reconnect attempt ${reconnectAttemptRef.current} failed:`, err);
       // Retry
-      attemptReconnectRef.current();
+      void attemptReconnectRef.current();
     }
   }, [wireSubscriptions]);
 
@@ -1699,7 +1703,7 @@ export function useDevice() {
         stopWatchdog();
         const oldDevice = deviceRef.current;
         deviceRef.current = null;
-        safeDisconnect(oldDevice).catch((e) => {
+        safeDisconnect(oldDevice).catch((e: unknown) => {
           console.debug('[useDevice] connect safeDisconnect prior', e);
         });
       }
@@ -1727,7 +1731,7 @@ export function useDevice() {
         wireSubscriptions(device, type);
 
         // Start configuration AFTER all listeners are wired
-        device.configure();
+        void device.configure();
       } catch (err) {
         clearConfigureTimeout();
         console.error('[Meshtastic] Connection failed:', err);
@@ -1765,7 +1769,7 @@ export function useDevice() {
         stopWatchdog();
         const oldDevice = deviceRef.current;
         deviceRef.current = null;
-        safeDisconnect(oldDevice).catch((e) => {
+        safeDisconnect(oldDevice).catch((e: unknown) => {
           console.debug('[useDevice] connectAutomatic safeDisconnect prior', e);
         });
       }
@@ -1790,7 +1794,7 @@ export function useDevice() {
         }
         deviceRef.current = device;
         wireSubscriptions(device, type);
-        device.configure();
+        void device.configure();
       } catch (err) {
         clearConfigureTimeout();
         console.error('[Meshtastic] Auto-connect failed:', err);
@@ -1839,7 +1843,7 @@ export function useDevice() {
           setMessages((prev) =>
             prev.map((m) => (m.packetId === tempId ? { ...m, status: 'acked' as const } : m)),
           );
-          window.electronAPI.db.updateMessageStatus(tempId, 'acked');
+          void window.electronAPI.db.updateMessageStatus(tempId, 'acked');
         } else {
           // failed
           setMessages((prev) =>
@@ -1847,7 +1851,7 @@ export function useDevice() {
               m.packetId === tempId ? { ...m, status: 'failed' as const, error } : m,
             ),
           );
-          window.electronAPI.db.updateMessageStatus(tempId, 'failed', error);
+          void window.electronAPI.db.updateMessageStatus(tempId, 'failed', error);
         }
       } else {
         // mqtt — read current device status from state so the DB update is consistent
@@ -1855,7 +1859,12 @@ export function useDevice() {
           const existing = prev.find((m) => m.packetId === tempId);
           if (status !== 'sending' && existing) {
             const deviceStatus = existing.status ?? 'acked';
-            window.electronAPI.db.updateMessageStatus(tempId, deviceStatus, existing.error, status);
+            void window.electronAPI.db.updateMessageStatus(
+              tempId,
+              deviceStatus,
+              existing.error,
+              status,
+            );
           }
           return prev.map((m) =>
             m.packetId === tempId ? { ...m, mqttStatus: status as ChatMessage['mqttStatus'] } : m,
@@ -1874,7 +1883,7 @@ export function useDevice() {
       const hasMqtt = mqttStatusRef.current === 'connected';
       if (!deviceRef.current && !hasMqtt) throw new Error('Not connected');
 
-      const from = myNodeNumRef.current || getOrCreateVirtualNodeId();
+      const from = myNodeNumRef.current > 0 ? myNodeNumRef.current : getOrCreateVirtualNodeId();
       const tempId = Math.floor(Math.random() * 0xffffffff);
 
       // Determine initial MQTT display state (TransportManager will confirm/update asynchronously)
@@ -1896,7 +1905,7 @@ export function useDevice() {
         replyId,
       };
       setMessages((prev) => [...prev, msg]);
-      window.electronAPI.db.saveMessage(msg);
+      void window.electronAPI.db.saveMessage(msg);
 
       // For device path: track this tempId so the RF echo can be suppressed (avoids duplicate)
       if (deviceRef.current) {
@@ -1904,16 +1913,14 @@ export function useDevice() {
       }
 
       // Lazy-init TransportManager (stable deps are all refs)
-      if (!transportManagerRef.current) {
-        transportManagerRef.current = new TransportManager({
-          deviceRef,
-          myNodeNumRef,
-          mqttStatusRef,
-          channelConfigsRef,
-          isDuplicate,
-          onStatusUpdateRef,
-        });
-      }
+      transportManagerRef.current ??= new TransportManager({
+        deviceRef,
+        myNodeNumRef,
+        mqttStatusRef,
+        channelConfigsRef,
+        isDuplicate,
+        onStatusUpdateRef,
+      });
       transportManagerRef.current.sendMessage(text, channel, destination, replyId, tempId, from);
     },
     [getNodeName, isDuplicate],
@@ -2096,7 +2103,7 @@ export function useDevice() {
         nodesRef.current = nodeMap;
         setNodes(nodeMap);
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         console.error('[useDevice] Failed to refresh nodes:', err);
       });
   }, []);
@@ -2108,7 +2115,7 @@ export function useDevice() {
         console.debug(`[useDevice] refreshMessagesFromDb: loaded ${msgs.length} messages`);
         setMessages(msgs.reverse());
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         console.error('[useDevice] Failed to refresh messages:', err);
         setMessages([]);
       });
@@ -2165,7 +2172,7 @@ export function useDevice() {
           const isVirtualNode = !hasDevice && selfNodeId === getOrCreateVirtualNodeId();
           updateNodes((prev) => {
             const updated = new Map(prev);
-            const existing = updated.get(selfNodeId) || emptyNode(selfNodeId);
+            const existing = updated.get(selfNodeId) ?? emptyNode(selfNodeId);
             const node: MeshNode = {
               ...existing,
               node_id: selfNodeId,
@@ -2178,7 +2185,7 @@ export function useDevice() {
                 : {}),
             };
             updated.set(selfNodeId, node);
-            if (!isVirtualNode) window.electronAPI.db.saveNode(node);
+            if (!isVirtualNode) void window.electronAPI.db.saveNode(node);
             return updated;
           });
         }
@@ -2199,7 +2206,7 @@ export function useDevice() {
                 time: Math.floor(Date.now() / 1000),
               }),
             )
-            .catch((e) => {
+            .catch((e: unknown) => {
               console.debug('[useDevice] setPosition non-fatal', e);
             });
         }
@@ -2215,7 +2222,7 @@ export function useDevice() {
 
   // Resolve position on app startup regardless of device connection
   useEffect(() => {
-    refreshOurPositionRef.current();
+    void refreshOurPositionRef.current();
   }, []);
 
   const sendPositionToDevice = useCallback(async (lat: number, lon: number, alt?: number) => {
@@ -2236,7 +2243,7 @@ export function useDevice() {
       stopGpsInterval();
       if (secs > 0) {
         gpsIntervalRef.current = setInterval(() => {
-          refreshOurPositionRef.current().catch((err) => {
+          refreshOurPositionRef.current().catch((err: unknown) => {
             console.error('[useDevice] GPS interval refresh error:', err);
           });
         }, secs * 1000);
@@ -2255,7 +2262,7 @@ export function useDevice() {
       const hasMqtt = mqttStatusRef.current === 'connected';
       if (!deviceRef.current && !hasMqtt) throw new Error('Not connected');
 
-      const from = myNodeNumRef.current || 0;
+      const from = myNodeNumRef.current;
       const msg: ChatMessage = {
         sender_id: from,
         sender_name: getNodeName(from),
@@ -2274,7 +2281,7 @@ export function useDevice() {
         if (isDup) return prev;
         return [...prev, msg];
       });
-      window.electronAPI.db.saveMessage(msg);
+      void window.electronAPI.db.saveMessage(msg);
 
       // Device transport
       if (deviceRef.current) {
@@ -2287,7 +2294,9 @@ export function useDevice() {
         if (chCfg?.uplinkEnabled || !deviceRef.current) {
           window.electronAPI.mqtt
             .publish({ text: '', from, channel, emoji, replyId })
-            .catch((e: unknown) => console.warn('[useDevice] sendReaction MQTT failed', e));
+            .catch((e: unknown) => {
+              console.warn('[useDevice] sendReaction MQTT failed', e);
+            });
         }
       }
     },

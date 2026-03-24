@@ -180,7 +180,12 @@ interface Props {
   messages: ChatMessage[];
   channels: { index: number; name: string }[];
   myNodeNum: number;
-  onSend: (text: string, channel: number, destination?: number, replyId?: number) => void;
+  onSend: (
+    text: string,
+    channel: number,
+    destination?: number,
+    replyId?: number,
+  ) => void | Promise<void>;
   onReact: (emoji: number, replyId: number, channel: number) => Promise<void>;
   onResend: (msg: ChatMessage) => void;
   onNodeClick: (nodeNum: number) => void;
@@ -320,7 +325,7 @@ function ChatPanel({
 
     for (const msg of messages) {
       if (msg.emoji && msg.replyId) {
-        const existing = reactions.get(msg.replyId) || [];
+        const existing = reactions.get(msg.replyId) ?? [];
         existing.push({ emoji: msg.emoji, sender_name: msg.sender_name });
         reactions.set(msg.replyId, existing);
       } else {
@@ -477,7 +482,9 @@ function ChatPanel({
       }
     };
     document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+    };
   }, [showSearch, viewMode, replyTo]);
 
   // Toggle search with Cmd+F / Ctrl+F
@@ -489,7 +496,9 @@ function ChatPanel({
       }
     };
     window.addEventListener('keydown', handleKeys);
-    return () => window.removeEventListener('keydown', handleKeys);
+    return () => {
+      window.removeEventListener('keydown', handleKeys);
+    };
   }, []);
 
   useEffect(() => {
@@ -506,7 +515,8 @@ function ChatPanel({
       console.debug('[ChatPanel] handleSend');
       const sendChannel = channel === -1 ? 0 : channel;
       const destination = viewMode === 'dm' && activeDmNode != null ? activeDmNode : undefined;
-      await onSend(input.trim(), sendChannel, destination, replyTo?.packetId);
+      const sendOutcome = onSend(input.trim(), sendChannel, destination, replyTo?.packetId);
+      await Promise.resolve(sendOutcome);
       setInput('');
       setReplyTo(null);
       const now = Date.now();
@@ -535,7 +545,7 @@ function ChatPanel({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      void handleSend();
     }
   };
 
@@ -596,7 +606,7 @@ function ChatPanel({
 
     const grouped = new Map<number, string[]>();
     for (const r of reactions) {
-      const existing = grouped.get(r.emoji) || [];
+      const existing = grouped.get(r.emoji) ?? [];
       existing.push(r.sender_name);
       grouped.set(r.emoji, existing);
     }
@@ -701,7 +711,9 @@ function ChatPanel({
 
         {/* Search toggle */}
         <button
-          onClick={() => setShowSearch(!showSearch)}
+          onClick={() => {
+            setShowSearch(!showSearch);
+          }}
           aria-pressed={showSearch}
           aria-label="Search messages"
           className={`p-1.5 rounded-lg transition-colors ${
@@ -786,7 +798,9 @@ function ChatPanel({
               </button>
               <button
                 type="button"
-                onClick={() => closeDmTab(nodeNum)}
+                onClick={() => {
+                  closeDmTab(nodeNum);
+                }}
                 aria-label="x"
                 className="ml-0.5 text-muted hover:text-white text-[10px] leading-none"
                 title="Close DM"
@@ -805,7 +819,9 @@ function ChatPanel({
             ref={searchInputRef}
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+            }}
             placeholder="Search messages..."
             aria-label="Search messages..."
             spellCheck={false}
@@ -901,7 +917,9 @@ function ChatPanel({
                       {/* Header: sender name (clickable) + DM indicator + time */}
                       <div className="flex items-center gap-2 mb-0.5">
                         <button
-                          onClick={() => onNodeClick(msg.sender_id)}
+                          onClick={() => {
+                            onNodeClick(msg.sender_id);
+                          }}
                           className={`text-xs font-semibold cursor-pointer hover:underline ${
                             isDm ? 'text-purple-400' : isOwn ? 'text-blue-400' : 'text-bright-green'
                           }`}
@@ -1036,9 +1054,9 @@ function ChatPanel({
                         </button>
                         {/* React */}
                         <button
-                          onClick={() =>
-                            setPickerOpenFor(showPicker ? null : (msg.packetId ?? msg.timestamp))
-                          }
+                          onClick={() => {
+                            setPickerOpenFor(showPicker ? null : (msg.packetId ?? msg.timestamp));
+                          }}
                           className="text-gray-600 hover:text-gray-300 text-xs p-1 rounded"
                           aria-label="Add reaction"
                           title="React"
@@ -1060,7 +1078,9 @@ function ChatPanel({
                         {/* Quick DM */}
                         {!isOwn && (
                           <button
-                            onClick={() => openDmTo(msg.sender_id)}
+                            onClick={() => {
+                              openDmTo(msg.sender_id);
+                            }}
                             className="text-gray-600 hover:text-purple-400 text-xs p-1 rounded"
                             title={`Direct message ${msg.sender_name}`}
                           >
@@ -1170,7 +1190,9 @@ function ChatPanel({
             {REACTION_EMOJIS.slice(0, 6).map((re) => (
               <button
                 key={re.code}
-                onClick={() => insertEmojiAtCursor(re.code)}
+                onClick={() => {
+                  insertEmojiAtCursor(re.code);
+                }}
                 className="hover:scale-125 transition-transform text-lg px-0.5"
                 title={re.name}
               >
@@ -1182,7 +1204,9 @@ function ChatPanel({
             {REACTION_EMOJIS.slice(6).map((re) => (
               <button
                 key={re.code}
-                onClick={() => insertEmojiAtCursor(re.code)}
+                onClick={() => {
+                  insertEmojiAtCursor(re.code);
+                }}
                 className="hover:scale-125 transition-transform text-lg px-0.5"
                 title={re.name}
               >
@@ -1222,7 +1246,9 @@ function ChatPanel({
             {replyTo.payload.length > 60 ? replyTo.payload.slice(0, 60) + '…' : replyTo.payload}
           </span>
           <button
-            onClick={() => setReplyTo(null)}
+            onClick={() => {
+              setReplyTo(null);
+            }}
             className="text-muted hover:text-gray-200 ml-1 leading-none"
             title="Cancel reply"
           >
@@ -1266,7 +1292,9 @@ function ChatPanel({
         />
         {/* Compose emoji picker toggle */}
         <button
-          onClick={() => setShowComposePicker((prev) => !prev)}
+          onClick={() => {
+            setShowComposePicker((prev) => !prev);
+          }}
           disabled={!isConnected || sending}
           aria-label="😊"
           className={`px-2.5 py-2.5 rounded-xl transition-colors disabled:opacity-50 ${

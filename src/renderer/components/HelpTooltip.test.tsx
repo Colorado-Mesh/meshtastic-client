@@ -39,7 +39,7 @@ describe('HelpTooltip', () => {
 
   it('shows tooltip on focus and hides on blur', () => {
     render(<HelpTooltip text="Keyboard help" />);
-    const trigger = document.querySelector('.cursor-help') as HTMLElement;
+    const trigger = document.querySelector('.cursor-help')!;
     expect(screen.queryByText('Keyboard help')).not.toBeInTheDocument();
     act(() => {
       fireEvent.focus(trigger);
@@ -68,8 +68,8 @@ describe('HelpTooltip', () => {
       toJSON: () => ({}),
     });
     render(<HelpTooltip text="Clamped" />);
-    await user.hover(document.querySelector('.cursor-help') as HTMLElement);
-    const tooltip = document.querySelector('.pointer-events-none') as HTMLElement;
+    await user.hover(document.querySelector('.cursor-help')!);
+    const tooltip = document.querySelector<HTMLElement>('.pointer-events-none')!;
     expect(tooltip).toBeTruthy();
     expect(parseFloat(tooltip.style.left)).toBeLessThanOrEqual(window.innerWidth - 128 - 8);
     vi.restoreAllMocks();
@@ -91,8 +91,8 @@ describe('HelpTooltip', () => {
       toJSON: () => ({}),
     });
     render(<HelpTooltip text="Left clamped" />);
-    await user.hover(document.querySelector('.cursor-help') as HTMLElement);
-    const tooltip = document.querySelector('.pointer-events-none') as HTMLElement;
+    await user.hover(document.querySelector('.cursor-help')!);
+    const tooltip = document.querySelector<HTMLElement>('.pointer-events-none')!;
     expect(tooltip).toBeTruthy();
     expect(parseFloat(tooltip.style.left)).toBeGreaterThanOrEqual(128 + 8);
     vi.restoreAllMocks();
@@ -112,8 +112,8 @@ describe('HelpTooltip', () => {
       toJSON: () => ({}),
     });
     render(<HelpTooltip text="Below tooltip" />);
-    await user.hover(document.querySelector('.cursor-help') as HTMLElement);
-    const tooltip = document.querySelector('.pointer-events-none') as HTMLElement;
+    await user.hover(document.querySelector('.cursor-help')!);
+    const tooltip = document.querySelector<HTMLElement>('.pointer-events-none')!;
     expect(tooltip).toBeTruthy();
     // Positioned below (top = bottom + 4 = 40), not above
     expect(parseFloat(tooltip.style.top)).toBe(40);
@@ -135,8 +135,8 @@ describe('HelpTooltip', () => {
       toJSON: () => ({}),
     });
     render(<HelpTooltip text="Above tooltip" />);
-    await user.hover(document.querySelector('.cursor-help') as HTMLElement);
-    const tooltip = document.querySelector('.pointer-events-none') as HTMLElement;
+    await user.hover(document.querySelector('.cursor-help')!);
+    const tooltip = document.querySelector<HTMLElement>('.pointer-events-none')!;
     expect(tooltip).toBeTruthy();
     // Positioned above (top = r.top - 8 = 192), transform flips it up
     expect(parseFloat(tooltip.style.top)).toBe(192);

@@ -101,9 +101,13 @@ export default function NodeListPanel({
   useEffect(() => {
     const main = document.querySelector('main');
     if (!main) return;
-    const handler = () => setShowScrollTop(main.scrollTop > 200);
+    const handler = () => {
+      setShowScrollTop(main.scrollTop > 200);
+    };
     main.addEventListener('scroll', handler);
-    return () => main.removeEventListener('scroll', handler);
+    return () => {
+      main.removeEventListener('scroll', handler);
+    };
   }, []);
 
   const scrollToTop = () =>
@@ -141,8 +145,7 @@ export default function NodeListPanel({
     if (locationFilter.enabled) {
       const homeNode = myNodeNum ? nodes.get(myNodeNum) : undefined;
       const homeHasLocation =
-        homeNode &&
-        homeNode.latitude != null &&
+        homeNode?.latitude != null &&
         homeNode.latitude !== 0 &&
         homeNode.longitude != null &&
         homeNode.longitude !== 0;
@@ -156,8 +159,8 @@ export default function NodeListPanel({
           // Nodes without GPS can't be distance-filtered — keep them visible
           if (n.latitude == null || n.longitude == null) return true;
           const d = haversineDistanceKm(
-            homeNode!.latitude!,
-            homeNode!.longitude!,
+            homeNode.latitude!,
+            homeNode.longitude!,
             n.latitude,
             n.longitude,
           );
@@ -246,8 +249,7 @@ export default function NodeListPanel({
     if (!locationFilter.enabled) return null;
     const homeNode = myNodeNum ? nodes.get(myNodeNum) : undefined;
     const homeHasLocation =
-      homeNode &&
-      homeNode.latitude != null &&
+      homeNode?.latitude != null &&
       homeNode.latitude !== 0 &&
       homeNode.longitude != null &&
       homeNode.longitude !== 0;
@@ -292,7 +294,9 @@ export default function NodeListPanel({
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+            }}
             placeholder="Search nodes..."
             aria-label="Search nodes..."
             className="flex-1 px-3 py-1.5 bg-secondary-dark/80 rounded-lg text-gray-200 text-sm border border-gray-600/50 focus:border-brand-green/50 focus:outline-none"
@@ -346,7 +350,9 @@ export default function NodeListPanel({
                   sortField === 'node_id' ? (sortAsc ? 'ascending' : 'descending') : 'none'
                 }
                 className="px-3 py-2 cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort('node_id')}
+                onClick={() => {
+                  handleSort('node_id');
+                }}
               >
                 ID <SortIcon field="node_id" sortField={sortField} sortAsc={sortAsc} />
               </th>
@@ -356,7 +362,9 @@ export default function NodeListPanel({
                   sortField === 'long_name' ? (sortAsc ? 'ascending' : 'descending') : 'none'
                 }
                 className="px-3 py-2 cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort('long_name')}
+                onClick={() => {
+                  handleSort('long_name');
+                }}
               >
                 Long Name <SortIcon field="long_name" sortField={sortField} sortAsc={sortAsc} />
               </th>
@@ -366,7 +374,9 @@ export default function NodeListPanel({
                   sortField === 'short_name' ? (sortAsc ? 'ascending' : 'descending') : 'none'
                 }
                 className="px-3 py-2 cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort('short_name')}
+                onClick={() => {
+                  handleSort('short_name');
+                }}
               >
                 Short <SortIcon field="short_name" sortField={sortField} sortAsc={sortAsc} />
               </th>
@@ -376,7 +386,9 @@ export default function NodeListPanel({
                   sortField === 'last_heard' ? (sortAsc ? 'ascending' : 'descending') : 'none'
                 }
                 className="px-3 py-2 cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort('last_heard')}
+                onClick={() => {
+                  handleSort('last_heard');
+                }}
               >
                 Last Heard <SortIcon field="last_heard" sortField={sortField} sortAsc={sortAsc} />
               </th>
@@ -384,7 +396,9 @@ export default function NodeListPanel({
                 scope="col"
                 aria-sort={sortField === 'role' ? (sortAsc ? 'ascending' : 'descending') : 'none'}
                 className="px-3 py-2 cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort('role')}
+                onClick={() => {
+                  handleSort('role');
+                }}
               >
                 Role <SortIcon field="role" sortField={sortField} sortAsc={sortAsc} />
               </th>
@@ -394,7 +408,9 @@ export default function NodeListPanel({
                   sortField === 'hops_away' ? (sortAsc ? 'ascending' : 'descending') : 'none'
                 }
                 className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort('hops_away')}
+                onClick={() => {
+                  handleSort('hops_away');
+                }}
               >
                 Hops <SortIcon field="hops_away" sortField={sortField} sortAsc={sortAsc} />
               </th>
@@ -404,7 +420,9 @@ export default function NodeListPanel({
                   sortField === 'via_mqtt' ? (sortAsc ? 'ascending' : 'descending') : 'none'
                 }
                 className="px-3 py-2 text-center cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort('via_mqtt')}
+                onClick={() => {
+                  handleSort('via_mqtt');
+                }}
               >
                 MQTT <SortIcon field="via_mqtt" sortField={sortField} sortAsc={sortAsc} />
               </th>
@@ -414,7 +432,9 @@ export default function NodeListPanel({
                   sortField === 'latitude' ? (sortAsc ? 'ascending' : 'descending') : 'none'
                 }
                 className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort('latitude')}
+                onClick={() => {
+                  handleSort('latitude');
+                }}
               >
                 Lat <SortIcon field="latitude" sortField={sortField} sortAsc={sortAsc} />
               </th>
@@ -424,7 +444,9 @@ export default function NodeListPanel({
                   sortField === 'longitude' ? (sortAsc ? 'ascending' : 'descending') : 'none'
                 }
                 className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort('longitude')}
+                onClick={() => {
+                  handleSort('longitude');
+                }}
               >
                 Lon <SortIcon field="longitude" sortField={sortField} sortAsc={sortAsc} />
               </th>
@@ -432,7 +454,9 @@ export default function NodeListPanel({
                 scope="col"
                 aria-sort={sortField === 'rssi' ? (sortAsc ? 'ascending' : 'descending') : 'none'}
                 className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort('rssi')}
+                onClick={() => {
+                  handleSort('rssi');
+                }}
               >
                 Signal <SortIcon field="rssi" sortField={sortField} sortAsc={sortAsc} />
               </th>
@@ -440,7 +464,9 @@ export default function NodeListPanel({
                 scope="col"
                 aria-sort={sortField === 'snr' ? (sortAsc ? 'ascending' : 'descending') : 'none'}
                 className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort('snr')}
+                onClick={() => {
+                  handleSort('snr');
+                }}
                 title="SNR in dB — only meaningful for direct (0-hop) RF neighbors"
               >
                 SNR <SortIcon field="snr" sortField={sortField} sortAsc={sortAsc} />
@@ -451,7 +477,9 @@ export default function NodeListPanel({
                   sortField === 'battery' ? (sortAsc ? 'ascending' : 'descending') : 'none'
                 }
                 className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort('battery')}
+                onClick={() => {
+                  handleSort('battery');
+                }}
               >
                 Battery <SortIcon field="battery" sortField={sortField} sortAsc={sortAsc} />
               </th>
@@ -461,7 +489,9 @@ export default function NodeListPanel({
                   sortField === 'voltage' ? (sortAsc ? 'ascending' : 'descending') : 'none'
                 }
                 className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort('voltage')}
+                onClick={() => {
+                  handleSort('voltage');
+                }}
               >
                 Voltage <SortIcon field="voltage" sortField={sortField} sortAsc={sortAsc} />
               </th>
@@ -475,7 +505,9 @@ export default function NodeListPanel({
                     : 'none'
                 }
                 className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort('channel_utilization')}
+                onClick={() => {
+                  handleSort('channel_utilization');
+                }}
               >
                 Ch.Util{' '}
                 <SortIcon field="channel_utilization" sortField={sortField} sortAsc={sortAsc} />
@@ -486,7 +518,9 @@ export default function NodeListPanel({
                   sortField === 'air_util_tx' ? (sortAsc ? 'ascending' : 'descending') : 'none'
                 }
                 className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort('air_util_tx')}
+                onClick={() => {
+                  handleSort('air_util_tx');
+                }}
               >
                 Air Tx <SortIcon field="air_util_tx" sortField={sortField} sortAsc={sortAsc} />
               </th>
@@ -496,7 +530,9 @@ export default function NodeListPanel({
                   sortField === 'altitude' ? (sortAsc ? 'ascending' : 'descending') : 'none'
                 }
                 className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort('altitude')}
+                onClick={() => {
+                  handleSort('altitude');
+                }}
               >
                 Alt <SortIcon field="altitude" sortField={sortField} sortAsc={sortAsc} />
               </th>
@@ -506,7 +542,9 @@ export default function NodeListPanel({
                   sortField === 'redundancy' ? (sortAsc ? 'ascending' : 'descending') : 'none'
                 }
                 className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => handleSort('redundancy')}
+                onClick={() => {
+                  handleSort('redundancy');
+                }}
                 title="Echoes: same packet received via multiple paths (e.g. RF + MQTT or multiple RF hops). Higher means better mesh redundancy."
               >
                 Redund. <SortIcon field="redundancy" sortField={sortField} sortAsc={sortAsc} />
@@ -538,7 +576,9 @@ export default function NodeListPanel({
                 return (
                   <tr
                     key={node.node_id}
-                    onClick={() => onNodeClick(node)}
+                    onClick={() => {
+                      onNodeClick(node);
+                    }}
                     className={`cursor-pointer hover:bg-secondary-dark/50 transition-colors ${rowOpacity} ${
                       isSelf ? 'bg-brand-green/5 border-l-2 border-l-brand-green' : ''
                     }`}
@@ -574,10 +614,17 @@ export default function NodeListPanel({
                       </div>
                     </td>
                     {/* Favorite toggle */}
-                    <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
+                    <td
+                      className="px-2 py-2"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                      }}
+                    >
                       {!isSelf && (
                         <button
-                          onClick={() => onToggleFavorite(node.node_id, !node.favorited)}
+                          onClick={() => {
+                            onToggleFavorite(node.node_id, !node.favorited);
+                          }}
                           aria-label={node.favorited ? 'Remove from favorites' : 'Add to favorites'}
                           aria-pressed={node.favorited}
                           title={node.favorited ? 'Remove from favorites' : 'Add to favorites'}
@@ -647,12 +694,8 @@ export default function NodeListPanel({
                     >
                       {node.heard_via_mqtt_only ? (
                         <span className="text-muted">—</span>
-                      ) : isSelf && (node.hops_away === undefined || node.hops_away === null) ? (
-                        0
-                      ) : node.hops_away !== undefined && node.hops_away !== null ? (
-                        node.hops_away
                       ) : (
-                        '-'
+                        (node.hops_away ?? (isSelf ? 0 : '-'))
                       )}
                     </td>
                     <td className="px-3 py-2 text-center text-gray-300 text-xs">

@@ -45,7 +45,9 @@ export default function KeyboardShortcutsModal({ onClose, tabNames }: KeyboardSh
       if (e.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+    };
   }, [onClose]);
 
   useEffect(() => {
@@ -74,7 +76,9 @@ export default function KeyboardShortcutsModal({ onClose, tabNames }: KeyboardSh
       }
     };
     root.addEventListener('keydown', onTab);
-    return () => root.removeEventListener('keydown', onTab);
+    return () => {
+      root.removeEventListener('keydown', onTab);
+    };
   }, []);
 
   return (

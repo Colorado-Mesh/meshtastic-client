@@ -39,20 +39,24 @@ vi.mock('@liamcottle/meshcore.js', () => {
 
   class MockSerialConnection {
     async write(bytes: Uint8Array) {
+      await Promise.resolve();
       void bytes;
       return undefined;
     }
     async onDataReceived(value: Uint8Array) {
+      await Promise.resolve();
       void value;
       return undefined;
     }
     async onConnected() {
+      await Promise.resolve();
       return undefined;
     }
     onDisconnected() {
       return undefined;
     }
     async close() {
+      await Promise.resolve();
       return undefined;
     }
     on(event: string, cb: (...args: unknown[]) => void) {

@@ -150,7 +150,7 @@ export class MeshcoreMqttAdapter extends EventEmitter {
       const wsScheme = settings.port === 443 || settings.tlsInsecure !== true ? 'wss' : 'ws';
       connectOpts = {
         ...connectOpts,
-        protocol: wsScheme as 'wss' | 'ws',
+        protocol: wsScheme,
         host: settings.server.trim(),
         port: settings.port,
         path: '/mqtt',
@@ -204,7 +204,7 @@ export class MeshcoreMqttAdapter extends EventEmitter {
         this.connectAckTimer = null;
       }
       console.debug('[MeshcoreMqttAdapter] CONNACK received', new Date().toISOString());
-      this.clientIdStr = (this.client?.options.clientId as string) || '';
+      this.clientIdStr = this.client?.options?.clientId ?? '';
       this.setStatus('connected');
       this.emit('clientId', this.clientIdStr);
       const base = normalizePrefix(settings.topicPrefix || 'msh');

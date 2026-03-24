@@ -6,7 +6,7 @@ const INDEX_HTML = readFileSync(join(__dirname, 'index.html'), 'utf-8');
 
 describe('index.html CSP', () => {
   it('connect-src does not use over-broad http://*', () => {
-    const m = INDEX_HTML.match(/http-equiv="Content-Security-Policy"\s+content="([^"]+)"/i);
+    const m = /http-equiv="Content-Security-Policy"\s+content="([^"]+)"/i.exec(INDEX_HTML);
     expect(m).toBeTruthy();
     const csp = m![1];
     expect(csp).toMatch(/connect-src/i);

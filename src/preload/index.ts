@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 import type {
   ElectronAPI,
+  NobleBleConnectResult,
   NobleBleDevice,
   NobleBleSessionId,
   SerialPort,
@@ -132,7 +133,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const handler = (
         _: unknown,
         payload: { status: string; protocol: 'meshtastic' | 'meshcore' },
-      ) => cb(payload);
+      ) => {
+        cb(payload);
+      };
       ipcRenderer.on('mqtt:status', handler);
       return () => ipcRenderer.off('mqtt:status', handler);
     },
@@ -140,7 +143,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const handler = (
         _: unknown,
         payload: { error: string; protocol: 'meshtastic' | 'meshcore' },
-      ) => cb(payload);
+      ) => {
+        cb(payload);
+      };
       ipcRenderer.on('mqtt:error', handler);
       return () => ipcRenderer.off('mqtt:error', handler);
     },
@@ -150,17 +155,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const handler = (
         _: unknown,
         payload: { warning: string; protocol: 'meshtastic' | 'meshcore' },
-      ) => cb(payload);
+      ) => {
+        cb(payload);
+      };
       ipcRenderer.on('mqtt:warning', handler);
       return () => ipcRenderer.off('mqtt:warning', handler);
     },
     onNodeUpdate: (cb: (node: unknown) => void) => {
-      const handler = (_: unknown, n: unknown) => cb(n);
+      const handler = (_: unknown, n: unknown) => {
+        cb(n);
+      };
       ipcRenderer.on('mqtt:node-update', handler);
       return () => ipcRenderer.off('mqtt:node-update', handler);
     },
     onMessage: (cb: (msg: unknown) => void) => {
-      const handler = (_: unknown, m: unknown) => cb(m);
+      const handler = (_: unknown, m: unknown) => {
+        cb(m);
+      };
       ipcRenderer.on('mqtt:message', handler);
       return () => ipcRenderer.off('mqtt:message', handler);
     },
@@ -170,7 +181,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const handler = (
         _: unknown,
         payload: { clientId: string; protocol: 'meshtastic' | 'meshcore' },
-      ) => cb(payload);
+      ) => {
+        cb(payload);
+      };
       ipcRenderer.on('mqtt:clientId', handler);
       return () => ipcRenderer.off('mqtt:clientId', handler);
     },
@@ -215,7 +228,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       rawHex?: string;
     }) => ipcRenderer.invoke('mqtt:publishMeshcorePacketLog', args),
     onMeshcoreChat: (cb: (msg: unknown) => void) => {
-      const handler = (_: unknown, m: unknown) => cb(m);
+      const handler = (_: unknown, m: unknown) => {
+        cb(m);
+      };
       ipcRenderer.on('mqtt:meshcore-chat', handler);
       return () => ipcRenderer.off('mqtt:meshcore-chat', handler);
     },
@@ -223,32 +238,39 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ─── Noble BLE ──────────────────────────────────────────────────
   onNobleBleAdapterState: (cb: (state: string) => void) => {
-    const handler = (_: unknown, state: string) => cb(state);
+    const handler = (_: unknown, state: string) => {
+      cb(state);
+    };
     ipcRenderer.on('noble-ble-adapter-state', handler);
     return () => ipcRenderer.off('noble-ble-adapter-state', handler);
   },
   onNobleBleDeviceDiscovered: (cb: (device: NobleBleDevice) => void) => {
-    const handler = (_: unknown, device: NobleBleDevice) => cb(device);
+    const handler = (_: unknown, device: NobleBleDevice) => {
+      cb(device);
+    };
     ipcRenderer.on('noble-ble-device-discovered', handler);
     return () => ipcRenderer.off('noble-ble-device-discovered', handler);
   },
   onNobleBleConnected: (cb: (sessionId: NobleBleSessionId) => void) => {
-    const handler = (_: unknown, payload: { sessionId: NobleBleSessionId }) =>
+    const handler = (_: unknown, payload: { sessionId: NobleBleSessionId }) => {
       cb(payload.sessionId);
+    };
     ipcRenderer.on('noble-ble-connected', handler);
     return () => ipcRenderer.off('noble-ble-connected', handler);
   },
   onNobleBleDisconnected: (cb: (sessionId: NobleBleSessionId) => void) => {
-    const handler = (_: unknown, payload: { sessionId: NobleBleSessionId }) =>
+    const handler = (_: unknown, payload: { sessionId: NobleBleSessionId }) => {
       cb(payload.sessionId);
+    };
     ipcRenderer.on('noble-ble-disconnected', handler);
     return () => ipcRenderer.off('noble-ble-disconnected', handler);
   },
   onNobleBleFromRadio: (
     cb: (payload: { sessionId: NobleBleSessionId; bytes: Uint8Array }) => void,
   ) => {
-    const handler = (_: unknown, payload: { sessionId: NobleBleSessionId; bytes: Uint8Array }) =>
+    const handler = (_: unknown, payload: { sessionId: NobleBleSessionId; bytes: Uint8Array }) => {
       cb(payload);
+    };
     ipcRenderer.on('noble-ble-from-radio', handler);
     return () => ipcRenderer.off('noble-ble-from-radio', handler);
   },
@@ -256,7 +278,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('noble-ble-start-scan', sessionId),
   stopNobleBleScanning: (sessionId: NobleBleSessionId): Promise<void> =>
     ipcRenderer.invoke('noble-ble-stop-scan', sessionId),
-  connectNobleBle: (sessionId: NobleBleSessionId, peripheralId: string): Promise<void> =>
+  connectNobleBle: (
+    sessionId: NobleBleSessionId,
+    peripheralId: string,
+  ): Promise<NobleBleConnectResult> =>
     ipcRenderer.invoke('noble-ble-connect', sessionId, peripheralId),
   disconnectNobleBle: (sessionId: NobleBleSessionId): Promise<void> =>
     ipcRenderer.invoke('noble-ble-disconnect', sessionId),
@@ -267,7 +292,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Main process intercepts select-serial-port and sends the port
   // list here. Renderer shows a picker, then calls selectSerialPort.
   onSerialPortsDiscovered: (callback: (ports: SerialPort[]) => void) => {
-    const handler = (_event: unknown, ports: SerialPort[]) => callback(ports);
+    const handler = (_event: unknown, ports: SerialPort[]) => {
+      callback(ports);
+    };
     ipcRenderer.on('serial-ports-discovered', handler);
     return () => {
       ipcRenderer.removeListener('serial-ports-discovered', handler);
@@ -308,36 +335,52 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const handler = (
         _: unknown,
         info: { version: string; releaseUrl: string; isPackaged: boolean; isMac: boolean },
-      ) => cb(info);
+      ) => {
+        cb(info);
+      };
       ipcRenderer.on('update:available', handler);
       return () => ipcRenderer.off('update:available', handler);
     },
     onNotAvailable: (cb: () => void) => {
-      const handler = () => cb();
+      const handler = () => {
+        cb();
+      };
       ipcRenderer.on('update:not-available', handler);
       return () => ipcRenderer.off('update:not-available', handler);
     },
     onProgress: (cb: (info: { percent: number }) => void) => {
-      const handler = (_: unknown, info: { percent: number }) => cb(info);
+      const handler = (_: unknown, info: { percent: number }) => {
+        cb(info);
+      };
       ipcRenderer.on('update:progress', handler);
       return () => ipcRenderer.off('update:progress', handler);
     },
     onDownloaded: (cb: () => void) => {
-      const handler = () => cb();
+      const handler = () => {
+        cb();
+      };
       ipcRenderer.on('update:downloaded', handler);
       return () => ipcRenderer.off('update:downloaded', handler);
     },
     onError: (cb: (info: { message: string }) => void) => {
-      const handler = (_: unknown, info: { message: string }) => cb(info);
+      const handler = (_: unknown, info: { message: string }) => {
+        cb(info);
+      };
       ipcRenderer.on('update:error', handler);
       return () => ipcRenderer.off('update:error', handler);
     },
   },
 
   // ─── Connection status ─────────────────────────────────────────
-  notifyDeviceConnected: () => ipcRenderer.send('device-connected'),
-  notifyDeviceDisconnected: () => ipcRenderer.send('device-disconnected'),
-  setTrayUnread: (count: number) => ipcRenderer.send('set-tray-unread', count),
+  notifyDeviceConnected: () => {
+    ipcRenderer.send('device-connected');
+  },
+  notifyDeviceDisconnected: () => {
+    ipcRenderer.send('device-disconnected');
+  },
+  setTrayUnread: (count: number) => {
+    ipcRenderer.send('set-tray-unread', count);
+  },
   quitApp: () => ipcRenderer.invoke('app:quit'),
 
   // ─── Native OS notifications ───────────────────────────────────
@@ -364,12 +407,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ─── Power events ──────────────────────────────────────────────
   onPowerSuspend: (cb: () => void) => {
-    const handler = () => cb();
+    const handler = () => {
+      cb();
+    };
     ipcRenderer.on('power:suspend', handler);
     return () => ipcRenderer.off('power:suspend', handler);
   },
   onPowerResume: (cb: () => void) => {
-    const handler = () => cb();
+    const handler = () => {
+      cb();
+    };
     ipcRenderer.on('power:resume', handler);
     return () => ipcRenderer.off('power:resume', handler);
   },
@@ -382,12 +429,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       write: (bytes: number[]) => ipcRenderer.invoke('meshcore:tcp-write', bytes),
       disconnect: () => ipcRenderer.invoke('meshcore:tcp-disconnect'),
       onData: (cb: (bytes: Uint8Array) => void) => {
-        const handler = (_: unknown, bytes: Uint8Array) => cb(bytes);
+        const handler = (_: unknown, bytes: Uint8Array) => {
+          cb(bytes);
+        };
         ipcRenderer.on('meshcore:tcp-data', handler);
         return () => ipcRenderer.off('meshcore:tcp-data', handler);
       },
       onDisconnected: (cb: () => void) => {
-        const handler = () => cb();
+        const handler = () => {
+          cb();
+        };
         ipcRenderer.on('meshcore:tcp-disconnected', handler);
         return () => ipcRenderer.off('meshcore:tcp-disconnected', handler);
       },
@@ -408,7 +459,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const handler = (
         _: unknown,
         entry: { ts: number; level: string; source: string; message: string },
-      ) => cb(entry);
+      ) => {
+        cb(entry);
+      };
       ipcRenderer.on('log:line', handler);
       return () => ipcRenderer.off('log:line', handler);
     },

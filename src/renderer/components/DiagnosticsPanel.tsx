@@ -17,7 +17,7 @@ import {
 import { diagnoseConnectedNode, hasLocalStatsData } from '../lib/diagnostics/RFDiagnosticEngine';
 import type { OurPosition } from '../lib/gpsSource';
 import type { ProtocolCapabilities } from '../lib/radio/BaseRadioProvider';
-import type { DiagnosticRow, MeshNode, RfDiagnosticRow, RoutingDiagnosticRow } from '../lib/types';
+import type { DiagnosticRow, MeshNode } from '../lib/types';
 import { routingRowToNodeAnomaly } from '../lib/types';
 import { useDiagnosticsStore } from '../stores/diagnosticsStore';
 import MeshCongestionAttributionBlock from './MeshCongestionAttributionBlock';
@@ -362,7 +362,7 @@ export default function DiagnosticsPanel({
         );
       }
       if (row.kind === 'rf') {
-        const rf = row as RfDiagnosticRow;
+        const rf = row;
         const node = nodes.get(rf.nodeId);
         const isInfo = rf.severity === 'info';
         const colorClass = isInfo ? 'text-blue-400' : 'text-orange-400';
@@ -372,7 +372,7 @@ export default function DiagnosticsPanel({
         rows.push(
           <tr
             key={rf.id}
-            onClick={() => node && onNodeClick && onNodeClick(node)}
+            onClick={() => node && onNodeClick?.(node)}
             className={`hover:bg-secondary-dark/50 transition-colors ${
               onNodeClick && node ? 'cursor-pointer' : ''
             }`}
@@ -422,7 +422,7 @@ export default function DiagnosticsPanel({
         );
         return rows;
       }
-      const anomaly = routingRowToNodeAnomaly(row as RoutingDiagnosticRow);
+      const anomaly = routingRowToNodeAnomaly(row);
       const node = nodes.get(anomaly.nodeId);
       const isError = anomaly.severity === 'error';
       const isInfo = anomaly.severity === 'info';
@@ -438,13 +438,13 @@ export default function DiagnosticsPanel({
       const traceHops = hasResult
         ? [
             getFullNodeLabel(myNodeNum) || 'Me',
-            ...traceResult!.route.map((id) => getFullNodeLabel(id)),
-            getFullNodeLabel(traceResult!.from),
+            ...traceResult.route.map((id) => getFullNodeLabel(id)),
+            getFullNodeLabel(traceResult.from),
           ]
         : null;
       rows.push(
         <tr
-          key={(row as RoutingDiagnosticRow).id}
+          key={row.id}
           onClick={() => {
             if (node && onNodeClick) onNodeClick(node);
           }}
@@ -480,7 +480,7 @@ export default function DiagnosticsPanel({
               )}
           </td>
           <td className="px-4 py-2.5 text-right text-xs text-gray-300">
-            {anomaly.hopsAway != null ? anomaly.hopsAway : '—'}
+            {anomaly.hopsAway ?? '—'}
           </td>
           <td className="px-4 py-2.5 text-right text-xs text-muted">
             {isPending ? (
@@ -504,7 +504,12 @@ export default function DiagnosticsPanel({
               );
             })()}
           </td>
-          <td className="px-4 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
+          <td
+            className="px-4 py-2.5 text-right"
+            onClick={(e) => {
+              e.stopPropagation();
+            }}
+          >
             <div className="flex flex-col items-end gap-1.5">
               {isPending ? (
                 <span className="flex items-center justify-end gap-1.5 text-xs text-blue-400">
@@ -563,7 +568,9 @@ export default function DiagnosticsPanel({
               {showMqttControls &&
                 (mqttIgnoredNodes.has(anomaly.nodeId) ? (
                   <button
-                    onClick={() => setNodeMqttIgnored(anomaly.nodeId, false)}
+                    onClick={() => {
+                      setNodeMqttIgnored(anomaly.nodeId, false);
+                    }}
                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 hover:bg-yellow-500/30 transition-colors whitespace-nowrap"
                     title="Click to stop ignoring MQTT for this node"
                   >
@@ -571,7 +578,9 @@ export default function DiagnosticsPanel({
                   </button>
                 ) : (
                   <button
-                    onClick={() => setNodeMqttIgnored(anomaly.nodeId, true)}
+                    onClick={() => {
+                      setNodeMqttIgnored(anomaly.nodeId, true);
+                    }}
                     className="px-2 py-0.5 text-[10px] rounded bg-secondary-dark hover:bg-gray-600 text-muted hover:text-gray-300 transition-colors whitespace-nowrap"
                     title="Exclude this node's MQTT data from diagnostics"
                   >
@@ -609,7 +618,9 @@ export default function DiagnosticsPanel({
           </span>
           <button
             type="button"
-            onClick={() => clearDiagnosticRowsSnapshot()}
+            onClick={() => {
+              clearDiagnosticRowsSnapshot();
+            }}
             className="shrink-0 text-xs px-2 py-1 rounded bg-blue-900/50 hover:bg-blue-800/50 text-blue-100"
           >
             Stop restoring on next launch
@@ -767,7 +778,9 @@ export default function DiagnosticsPanel({
               type="checkbox"
               id="congestionHalos"
               checked={congestionHalosEnabled}
-              onChange={(e) => setCongestionHalosEnabled(e.target.checked)}
+              onChange={(e) => {
+                setCongestionHalosEnabled(e.target.checked);
+              }}
               className="accent-brand-green"
             />
             <label htmlFor="congestionHalos" className="text-sm text-gray-300 cursor-pointer">
@@ -779,7 +792,9 @@ export default function DiagnosticsPanel({
               type="checkbox"
               id="anomalyHalos"
               checked={anomalyHalosEnabled}
-              onChange={(e) => setAnomalyHalosEnabled(e.target.checked)}
+              onChange={(e) => {
+                setAnomalyHalosEnabled(e.target.checked);
+              }}
               className="accent-brand-green"
             />
             <label htmlFor="anomalyHalos" className="text-sm text-gray-300 cursor-pointer">
@@ -792,7 +807,9 @@ export default function DiagnosticsPanel({
                 type="checkbox"
                 id="ignoreMqtt"
                 checked={ignoreMqttEnabled}
-                onChange={(e) => setIgnoreMqttEnabled(e.target.checked)}
+                onChange={(e) => {
+                  setIgnoreMqttEnabled(e.target.checked);
+                }}
                 className="accent-brand-green"
               />
               <label htmlFor="ignoreMqtt" className="text-sm text-gray-300 cursor-pointer">
@@ -815,7 +832,9 @@ export default function DiagnosticsPanel({
               ).map(({ mode, label }, i) => (
                 <button
                   key={mode}
-                  onClick={() => setEnvMode(mode)}
+                  onClick={() => {
+                    setEnvMode(mode);
+                  }}
                   className={`px-4 py-1.5 text-sm transition-colors ${i > 0 ? 'border-l border-gray-600/50' : ''} ${
                     envMode === mode
                       ? 'bg-brand-green/20 text-brand-green border-brand-green/50'
@@ -876,7 +895,9 @@ export default function DiagnosticsPanel({
                 >
                   {label}
                   <button
-                    onClick={() => setNodeMqttIgnored(nodeId, false)}
+                    onClick={() => {
+                      setNodeMqttIgnored(nodeId, false);
+                    }}
                     aria-label="✕"
                     className="ml-0.5 hover:text-yellow-100 leading-none"
                     title="Remove per-node MQTT filter"
@@ -928,7 +949,9 @@ export default function DiagnosticsPanel({
           <input
             type="text"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+            }}
             placeholder="Search anomalies..."
             aria-label="Search anomalies..."
             className="w-48 px-3 py-1.5 bg-secondary-dark/80 rounded-lg text-gray-200 text-sm border border-gray-600/50 focus:border-brand-green/50 focus:outline-none"

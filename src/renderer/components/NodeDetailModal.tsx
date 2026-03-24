@@ -93,7 +93,9 @@ export default function NodeDetailModal({
       if (e.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+    };
   }, [onClose]);
 
   // Reset all state when node changes
@@ -125,7 +127,9 @@ export default function NodeDetailModal({
       setPositionRequestedAt(null);
       setActionStatus('Position request timed out');
     }, 30_000);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+    };
   }, [positionRequestedAt]);
 
   // Clear trace route pending when result arrives
@@ -164,14 +168,16 @@ export default function NodeDetailModal({
       setTraceRoutePending(false);
       setActionStatus('Trace route timed out');
     }, 60_000);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+    };
   }, [traceRoutePending]);
 
   if (!node) return null;
 
   const hexId = `!${node.node_id.toString(16)}`;
   const displayName = node.short_name || node.long_name || hexId;
-  const isOurNode = homeNode != null && node.node_id === homeNode.node_id;
+  const isOurNode = node.node_id === homeNode?.node_id;
 
   const handleRequestPosition = async () => {
     setPositionRequestedAt(Date.now());
@@ -232,7 +238,9 @@ export default function NodeDetailModal({
             </div>
           </div>
           <button
-            onClick={() => onToggleFavorite(node.node_id, !node.favorited)}
+            onClick={() => {
+              onToggleFavorite(node.node_id, !node.favorited);
+            }}
             className="p-1.5 rounded-lg hover:bg-secondary-dark transition-colors shrink-0 mr-1"
             aria-label={node.favorited ? 'Remove from favorites' : 'Add to favorites'}
             aria-pressed={node.favorited}
@@ -311,7 +319,9 @@ export default function NodeDetailModal({
                     {new Date(meshcoreNodeTelemetry.fetchedAt).toLocaleTimeString()}
                   </span>
                   <button
-                    onClick={() => setShowTelemetry(false)}
+                    onClick={() => {
+                      setShowTelemetry(false);
+                    }}
                     className="text-xs text-muted hover:text-gray-300"
                   >
                     Hide
@@ -375,7 +385,9 @@ export default function NodeDetailModal({
                   Neighbors ({meshcoreNeighbors.totalNeighboursCount})
                 </h4>
                 <button
-                  onClick={() => setShowMeshcoreNeighbors(false)}
+                  onClick={() => {
+                    setShowMeshcoreNeighbors(false);
+                  }}
                   className="text-xs text-muted hover:text-gray-300"
                 >
                   Hide
@@ -499,7 +511,9 @@ export default function NodeDetailModal({
                   Repeater Status
                 </h4>
                 <button
-                  onClick={() => setShowRepeaterStats(false)}
+                  onClick={() => {
+                    setShowRepeaterStats(false);
+                  }}
                   className="text-xs text-muted hover:text-gray-300"
                 >
                   Hide
@@ -689,7 +703,9 @@ export default function NodeDetailModal({
             <div className="text-xs text-muted">Exclude this node's MQTT data from diagnostics</div>
           </div>
           <button
-            onClick={() => setNodeMqttIgnored(node.node_id, !mqttIgnoredNodes.has(node.node_id))}
+            onClick={() => {
+              setNodeMqttIgnored(node.node_id, !mqttIgnoredNodes.has(node.node_id));
+            }}
             className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${
               mqttIgnoredNodes.has(node.node_id) ? 'bg-yellow-500' : 'bg-gray-600'
             }`}
@@ -720,7 +736,9 @@ export default function NodeDetailModal({
         <div className="shrink-0 px-5 pb-4">
           {!showDeleteConfirm ? (
             <button
-              onClick={() => setShowDeleteConfirm(true)}
+              onClick={() => {
+                setShowDeleteConfirm(true);
+              }}
               className="w-full mt-2 px-3 py-2 text-sm font-medium bg-red-900/30 hover:bg-red-900/50 text-red-400 hover:text-red-300 rounded-lg transition-colors border border-red-900/50"
             >
               Delete Node
@@ -732,7 +750,9 @@ export default function NodeDetailModal({
               </p>
               <div className="flex gap-2">
                 <button
-                  onClick={() => setShowDeleteConfirm(false)}
+                  onClick={() => {
+                    setShowDeleteConfirm(false);
+                  }}
                   className="flex-1 px-3 py-1.5 text-xs bg-secondary-dark hover:bg-gray-600 text-gray-300 rounded transition-colors"
                 >
                   Cancel

@@ -198,7 +198,7 @@ function loadDiagnosticRowsSnapshot(): { rows: DiagnosticRow[]; savedAt: number 
     raw,
     'diagnosticsStore loadDiagnosticRowsSnapshot',
   );
-  if (!parsed || parsed.v !== 1 || !Array.isArray(parsed.rows)) return null;
+  if (parsed?.v !== 1 || !Array.isArray(parsed.rows)) return null;
   let rows = parsed.rows.filter(isValidDiagnosticRow);
   if (rows.length === 0 && parsed.rows.length > 0) return null;
   const now = Date.now();
@@ -348,7 +348,7 @@ function loadMqttIgnoredNodes(): Set<number> {
   const raw = localStorage.getItem('mesh-client:mqttIgnoredNodes');
   const arr = parseStoredJson<unknown>(raw, 'diagnosticsStore loadMqttIgnoredNodes');
   if (Array.isArray(arr) && arr.every((n) => typeof n === 'number')) {
-    return new Set<number>(arr as number[]);
+    return new Set<number>(arr);
   }
   return new Set();
 }

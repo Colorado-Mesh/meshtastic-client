@@ -542,8 +542,8 @@ function runMigrations(): void {
 }
 
 /** Export DB to a file. Best-effort for very large databases; may take a long time with no progress callback. */
-export async function exportDatabase(destPath: string): Promise<void> {
-  await getDatabase().backup(destPath);
+export function exportDatabase(destPath: string): void {
+  getDatabase().backup(destPath);
 }
 
 const MAX_MERGE_FILE_BYTES = 500 * 1024 * 1024; // 500 MB
@@ -636,7 +636,7 @@ export function mergeDatabase(sourcePath: string) {
             );
             continue;
           }
-          if (!checkMessage.get(senderId as number, timestamp as number, payload as string)) {
+          if (!checkMessage.get(senderId as number, timestamp as number, payload)) {
             insertMessage.run(msg);
             messagesAdded++;
           }

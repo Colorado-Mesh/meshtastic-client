@@ -45,7 +45,7 @@ import {
 import { parseStoredJson } from './lib/parseStoredJson';
 import { useRadioProvider } from './lib/radio/providerFactory';
 import { applyThemeColors, loadThemeColors } from './lib/themeColors';
-import type { ChatMessage, DeviceState, MeshProtocol, MQTTSettings } from './lib/types';
+import type { ChatMessage, MeshProtocol, MQTTSettings } from './lib/types';
 import { useDiagnosticsStore } from './stores/diagnosticsStore';
 
 const PROTOCOL_KEY = 'mesh-client:protocol';
@@ -304,7 +304,7 @@ export default function App() {
         .join('');
     const unconfiguredKey = '00000000000000000000000000000000';
     return chs
-      .filter((ch) => ch.secret && ch.secret.length === 16 && toHex(ch.secret) !== unconfiguredKey)
+      .filter((ch) => ch.secret?.length === 16 && toHex(ch.secret) !== unconfiguredKey)
       .map((ch) => ({ index: ch.index, name: ch.name }));
   }, [protocol, device.channels]);
 
@@ -335,8 +335,12 @@ export default function App() {
   const chatNodesForPanel = isChatPanelFrozen && freeze ? freeze.nodes : nodesForUi;
   const chatChannelsForPanel = isChatPanelFrozen && freeze ? freeze.channels : chatChannels;
 
-  const handleDmTargetConsumed = useCallback(() => setPendingDmTarget(null), []);
-  const handleOpenGlobalSearch = useCallback(() => setSearchModalOpen(true), []);
+  const handleDmTargetConsumed = useCallback(() => {
+    setPendingDmTarget(null);
+  }, []);
+  const handleOpenGlobalSearch = useCallback(() => {
+    setSearchModalOpen(true);
+  }, []);
 
   // ─── Startup node pruning based on persisted admin settings ─────
   const { refreshNodesFromDb } = device;
@@ -349,36 +353,38 @@ export default function App() {
     const s = { ...DEFAULT_ADMIN_SETTINGS_SHARED, ...raw };
     const ops: Promise<unknown>[] = [
       // One-time migration: rename legacy "RF !xxxxxxxx" stub nodes to "!xxxxxxxx"
-      window.electronAPI.db
-        .migrateRfStubNodes()
-        .catch((e) => console.warn('[App] startup migrateRfStubNodes failed', e)),
+      window.electronAPI.db.migrateRfStubNodes().catch((e: unknown) => {
+        console.warn('[App] startup migrateRfStubNodes failed', e);
+      }),
     ];
     if (s.autoPruneEnabled) {
       const days =
         typeof s.autoPruneDays === 'number' && s.autoPruneDays > 0 ? s.autoPruneDays : 30;
       ops.push(
-        window.electronAPI.db
-          .deleteNodesByAge(days)
-          .catch((e) => console.warn('[App] startup deleteNodesByAge failed', e)),
+        window.electronAPI.db.deleteNodesByAge(days).catch((e: unknown) => {
+          console.warn('[App] startup deleteNodesByAge failed', e);
+        }),
       );
     }
-    if (s.nodeCapEnabled !== false) {
+    if (s.nodeCapEnabled) {
       const cap = typeof s.nodeCapCount === 'number' && s.nodeCapCount > 0 ? s.nodeCapCount : 10000;
       ops.push(
-        window.electronAPI.db
-          .pruneNodesByCount(cap)
-          .catch((e) => console.warn('[App] startup pruneNodesByCount failed', e)),
+        window.electronAPI.db.pruneNodesByCount(cap).catch((e: unknown) => {
+          console.warn('[App] startup pruneNodesByCount failed', e);
+        }),
       );
     }
     if (s.pruneEmptyNamesEnabled) {
       ops.push(
-        window.electronAPI.db
-          .deleteNodesWithoutLongname()
-          .catch((e) => console.warn('[App] startup deleteNodesWithoutLongname failed', e)),
+        window.electronAPI.db.deleteNodesWithoutLongname().catch((e: unknown) => {
+          console.warn('[App] startup deleteNodesWithoutLongname failed', e);
+        }),
       );
     }
     if (ops.length > 0) {
-      void Promise.all(ops).then(() => refreshNodesFromDb());
+      void Promise.all(ops).then(() => {
+        refreshNodesFromDb();
+      });
     }
   }, [refreshNodesFromDb]);
 
@@ -397,11 +403,9 @@ export default function App() {
           'App MQTT auto-launch',
         );
         if (settings?.autoLaunch) {
-          const connectSettings = {
+          const connectSettings: MQTTSettings = {
             ...settings,
-            mqttTransportProtocol: (prot === 'meshcore' ? 'meshcore' : 'meshtastic') as
-              | 'meshcore'
-              | 'meshtastic',
+            mqttTransportProtocol: prot === 'meshcore' ? 'meshcore' : 'meshtastic',
           };
           const tryConnect = async () => {
             if (prot === 'meshcore' && isLetsMeshSettings(connectSettings.server)) {
@@ -440,7 +444,9 @@ export default function App() {
             }
             await window.electronAPI.mqtt.connect(connectSettings);
           };
-          void tryConnect().catch((e) => console.warn('[App] MQTT auto-launch connect failed', e));
+          void tryConnect().catch((e: unknown) => {
+            console.warn('[App] MQTT auto-launch connect failed', e);
+          });
         }
       } catch (e) {
         console.debug('[App] MQTT auto-launch startup', e);
@@ -491,8 +497,12 @@ export default function App() {
 
   // ─── Auto-check for updates on startup ────
   useEffect(() => {
-    const t = setTimeout(() => window.electronAPI.update.check(), 5000);
-    return () => clearTimeout(t);
+    const t = setTimeout(() => {
+      void window.electronAPI.update.check();
+    }, 5000);
+    return () => {
+      clearTimeout(t);
+    };
   }, []);
 
   // ─── Keyboard shortcuts: Cmd/Ctrl+[ / ] to switch protocol ───────────────
@@ -507,7 +517,9 @@ export default function App() {
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, [handleProtocolChange]);
 
   // ─── Keyboard shortcuts: Cmd/Ctrl+1-9 for tabs, ? for help ───────────────
@@ -518,7 +530,7 @@ export default function App() {
         setSearchModalOpen(true);
       } else if ((e.metaKey || e.ctrlKey) && e.key >= '1' && e.key <= '9') {
         e.preventDefault();
-        setActiveTab(parseInt(e.key) - 1);
+        setActiveTab(parseInt(e.key, 10) - 1);
       } else if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         const tag = (e.target as HTMLElement).tagName;
         if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
@@ -528,7 +540,9 @@ export default function App() {
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
   // ─── Track Meshtastic messages arriving while inactive ──────────
@@ -593,7 +607,7 @@ export default function App() {
   // Manual reconnect from banner
   const handleReconnect = useCallback(() => {
     const lastType = device.state.connectionType ?? 'ble';
-    device.disconnect().then(() => {
+    void device.disconnect().then(() => {
       // Small delay before reconnecting
       setTimeout(() => {
         if (protocol === 'meshtastic' && lastType === 'ble') {
@@ -604,12 +618,14 @@ export default function App() {
             console.warn('[App] handleReconnect missing BLE peripheral ID');
             return;
           }
-          device.connectAutomatic('ble', undefined, undefined, bleDeviceId).catch((err) => {
-            console.warn('[App] handleReconnect BLE auto-connect failed', err);
-          });
+          device
+            .connectAutomatic('ble', undefined, undefined, bleDeviceId)
+            .catch((err: unknown) => {
+              console.warn('[App] handleReconnect BLE auto-connect failed', err);
+            });
           return;
         }
-        device.connect(lastType).catch((err) => {
+        device.connect(lastType).catch((err: unknown) => {
           console.warn('[App] handleReconnect connect failed', err);
         });
       }, 500);
@@ -621,7 +637,9 @@ export default function App() {
     setActiveTab(1); // Switch to Chat tab
   }, []);
 
-  const handleLocationFilterChange = useCallback((f: LocationFilter) => setLocationFilter(f), []);
+  const handleLocationFilterChange = useCallback((f: LocationFilter) => {
+    setLocationFilter(f);
+  }, []);
 
   const statusColor = STATUS_COLOR[device.state.status] ?? 'bg-gray-500';
 
@@ -673,7 +691,9 @@ export default function App() {
                 type="button"
                 aria-pressed={protocol === 'meshtastic'}
                 aria-label="Switch to Meshtastic"
-                onClick={() => handleProtocolChange('meshtastic')}
+                onClick={() => {
+                  handleProtocolChange('meshtastic');
+                }}
                 className={`px-3 py-0.5 transition-colors ${
                   protocol === 'meshtastic'
                     ? 'bg-brand-green/20 text-brand-green'
@@ -692,7 +712,9 @@ export default function App() {
                 type="button"
                 aria-pressed={protocol === 'meshcore'}
                 aria-label="Switch to MeshCore"
-                onClick={() => handleProtocolChange('meshcore')}
+                onClick={() => {
+                  handleProtocolChange('meshcore');
+                }}
                 className={`px-3 py-0.5 transition-colors ${
                   protocol === 'meshcore'
                     ? 'bg-cyan-600/20 text-cyan-400'
@@ -779,7 +801,9 @@ export default function App() {
             </span>
             <button
               type="button"
-              onClick={() => setTelemetryNoticeDismissed(true)}
+              onClick={() => {
+                setTelemetryNoticeDismissed(true);
+              }}
               aria-label="Dismiss"
               className="shrink-0 text-gray-500 hover:text-gray-300 transition-colors text-xs font-medium px-2 py-1 rounded border border-gray-600 hover:border-gray-500"
             >
@@ -824,10 +848,10 @@ export default function App() {
                   </div>
                   <div hidden={protocol !== 'meshcore'}>
                     <ConnectionPanel
-                      state={meshcoreDevice.state as DeviceState}
+                      state={meshcoreDevice.state}
                       onConnect={(type, addr, blePeripheralId) =>
                         meshcoreDevice.connect(
-                          type === 'http' ? 'tcp' : (type as 'ble' | 'serial'),
+                          type === 'http' ? 'tcp' : type,
                           addr,
                           blePeripheralId,
                         )
@@ -875,7 +899,9 @@ export default function App() {
                     <NodeListPanel
                       nodes={nodesForUi}
                       myNodeNum={device.selfNodeId}
-                      onNodeClick={(node) => setSelectedNodeId(node.node_id)}
+                      onNodeClick={(node) => {
+                        setSelectedNodeId(node.node_id);
+                      }}
                       mqttConnected={device.mqttStatus === 'connected'}
                       locationFilter={locationFilter}
                       onToggleFavorite={device.setNodeFavorited}
@@ -989,7 +1015,9 @@ export default function App() {
                         meshcoreNeighbors={meshcoreDevice.meshcoreNeighbors}
                         onRequestTelemetry={meshcoreDevice.requestTelemetry}
                         meshcoreTelemetry={meshcoreDevice.meshcoreNodeTelemetry}
-                        onSelectRepeater={(node) => setSelectedNodeId(node.node_id)}
+                        onSelectRepeater={(node) => {
+                          setSelectedNodeId(node.node_id);
+                        }}
                       />
                     </Suspense>
                   ) : null}
@@ -1063,7 +1091,9 @@ export default function App() {
                         traceRouteResults={device.traceRouteResults}
                         getFullNodeLabel={device.getFullNodeLabel}
                         ourPosition={device.ourPosition}
-                        onNodeClick={(node) => setSelectedNodeId(node.node_id)}
+                        onNodeClick={(node) => {
+                          setSelectedNodeId(node.node_id);
+                        }}
                         capabilities={capabilities}
                       />
                     </Suspense>
@@ -1109,7 +1139,9 @@ export default function App() {
               </span>
               <button
                 type="button"
-                onClick={() => setShowShortcuts(true)}
+                onClick={() => {
+                  setShowShortcuts(true);
+                }}
                 aria-label="Keyboard shortcuts (?)"
                 aria-haspopup="dialog"
                 title="Keyboard shortcuts (?)"
@@ -1178,7 +1210,9 @@ export default function App() {
         {/* Keyboard Shortcuts Modal */}
         {showShortcuts && (
           <KeyboardShortcutsModal
-            onClose={() => setShowShortcuts(false)}
+            onClose={() => {
+              setShowShortcuts(false);
+            }}
             tabNames={displayTabNames}
           />
         )}
@@ -1186,7 +1220,9 @@ export default function App() {
         {/* Cross-channel Search Modal */}
         <SearchModal
           isOpen={searchModalOpen}
-          onClose={() => setSearchModalOpen(false)}
+          onClose={() => {
+            setSearchModalOpen(false);
+          }}
           protocol={protocol}
           nodes={nodesForUi}
           channels={chatChannels}
@@ -1199,7 +1235,9 @@ export default function App() {
         <NodeDetailModal
           nodes={nodesForUi}
           node={selectedNode}
-          onClose={() => setSelectedNodeId(null)}
+          onClose={() => {
+            setSelectedNodeId(null);
+          }}
           onRequestPosition={device.requestPosition}
           onTraceRoute={device.traceRoute}
           traceRouteHops={traceRouteHops}

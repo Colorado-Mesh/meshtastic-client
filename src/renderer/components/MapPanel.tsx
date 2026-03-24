@@ -381,8 +381,7 @@ function ViewportSaver({ hasAnyPositions }: { hasAnyPositions: boolean }) {
       const next = { center: [center.lat, center.lng] as [number, number], zoom };
       const current = useMapViewportStore.getState().viewport;
       if (
-        current &&
-        current.zoom === next.zoom &&
+        current?.zoom === next.zoom &&
         Math.abs(current.center[0] - next.center[0]) < VIEWPORT_EPS &&
         Math.abs(current.center[1] - next.center[1]) < VIEWPORT_EPS
       ) {
@@ -534,14 +533,13 @@ export default function MapPanel({
 
   useEffect(() => {
     ensureMapStyles();
-    loadHistoryFromDb();
+    void loadHistoryFromDb();
   }, [loadHistoryFromDb]);
 
   const nodesWithPosition = useMemo(() => {
     const homeNode = myNodeNum ? nodes.get(myNodeNum) : undefined;
     const homeHasLocation =
-      homeNode &&
-      homeNode.latitude != null &&
+      homeNode?.latitude != null &&
       homeNode.latitude !== 0 &&
       homeNode.longitude != null &&
       homeNode.longitude !== 0;
@@ -564,8 +562,8 @@ export default function MapPanel({
       }
       if (!rejectReason && locationFilter.enabled && homeHasLocation) {
         const d = haversineDistanceKm(
-          homeNode!.latitude!,
-          homeNode!.longitude!,
+          homeNode.latitude!,
+          homeNode.longitude!,
           n.latitude!,
           n.longitude!,
         );
@@ -585,8 +583,7 @@ export default function MapPanel({
       if (idSet.has(nodeId)) continue;
       const node = nodes.get(nodeId);
       if (
-        !node ||
-        node.latitude == null ||
+        node?.latitude == null ||
         node.longitude == null ||
         !(Math.abs(node.latitude) > 0.0001 || Math.abs(node.longitude) > 0.0001)
       )

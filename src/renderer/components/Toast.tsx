@@ -54,11 +54,15 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
 
   useEffect(() => {
     // Slide in
-    requestAnimationFrame(() => setVisible(true));
+    requestAnimationFrame(() => {
+      setVisible(true);
+    });
     // Auto-dismiss
     timerRef.current = setTimeout(() => {
       setVisible(false);
-      dismissTimerRef.current = setTimeout(() => onDismiss(toast.id), 300);
+      dismissTimerRef.current = setTimeout(() => {
+        onDismiss(toast.id);
+      }, 300);
     }, toast.duration);
     return () => {
       clearTimeout(timerRef.current);
@@ -92,7 +96,9 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
         onClick={() => {
           clearTimeout(timerRef.current);
           setVisible(false);
-          dismissTimerRef.current = setTimeout(() => onDismiss(toast.id), 300);
+          dismissTimerRef.current = setTimeout(() => {
+            onDismiss(toast.id);
+          }, 300);
         }}
         aria-label="Dismiss"
         className="text-muted hover:text-gray-200 ml-2 shrink-0 text-xs font-medium"

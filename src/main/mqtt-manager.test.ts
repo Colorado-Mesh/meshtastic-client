@@ -110,7 +110,7 @@ describe('parsePsk', () => {
     expect(result).not.toBeNull();
     expect(result!.length).toBe(16);
     expect(result![0]).toBe(0x01);
-    expect(result!.slice(1).every((b) => b === 0)).toBe(true);
+    expect(result!.subarray(1).every((b) => b === 0)).toBe(true);
   });
 
   it('truncates a key longer than 16 bytes to 16 bytes', () => {

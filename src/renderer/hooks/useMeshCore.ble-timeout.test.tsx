@@ -17,7 +17,7 @@ describe('useMeshCore BLE Noble IPC timeout handling', () => {
     vi.clearAllMocks();
     vi.mocked(window.electronAPI.db.getMeshcoreContacts).mockResolvedValue([]);
     vi.mocked(window.electronAPI.db.getMeshcoreMessages).mockResolvedValue([]);
-    vi.mocked(window.electronAPI.connectNobleBle).mockResolvedValue(undefined);
+    vi.mocked(window.electronAPI.connectNobleBle).mockResolvedValue({ ok: true });
     vi.mocked(window.electronAPI.disconnectNobleBle).mockResolvedValue(undefined);
     vi.mocked(withTimeout).mockImplementation((promise: Promise<unknown>) => promise);
   });
@@ -101,7 +101,7 @@ describe('useMeshCore BLE Noble IPC timeout handling', () => {
   it('retries once after IPC-open timeout before second-attempt handshake timeout', async () => {
     vi.mocked(window.electronAPI.connectNobleBle)
       .mockRejectedValueOnce(new Error('MeshCore BLE IPC open timed out after 25000ms'))
-      .mockResolvedValueOnce(undefined);
+      .mockResolvedValueOnce({ ok: true });
 
     vi.mocked(withTimeout).mockImplementation(
       async (promise: Promise<unknown>, _ms: number, label: string) => {

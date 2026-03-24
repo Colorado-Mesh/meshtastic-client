@@ -104,7 +104,7 @@ function serializeErrorLike(value: unknown): string {
     return JSON.stringify(value);
   } catch {
     // catch-no-log-ok stringify fallback for arbitrary error payloads
-    return String(value);
+    return '[unserializable]';
   }
 }
 
@@ -161,7 +161,9 @@ class IpcTcpConnection {
   }
 
   cleanup() {
-    this.cleanupFns.forEach((fn) => fn());
+    this.cleanupFns.forEach((fn) => {
+      fn();
+    });
     this.cleanupFns = [];
   }
 }
@@ -210,7 +212,9 @@ class IpcNobleConnection {
     this.cleanupFns = [offData, offDisc];
     try {
       await withTimeout(
-        window.electronAPI.connectNobleBle(sessionId, this.peripheralId),
+        window.electronAPI.connectNobleBle(sessionId, this.peripheralId).then((result) => {
+          if (!result.ok) throw new Error(result.error || 'BLE connect failed');
+        }),
         NOBLE_IPC_CONNECT_TIMEOUT_MS,
         'MeshCore BLE IPC open',
       );
@@ -239,7 +243,9 @@ class IpcNobleConnection {
   }
 
   cleanup() {
-    this.cleanupFns.forEach((fn) => fn());
+    this.cleanupFns.forEach((fn) => {
+      fn();
+    });
     this.cleanupFns = [];
   }
 }
@@ -441,8 +447,8 @@ function normalizeMeshcoreIncomingText(rawText: string): MeshcoreNormalizedText 
   const senderCandidate = text.slice(0, colonIdx).trim();
   let payload = text.slice(colonIdx + 1).trim();
   if (!senderCandidate || !payload) return { payload: text };
-  const tapbackTargetMatch = payload.match(/^@\[[^\]]+\]\s*(.+)$/u);
-  if (tapbackTargetMatch && tapbackTargetMatch[1]) {
+  const tapbackTargetMatch = /^@\[[^\]]+\]\s*(.+)$/u.exec(payload);
+  if (tapbackTargetMatch?.[1]) {
     payload = tapbackTargetMatch[1].trim();
   }
   return { senderName: senderCandidate, payload };
@@ -660,7 +666,7 @@ export function useMeshCore() {
   useEffect(() => {
     const offStatus = window.electronAPI.mqtt.onStatus(({ status: s, protocol }) => {
       if (protocol !== 'meshcore') return;
-      const st = s as MQTTStatus;
+      const st = s;
       mqttStatusRef.current = st;
       setMqttStatus(st);
     });
@@ -724,7 +730,9 @@ export function useMeshCore() {
           console.debug('[useMeshCore] mount: loaded', mapped.length, 'messages from DB');
         }
       })
-      .catch((e) => console.warn('[useMeshCore] load contacts/messages from DB on mount', e));
+      .catch((e: unknown) => {
+        console.warn('[useMeshCore] load contacts/messages from DB on mount', e);
+      });
     return () => {
       cancelled = true;
     };
@@ -770,9 +778,7 @@ export function useMeshCore() {
         return;
       }
       let resolvedId =
-        m.senderNodeId != null && Number.isFinite(Number(m.senderNodeId))
-          ? Number(m.senderNodeId) >>> 0
-          : 0;
+        m.senderNodeId != null && Number.isFinite(m.senderNodeId) ? m.senderNodeId >>> 0 : 0;
       const ts = m.timestamp ?? Date.now();
       const tsSec = Math.floor(ts / 1000);
       const displayName =
@@ -852,9 +858,11 @@ export function useMeshCore() {
           .map((b) => b.toString(16).padStart(2, '0'))
           .join('');
         pubKeyPrefixMapRef.current.set(prefix, node.node_id);
-        void window.electronAPI.db.saveMeshcoreContact(contactToDbRow(contact)).catch((e) => {
-          console.warn('[useMeshCore] saveMeshcoreContact error', e);
-        });
+        void window.electronAPI.db
+          .saveMeshcoreContact(contactToDbRow(contact))
+          .catch((e: unknown) => {
+            console.warn('[useMeshCore] saveMeshcoreContact error', e);
+          });
       }
 
       try {
@@ -1265,7 +1273,7 @@ export function useMeshCore() {
                 rssi,
                 rawHex,
               })
-              .catch((e) => {
+              .catch((e: unknown) => {
                 const t = Date.now();
                 if (t - lastPacketLogPublishFailureLogAtRef.current >= 30_000) {
                   lastPacketLogPublishFailureLogAtRef.current = t;
@@ -1343,7 +1351,7 @@ export function useMeshCore() {
         console.warn('[useMeshCore] setManualAddContacts (init) error', e);
       }
 
-      await conn.syncDeviceTime().catch((e) => {
+      await conn.syncDeviceTime().catch((e: unknown) => {
         console.warn('[useMeshCore] syncDeviceTime error', e);
       });
       await conn
@@ -1351,7 +1359,7 @@ export function useMeshCore() {
         .then(({ batteryMilliVolts }) => {
           setSelfInfo((prev) => (prev ? { ...prev, batteryMilliVolts } : prev));
         })
-        .catch((e) => {
+        .catch((e: unknown) => {
           console.warn('[useMeshCore] getBatteryVoltage error', e);
         });
     },
@@ -1436,12 +1444,15 @@ export function useMeshCore() {
               await new Promise<void>((r) => setTimeout(r, 1500));
             }
           }
-          if (!connected) throw lastBleError ?? new Error('BLE connect failed');
+          if (!connected) {
+            if (lastBleError instanceof Error) throw lastBleError;
+            throw new Error('BLE connect failed');
+          }
         } else if (type === 'serial') {
           console.debug('[useMeshCore] connect: serial requesting port...');
           if (!navigator.serial?.requestPort) throw new Error('Web Serial API not available');
           const port = await navigator.serial.requestPort();
-          serialRawPort = port as SerialPort;
+          serialRawPort = port;
           persistSerialPortIdentity(serialRawPort);
           await (serialRawPort as any).open({ baudRate: 115200 });
           conn = new (WebSerialConnection as unknown as new (port: unknown) => MeshCoreConnection)(
@@ -1462,7 +1473,7 @@ export function useMeshCore() {
         console.debug('[useMeshCore] connect: handshake complete, type=', type);
       } catch (err) {
         const rawMessage = serializeErrorLike(err) || 'Connection failed';
-        const safeMessage = (rawMessage && String(rawMessage).trim()) || 'Connection failed';
+        const safeMessage = rawMessage.trim() || 'Connection failed';
         const isAlreadyInProgress = /already in progress|Connection already in progress/i.test(
           safeMessage,
         );
@@ -1552,7 +1563,7 @@ export function useMeshCore() {
         try {
           if (!navigator.serial?.getPorts) throw new Error('Web Serial API not available');
           const ports = await navigator.serial.getPorts();
-          serialPort = selectGrantedSerialPort(ports, lastSerialPortId) as SerialPort;
+          serialPort = selectGrantedSerialPort(ports, lastSerialPortId);
           persistSerialPortIdentity(serialPort);
           await serialPort.open({ baudRate: 115200 });
           serialConn = new (WebSerialConnection as unknown as new (
@@ -1586,7 +1597,7 @@ export function useMeshCore() {
         }
       } else if (type === 'http') {
         let addr = httpAddress;
-        if (addr == null || !String(addr).trim()) {
+        if (!addr?.trim()) {
           try {
             const raw = localStorage.getItem('mesh-client:lastConnection:meshcore');
             const parsed = raw
@@ -1695,7 +1706,7 @@ export function useMeshCore() {
                 packet_id: ackCrc,
                 to_node: destNodeId,
               })
-              .catch((e) => {
+              .catch((e: unknown) => {
                 console.warn('[useMeshCore] saveMeshcoreMessage (outgoing) error', e);
               });
 
@@ -1711,7 +1722,7 @@ export function useMeshCore() {
               );
               void window.electronAPI.db
                 .updateMeshcoreMessageStatus(ackCrc, 'failed')
-                .catch((e) => {
+                .catch((e: unknown) => {
                   console.warn('[useMeshCore] updateMeshcoreMessageStatus (timeout) error', e);
                 });
             }, estTimeout);
@@ -1735,7 +1746,7 @@ export function useMeshCore() {
                 status: 'acked',
                 to_node: destNodeId,
               })
-              .catch((e) => {
+              .catch((e: unknown) => {
                 console.warn('[useMeshCore] saveMeshcoreMessage (outgoing-no-ack) error', e);
               });
           }
@@ -1854,7 +1865,7 @@ export function useMeshCore() {
       next.delete(nodeId);
       return next;
     });
-    void window.electronAPI.db.deleteMeshcoreContact(nodeId).catch((e) => {
+    void window.electronAPI.db.deleteMeshcoreContact(nodeId).catch((e: unknown) => {
       console.warn('[useMeshCore] deleteMeshcoreContact error', e);
     });
   }, []);
@@ -1867,7 +1878,7 @@ export function useMeshCore() {
       }
       return next;
     });
-    await window.electronAPI.db.clearMeshcoreRepeaters().catch((e) => {
+    await window.electronAPI.db.clearMeshcoreRepeaters().catch((e: unknown) => {
       console.warn('[useMeshCore] clearMeshcoreRepeaters error', e);
     });
   }, []);
@@ -1917,7 +1928,9 @@ export function useMeshCore() {
             ? new Error(
                 'Failed to apply radio settings. The device may not support changing radio parameters over this connection.',
               )
-            : e;
+            : e instanceof Error
+              ? e
+              : new Error(typeof e === 'string' ? e : 'Unknown error');
         throw err;
       }
       try {
@@ -1930,7 +1943,9 @@ export function useMeshCore() {
             ? new Error(
                 'Failed to set TX power. The device may not support changing it over this connection.',
               )
-            : e;
+            : e instanceof Error
+              ? e
+              : new Error(typeof e === 'string' ? e : 'Unknown error');
         throw err;
       }
       setSelfInfo((prev) =>
@@ -1995,7 +2010,9 @@ export function useMeshCore() {
             ? new Error(
                 'Device rejected position update — check that the device supports setting coordinates',
               )
-            : e;
+            : e instanceof Error
+              ? e
+              : new Error(typeof e === 'string' ? e : 'Unknown error');
         throw err;
       }
     },
@@ -2271,8 +2288,14 @@ export function useMeshCore() {
         continue;
       }
       const rec = r as Record<string, unknown>;
-      const name = String(rec.name ?? rec.label ?? rec.title ?? rec.node_name ?? '').trim();
-      const rawKey = String(rec.public_key ?? rec.pubkey ?? rec.key ?? rec.publicKey ?? '').trim();
+      const firstString = (...vals: unknown[]) => {
+        for (const v of vals) {
+          if (typeof v === 'string' && v.trim()) return v.trim();
+        }
+        return '';
+      };
+      const name = firstString(rec.name, rec.label, rec.title, rec.node_name);
+      const rawKey = firstString(rec.public_key, rec.pubkey, rec.key, rec.publicKey);
       if (!name || !rawKey) {
         console.debug('[useMeshCore] importRepeaters: skipping entry missing name or key', rec);
         skipped++;
@@ -2371,9 +2394,9 @@ export function useMeshCore() {
             last_rssi: null,
             nickname: name,
           })
-          .catch((e: unknown) =>
-            console.warn('[useMeshCore] saveMeshcoreContact (import repeaters) error', e),
-          );
+          .catch((e: unknown) => {
+            console.warn('[useMeshCore] saveMeshcoreContact (import repeaters) error', e);
+          });
       }
     }
 

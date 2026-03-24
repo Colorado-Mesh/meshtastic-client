@@ -27,6 +27,7 @@ class FakeCharacteristic extends EventEmitter {
   }
 
   async subscribeAsync(): Promise<void> {
+    await Promise.resolve();
     this.subscribeCalls += 1;
     if (this.subscribeFails) throw new Error('subscribe failed');
   }
@@ -36,11 +37,13 @@ class FakeCharacteristic extends EventEmitter {
   }
 
   async readAsync(): Promise<Buffer> {
+    await Promise.resolve();
     this.readCalls += 1;
     return this.readQueue.length > 0 ? this.readQueue.shift()! : Buffer.alloc(0);
   }
 
   async writeAsync(): Promise<void> {
+    await Promise.resolve();
     this.writeCalls += 1;
   }
 }
@@ -61,10 +64,12 @@ class FakePeripheral extends EventEmitter {
   }
 
   async connectAsync(): Promise<void> {
+    await Promise.resolve();
     this.state = 'connected';
   }
 
   async disconnectAsync(): Promise<void> {
+    await Promise.resolve();
     this.state = 'disconnected';
     this.emit('disconnect', 'manual');
   }
@@ -72,6 +77,7 @@ class FakePeripheral extends EventEmitter {
   async discoverSomeServicesAndCharacteristicsAsync(): Promise<{
     characteristics: FakeCharacteristic[];
   }> {
+    await Promise.resolve();
     return { characteristics: this.characteristics };
   }
 }

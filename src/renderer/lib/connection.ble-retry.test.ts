@@ -19,13 +19,13 @@ import { createBleConnection } from './connection';
 describe('createBleConnection retry behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(window.electronAPI.connectNobleBle).mockResolvedValue(undefined);
+    vi.mocked(window.electronAPI.connectNobleBle).mockResolvedValue({ ok: true });
   });
 
   it('retries once on main-process BLE timeout errors', async () => {
     vi.mocked(window.electronAPI.connectNobleBle)
-      .mockRejectedValueOnce(new Error('BLE connectAsync timed out after 30000ms'))
-      .mockResolvedValueOnce(undefined);
+      .mockResolvedValueOnce({ ok: false, error: 'BLE connectAsync timed out after 30000ms' })
+      .mockResolvedValueOnce({ ok: true });
 
     const device = await createBleConnection('ble-device-1', 'meshtastic');
 
@@ -45,9 +45,10 @@ describe('createBleConnection retry behavior', () => {
   });
 
   it('does not retry non-timeout BLE errors', async () => {
-    vi.mocked(window.electronAPI.connectNobleBle).mockRejectedValue(
-      new Error('Bluetooth adapter is not available'),
-    );
+    vi.mocked(window.electronAPI.connectNobleBle).mockResolvedValue({
+      ok: false,
+      error: 'Bluetooth adapter is not available',
+    });
 
     await expect(createBleConnection('ble-device-2', 'meshtastic')).rejects.toThrow(
       'Bluetooth adapter is not available',

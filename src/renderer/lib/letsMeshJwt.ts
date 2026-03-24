@@ -54,10 +54,10 @@ function normalizePublicKeyHex(publicKey: string | number[] | undefined): string
   if (Array.isArray(publicKey)) {
     if (publicKey.length < 32) return null;
     return Array.from(publicKey.slice(0, 32))
-      .map((b) => Number(b).toString(16).padStart(2, '0'))
+      .map((b: number) => (b & 0xff).toString(16).padStart(2, '0'))
       .join('');
   }
-  const raw = String(publicKey).trim();
+  const raw = publicKey.trim();
   if (/^[0-9a-fA-F]{64}$/.test(raw)) return raw.toLowerCase();
   try {
     const s = raw.replace(/-/g, '+').replace(/_/g, '/');
@@ -83,20 +83,18 @@ function meshcoreOrlpPrivateKeyHex(
   if (Array.isArray(privateKey)) {
     if (privateKey.length >= 64) {
       return Array.from(privateKey.slice(0, 64))
-        .map((b) => Number(b).toString(16).padStart(2, '0'))
+        .map((b: number) => (b & 0xff).toString(16).padStart(2, '0'))
         .join('');
     }
     if (privateKey.length >= 32) {
       const seed = Array.from(privateKey.slice(0, 32))
-        .map((b) => Number(b).toString(16).padStart(2, '0'))
+        .map((b: number) => (b & 0xff).toString(16).padStart(2, '0'))
         .join('');
       return seed + publicKeyHex;
     }
     return null;
   }
-  const s = String(privateKey ?? '')
-    .trim()
-    .replace(/^0x/i, '');
+  const s = (typeof privateKey === 'string' ? privateKey : '').trim().replace(/^0x/i, '');
   if (/^[0-9a-fA-F]{128}$/.test(s)) return s.toLowerCase();
   if (/^[0-9a-fA-F]{64}$/.test(s)) return s.toLowerCase() + publicKeyHex;
   return null;

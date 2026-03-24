@@ -3,7 +3,11 @@ import { app } from 'electron';
 import fs from 'fs';
 import path from 'path';
 
-import { sanitizeForLogSink, sanitizeLogMessage } from './sanitize-log-message';
+import {
+  sanitizeForLogSink,
+  sanitizeLogMessage,
+  sanitizeLogPayloadForDisk,
+} from './sanitize-log-message';
 
 export { sanitizeLogMessage };
 
@@ -72,10 +76,9 @@ function flushPendingBuffer(): void {
   if (pendingBuffer.length === 0) return;
   const lines = pendingBuffer.splice(0, pendingBuffer.length);
   const p = getLogFilePath();
-  const data = lines.join('');
+  const data = sanitizeLogPayloadForDisk(lines.join(''));
   appendChain = appendChain.then(() =>
-    // codeql[js/http-to-file-access] -- data is joined formatLine outputs; each line was built after sanitizeLogMessage in appendLine.
-    fs.promises.appendFile(p, data, 'utf8').catch((e) => {
+    fs.promises.appendFile(p, data, 'utf8').catch((e: unknown) => {
       original.debug('[log-service] flushPendingBuffer appendFile failed', e);
     }),
   );
@@ -127,16 +130,13 @@ export function appendLine(level: LogLevel, source: string, message: string): vo
     return;
   }
 
+  const diskLine = sanitizeLogPayloadForDisk(line);
   appendChain = appendChain
-    .then(() =>
-      // codeql[js/http-to-file-access] -- line is built only from sanitizeLogMessage(message/source) + fixed path; not raw network payload.
-      fs.promises.appendFile(getLogFilePath(), line, 'utf8'),
-    )
-    .catch((e) => {
+    .then(() => fs.promises.appendFile(getLogFilePath(), diskLine, 'utf8'))
+    .catch((e: unknown) => {
       original.debug('[log-service] appendFile failed, retry writeFileSync', e);
       try {
-        // codeql[js/http-to-file-access] -- same as appendFile above; retry path only.
-        fs.writeFileSync(getLogFilePath(), line, { encoding: 'utf8' });
+        fs.writeFileSync(getLogFilePath(), diskLine, { encoding: 'utf8' });
       } catch (e2) {
         original.debug('[log-service] writeFileSync retry failed', e2);
       }
@@ -201,7 +201,7 @@ function stringifyArgs(args: unknown[]): string {
           return JSON.stringify(a);
         } catch (e) {
           original.debug('[log-service] stringifyArgs JSON.stringify failed', e);
-          return String(a);
+          return '[unserializable]';
         }
       }
       return String(a);
