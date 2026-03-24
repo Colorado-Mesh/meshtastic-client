@@ -1126,6 +1126,10 @@ ipcMain.handle('noble-ble-to-radio', async (_event, sessionId: unknown, bytes: u
     console.debug(`[main] noble-ble-to-radio: ignoring session=${sessionId} (app is quitting)`);
     return;
   }
+  if (!nobleBleManager.isConnected(sessionId)) {
+    console.debug(`[main] noble-ble-to-radio: session=${sessionId} not connected, ignoring`);
+    return;
+  }
   const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes as Uint8Array);
   if (buf.length > NOBLE_BLE_TO_RADIO_MAX_BYTES) {
     return Promise.reject(

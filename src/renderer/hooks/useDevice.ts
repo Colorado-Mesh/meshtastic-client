@@ -82,6 +82,7 @@ function getOrCreateVirtualNodeId(): number {
 
 const MQTT_ONLY_VIRTUAL_LONG_NAME = 'MQTT-only Virtual Address';
 const ROLE_CLIENT = 0;
+const ROLE_CLIENT_MUTE = 1;
 
 export function useDevice() {
   const deviceRef = useRef<MeshDevice | null>(null);
@@ -288,6 +289,7 @@ export function useDevice() {
     if (pollRef.current) return; // Already polling
     const intervalMs = connectionType === 'http' ? HTTP_POLL_INTERVAL_MS : POLL_INTERVAL_MS;
     pollRef.current = setInterval(() => {
+      if (nodesRef.current.get(myNodeNumRef.current)?.role === ROLE_CLIENT_MUTE) return;
       deviceRef.current?.requestPosition(0xffffffff).catch((e) => {
         console.debug('[useDevice] requestPosition poll', e);
       });
@@ -995,6 +997,8 @@ export function useDevice() {
         };
         if (!info.num) return;
         const nodeNum = info.num;
+        const prevOwnRole =
+          nodeNum === myNodeNumRef.current ? nodesRef.current.get(nodeNum)?.role : undefined;
 
         updateNodes((prev) => {
           const updated = new Map(prev);
@@ -1066,6 +1070,15 @@ export function useDevice() {
           window.electronAPI.db.saveNode(node);
           return updated;
         });
+        if (
+          nodeNum === myNodeNumRef.current &&
+          nodesRef.current.get(nodeNum)?.role === ROLE_CLIENT_MUTE &&
+          prevOwnRole !== ROLE_CLIENT_MUTE
+        ) {
+          console.info(
+            '[useDevice] Device role is Client Mute — position reports to device suppressed',
+          );
+        }
         const updatedRfNode = nodesRef.current.get(nodeNum);
         if (updatedRfNode) {
           useDiagnosticsStore
@@ -2170,10 +2183,12 @@ export function useDevice() {
           });
         }
 
-        const shouldSendToDevice =
+        const isClientMute = nodesRef.current.get(myNodeNumRef.current)?.role === ROLE_CLIENT_MUTE;
+        const wouldSendWithoutMute =
           deviceRef.current &&
           ((pos.source === 'static' && deviceGpsModeRef.current !== 1) ||
             (pos.source === 'browser' && deviceGpsModeRef.current === 2));
+        const shouldSendToDevice = !isClientMute && wouldSendWithoutMute;
 
         if (shouldSendToDevice && deviceRef.current) {
           deviceRef.current
@@ -2205,6 +2220,7 @@ export function useDevice() {
 
   const sendPositionToDevice = useCallback(async (lat: number, lon: number, alt?: number) => {
     if (!deviceRef.current) return;
+    if (nodesRef.current.get(myNodeNumRef.current)?.role === ROLE_CLIENT_MUTE) return;
     await deviceRef.current.setPosition(
       create(Mesh.PositionSchema, {
         latitudeI: Math.round(lat * 1e7),

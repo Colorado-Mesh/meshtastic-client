@@ -83,6 +83,26 @@ export class NobleBleManager extends EventEmitter {
     });
 
     noble.on('discover', (peripheral: any) => {
+      // Client-side filter: noble's server-side UUID filter is unreliable on macOS.
+      // When only the meshtastic session is scanning, only pass devices that advertise
+      // the meshtastic service UUID. Devices that advertise zero service UUIDs are passed
+      // through (older firmware omits UUIDs from advertisement data) with a debug log.
+      if (!this.scanRequesters.has('meshcore') && this.scanRequesters.has('meshtastic')) {
+        const advUuids: string[] = (peripheral.advertisement?.serviceUuids ?? []).map((u: string) =>
+          u.toLowerCase().replace(/-/g, ''),
+        );
+        if (advUuids.length > 0 && !advUuids.includes(SERVICE_UUID)) {
+          console.debug(
+            `[NobleBleManager] discover: skipping non-meshtastic peripheral ${peripheral.id} (${peripheral.advertisement?.localName ?? 'unnamed'}) — advertised UUIDs: [${advUuids.join(', ')}]`,
+          );
+          return;
+        }
+        if (advUuids.length === 0) {
+          console.debug(
+            `[NobleBleManager] discover: passing peripheral ${peripheral.id} (${peripheral.advertisement?.localName ?? 'unnamed'}) with no advertised service UUIDs — may not be meshtastic`,
+          );
+        }
+      }
       const id: string = peripheral.id;
       const name: string = peripheral.advertisement?.localName || peripheral.address || id;
       const isNew = !this.knownPeripherals.has(id);
@@ -279,23 +299,17 @@ export class NobleBleManager extends EventEmitter {
   }
 
   private doStopScanning(): Promise<void> {
-    // If nothing is scanning, noble's stopScanning callback may never run (observed on Windows),
-    // which would hang shutdown forever.
-    if (!this.scanningActive) {
-      return Promise.resolve();
+    if (!this.scanningActive) return Promise.resolve();
+    // Mark stopped immediately — noble's stopScanning callback is unreliable on some platforms
+    // (may never fire on Windows; can hang on macOS if CBCentralManager state is inconsistent).
+    // CoreBluetooth receives the stop command regardless; we don't need to await confirmation.
+    this.scanningActive = false;
+    try {
+      noble.stopScanning();
+    } catch (err) {
+      console.debug('[NobleBleManager] stopScanning error (ignored):', err); // log-injection-ok noble internal error
     }
-    return new Promise((resolve) => {
-      try {
-        noble.stopScanning(() => {
-          this.scanningActive = false;
-          resolve();
-        });
-      } catch (err) {
-        console.debug('[NobleBleManager] stopScanning error (ignored):', err); // log-injection-ok noble internal error
-        this.scanningActive = false;
-        resolve();
-      }
-    });
+    return Promise.resolve();
   }
 
   /**
@@ -406,6 +420,20 @@ export class NobleBleManager extends EventEmitter {
       session.connectedPeripheralDisconnectHandler = onDisconnected;
 
       if (peripheral.state === 'connected') {
+        // Check if any other session already owns this peripheral. If so, refuse to connect
+        // rather than destructively disconnecting the other session's active GATT link.
+        for (const [otherSessionId, otherSession] of this.sessions.entries()) {
+          if (
+            otherSessionId !== sessionId &&
+            otherSession.connectedPeripheral?.id === peripheral.id
+          ) {
+            throw new Error(
+              `Peripheral ${peripheral.id} is already in use by the ${otherSessionId} session`,
+            );
+          }
+        }
+        // Peripheral is connected in noble's internal state but not claimed by any session
+        // (e.g. leftover from a previous crashed session). Disconnect before reconnecting.
         console.warn(
           `[BLE:${sessionId}] peripheral already connected in noble — disconnecting before reconnect`,
         );
@@ -528,6 +556,11 @@ export class NobleBleManager extends EventEmitter {
         });
       }
     }
+  }
+
+  isConnected(sessionId: NobleSessionId): boolean {
+    const session = this.sessions.get(sessionId);
+    return session != null && session.toRadioChar != null;
   }
 
   async writeToRadio(sessionId: NobleSessionId, data: Buffer): Promise<void> {

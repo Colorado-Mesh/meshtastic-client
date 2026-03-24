@@ -1371,6 +1371,8 @@ export function useMeshCore() {
         const isAlreadyInProgress = /already in progress|Connection already in progress/i.test(
           safeMessage,
         );
+        const isMissingServices = /could not find all requested services/i.test(safeMessage);
+        const isPeripheralInUse = /already in use by the/i.test(safeMessage);
         // When err is missing (e.g. library rejected with no reason), use a BLE-specific hint if we were connecting via BLE
         const fallbackMessage =
           type === 'ble' && err == null
@@ -1380,7 +1382,11 @@ export function useMeshCore() {
         const normalizedErr = new Error(
           isAlreadyInProgress
             ? 'Bluetooth connection already in progress. Wait for it to finish or try Serial/USB instead.'
-            : displayMessage,
+            : isMissingServices
+              ? 'Device does not support the MeshCore BLE protocol. Make sure the device is running MeshCore firmware.'
+              : isPeripheralInUse
+                ? 'This device is already connected via Meshtastic BLE. Disconnect it first before connecting as MeshCore.'
+                : displayMessage,
         );
         const errForLog =
           err != null ? (err instanceof Error ? err.message : String(err)) : '(no error object)';
