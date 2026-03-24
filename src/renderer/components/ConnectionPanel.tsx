@@ -1736,6 +1736,15 @@ export default function ConnectionPanel({
           Disconnect &amp; Quit
         </button>
       )}
+      {protocol === 'meshcore' && mqttStatus !== 'connected' && (
+        <button
+          type="button"
+          onClick={() => window.electronAPI.quitApp()}
+          className="w-full px-6 py-2.5 border border-red-700 text-red-400 hover:bg-red-900/30 hover:text-red-300 font-medium rounded-lg transition-colors text-sm"
+        >
+          Quit
+        </button>
+      )}
 
       {/* Last Connection — one-click reconnect card */}
       {lastConnection && !connecting && (

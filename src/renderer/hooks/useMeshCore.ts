@@ -109,6 +109,8 @@ function serializeErrorLike(value: unknown): string {
   if (value instanceof Error) return value.message;
   if (typeof value === 'string') return value;
   if (value == null) return '';
+  if (typeof (value as Record<string, unknown>).message === 'string')
+    return (value as Record<string, unknown>).message as string;
   try {
     return JSON.stringify(value);
   } catch {
@@ -1382,10 +1384,10 @@ export function useMeshCore() {
       });
 
       if (type === 'ble') bleConnectInProgressRef.current = true;
+      let conn: MeshCoreConnection | null = null;
+      let serialRawPort: SerialPort | null = null;
 
       try {
-        let conn: MeshCoreConnection | null = null;
-
         if (type === 'ble') {
           if (!blePeripheralId) {
             throw new Error('BLE peripheral ID required');
@@ -1447,10 +1449,11 @@ export function useMeshCore() {
           console.debug('[useMeshCore] connect: serial requesting port...');
           if (!navigator.serial?.requestPort) throw new Error('Web Serial API not available');
           const port = await navigator.serial.requestPort();
-          persistSerialPortIdentity(port as SerialPort);
-          await (port as any).open({ baudRate: 115200 });
+          serialRawPort = port as SerialPort;
+          persistSerialPortIdentity(serialRawPort);
+          await (serialRawPort as any).open({ baudRate: 115200 });
           conn = new (WebSerialConnection as unknown as new (port: unknown) => MeshCoreConnection)(
-            port,
+            serialRawPort,
           );
         } else {
           // tcp
@@ -1517,6 +1520,24 @@ export function useMeshCore() {
         ipcTcpRef.current = null;
         ipcNobleRef.current?.cleanup();
         ipcNobleRef.current = null;
+        // Release serial port lock so the next attempt can open it
+        if (type === 'serial') {
+          connRef.current = null;
+          if (conn) {
+            try {
+              await conn.close();
+            } catch {
+              // catch-no-log-ok port may already be in a bad state
+            }
+          }
+          if (serialRawPort) {
+            try {
+              await serialRawPort.close();
+            } catch {
+              // catch-no-log-ok port may already be in a bad state
+            }
+          }
+        }
         throw normalizedErr;
       } finally {
         if (type === 'ble') bleConnectInProgressRef.current = false;
@@ -1539,20 +1560,41 @@ export function useMeshCore() {
     ) => {
       if (type === 'serial') {
         setState({ status: 'connecting', myNodeNum: 0, connectionType: 'serial' });
+        let serialPort: SerialPort | null = null;
+        let serialConn: MeshCoreConnection | null = null;
         try {
           if (!navigator.serial?.getPorts) throw new Error('Web Serial API not available');
           const ports = await navigator.serial.getPorts();
-          const port = selectGrantedSerialPort(ports, lastSerialPortId);
-          persistSerialPortIdentity(port);
-          await (port as SerialPort).open({ baudRate: 115200 });
-          const conn = new (WebSerialConnection as unknown as new (
+          serialPort = selectGrantedSerialPort(ports, lastSerialPortId) as SerialPort;
+          persistSerialPortIdentity(serialPort);
+          await serialPort.open({ baudRate: 115200 });
+          serialConn = new (WebSerialConnection as unknown as new (
             port: unknown,
-          ) => MeshCoreConnection)(port);
-          await initConn(conn);
+          ) => MeshCoreConnection)(serialPort);
+          await initConn(serialConn);
           console.debug('[useMeshCore] connectAutomatic serial: connected');
         } catch (err) {
-          console.error('[useMeshCore] connectAutomatic serial error', err);
+          console.error(
+            '[useMeshCore] connectAutomatic serial error',
+            serializeErrorLike(err) || err,
+          );
           setState({ status: 'disconnected', myNodeNum: 0, connectionType: null });
+          connRef.current = null;
+          // Always try both: conn.close() may throw if the read pump already errored
+          if (serialConn) {
+            try {
+              await serialConn.close();
+            } catch {
+              // catch-no-log-ok port may already be in a bad state
+            }
+          }
+          if (serialPort) {
+            try {
+              await serialPort.close();
+            } catch {
+              // catch-no-log-ok port may already be in a bad state
+            }
+          }
           throw err;
         }
       } else if (type === 'http') {
