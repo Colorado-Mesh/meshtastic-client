@@ -14,6 +14,18 @@ describe('IPC payload size limits (source contract)', () => {
   });
 });
 
+describe('Noble BLE disconnect handling (source contract)', () => {
+  it('classifies expected disconnect write races and ignores them in noble-ble-to-radio', () => {
+    expect(INDEX_SOURCE).toContain('function isExpectedNobleDisconnectError(err: unknown)');
+    expect(INDEX_SOURCE).toMatch(/message\.includes\('not connected'\)/);
+    expect(INDEX_SOURCE).toMatch(/await nobleBleManager\.writeToRadio\(sessionId, buf\)/);
+    expect(INDEX_SOURCE).toMatch(/if \(isExpectedNobleDisconnectError\(err\)\)/);
+    expect(INDEX_SOURCE).toMatch(
+      /noble-ble-to-radio: disconnected during write, ignoring session=/,
+    );
+  });
+});
+
 describe('MeshCore packet log IPC (source contract)', () => {
   it('validates publishMeshcorePacketLog args and wires handler', () => {
     expect(INDEX_SOURCE).toContain('const MAX_MESHCORE_PACKET_LOG_ORIGIN = 200');

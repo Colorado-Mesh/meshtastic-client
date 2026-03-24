@@ -77,6 +77,16 @@ const MESHCORE_TCP_WRITE_MAX_BYTES = 256 * 1024;
 /** Max bytes per BLE write IPC (DoS guard). */
 const NOBLE_BLE_TO_RADIO_MAX_BYTES = 512;
 
+function isExpectedNobleDisconnectError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const message = err.message.toLowerCase();
+  return (
+    /\bdisconnected\b(?:\s*[:#-]?\s*\d+)?/.test(message) ||
+    message.includes('not connected') ||
+    message.includes('not currently connected')
+  );
+}
+
 function isAnyMqttConnected(): boolean {
   return mqttManager.getStatus() === 'connected' || meshcoreMqttAdapter.getStatus() === 'connected';
 }
@@ -1138,7 +1148,19 @@ ipcMain.handle('noble-ble-to-radio', async (_event, sessionId: unknown, bytes: u
       ),
     );
   }
-  await nobleBleManager.writeToRadio(sessionId, buf);
+  try {
+    await nobleBleManager.writeToRadio(sessionId, buf);
+  } catch (err) {
+    if (isExpectedNobleDisconnectError(err)) {
+      console.debug(
+        '[main] noble-ble-to-radio: disconnected during write, ignoring session=',
+        sanitizeLogMessage(String(sessionId)),
+        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+      );
+      return;
+    }
+    throw err;
+  }
 });
 
 // ─── MQTT: Forward manager events to renderer ───────────────────────
