@@ -50,6 +50,12 @@ interface NobleBleSession {
   closing: boolean;
   /** Cleared on disconnect; avoids post-write timer firing after teardown. */
   postWriteReadPumpTimer: ReturnType<typeof setTimeout> | null;
+  /**
+   * True when fromRadioChar delivers data via notifications and does not support GATT reads.
+   * When set, the read pump and post-write read-pump timer are skipped entirely.
+   * MeshCore NUS TX (6e400003) is notify-only; Meshtastic fromRadio supports reads.
+   */
+  fromRadioNotifyOnly: boolean;
 }
 
 export class NobleBleManager extends EventEmitter {
@@ -129,6 +135,7 @@ export class NobleBleManager extends EventEmitter {
       readPumpRequested: false,
       closing: false,
       postWriteReadPumpTimer: null,
+      fromRadioNotifyOnly: false,
     };
   }
 
@@ -154,11 +161,14 @@ export class NobleBleManager extends EventEmitter {
     session.fromNumDataHandler = null;
     session.readPumpActive = false;
     session.readPumpRequested = false;
+    session.fromRadioNotifyOnly = false;
   }
 
   private requestFromRadioReadPump(sessionId: NobleSessionId): void {
     const session = this.getSession(sessionId);
     if (session.closing) return;
+    // Notify-only characteristics (e.g. MeshCore NUS TX) deliver data via events — no reads needed.
+    if (session.fromRadioNotifyOnly) return;
     session.readPumpRequested = true;
     if (session.readPumpActive) return;
     session.readPumpActive = true;
@@ -265,6 +275,14 @@ export class NobleBleManager extends EventEmitter {
       this.emit('deviceDiscovered', { deviceId: id, deviceName: name } as NobleBleDevice);
     }
     this.scanRequesters.add(sessionId);
+    if (!this.adapterReady) {
+      // On Linux/BlueZ, noble.state is asynchronously initialized ('unknown' at startup).
+      // Wait up to 5s for the adapter to reach a definitive state before failing.
+      console.debug(
+        '[NobleBleManager] startScanning: adapter not ready, waiting for state change…',
+      );
+      await this.waitForAdapterReady(5000);
+    }
     if (!this.adapterReady) throw new Error('Bluetooth adapter is not powered on');
     await this.doStartScanning();
   }
@@ -287,6 +305,9 @@ export class NobleBleManager extends EventEmitter {
   }
 
   private doStartScanning(): Promise<void> {
+    // Idempotent: if a scan is already active (e.g. kicked by stateChange handler concurrently),
+    // skip the duplicate noble.startScanning() call.
+    if (this.scanningActive) return Promise.resolve();
     const filter = this.computeScanFilter();
     return new Promise((resolve, reject) => {
       noble.startScanning(filter, false, (err: Error | null) => {
@@ -298,6 +319,33 @@ export class NobleBleManager extends EventEmitter {
         this.scanningActive = true;
         resolve();
       });
+    });
+  }
+
+  /**
+   * Waits for the BLE adapter to reach a definitive state (poweredOn or any non-unknown state).
+   * Resolves when the next adapterState event fires or when the timeout expires.
+   * Always resolves (never rejects) so callers can re-check this.adapterReady themselves.
+   *
+   * On Linux/BlueZ, noble.state is 'unknown' at construction and transitions asynchronously
+   * via D-Bus. This prevents false "adapter not powered on" errors during app startup.
+   */
+  private waitForAdapterReady(timeoutMs: number): Promise<void> {
+    if (this.adapterReady) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const cleanup = () => {
+        clearTimeout(timer);
+        this.off('adapterState', onState);
+      };
+      const onState = () => {
+        cleanup();
+        resolve();
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        resolve();
+      }, timeoutMs);
+      this.once('adapterState', onState);
     });
   }
 
@@ -505,6 +553,9 @@ export class NobleBleManager extends EventEmitter {
         : [];
       const fromRadioSupportsNotify =
         fromRadioProps.includes('notify') || fromRadioProps.includes('indicate');
+      // Track whether fromRadioChar is notify-only (no GATT reads). MeshCore NUS TX is
+      // notify-only — attempting readAsync() on it yields a BLE protocol error.
+      session.fromRadioNotifyOnly = fromRadioSupportsNotify;
       if (fromRadioSupportsNotify) {
         await withTimeout(session.fromRadioChar.subscribeAsync(), 10000, 'BLE fromRadio subscribe');
         session.fromRadioDataHandler = (data: Buffer) => {
@@ -579,14 +630,17 @@ export class NobleBleManager extends EventEmitter {
     );
     // Give the device time to prepare its response, then kick the read pump.
     // fromNum notify is the primary trigger; this is a safety net for devices that are slow to notify.
-    if (session.postWriteReadPumpTimer !== null) {
-      clearTimeout(session.postWriteReadPumpTimer);
-      session.postWriteReadPumpTimer = null;
+    // Skip entirely for notify-only characteristics (e.g. MeshCore) — responses arrive via events.
+    if (!session.fromRadioNotifyOnly) {
+      if (session.postWriteReadPumpTimer !== null) {
+        clearTimeout(session.postWriteReadPumpTimer);
+        session.postWriteReadPumpTimer = null;
+      }
+      session.postWriteReadPumpTimer = setTimeout(() => {
+        session.postWriteReadPumpTimer = null;
+        this.requestFromRadioReadPump(sessionId);
+      }, POST_WRITE_READ_PUMP_DELAY_MS);
     }
-    session.postWriteReadPumpTimer = setTimeout(() => {
-      session.postWriteReadPumpTimer = null;
-      this.requestFromRadioReadPump(sessionId);
-    }, POST_WRITE_READ_PUMP_DELAY_MS);
   }
 
   async disconnect(sessionId: NobleSessionId): Promise<void> {
