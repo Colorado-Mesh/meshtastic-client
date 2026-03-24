@@ -1409,14 +1409,15 @@ export default function ConnectionPanel({
               Use WebSocket transport <span className="text-gray-500">(required for port 443)</span>
             </label>
           </div>
-          {meshcorePreset === 'letsmesh' &&
+          {protocol === 'meshcore' &&
+            meshcorePreset === 'letsmesh' &&
             letsMeshPresetConfigurationDeviation(meshcoreMqttSettings) && (
               <div className="rounded border border-amber-700/50 bg-amber-900/20 px-2 py-2 text-xs text-amber-200/90">
                 Public LetsMesh needs WebSocket on port 443 and server mqtt-us-v1.letsmesh.net or
                 mqtt-eu-v1.letsmesh.net. Use Region (US/EU), or switch to Custom for other brokers.
               </div>
             )}
-          {meshcorePreset === 'letsmesh' && (
+          {protocol === 'meshcore' && meshcorePreset === 'letsmesh' && (
             <div
               className={`flex items-start gap-2 rounded border px-2 py-2 text-xs ${
                 readMeshcoreIdentity()?.private_key
@@ -1432,7 +1433,7 @@ export default function ConnectionPanel({
               })()}
             </div>
           )}
-          {meshcorePreset === 'letsmesh' && (
+          {protocol === 'meshcore' && meshcorePreset === 'letsmesh' && (
             <div className="flex items-start gap-2 rounded border border-gray-600/50 bg-secondary-dark/40 px-2 py-2 text-xs text-gray-300">
               <input
                 type="checkbox"
@@ -1578,7 +1579,7 @@ export default function ConnectionPanel({
                   ...activeMqttSettings,
                   mqttTransportProtocol: protocol === 'meshcore' ? 'meshcore' : 'meshtastic',
                 };
-                if (meshcorePreset === 'letsmesh') {
+                if (protocol === 'meshcore' && meshcorePreset === 'letsmesh') {
                   const presetErr = validateLetsMeshPresetConnect(settings);
                   if (presetErr) {
                     setMqttError(presetErr);

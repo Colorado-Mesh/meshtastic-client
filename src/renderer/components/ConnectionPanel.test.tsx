@@ -123,6 +123,40 @@ describe('ConnectionPanel MQTT connect error', () => {
 
     expect(await screen.findByText('broker refused')).toBeInTheDocument();
   });
+
+  it('does not run LetsMesh preset validation for Meshtastic when meshcore preset was letsmesh', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('mesh-client:mqttPreset:meshcore', 'letsmesh');
+    const connect = vi.mocked(window.electronAPI.mqtt.connect);
+    connect.mockClear();
+    connect.mockResolvedValue(undefined);
+
+    render(
+      <ConnectionPanel
+        state={disconnectedState}
+        onConnect={vi.fn().mockResolvedValue(undefined)}
+        onAutoConnect={vi.fn().mockResolvedValue(undefined)}
+        onDisconnect={vi.fn().mockResolvedValue(undefined)}
+        mqttStatus="disconnected"
+        protocol="meshtastic"
+        onProtocolChange={vi.fn()}
+      />,
+    );
+
+    const mqttCard = screen.getByText('MQTT Connection').closest('.bg-deep-black');
+    expect(mqttCard).toBeTruthy();
+    const connectBtn = within(mqttCard as HTMLElement).getByRole('button', { name: 'Connect' });
+    await user.click(connectBtn);
+
+    expect(connect).toHaveBeenCalledTimes(1);
+    const payload = connect.mock.calls[0]?.[0];
+    expect(payload?.mqttTransportProtocol).toBe('meshtastic');
+    expect(
+      screen.queryByText(/LetsMesh requires WebSocket transport on port 443/i),
+    ).not.toBeInTheDocument();
+
+    localStorage.removeItem('mesh-client:mqttPreset:meshcore');
+  });
 });
 
 describe('ConnectionPanel BLE error humanization', () => {
