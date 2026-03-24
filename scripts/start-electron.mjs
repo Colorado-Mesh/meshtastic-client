@@ -1,12 +1,32 @@
 #!/usr/bin/env node
 import { spawn } from 'child_process';
+import { existsSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
-const localElectronBin = path.join(projectRoot, 'node_modules', 'electron', 'dist', 'electron');
+
+export function resolveLocalElectronBin(platform = process.platform, fileExists = existsSync) {
+  const distDir = path.join(projectRoot, 'node_modules', 'electron', 'dist');
+  const platformCandidates =
+    platform === 'darwin'
+      ? [path.join(distDir, 'Electron.app', 'Contents', 'MacOS', 'Electron')]
+      : platform === 'win32'
+        ? [path.join(distDir, 'electron.exe')]
+        : [path.join(distDir, 'electron')];
+  const fallbackCandidates = [
+    path.join(distDir, 'electron'),
+    path.join(distDir, 'electron.exe'),
+    path.join(distDir, 'Electron.app', 'Contents', 'MacOS', 'Electron'),
+  ];
+  const candidates = [...platformCandidates, ...fallbackCandidates];
+  for (const candidate of candidates) {
+    if (fileExists(candidate)) return candidate;
+  }
+  return platformCandidates[0];
+}
 
 export function classifyElectronStartupError(stderrText) {
   const lower = String(stderrText || '').toLowerCase();
@@ -31,7 +51,7 @@ export function fedoraLibffmpegRemediation() {
 }
 
 export async function runStartElectron(argv = process.argv.slice(2)) {
-  const child = spawn(localElectronBin, ['.', ...argv], {
+  const child = spawn(resolveLocalElectronBin(), ['.', ...argv], {
     cwd: projectRoot,
     stdio: ['inherit', 'inherit', 'pipe'],
     env: process.env,

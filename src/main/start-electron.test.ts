@@ -29,4 +29,28 @@ describe('start-electron wrapper helpers', () => {
     expect(text).toContain('--ambient-caps +net_raw');
     expect(text).toContain("bash -lc 'npm start'");
   });
+
+  it('resolves macOS electron app binary path', async () => {
+    // @ts-expect-error test import from scripts directory
+    const mod = (await import('../../scripts/start-electron.mjs')) as {
+      resolveLocalElectronBin: (
+        platform: string,
+        fileExists: (candidate: string) => boolean,
+      ) => string;
+    };
+    const resolved = mod.resolveLocalElectronBin('darwin', () => false);
+    expect(resolved).toContain('node_modules/electron/dist/Electron.app/Contents/MacOS/Electron');
+  });
+
+  it('resolves Linux electron binary path', async () => {
+    // @ts-expect-error test import from scripts directory
+    const mod = (await import('../../scripts/start-electron.mjs')) as {
+      resolveLocalElectronBin: (
+        platform: string,
+        fileExists: (candidate: string) => boolean,
+      ) => string;
+    };
+    const resolved = mod.resolveLocalElectronBin('linux', () => false);
+    expect(resolved).toContain('node_modules/electron/dist/electron');
+  });
 });
