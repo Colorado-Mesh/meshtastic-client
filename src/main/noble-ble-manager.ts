@@ -55,7 +55,7 @@ interface NobleBleSession {
   toRadioChar: any | null;
   fromRadioChar: any | null;
   fromNumChar: any | null;
-  fromRadioDataHandler: ((data: Buffer) => void) | null;
+  fromRadioDataHandler: ((data: Buffer, isNotification: boolean) => void) | null;
   fromNumDataHandler: ((data: Buffer) => void) | null;
   readPumpActive: boolean;
   readPumpRequested: boolean;
@@ -527,6 +527,9 @@ export class NobleBleManager extends EventEmitter {
           `BLE peripheral not found: ${peripheralId}. Scan for devices before connecting.`,
         );
       }
+      console.debug(
+        `[BLE:${sessionId}] peripheral info — address=${peripheral.address ?? 'unknown'} addressType=${peripheral.addressType ?? 'unknown'} rssi=${peripheral.rssi ?? 'unknown'} state=${peripheral.state} platform=${process.platform}`,
+      );
 
       if (peripheral.state === 'connected') {
         // Check if any other session already owns this peripheral. If so, refuse to connect
@@ -558,7 +561,8 @@ export class NobleBleManager extends EventEmitter {
         }
       }
 
-      const onDisconnected = () => {
+      const onDisconnected = (reason?: string) => {
+        console.debug(`[BLE:${sessionId}] peripheral disconnected — reason=${reason ?? 'none'}`);
         if (session.fromRadioChar && session.fromRadioDataHandler) {
           try {
             session.fromRadioChar.off('data', session.fromRadioDataHandler);
@@ -578,6 +582,11 @@ export class NobleBleManager extends EventEmitter {
       };
       peripheral.once('disconnect', onDisconnected);
       session.connectedPeripheralDisconnectHandler = onDisconnected;
+      // Log MTU negotiation — WinRT sometimes negotiates asynchronously after connect.
+      peripheral.once('mtu', (mtu: number) => {
+        console.debug(`[BLE:${sessionId}] MTU updated: ${mtu}`);
+      });
+      const tConnect = Date.now();
       try {
         await withTimeout(peripheral.connectAsync(), BLE_CONNECT_TIMEOUT_MS, 'BLE connectAsync');
       } catch (err) {
@@ -593,6 +602,9 @@ export class NobleBleManager extends EventEmitter {
         throw err;
       }
       connected = true;
+      console.debug(
+        `[BLE:${sessionId}] connectAsync done in ${Date.now() - tConnect}ms — address=${peripheral.address ?? 'unknown'} mtu=${peripheral.mtu ?? 'null'} state=${peripheral.state}`,
+      );
 
       const isMeshcore = sessionId === 'meshcore';
       const discoverServiceUuids = isMeshcore ? [MESHCORE_SERVICE_UUID] : [SERVICE_UUID];
@@ -600,6 +612,7 @@ export class NobleBleManager extends EventEmitter {
         ? [MESHCORE_RX_UUID, MESHCORE_TX_UUID]
         : [TORADIO_UUID, FROMRADIO_UUID, FROMNUM_UUID];
 
+      const tDiscover = Date.now();
       const { characteristics } = await withTimeout<{
         characteristics: any[];
       }>(
@@ -622,11 +635,14 @@ export class NobleBleManager extends EventEmitter {
         }
       }
       console.debug(
-        `[BLE:${sessionId}] discovered chars — toRadio=${Boolean(session.toRadioChar)} fromRadio=${Boolean(session.fromRadioChar)} fromNum=${Boolean(session.fromNumChar)} toRadioProps=${JSON.stringify(session.toRadioChar?.properties)} fromRadioProps=${JSON.stringify(session.fromRadioChar?.properties)} fromNumProps=${JSON.stringify(session.fromNumChar?.properties)}`,
+        `[BLE:${sessionId}] discovered chars in ${Date.now() - tDiscover}ms — toRadio=${Boolean(session.toRadioChar)} fromRadio=${Boolean(session.fromRadioChar)} fromNum=${Boolean(session.fromNumChar)} toRadioProps=${JSON.stringify(session.toRadioChar?.properties)} fromRadioProps=${JSON.stringify(session.fromRadioChar?.properties)} fromNumProps=${JSON.stringify(session.fromNumChar?.properties)}`,
       );
 
       // FROMNUM is optional for notification-based flow; require only TX/RX characteristics.
       if (!session.toRadioChar || !session.fromRadioChar) {
+        console.warn(
+          `[BLE:${sessionId}] missing required chars — toRadio=${Boolean(session.toRadioChar)} fromRadio=${Boolean(session.fromRadioChar)} discoveredUuids=${characteristics.map((c: any) => c.uuid).join(',')}`, // log-injection-ok noble internal characteristic UUIDs
+        );
         throw new Error('Failed to find required BLE characteristics');
       }
 
@@ -649,26 +665,35 @@ export class NobleBleManager extends EventEmitter {
         : [];
       const fromRadioSupportsNotify =
         fromRadioProps.includes('notify') || fromRadioProps.includes('indicate');
-      // Track whether fromRadioChar is notify-only (no GATT reads). MeshCore NUS TX is
-      // notify-only — attempting readAsync() on it yields a BLE protocol error.
-      session.fromRadioNotifyOnly = fromRadioSupportsNotify;
-      if (fromRadioSupportsNotify) {
+      const fromRadioCanRead = fromRadioProps.includes('read');
+      // fromRadioNotifyOnly=true only when notify is the sole delivery path (no GATT reads).
+      // macOS/Linux NUS TX = ["notify"] → notify-only, read pump skipped.
+      // Windows NUS TX = ["read","notify"] → use read pump; Noble WinRT notification delivery
+      // is unreliable on some devices, and skipping the notify subscription also prevents
+      // duplicate packet delivery when both paths would otherwise fire for the same write.
+      session.fromRadioNotifyOnly = fromRadioSupportsNotify && !fromRadioCanRead;
+      const tSubscribe = Date.now();
+      if (fromRadioSupportsNotify && !fromRadioCanRead) {
         await withTimeout(
           session.fromRadioChar.subscribeAsync(),
           BLE_SUBSCRIBE_TIMEOUT_MS,
           'BLE fromRadio subscribe',
         );
-        session.fromRadioDataHandler = (data: Buffer) => {
+        session.fromRadioDataHandler = (data: Buffer, isNotification: boolean) => {
           if (!data || data.length === 0) return;
-          console.debug(`[BLE:${sessionId}] fromRadio notify: ${data.length} bytes`);
+          console.debug(
+            `[BLE:${sessionId}] fromRadio data: ${data.length} bytes isNotification=${isNotification}`,
+          );
           this.emit('fromRadio', { sessionId, bytes: new Uint8Array(Buffer.from(data)) });
         };
         session.fromRadioChar.on('data', session.fromRadioDataHandler);
       } else {
-        console.debug(`[BLE:${sessionId}] fromRadio has no notify — using read-pump path only`);
+        console.debug(
+          `[BLE:${sessionId}] fromRadio using read-pump path (canRead=${fromRadioCanRead} hasNotify=${fromRadioSupportsNotify})`,
+        );
       }
       console.debug(
-        `[BLE:${sessionId}] subscriptions ready — fromNum=${Boolean(session.fromNumChar)} fromRadioNotify=${fromRadioSupportsNotify}`,
+        `[BLE:${sessionId}] subscriptions ready in ${Date.now() - tSubscribe}ms — fromNum=${Boolean(session.fromNumChar)} fromRadioNotify=${fromRadioSupportsNotify && !fromRadioCanRead} fromRadioReadPump=${fromRadioCanRead} mtu=${peripheral.mtu ?? 'null'}`,
       );
 
       session.connectedPeripheral = peripheral;

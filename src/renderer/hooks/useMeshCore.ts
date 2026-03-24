@@ -1437,6 +1437,9 @@ export function useMeshCore() {
                 maxAttempts: NOBLE_IPC_CONNECT_MAX_ATTEMPTS,
                 stage,
               });
+              // Brief pause before retry: gives BlueZ/WinRT time to release adapter state
+              // after a failed or timed-out connect attempt.
+              await new Promise<void>((r) => setTimeout(r, 1500));
             }
           }
           if (!connected) throw lastBleError ?? new Error('BLE connect failed');

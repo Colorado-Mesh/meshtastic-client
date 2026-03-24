@@ -87,9 +87,20 @@ describe('NobleBleManager — notify-only fromRadio read pump suppression (regre
     expect(SOURCE).toMatch(/if \(session\.fromRadioNotifyOnly\) return/);
   });
 
-  it('connect() assigns fromRadioNotifyOnly from fromRadioSupportsNotify', () => {
-    // The flag must be derived from the actual characteristic properties at connect time
-    expect(SOURCE).toMatch(/session\.fromRadioNotifyOnly\s*=\s*fromRadioSupportsNotify/);
+  it('connect() sets fromRadioNotifyOnly only when notify is present AND read is absent', () => {
+    // fromRadioNotifyOnly must be true only for pure notify-only characteristics.
+    // Windows NUS TX reports ["read","notify"] — the read flag must gate the assignment.
+    expect(SOURCE).toMatch(
+      /session\.fromRadioNotifyOnly\s*=\s*fromRadioSupportsNotify\s*&&\s*!fromRadioCanRead/,
+    );
+  });
+
+  it('subscribes to fromRadio notify only when notify is set and read is NOT available', () => {
+    // When the characteristic also supports reads (e.g. Windows ["read","notify"]), we use
+    // the read pump instead of notify to avoid Noble WinRT notification delivery issues.
+    expect(SOURCE).toMatch(/if \(fromRadioSupportsNotify && !fromRadioCanRead\)/);
+    // The read pump log must mention canRead and hasNotify for diagnostics
+    expect(SOURCE).toContain('fromRadio supports reads');
   });
 
   it('writeToRadio skips the post-write read-pump timer when fromRadioNotifyOnly is set', () => {
