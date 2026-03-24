@@ -413,84 +413,6 @@ export default function AppPanel({
         </div>
       )}
 
-      {/* Appearance / color scheme */}
-      <div className="space-y-2">
-        <h3 className="text-sm font-medium text-muted">Appearance</h3>
-        <div className="bg-secondary-dark rounded-lg p-4 space-y-4">
-          <p className="text-xs text-muted leading-relaxed">
-            Override the app color scheme with hex values. Changes apply immediately and persist
-            across restarts. Invalid hex is not saved.
-          </p>
-          {THEME_TOKEN_META.map((meta) => {
-            const hex = themeColors[meta.key];
-            return (
-              <div
-                key={meta.key}
-                className="space-y-2 pb-3 border-b border-gray-700 last:border-0 last:pb-0"
-              >
-                <div className="flex items-center gap-2">
-                  <span
-                    className="w-8 h-8 rounded border border-gray-600 shrink-0"
-                    style={{ backgroundColor: hex }}
-                    aria-hidden="true"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div
-                      id={`theme-color-heading-${meta.key}`}
-                      className="text-sm font-medium text-gray-200"
-                    >
-                      {meta.label}
-                    </div>
-                    <p className="text-xs text-muted">{meta.description}</p>
-                    <p className="text-xs font-mono text-gray-400 mt-1">Current: {hex}</p>
-                  </div>
-                </div>
-                {/* Preset buttons only — no text input (Electron macOS representedObject warnings). */}
-                <div
-                  className="flex flex-wrap gap-1.5 pl-10"
-                  role="group"
-                  aria-labelledby={`theme-color-heading-${meta.key}`}
-                >
-                  {THEME_COLOR_PRESETS.map((p) => {
-                    const selected = p.hex === hex;
-                    return (
-                      <button
-                        key={`${meta.key}-${p.hex}`}
-                        type="button"
-                        title={p.label}
-                        aria-label={`${p.label} ${p.hex}`}
-                        aria-pressed={selected}
-                        onClick={() => {
-                          commitThemeColor(meta.key, p.hex);
-                        }}
-                        className={`w-7 h-7 rounded border shrink-0 transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-brand-green/50 ${
-                          selected
-                            ? 'ring-2 ring-brand-green ring-offset-1 ring-offset-secondary-dark'
-                            : 'border-gray-600'
-                        }`}
-                        style={{ backgroundColor: p.hex }}
-                      />
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-          <button
-            type="button"
-            onClick={() => {
-              resetThemeColors();
-              setThemeColors({ ...DEFAULT_THEME_COLORS });
-              addToast('Colors reset to app defaults.', 'success');
-            }}
-            aria-label="Reset all colors to defaults"
-            className="w-full px-3 py-2 bg-secondary-dark hover:bg-gray-600 text-gray-300 rounded-lg text-sm font-medium transition-colors"
-          >
-            Reset all colors to defaults
-          </button>
-        </div>
-      </div>
-
       {/* GPS / Location */}
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-muted">GPS / Location</h3>
@@ -934,6 +856,89 @@ export default function AppPanel({
           </button>
         </div>
       </div>
+
+      {/* Appearance — collapsible; preset-only colors (no text input — Electron macOS menu warnings). */}
+      <details className="group bg-secondary-dark rounded-lg border border-gray-700">
+        <summary className="px-4 py-3 cursor-pointer text-sm font-medium text-gray-200 flex items-center justify-between gap-2 hover:bg-gray-800/40 rounded-lg list-none [&::-webkit-details-marker]:hidden">
+          <span>Appearance — color scheme</span>
+          <svg
+            className="w-4 h-4 text-muted shrink-0 group-open:rotate-180 transition-transform"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            aria-hidden="true"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </summary>
+        <div className="px-4 pb-4 pt-1 space-y-3 border-t border-gray-700">
+          <p className="text-xs text-muted">
+            Changes apply immediately and persist. Hover a token name for where it is used.
+          </p>
+          {THEME_TOKEN_META.map((meta) => {
+            const hex = themeColors[meta.key];
+            return (
+              <div
+                key={meta.key}
+                className="flex flex-wrap items-center gap-2 pb-2 border-b border-gray-600/80 last:border-0 last:pb-0"
+              >
+                <span
+                  className="w-6 h-6 rounded border border-gray-600 shrink-0"
+                  style={{ backgroundColor: hex }}
+                  title={hex}
+                  aria-hidden="true"
+                />
+                <div
+                  id={`theme-color-heading-${meta.key}`}
+                  className="text-sm font-medium text-gray-200 shrink-0 min-w-[6.5rem] max-w-[9rem]"
+                  title={meta.description}
+                >
+                  {meta.label}
+                </div>
+                <div
+                  className="flex flex-nowrap gap-1 overflow-x-auto max-w-full min-w-0 flex-1 py-0.5 [scrollbar-width:thin]"
+                  role="group"
+                  aria-labelledby={`theme-color-heading-${meta.key}`}
+                >
+                  {THEME_COLOR_PRESETS.map((p) => {
+                    const selected = p.hex === hex;
+                    return (
+                      <button
+                        key={`${meta.key}-${p.hex}`}
+                        type="button"
+                        title={p.label}
+                        aria-label={`${p.label} ${p.hex}`}
+                        aria-pressed={selected}
+                        onClick={() => {
+                          commitThemeColor(meta.key, p.hex);
+                        }}
+                        className={`w-6 h-6 rounded border shrink-0 transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-brand-green/50 ${
+                          selected
+                            ? 'ring-2 ring-brand-green ring-offset-1 ring-offset-secondary-dark'
+                            : 'border-gray-600'
+                        }`}
+                        style={{ backgroundColor: p.hex }}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => {
+              resetThemeColors();
+              setThemeColors({ ...DEFAULT_THEME_COLORS });
+              addToast('Colors reset to app defaults.', 'success');
+            }}
+            aria-label="Reset all colors to defaults"
+            className="w-full px-3 py-2 bg-deep-black hover:bg-gray-700 text-gray-300 rounded-lg text-sm font-medium transition-colors border border-gray-600"
+          >
+            Reset all colors to defaults
+          </button>
+        </div>
+      </details>
 
       {/* Danger Zone — all destructive actions at bottom, red styling */}
       <div className="space-y-3">
