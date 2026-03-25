@@ -9,7 +9,7 @@ These requirements apply to all platforms.
 ### 1) Required software
 
 - Git
-- Node.js **22.12.0+** (Node 22, to match CI)
+- Node.js **25.8.1+** (prefer the latest stable release for development when possible)
 - npm **9+**
 - Python 3 + `pip` (needed for MkDocs documentation build)
 
@@ -89,9 +89,24 @@ npm run docs:build
 npm run docs:serve
 ```
 
-### 4) Test harness and local quality checks
+### 4) Test harness setup and local quality checks
 
-Run these before opening a PR:
+This section is the project test harness setup.
+
+Installed via `npm install` (from `package.json`):
+
+- `vitest` and renderer/main test dependencies
+- `eslint`
+- `typescript`
+- `prettier`
+
+Not installed by npm (install separately when needed):
+
+- `actionlint` (recommended for workflow linting; run `npm run setup:actionlint` or install system-wide)
+- `docker` and `act` (only if you run GitHub Actions locally)
+- Python 3 + `venv` + MkDocs Python deps (for docs checks/builds)
+
+Run these quality checks before opening a PR:
 
 ```bash
 npm run test:run
@@ -169,13 +184,13 @@ These scripts try to install optional tooling automatically. If they fail (for e
    ```bash
    xcode-select --install
    ```
-2. Install Node 22 (recommended via nvm) and npm:
+2. Install Node 25 (recommended via nvm) and npm:
    ```bash
    curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
    export NVM_DIR="$HOME/.nvm"
    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-   nvm install 22
-   nvm use 22
+   nvm install 25
+   nvm use 25
    ```
 
 ### Build/run flow
@@ -282,7 +297,7 @@ Fix:
 
 ### Install prerequisites
 
-Install Node 22 and native build dependencies.
+Install Node 25 and native build dependencies.
 
 Debian/Ubuntu:
 
@@ -290,8 +305,8 @@ Debian/Ubuntu:
 curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-nvm install 22
-nvm use 22
+nvm install 25
+nvm use 25
 sudo apt install build-essential python3
 ```
 
@@ -301,8 +316,8 @@ Fedora/RedHat:
 curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-nvm install 22
-nvm use 22
+nvm install 25
+nvm use 25
 sudo dnf groupinstall "Development Tools"
 sudo dnf install python3
 ```
