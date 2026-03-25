@@ -65,6 +65,23 @@ function formatUptime(secs: number | undefined): string {
   return `${mins}m`;
 }
 
+/** Prefer on-demand repeater status (remote query); contact list SNR/RSSI are often stale for MeshCore. */
+function displayRepeaterSnr(node: MeshNode, status: MeshCoreRepeaterStatus | undefined): string {
+  if (status !== undefined && Number.isFinite(status.lastSnr)) {
+    return status.lastSnr.toFixed(1);
+  }
+  if (node.snr != null) return node.snr.toFixed(1);
+  return '—';
+}
+
+function displayRepeaterRssi(node: MeshNode, status: MeshCoreRepeaterStatus | undefined): string {
+  if (status !== undefined && Number.isFinite(status.lastRssi)) {
+    return String(status.lastRssi);
+  }
+  if (node.rssi != null) return String(node.rssi);
+  return '—';
+}
+
 function SignalSparkline({ points }: { points: { ts: number; snr: number }[] }) {
   if (points.length < 2) return <span className="text-gray-600 text-xs">—</span>;
   const W = 80,
@@ -425,9 +442,24 @@ export default function RepeatersPanel({
                 <th className="py-2 pr-4 font-medium">Status</th>
                 <th className="py-2 pr-4 font-medium">Name</th>
                 <th className="py-2 pr-4 font-medium">Last Heard</th>
-                <th className="py-2 pr-4 font-medium">SNR</th>
-                <th className="py-2 pr-4 font-medium">RSSI</th>
-                <th className="py-2 pr-4 font-medium">Hops</th>
+                <th
+                  className="py-2 pr-4 font-medium"
+                  title="dB — from Request Status when available, else contact list"
+                >
+                  SNR
+                </th>
+                <th
+                  className="py-2 pr-4 font-medium"
+                  title="dBm — from Request Status when available, else contact list"
+                >
+                  RSSI
+                </th>
+                <th
+                  className="py-2 pr-4 font-medium"
+                  title="Hop count from last trace (Ping); MeshCore path differs from Meshtastic"
+                >
+                  Hops
+                </th>
                 <th className="py-2 pr-4 font-medium">Uptime</th>
                 <th className="py-2 pr-4 font-medium">Air%</th>
                 <th className="py-2 pr-4 font-medium">Path History</th>
@@ -502,8 +534,26 @@ export default function RepeatersPanel({
                       <td className="py-2 pr-4 text-gray-400 text-xs">
                         {formatRelativeTime(node.last_heard)}
                       </td>
-                      <td className="py-2 pr-4">{node.snr != null ? node.snr.toFixed(1) : '—'}</td>
-                      <td className="py-2 pr-4">{node.rssi ?? '—'}</td>
+                      <td
+                        className="py-2 pr-4"
+                        title={
+                          status !== undefined
+                            ? 'SNR from repeater status'
+                            : 'Contact SNR — use Status for live reading'
+                        }
+                      >
+                        {displayRepeaterSnr(node, status)}
+                      </td>
+                      <td
+                        className="py-2 pr-4"
+                        title={
+                          status !== undefined
+                            ? 'RSSI from repeater status'
+                            : 'Contact RSSI — use Status for live reading'
+                        }
+                      >
+                        {displayRepeaterRssi(node, status)}
+                      </td>
                       <td className="py-2 pr-4">
                         {traceResult ? (
                           hasTraceResult ? (

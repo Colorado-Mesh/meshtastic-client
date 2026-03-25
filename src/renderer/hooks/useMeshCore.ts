@@ -25,6 +25,7 @@ import {
   mergeMeshcoreChatStubNodes,
   meshcoreChatStubNodeIdFromDisplayName,
   meshcoreContactToMeshNode,
+  meshcoreGetRepeaterSessionPassword,
   meshcoreIsChatStubNodeId,
   meshcoreIsSyntheticPlaceholderPubKeyHex,
   meshcoreSyntheticPlaceholderPubKeyHex,
@@ -433,6 +434,11 @@ interface MeshCoreConnection {
     lastSnr: number;
     tag: number;
   }>;
+  login(
+    contactPublicKey: Uint8Array,
+    password: string,
+    extraTimeoutMillis?: number,
+  ): Promise<unknown>;
   getStatus(pubKey: Uint8Array): Promise<{
     batt_milli_volts: number;
     curr_tx_queue_len: number;
@@ -468,6 +474,19 @@ interface MeshCoreConnection {
   setOtherParams(manualAddContacts: boolean): Promise<void>;
   setAutoAddContacts(): Promise<void>;
   setManualAddContacts(): Promise<void>;
+}
+
+async function meshcoreTryRepeaterLogin(
+  conn: MeshCoreConnection,
+  pubKey: Uint8Array,
+): Promise<void> {
+  const password = meshcoreGetRepeaterSessionPassword().trim();
+  if (!password) return;
+  try {
+    await conn.login(pubKey, password, 2000);
+  } catch (e) {
+    console.warn('[useMeshCore] repeater login failed (continuing)', e);
+  }
 }
 
 interface MeshCoreContactRaw {
@@ -789,7 +808,7 @@ export function useMeshCore() {
             node_id: row.node_id,
             long_name:
               row.nickname ?? row.adv_name ?? `Node-${row.node_id.toString(16).toUpperCase()}`,
-            short_name: row.nickname ? row.nickname.slice(0, 4) : '',
+            short_name: '',
             hw_model: CONTACT_TYPE_LABELS[row.contact_type] ?? 'Unknown',
             battery: 0,
             snr: row.last_snr ?? 0,
@@ -881,7 +900,7 @@ export function useMeshCore() {
           ? {
               ...existing,
               long_name: m.senderName ?? existing.long_name,
-              short_name: (m.senderName ?? existing.long_name).slice(0, 4),
+              short_name: '',
               last_heard: Math.max(existing.last_heard ?? 0, tsSec),
               heard_via_mqtt: true,
             }
@@ -962,7 +981,7 @@ export function useMeshCore() {
               node_id: row.node_id,
               long_name:
                 row.nickname ?? row.adv_name ?? `Node-${row.node_id.toString(16).toUpperCase()}`,
-              short_name: row.nickname ? row.nickname.slice(0, 4) : '',
+              short_name: '',
               hw_model: CONTACT_TYPE_LABELS[row.contact_type] ?? 'Unknown',
               battery: 0,
               snr: row.last_snr ?? 0,
@@ -983,7 +1002,7 @@ export function useMeshCore() {
 
       for (const [nodeId, node] of nextNodes) {
         const nick = nicknameMapRef.current.get(nodeId);
-        if (nick) nextNodes.set(nodeId, { ...node, long_name: nick, short_name: nick.slice(0, 4) });
+        if (nick) nextNodes.set(nodeId, { ...node, long_name: nick, short_name: '' });
       }
 
       const myNodeId = opts?.myNodeId ?? 0;
@@ -993,9 +1012,7 @@ export function useMeshCore() {
         const hexFallback = `Node-${myNodeId.toString(16).toUpperCase()}`;
         const selfNameTrimmed = typeof self.name === 'string' ? self.name.trim() : '';
         const displayLongName = selfNameTrimmed || selfNode?.long_name || hexFallback;
-        const displayShortName = selfNameTrimmed
-          ? selfNameTrimmed.slice(0, 4)
-          : selfNode?.short_name || '????';
+        const displayShortName = '';
         if (selfNode) {
           nextNodes.set(myNodeId, {
             ...selfNode,
@@ -1059,7 +1076,7 @@ export function useMeshCore() {
             last_heard: d.lastAdvert,
             latitude: d.advLat !== 0 ? d.advLat / MESHCORE_COORD_SCALE : existing.latitude,
             longitude: d.advLon !== 0 ? d.advLon / MESHCORE_COORD_SCALE : existing.longitude,
-            ...(nick ? { long_name: nick, short_name: nick.slice(0, 4) } : {}),
+            ...(nick ? { long_name: nick, short_name: '' } : {}),
           });
           return next;
         });
@@ -1126,9 +1143,7 @@ export function useMeshCore() {
           .join('');
         pubKeyPrefixMapRef.current.set(prefix, node.node_id);
         const nick = nicknameMapRef.current.get(node.node_id);
-        const nodeWithNick = nick
-          ? { ...node, long_name: nick, short_name: nick.slice(0, 4) }
-          : node;
+        const nodeWithNick = nick ? { ...node, long_name: nick, short_name: '' } : node;
         console.debug(
           '[useMeshCore] event 138: new contact',
           node.node_id.toString(16).toUpperCase(),
@@ -2229,7 +2244,7 @@ export function useMeshCore() {
               next.set(selfNodeId, {
                 node_id: selfNodeId,
                 long_name: trimmedName || `Node-${selfNodeId.toString(16).toUpperCase()}`,
-                short_name: (trimmedName || '????').slice(0, 4),
+                short_name: '',
                 hw_model: 'Unknown',
                 battery: 0,
                 snr: 0,
@@ -2291,6 +2306,7 @@ export function useMeshCore() {
     if (!pubKey || !connRef.current) return;
     console.debug('[useMeshCore] requestRepeaterStatus nodeId=', nodeId.toString(16).toUpperCase());
     try {
+      await meshcoreTryRepeaterLogin(connRef.current, pubKey);
       const raw = await connRef.current.getStatus(pubKey);
       const status: MeshCoreRepeaterStatus = {
         battMilliVolts: raw.batt_milli_volts,
@@ -2326,6 +2342,7 @@ export function useMeshCore() {
     if (!pubKey || !connRef.current) return;
     console.debug('[useMeshCore] requestTelemetry nodeId=', nodeId.toString(16).toUpperCase());
     try {
+      await meshcoreTryRepeaterLogin(connRef.current, pubKey);
       const raw = await connRef.current.getTelemetry(pubKey);
       const entries = CayenneLpp.parse(raw.lppSensorData) as CayenneLppEntry[];
       const result: MeshCoreNodeTelemetry = { fetchedAt: Date.now(), entries };
@@ -2587,7 +2604,7 @@ export function useMeshCore() {
             next.set(nodeId, {
               ...existing,
               long_name: name,
-              short_name: name.slice(0, 4),
+              short_name: '',
               latitude: hasImportGps && !existingHasGps ? latitude : existing.latitude,
               longitude: hasImportGps && !existingHasGps ? longitude : existing.longitude,
             });
@@ -2600,7 +2617,7 @@ export function useMeshCore() {
             next.set(nodeId, {
               node_id: nodeId,
               long_name: name,
-              short_name: name.slice(0, 4),
+              short_name: '',
               hw_model: 'Repeater',
               battery: 0,
               snr: 0,

@@ -82,7 +82,7 @@ export function minimalMeshcoreChatNode(
   return {
     node_id: nodeId,
     long_name: name,
-    short_name: name.slice(0, 4),
+    short_name: '',
     hw_model: 'Chat',
     snr: 0,
     battery: 0,
@@ -132,7 +132,7 @@ export function meshcoreContactToMeshNode(contact: MeshCoreContact): MeshNode {
   return {
     node_id: nodeId,
     long_name: contact.advName || `Node-${nodeId.toString(16).toUpperCase()}`,
-    short_name: contact.advName?.slice(0, 4) || '????',
+    short_name: '',
     hw_model: CONTACT_TYPE_LABELS[contact.type] ?? 'Unknown',
     snr: 0,
     battery: 0,
@@ -158,8 +158,40 @@ export async function meshcoreDeriveChannelKeyHexFromName(channelName: string): 
   return Array.from(first16, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/**
+ * Normalize `getSelfInfo().radioFreq` to Hz for UI (`RadioPanel` MHz field).
+ * Firmware may report Hz (≥1e8), kHz (ISM band as integer, e.g. 910525), or MHz (float, e.g. 915.5).
+ */
+export function meshcoreSelfInfoFreqToDisplayHz(freq: number): number {
+  if (!Number.isFinite(freq) || freq <= 0) return 915_000_000;
+  if (freq >= 1e8) return Math.round(freq);
+  if (freq >= 100_000 && freq < 1e8) return Math.round(freq * 1000);
+  return Math.round(freq * 1e6);
+}
+
+/**
+ * Normalize `getSelfInfo().radioBw` to kHz for `ConfigSelect` bandwidth state.
+ * Firmware may report Hz (≥1000, e.g. 250000) or kHz (125, 250, 500).
+ */
+export function meshcoreSelfInfoBwToDisplayKhz(bw: number): number {
+  if (!Number.isFinite(bw) || bw <= 0) return 250;
+  if (bw >= 1000) return Math.round(bw / 1000);
+  return Math.round(bw);
+}
+
 const MESHCORE_REPEATER_AUTH_TOUCHED = 'meshclient:meshcoreRepeaterAuthTouched';
 const MESHCORE_REPEATER_PASSWORD = 'meshclient:meshcoreRepeaterPassword';
+
+/** Session-only repeater admin password from the optional prompt (for `login` before status/telemetry). */
+export function meshcoreGetRepeaterSessionPassword(): string {
+  if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') return '';
+  try {
+    return sessionStorage.getItem(MESHCORE_REPEATER_PASSWORD) ?? '';
+  } catch {
+    // catch-no-log-ok sessionStorage private mode / quota — return empty password
+    return '';
+  }
+}
 
 /**
  * Once per browser session, prompts for an optional repeater admin password before remote

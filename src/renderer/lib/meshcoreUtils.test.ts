@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   isMeshcoreTransportStatusChatLine,
   meshcoreDeriveChannelKeyHexFromName,
+  meshcoreSelfInfoBwToDisplayKhz,
+  meshcoreSelfInfoFreqToDisplayHz,
 } from './meshcoreUtils';
 
 describe('isMeshcoreTransportStatusChatLine', () => {
@@ -20,6 +22,30 @@ describe('isMeshcoreTransportStatusChatLine', () => {
 
   it('detects nack prefix', () => {
     expect(isMeshcoreTransportStatusChatLine('nack @[x] detail')).toBe(true);
+  });
+});
+
+describe('meshcoreSelfInfoFreqToDisplayHz', () => {
+  it('treats large values as Hz', () => {
+    expect(meshcoreSelfInfoFreqToDisplayHz(915_000_000)).toBe(915_000_000);
+  });
+
+  it('converts kHz integers from firmware to Hz', () => {
+    expect(meshcoreSelfInfoFreqToDisplayHz(910_525)).toBe(910_525_000);
+  });
+
+  it('converts MHz floats to Hz', () => {
+    expect(meshcoreSelfInfoFreqToDisplayHz(915.5)).toBe(915_500_000);
+  });
+});
+
+describe('meshcoreSelfInfoBwToDisplayKhz', () => {
+  it('converts Hz to kHz for UI', () => {
+    expect(meshcoreSelfInfoBwToDisplayKhz(250_000)).toBe(250);
+  });
+
+  it('passes through kHz when firmware already uses kHz', () => {
+    expect(meshcoreSelfInfoBwToDisplayKhz(250)).toBe(250);
   });
 });
 
