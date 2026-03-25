@@ -297,7 +297,7 @@ Fix:
 
 ### Install prerequisites
 
-Install Node 25 and native build dependencies.
+Install Node 25, `make`, and C++ build tools (`g++`/`gcc-c++`) with native build dependencies.
 
 Debian/Ubuntu:
 
@@ -307,7 +307,7 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 nvm install 25
 nvm use 25
-sudo apt install build-essential python3
+sudo apt install build-essential make g++ python3
 ```
 
 Fedora/RedHat:
@@ -319,7 +319,7 @@ export NVM_DIR="$HOME/.nvm"
 nvm install 25
 nvm use 25
 sudo dnf groupinstall "Development Tools"
-sudo dnf install python3
+sudo dnf install make gcc-c++ python3
 ```
 
 ### Build/run flow
