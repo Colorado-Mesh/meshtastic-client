@@ -491,6 +491,7 @@ declare global {
         onLine: (
           cb: (entry: { ts: number; level: string; source: string; message: string }) => void,
         ) => () => void;
+        logDeviceConnection: (detail: string) => Promise<void>;
       };
       update: {
         check: () => Promise<void>;

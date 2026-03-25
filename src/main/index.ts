@@ -38,10 +38,12 @@ import { getGpsFix } from './gps';
 import {
   clearLogFile,
   exportLogTo,
+  formatRuntimeLogTag,
   forwardRendererConsoleMessage,
   getLogPath,
   getRecentLines,
   initLogFile,
+  logDeviceConnection,
   patchMainConsole,
   sanitizeLogMessage,
   setMainWindow,
@@ -2151,12 +2153,17 @@ ipcMain.handle('log:clear', () => {
   }
 });
 
+ipcMain.handle('log:device-connection', (_event, detail: unknown) => {
+  if (typeof detail !== 'string' || detail.length > 8192) return;
+  logDeviceConnection(detail);
+});
+
 ipcMain.handle('log:export', async () => {
   try {
     if (!mainWindow) return null;
     const result = await dialog.showSaveDialog(mainWindow, {
       title: 'Export log',
-      defaultPath: `meshtastic-client-log-${new Date().toISOString().slice(0, 10)}.log`,
+      defaultPath: `mesh-client-log-${new Date().toISOString().slice(0, 10)}.log`,
       filters: [{ name: 'Log file', extensions: ['log', 'txt'] }],
     });
     if (!result.canceled && result.filePath) {
@@ -2616,6 +2623,9 @@ ipcMain.handle('meshcore:tcp-connect', (_event, host: string, port: number) => {
     meshcoreTcpSocket = socket;
     socket.connect(p, host, () => {
       console.debug('[IPC] meshcore:tcp-connect connected to', sanitizeLogMessage(host), p);
+      logDeviceConnection(
+        `transport=tcp stack=meshcore host=${sanitizeLogMessage(host)} port=${p}`,
+      );
       if (!settled) {
         settled = true;
         resolve();
@@ -2689,6 +2699,7 @@ app.on('second-instance', () => {
 void app.whenReady().then(() => {
   try {
     initLogFile();
+    console.debug(`[Startup] runtime ${formatRuntimeLogTag()}`);
 
     initDatabase();
     // Force the dock icon in development on macOS

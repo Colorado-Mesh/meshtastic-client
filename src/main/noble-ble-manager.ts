@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { EventEmitter } from 'events';
 
 import { withTimeout } from '../shared/withTimeout';
-import { sanitizeLogMessage } from './log-service';
+import { logDeviceConnection, sanitizeLogMessage } from './log-service';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const noble = require('@stoprocent/noble');
@@ -1067,6 +1067,9 @@ export class NobleBleManager extends EventEmitter {
         session.meshcoreGattInflight.resolve();
         session.meshcoreGattInflight = null;
       }
+      logDeviceConnection(
+        `transport=ble stack=${sessionId} peripheralId=${sanitizeLogMessage(peripheralId)} mac=${sanitizeLogMessage(String(peripheral.address ?? 'unknown'))}`,
+      );
       this.emit('connected', { sessionId });
     } catch (err) {
       console.warn(`[BLE:${sessionId}] connect failed:`, err instanceof Error ? err.message : err); // log-injection-ok noble internal error

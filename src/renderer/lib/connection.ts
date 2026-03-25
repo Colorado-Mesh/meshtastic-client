@@ -3,7 +3,11 @@ import { TransportHTTP } from '@meshtastic/transport-http';
 import { TransportWebSerial } from '@meshtastic/transport-web-serial';
 
 import { isMainProcessBleTimeoutMessage } from './bleConnectErrors';
-import { persistSerialPortIdentity, selectGrantedSerialPort } from './serialPortSignature';
+import {
+  getPortSignature,
+  persistSerialPortIdentity,
+  selectGrantedSerialPort,
+} from './serialPortSignature';
 import { TransportNobleIpc } from './transportNobleIpc';
 import type { ConnectionType, NobleBleSessionId } from './types';
 
@@ -13,6 +17,11 @@ const HTTP_PREFLIGHT_RETRIES = 3;
 const HTTP_PREFLIGHT_RETRY_DELAY_MS = 2_000;
 const BLE_CONNECT_MAX_ATTEMPTS = 2;
 const BLE_CONNECT_RETRY_DELAY_MS = 1_500;
+
+function logMeshtasticDeviceConnection(detail: string): void {
+  const fn = window.electronAPI?.log?.logDeviceConnection;
+  if (typeof fn === 'function') void fn(detail);
+}
 
 function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
   const ac = new AbortController();
@@ -160,6 +169,17 @@ export async function createConnection(
       if (capturedSerialPort) {
         persistSerialPortIdentity(capturedSerialPort);
       }
+      {
+        const parts = ['transport=serial', 'stack=meshtastic'];
+        if (capturedSerialPort) {
+          const pid = (capturedSerialPort as SerialPort & { portId?: string }).portId;
+          const sig = getPortSignature(capturedSerialPort);
+          if (pid) parts.push(`portId=${pid}`);
+          if (sig.usbVendorId != null) parts.push(`usbVendorId=${sig.usbVendorId}`);
+          if (sig.usbProductId != null) parts.push(`usbProductId=${sig.usbProductId}`);
+        }
+        logMeshtasticDeviceConnection(parts.join(' '));
+      }
       break;
     }
 
@@ -189,6 +209,12 @@ export async function createConnection(
         }, HTTP_CONNECT_TIMEOUT_MS),
       );
       transport = await Promise.race([createPromise, timeoutPromise]);
+      {
+        const httpPort = useTls ? 443 : 80;
+        logMeshtasticDeviceConnection(
+          `transport=http stack=meshtastic host=${host} tls=${useTls} port=${httpPort}`,
+        );
+      }
       break;
     }
 
@@ -229,6 +255,15 @@ export async function reconnectSerial(lastPortId?: string | null): Promise<MeshD
   );
 
   const transport = await TransportWebSerial.createFromPort(port, 115200);
+  {
+    const sig = getPortSignature(port);
+    const pid = (port as SerialPort & { portId?: string }).portId;
+    const parts = ['transport=serial', 'stack=meshtastic'];
+    if (pid) parts.push(`portId=${pid}`);
+    if (sig.usbVendorId != null) parts.push(`usbVendorId=${sig.usbVendorId}`);
+    if (sig.usbProductId != null) parts.push(`usbProductId=${sig.usbProductId}`);
+    logMeshtasticDeviceConnection(parts.join(' '));
+  }
   const device = new MeshDevice(transport as any);
   return device;
 }

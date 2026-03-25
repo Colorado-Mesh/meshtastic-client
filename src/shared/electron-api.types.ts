@@ -310,5 +310,7 @@ export interface ElectronAPI {
     clear: () => Promise<unknown>;
     export: () => Promise<string | null>;
     onLine: (cb: (entry: LogEntry) => void) => () => void;
+    /** Main-process log line: `[Connection] …` + runtime tag (sanitized in main). */
+    logDeviceConnection: (detail: string) => Promise<void>;
   };
 }

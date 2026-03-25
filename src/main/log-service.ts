@@ -1,3 +1,5 @@
+import { release as osRelease } from 'node:os';
+
 import type { BrowserWindow } from 'electron';
 import { app } from 'electron';
 import fs from 'fs';
@@ -11,7 +13,30 @@ import {
 
 export { sanitizeLogMessage };
 
-const LOG_FILENAME = 'meshtastic-client.log';
+/** Compact OS/runtime fields for startup and per-device connection lines (main process). */
+export function formatRuntimeLogTag(): string {
+  const appVersion =
+    typeof app !== 'undefined' && typeof app.getVersion === 'function'
+      ? app.getVersion()
+      : 'unknown';
+  const packaged =
+    typeof app !== 'undefined' && typeof app.isPackaged === 'boolean' ? app.isPackaged : false;
+  return `platform=${process.platform} arch=${process.arch} os=${osRelease()} electron=${process.versions.electron} node=${process.versions.node} app=${appVersion} packaged=${packaged}`;
+}
+
+/**
+ * One line per device connect: `[Connection] …` plus {@link formatRuntimeLogTag}.
+ * Pass only trusted or pre-sanitized fragments in `detail`; the full line is sanitized again in {@link appendLine}.
+ */
+export function logDeviceConnection(detail: string): void {
+  appendLine(
+    'debug',
+    'main',
+    `[Connection] ${sanitizeLogMessage(detail)} ${formatRuntimeLogTag()}`,
+  );
+}
+
+const LOG_FILENAME = 'mesh-client.log';
 const MAX_LINE_LENGTH = 8192;
 const MAX_IPC_MESSAGE_LENGTH = 4096;
 const RECENT_MAX = 1500;

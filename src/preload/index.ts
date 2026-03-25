@@ -471,5 +471,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('log:line', handler);
       return () => ipcRenderer.off('log:line', handler);
     },
+    logDeviceConnection: (detail: string) => ipcRenderer.invoke('log:device-connection', detail),
   },
 } satisfies ElectronAPI);

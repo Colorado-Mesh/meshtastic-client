@@ -34,6 +34,7 @@ import {
 } from '../lib/meshcoreUtils';
 import { parseStoredJson } from '../lib/parseStoredJson';
 import {
+  getPortSignature,
   LAST_SERIAL_PORT_KEY,
   persistSerialPortIdentity,
   selectGrantedSerialPort,
@@ -1651,6 +1652,15 @@ export function useMeshCore() {
           conn = new (WebSerialConnection as unknown as new (port: unknown) => MeshCoreConnection)(
             serialRawPort,
           );
+          {
+            const sid = localStorage.getItem(LAST_SERIAL_PORT_KEY);
+            const sig = getPortSignature(serialRawPort);
+            const parts = ['transport=serial', 'stack=meshcore'];
+            if (sid) parts.push(`portId=${sid}`);
+            if (sig.usbVendorId != null) parts.push(`usbVendorId=${sig.usbVendorId}`);
+            if (sig.usbProductId != null) parts.push(`usbProductId=${sig.usbProductId}`);
+            void window.electronAPI.log.logDeviceConnection(parts.join(' '));
+          }
         } else {
           // tcp
           const host = tcpHost ?? 'localhost';
@@ -1821,6 +1831,15 @@ export function useMeshCore() {
             port: unknown,
           ) => MeshCoreConnection)(serialPort);
           await initConn(serialConn, setupGen);
+          {
+            const sid = localStorage.getItem(LAST_SERIAL_PORT_KEY);
+            const sig = getPortSignature(serialPort);
+            const parts = ['transport=serial', 'stack=meshcore'];
+            if (sid) parts.push(`portId=${sid}`);
+            if (sig.usbVendorId != null) parts.push(`usbVendorId=${sig.usbVendorId}`);
+            if (sig.usbProductId != null) parts.push(`usbProductId=${sig.usbProductId}`);
+            void window.electronAPI.log.logDeviceConnection(parts.join(' '));
+          }
           console.debug('[useMeshCore] connectAutomatic serial: connected');
         } catch (err) {
           const isSetupAbort =

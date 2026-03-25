@@ -167,6 +167,7 @@ const electronAPIMock = {
     clear: vi.fn().mockResolvedValue(undefined),
     export: vi.fn().mockResolvedValue(null),
     onLine: vi.fn().mockReturnValue(() => {}),
+    logDeviceConnection: vi.fn().mockResolvedValue(undefined),
   },
 } satisfies ElectronAPI;
 

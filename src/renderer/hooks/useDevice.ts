@@ -519,7 +519,7 @@ export function useDevice() {
         positionWarning?: string | null;
       };
       if (!nodeUpdate.node_id) return;
-      console.debug('[useDevice] MQTT node update: nodeId=%d', nodeUpdate.node_id);
+      console.debug(`[useDevice] MQTT node update: nodeId=${nodeUpdate.node_id}`);
 
       updateNodes((prev) => {
         const existing = prev.get(nodeUpdate.node_id) ?? emptyNode(nodeUpdate.node_id);
@@ -638,7 +638,7 @@ export function useDevice() {
       }
 
       // Packet ID dedup (catches our own uplink echoes)
-      console.debug('[useDevice] MQTT message: from=%d packetId=%d', msg.sender_id, packetId);
+      console.debug(`[useDevice] MQTT message: from=${msg.sender_id} packetId=${packetId}`);
       if (packetId !== 0 && isDuplicate(packetId)) {
         if (getStoredMeshProtocol() === 'meshtastic') {
           useDiagnosticsStore.getState().recordDuplicate(msg.sender_id);
@@ -789,7 +789,7 @@ export function useDevice() {
 
       // ─── My node info ──────────────────────────────────────────
       const unsub2 = device.events.onMyNodeInfo.subscribe((info) => {
-        console.debug('[useDevice] onMyNodeInfo: myNodeNum=%d', info.myNodeNum);
+        console.debug(`[useDevice] onMyNodeInfo: myNodeNum=${info.myNodeNum}`);
         touchLastData();
         const virtualNodeId = getOrCreateVirtualNodeId();
         if (virtualNodeId !== info.myNodeNum) {
