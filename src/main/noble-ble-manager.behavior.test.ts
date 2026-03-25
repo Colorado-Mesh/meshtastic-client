@@ -214,7 +214,8 @@ describe('NobleBleManager behavior (notify-first + fallback)', () => {
       expect(readsAfterSubscribe).toBeGreaterThanOrEqual(1);
     }
     await manager.writeToRadio('meshcore', Buffer.from([0xbb]));
-    await wait(140);
+    // Linux early-poll fallback now backs off at 250ms between attempts.
+    await wait(340);
     if (MESHCORE_NOTIFY_FIRST_SKIPS_READ_PUMP) {
       expect(fromRadio.readCalls).toBe(0);
     } else {
