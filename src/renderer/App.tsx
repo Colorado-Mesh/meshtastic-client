@@ -892,6 +892,7 @@ export default function App() {
                     onDmTargetConsumed={handleDmTargetConsumed}
                     isActive={activeTab === 1}
                     onGlobalSearch={handleOpenGlobalSearch}
+                    protocol={protocol}
                   />
                 </div>
                 <div id="panel-2" role="tabpanel" aria-labelledby="tab-2" hidden={activeTab !== 2}>
@@ -932,6 +933,7 @@ export default function App() {
                           waypoints={device.waypoints}
                           onSendWaypoint={device.sendWaypoint}
                           onDeleteWaypoint={device.deleteWaypoint}
+                          protocol={protocol}
                         />
                       </Suspense>
                     </ErrorBoundary>

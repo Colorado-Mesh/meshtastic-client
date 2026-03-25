@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { isMeshcoreTransportStatusChatLine } from './meshcoreUtils';
+import {
+  isMeshcoreTransportStatusChatLine,
+  meshcoreDeriveChannelKeyHexFromName,
+} from './meshcoreUtils';
 
 describe('isMeshcoreTransportStatusChatLine', () => {
   it('detects MeshCore hop ACK lines', () => {
@@ -17,5 +20,18 @@ describe('isMeshcoreTransportStatusChatLine', () => {
 
   it('detects nack prefix', () => {
     expect(isMeshcoreTransportStatusChatLine('nack @[x] detail')).toBe(true);
+  });
+});
+
+describe('meshcoreDeriveChannelKeyHexFromName', () => {
+  it('matches SHA-256("#name") first 16 bytes as 32 hex chars', async () => {
+    const hex = await meshcoreDeriveChannelKeyHexFromName('test');
+    expect(hex).toBe('9cd8fcf22a47333b591d96a2b848b73f');
+  });
+
+  it('treats leading # as part of the hashed string', async () => {
+    const a = await meshcoreDeriveChannelKeyHexFromName('#foo');
+    const b = await meshcoreDeriveChannelKeyHexFromName('foo');
+    expect(a).toBe(b);
   });
 });

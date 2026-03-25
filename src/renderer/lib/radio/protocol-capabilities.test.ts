@@ -110,7 +110,7 @@ describe('ProtocolCapabilities contract', () => {
         "hasFullPositionConfig": false,
         "hasHopCount": false,
         "hasModemPresets": false,
-        "hasMqttHybrid": true,
+        "hasMqttHybrid": false,
         "hasNeighborInfo": false,
         "hasNodeDbReset": false,
         "hasOnDemandNodeStatus": true,

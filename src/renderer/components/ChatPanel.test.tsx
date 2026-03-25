@@ -134,6 +134,54 @@ describe('ChatPanel accessibility', () => {
     expect(screen.getByTitle('Received via RF')).toBeInTheDocument();
   });
 
+  it('hides RF-only transport badge in MeshCore mode (RF is the default path)', () => {
+    render(
+      <ToastProvider>
+        <ChatPanel
+          {...defaultProps}
+          protocol="meshcore"
+          myNodeNum={1}
+          messages={[
+            {
+              sender_id: 2,
+              sender_name: 'Other',
+              payload: 'Hello',
+              channel: 0,
+              timestamp: Date.now(),
+              status: 'acked',
+              receivedVia: 'rf',
+            },
+          ]}
+        />
+      </ToastProvider>,
+    );
+    expect(screen.queryByTitle('Received via RF')).not.toBeInTheDocument();
+  });
+
+  it('still shows MQTT transport badge in MeshCore mode when receivedVia is mqtt', () => {
+    render(
+      <ToastProvider>
+        <ChatPanel
+          {...defaultProps}
+          protocol="meshcore"
+          myNodeNum={1}
+          messages={[
+            {
+              sender_id: 2,
+              sender_name: 'Other',
+              payload: 'Hello',
+              channel: 0,
+              timestamp: Date.now(),
+              status: 'acked',
+              receivedVia: 'mqtt',
+            },
+          ]}
+        />
+      </ToastProvider>,
+    );
+    expect(screen.getByTitle('Received via MQTT')).toBeInTheDocument();
+  });
+
   it('shows role="alert" when onSend rejects', async () => {
     const user = userEvent.setup();
     const onSend = vi.fn().mockRejectedValue(new Error('send failed'));

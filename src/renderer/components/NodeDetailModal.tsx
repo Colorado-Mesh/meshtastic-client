@@ -5,6 +5,7 @@ import type {
   MeshCoreNodeTelemetry,
   MeshCoreRepeaterStatus,
 } from '../hooks/useMeshCore';
+import { meshcoreEnsureRepeaterRemoteAuthPrompt } from '../lib/meshcoreUtils';
 import type { MeshNode, MeshProtocol, NeighborInfoRecord } from '../lib/types';
 import { useDiagnosticsStore } from '../stores/diagnosticsStore';
 import NodeInfoBody from './NodeInfoBody';
@@ -278,6 +279,7 @@ export default function NodeDetailModal({
             traceRouteHops={isOurNode ? undefined : traceRouteHops}
             nodes={nodes}
             useFahrenheit={useFahrenheit}
+            protocol={protocol}
           />
 
           {/* MeshCore: trace path result */}
@@ -624,6 +626,7 @@ export default function NodeDetailModal({
             {protocol === 'meshcore' && onRequestRepeaterStatus && (
               <button
                 onClick={async () => {
+                  if (!meshcoreEnsureRepeaterRemoteAuthPrompt()) return;
                   setRepeaterStatusPending(true);
                   setActionStatus('Requesting status...');
                   try {
@@ -644,6 +647,7 @@ export default function NodeDetailModal({
             {protocol === 'meshcore' && onRequestTelemetry && (
               <button
                 onClick={async () => {
+                  if (!meshcoreEnsureRepeaterRemoteAuthPrompt()) return;
                   setTelemetryPending(true);
                   setActionStatus('Requesting telemetry...');
                   try {
@@ -664,6 +668,7 @@ export default function NodeDetailModal({
             {protocol === 'meshcore' && onRequestNeighbors && node.hw_model === 'Repeater' && (
               <button
                 onClick={async () => {
+                  if (!meshcoreEnsureRepeaterRemoteAuthPrompt()) return;
                   setNeighborsPending(true);
                   setActionStatus('Requesting neighbors...');
                   try {

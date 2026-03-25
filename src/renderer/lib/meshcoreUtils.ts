@@ -141,3 +141,45 @@ export function meshcoreContactToMeshNode(contact: MeshCoreContact): MeshNode {
     longitude: lon,
   };
 }
+
+/** MeshCore supports channel indices 0..39 (40 channels). */
+export const MESHCORE_CHANNEL_INDEX_MAX = 39;
+
+/**
+ * 128-bit AES key as 32 hex chars: first 16 bytes of SHA-256("#name") per MeshCore #channel convention.
+ * The name is normalized with a leading `#` (e.g. `general` → hash `#general`).
+ */
+export async function meshcoreDeriveChannelKeyHexFromName(channelName: string): Promise<string> {
+  const t = channelName.trim();
+  const input = t.startsWith('#') ? t : `#${t}`;
+  const data = new TextEncoder().encode(input);
+  const buf = await crypto.subtle.digest('SHA-256', data);
+  const first16 = new Uint8Array(buf).slice(0, 16);
+  return Array.from(first16, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+const MESHCORE_REPEATER_AUTH_TOUCHED = 'meshclient:meshcoreRepeaterAuthTouched';
+const MESHCORE_REPEATER_PASSWORD = 'meshclient:meshcoreRepeaterPassword';
+
+/**
+ * Once per browser session, prompts for an optional repeater admin password before remote
+ * telemetry/status/neighbors. Password is stored in sessionStorage for future wiring to the
+ * transport; cancel aborts the action.
+ */
+export function meshcoreEnsureRepeaterRemoteAuthPrompt(): boolean {
+  if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') return true;
+  try {
+    if (sessionStorage.getItem(MESHCORE_REPEATER_AUTH_TOUCHED) === '1') return true;
+    const r = window.prompt(
+      'Optional repeater admin password for remote telemetry/status (leave empty if none). Stored for this session only.',
+      sessionStorage.getItem(MESHCORE_REPEATER_PASSWORD) ?? '',
+    );
+    if (r === null) return false;
+    sessionStorage.setItem(MESHCORE_REPEATER_AUTH_TOUCHED, '1');
+    sessionStorage.setItem(MESHCORE_REPEATER_PASSWORD, r);
+    return true;
+  } catch {
+    // catch-no-log-ok sessionStorage private mode / quota — fall through to unauthenticated requests
+    return true;
+  }
+}

@@ -19,7 +19,7 @@ import {
 import { snrMeaningfulForNodeDiagnostics } from '../lib/diagnostics/snrMeaningfulForNodeDiagnostics';
 import { normalizeLastHeardMs } from '../lib/nodeStatus';
 import { RoleDisplay } from '../lib/roleInfo';
-import type { HopHistoryPoint, MeshNode, NodeAnomaly } from '../lib/types';
+import type { HopHistoryPoint, MeshNode, MeshProtocol, NodeAnomaly } from '../lib/types';
 import { routingRowToNodeAnomaly } from '../lib/types';
 import { useDiagnosticsStore } from '../stores/diagnosticsStore';
 import MeshCongestionAttributionBlock from './MeshCongestionAttributionBlock';
@@ -76,6 +76,8 @@ export interface NodeInfoBodyProps {
   /** When set, Mesh Congestion can list originators by name/role (RF duplicate-prone traffic). */
   nodes?: Map<number, MeshNode>;
   useFahrenheit?: boolean;
+  /** MeshCore uses contact/advert type (`hw_model`) instead of Meshtastic role; omit short name row. */
+  protocol?: MeshProtocol;
 }
 
 const SEVERITY_STYLES: Record<RFDiagnosis['severity'], string> = {
@@ -94,6 +96,7 @@ export default function NodeInfoBody({
   traceRouteHops,
   nodes,
   useFahrenheit = false,
+  protocol = 'meshtastic',
 }: NodeInfoBodyProps) {
   const diagnosticRows = useDiagnosticsStore((s) => s.diagnosticRows);
   const routingRow = getRoutingRowForNode(diagnosticRows, node.node_id);
@@ -176,13 +179,18 @@ export default function NodeInfoBody({
     <>
       {/* Names */}
       {node.long_name && <InfoRow label="Long Name" value={node.long_name} />}
-      {node.short_name && <InfoRow label="Short Name" value={node.short_name} />}
+      {protocol !== 'meshcore' && node.short_name && (
+        <InfoRow label="Short Name" value={node.short_name} />
+      )}
 
-      {/* Role */}
-      <div className="flex justify-between items-center py-2 border-b border-gray-700/50">
-        <span className="text-sm text-muted">Role</span>
-        <RoleDisplay role={node.role} />
-      </div>
+      {protocol === 'meshcore' ? (
+        <InfoRow label="Type" value={node.hw_model || '—'} />
+      ) : (
+        <div className="flex justify-between items-center py-2 border-b border-gray-700/50">
+          <span className="text-sm text-muted">Role</span>
+          <RoleDisplay role={node.role} />
+        </div>
+      )}
 
       {/* SNR: direct 0-hop RF or our node; otherwise Last-Hop SNR when multi-hop RF context */}
       {showSnr && (

@@ -84,7 +84,8 @@ export const MESHCORE_CAPABILITIES: ProtocolCapabilities = {
   protocol: 'meshcore',
   hasHopCount: false,
   hopLimitRange: [1, 64],
-  hasMqttHybrid: true,
+  /** MeshCore session is RF-first; MQTT bridge is optional and not shown as a node column. */
+  hasMqttHybrid: false,
   hasEnvironmentTelemetry: true,
   hasRfStats: false,
   hasNeighborInfo: false,

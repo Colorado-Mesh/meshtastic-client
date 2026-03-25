@@ -18,7 +18,7 @@ import { getRoutingRowForNode, routingAnomalyNodeIds } from '../lib/diagnostics/
 import { escapeSvgAttr } from '../lib/escapeSvg';
 import type { OurPosition } from '../lib/gpsSource';
 import { getNodeStatus, haversineDistanceKm } from '../lib/nodeStatus';
-import type { MeshNode, MeshWaypoint, NodeAnomaly } from '../lib/types';
+import type { MeshNode, MeshProtocol, MeshWaypoint, NodeAnomaly } from '../lib/types';
 import { routingRowToNodeAnomaly } from '../lib/types';
 import { useDiagnosticsStore } from '../stores/diagnosticsStore';
 import { useMapViewportStore } from '../stores/mapViewportStore';
@@ -214,6 +214,7 @@ interface MapMarkerProps {
   homeNode?: MeshNode | null;
   haloCenterOffset?: [number, number];
   nodes: Map<number, MeshNode>;
+  protocol: MeshProtocol;
 }
 
 const MapMarker = memo(
@@ -226,6 +227,7 @@ const MapMarker = memo(
     homeNode,
     haloCenterOffset = [0, 0],
     nodes,
+    protocol,
   }: MapMarkerProps) {
     const status = getNodeStatus(node.last_heard);
     const cuForIcon = congestionHalosEnabled ? (node.channel_utilization ?? 0) : 0;
@@ -319,7 +321,7 @@ const MapMarker = memo(
                   );
                 })()}
               </div>
-              <NodeInfoBody node={node} homeNode={homeNode} nodes={nodes} />
+              <NodeInfoBody node={node} homeNode={homeNode} nodes={nodes} protocol={protocol} />
             </div>
           </Popup>
         </Marker>
@@ -336,7 +338,8 @@ const MapMarker = memo(
     prev.anomaly?.type === next.anomaly?.type &&
     prev.anomaly?.severity === next.anomaly?.severity &&
     prev.haloCenterOffset?.[0] === next.haloCenterOffset?.[0] &&
-    prev.haloCenterOffset?.[1] === next.haloCenterOffset?.[1],
+    prev.haloCenterOffset?.[1] === next.haloCenterOffset?.[1] &&
+    prev.protocol === next.protocol,
 );
 
 // 1941 Ute Creek Dr, Longmont CO — used when there are no GPS coordinates
@@ -517,6 +520,7 @@ interface Props {
     ch?: number,
   ) => Promise<void>;
   onDeleteWaypoint?: (id: number) => Promise<void>;
+  protocol?: MeshProtocol;
 }
 
 export default function MapPanel({
@@ -527,6 +531,7 @@ export default function MapPanel({
   onLocateMe,
   waypoints,
   onDeleteWaypoint,
+  protocol = 'meshtastic',
 }: Props) {
   const homeNode = nodes.get(myNodeNum) ?? null;
 
@@ -656,7 +661,10 @@ export default function MapPanel({
     return {
       node_id: myNodeNum,
       long_name: longName,
-      short_name: homeNode?.short_name || longName.slice(0, 4),
+      short_name:
+        protocol === 'meshcore'
+          ? (homeNode?.short_name ?? '')
+          : homeNode?.short_name || longName.slice(0, 4),
       hw_model: homeNode?.hw_model ?? 'Unknown',
       battery: homeNode?.battery ?? 0,
       snr: homeNode?.snr ?? 0,
@@ -668,7 +676,7 @@ export default function MapPanel({
       heard_via_mqtt_only: homeNode?.heard_via_mqtt_only,
       channel_utilization: homeNode?.channel_utilization,
     };
-  }, [selfInNodesToRender, ourPosition, homeNode, myNodeNum]);
+  }, [selfInNodesToRender, ourPosition, homeNode, myNodeNum, protocol]);
 
   const nodesWithStatusAndHaloOffsetForRender = useMemo(() => {
     if (!selfFallbackNode) return nodesWithStatusAndHaloOffset;
@@ -781,6 +789,7 @@ export default function MapPanel({
             homeNode={homeNode}
             haloCenterOffset={haloCenterOffset}
             nodes={nodes}
+            protocol={protocol}
           />
         ))}
         {waypoints &&

@@ -1895,14 +1895,16 @@ export function useMeshCore() {
     console.debug('[useMeshCore] disconnect: complete');
   }, []);
 
+  // MeshCore transport does not support Meshtastic-style threaded replies (replyId); ChatPanel omits it.
   const sendMessage = useCallback(
     async (text: string, channelIdx: number, destNodeId?: number) => {
       if (!connRef.current) return;
       if (destNodeId !== undefined) {
         const pubKey = pubKeyMapRef.current.get(destNodeId);
         if (!pubKey) {
-          console.warn('[useMeshCore] sendMessage: no pubKey for', destNodeId);
-          return;
+          throw new Error(
+            'Cannot send DM: no encryption key for this contact. Wait for a full contact exchange, refresh contacts, or remove name-only stubs.',
+          );
         }
         const sentAt = Date.now();
         // Optimistically add own message with 'sending' status

@@ -20,6 +20,7 @@ type SortField =
   | 'latitude'
   | 'longitude'
   | 'role'
+  | 'hw_model'
   | 'hops_away'
   | 'via_mqtt'
   | 'voltage'
@@ -27,6 +28,21 @@ type SortField =
   | 'air_util_tx'
   | 'altitude'
   | 'redundancy';
+
+/** Sort fields that do not apply when the Nodes table is in MeshCore (contacts) layout. */
+const MESHCORE_INAPPLICABLE_SORT_FIELDS: readonly SortField[] = [
+  'short_name',
+  'role',
+  'hops_away',
+  'via_mqtt',
+  'rssi',
+  'snr',
+  'voltage',
+  'channel_utilization',
+  'air_util_tx',
+  'altitude',
+  'redundancy',
+];
 
 function SortIcon({
   field,
@@ -96,6 +112,13 @@ export default function NodeListPanel({
   const [sortField, setSortField] = useState<SortField>('last_heard');
   const [sortAsc, setSortAsc] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    if (mode === 'meshcore' && MESHCORE_INAPPLICABLE_SORT_FIELDS.includes(sortField)) {
+      setSortField('last_heard');
+      setSortAsc(false);
+    }
+  }, [mode, sortField]);
   const [showScrollTop, setShowScrollTop] = useState(false);
 
   useEffect(() => {
@@ -118,7 +141,7 @@ export default function NodeListPanel({
       setSortAsc(!sortAsc);
     } else {
       setSortField(field);
-      setSortAsc(field === 'long_name' || field === 'short_name'); // text asc, numbers desc
+      setSortAsc(field === 'long_name' || field === 'short_name' || field === 'hw_model'); // text asc, numbers desc
     }
   };
 
@@ -132,6 +155,7 @@ export default function NodeListPanel({
         (n) =>
           n.long_name.toLowerCase().includes(q) ||
           n.short_name.toLowerCase().includes(q) ||
+          n.hw_model?.toLowerCase().includes(q) ||
           n.node_id.toString(16).includes(q),
       );
     }
@@ -210,6 +234,9 @@ export default function NodeListPanel({
           break;
         case 'role':
           cmp = (a.role ?? 999) - (b.role ?? 999);
+          break;
+        case 'hw_model':
+          cmp = (a.hw_model || '').localeCompare(b.hw_model || '');
           break;
         case 'hops_away':
           cmp = (a.hops_away ?? 999) - (b.hops_away ?? 999);
@@ -297,8 +324,8 @@ export default function NodeListPanel({
             onChange={(e) => {
               setSearchQuery(e.target.value);
             }}
-            placeholder="Search nodes..."
-            aria-label="Search nodes..."
+            placeholder={mode === 'meshcore' ? 'Search contacts…' : 'Search nodes…'}
+            aria-label={mode === 'meshcore' ? 'Search contacts' : 'Search nodes'}
             className="flex-1 px-3 py-1.5 bg-secondary-dark/80 rounded-lg text-gray-200 text-sm border border-gray-600/50 focus:border-brand-green/50 focus:outline-none"
           />
         </div>
@@ -334,7 +361,10 @@ export default function NodeListPanel({
       </div>
 
       <div className="min-w-0 flex-1 overflow-auto rounded-lg border border-gray-700">
-        <table style={{ minWidth: '1600px' }} className="text-sm whitespace-nowrap">
+        <table
+          style={{ minWidth: mode === 'meshcore' ? '1000px' : '1600px' }}
+          className="text-sm whitespace-nowrap"
+        >
           <caption className="sr-only">Connected mesh nodes</caption>
           <thead>
             <tr className="bg-deep-black text-muted text-left sticky top-0 z-10 whitespace-nowrap">
@@ -368,18 +398,20 @@ export default function NodeListPanel({
               >
                 Long Name <SortIcon field="long_name" sortField={sortField} sortAsc={sortAsc} />
               </th>
-              <th
-                scope="col"
-                aria-sort={
-                  sortField === 'short_name' ? (sortAsc ? 'ascending' : 'descending') : 'none'
-                }
-                className="px-3 py-2 cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => {
-                  handleSort('short_name');
-                }}
-              >
-                Short <SortIcon field="short_name" sortField={sortField} sortAsc={sortAsc} />
-              </th>
+              {mode !== 'meshcore' && (
+                <th
+                  scope="col"
+                  aria-sort={
+                    sortField === 'short_name' ? (sortAsc ? 'ascending' : 'descending') : 'none'
+                  }
+                  className="px-3 py-2 cursor-pointer hover:text-gray-200 transition-colors select-none"
+                  onClick={() => {
+                    handleSort('short_name');
+                  }}
+                >
+                  Short <SortIcon field="short_name" sortField={sortField} sortAsc={sortAsc} />
+                </th>
+              )}
               <th
                 scope="col"
                 aria-sort={
@@ -392,40 +424,60 @@ export default function NodeListPanel({
               >
                 Last Heard <SortIcon field="last_heard" sortField={sortField} sortAsc={sortAsc} />
               </th>
-              <th
-                scope="col"
-                aria-sort={sortField === 'role' ? (sortAsc ? 'ascending' : 'descending') : 'none'}
-                className="px-3 py-2 cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => {
-                  handleSort('role');
-                }}
-              >
-                Role <SortIcon field="role" sortField={sortField} sortAsc={sortAsc} />
-              </th>
-              <th
-                scope="col"
-                aria-sort={
-                  sortField === 'hops_away' ? (sortAsc ? 'ascending' : 'descending') : 'none'
-                }
-                className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => {
-                  handleSort('hops_away');
-                }}
-              >
-                Hops <SortIcon field="hops_away" sortField={sortField} sortAsc={sortAsc} />
-              </th>
-              <th
-                scope="col"
-                aria-sort={
-                  sortField === 'via_mqtt' ? (sortAsc ? 'ascending' : 'descending') : 'none'
-                }
-                className="px-3 py-2 text-center cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => {
-                  handleSort('via_mqtt');
-                }}
-              >
-                MQTT <SortIcon field="via_mqtt" sortField={sortField} sortAsc={sortAsc} />
-              </th>
+              {mode === 'meshcore' ? (
+                <th
+                  scope="col"
+                  aria-sort={
+                    sortField === 'hw_model' ? (sortAsc ? 'ascending' : 'descending') : 'none'
+                  }
+                  className="px-3 py-2 cursor-pointer hover:text-gray-200 transition-colors select-none"
+                  onClick={() => {
+                    handleSort('hw_model');
+                  }}
+                  title="MeshCore contact / advert type"
+                >
+                  Type <SortIcon field="hw_model" sortField={sortField} sortAsc={sortAsc} />
+                </th>
+              ) : (
+                <th
+                  scope="col"
+                  aria-sort={sortField === 'role' ? (sortAsc ? 'ascending' : 'descending') : 'none'}
+                  className="px-3 py-2 cursor-pointer hover:text-gray-200 transition-colors select-none"
+                  onClick={() => {
+                    handleSort('role');
+                  }}
+                >
+                  Role <SortIcon field="role" sortField={sortField} sortAsc={sortAsc} />
+                </th>
+              )}
+              {mode !== 'meshcore' && (
+                <th
+                  scope="col"
+                  aria-sort={
+                    sortField === 'hops_away' ? (sortAsc ? 'ascending' : 'descending') : 'none'
+                  }
+                  className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
+                  onClick={() => {
+                    handleSort('hops_away');
+                  }}
+                >
+                  Hops <SortIcon field="hops_away" sortField={sortField} sortAsc={sortAsc} />
+                </th>
+              )}
+              {mode !== 'meshcore' && (
+                <th
+                  scope="col"
+                  aria-sort={
+                    sortField === 'via_mqtt' ? (sortAsc ? 'ascending' : 'descending') : 'none'
+                  }
+                  className="px-3 py-2 text-center cursor-pointer hover:text-gray-200 transition-colors select-none"
+                  onClick={() => {
+                    handleSort('via_mqtt');
+                  }}
+                >
+                  MQTT <SortIcon field="via_mqtt" sortField={sortField} sortAsc={sortAsc} />
+                </th>
+              )}
               <th
                 scope="col"
                 aria-sort={
@@ -450,27 +502,35 @@ export default function NodeListPanel({
               >
                 Lon <SortIcon field="longitude" sortField={sortField} sortAsc={sortAsc} />
               </th>
-              <th
-                scope="col"
-                aria-sort={sortField === 'rssi' ? (sortAsc ? 'ascending' : 'descending') : 'none'}
-                className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => {
-                  handleSort('rssi');
-                }}
-              >
-                Signal <SortIcon field="rssi" sortField={sortField} sortAsc={sortAsc} />
-              </th>
-              <th
-                scope="col"
-                aria-sort={sortField === 'snr' ? (sortAsc ? 'ascending' : 'descending') : 'none'}
-                className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => {
-                  handleSort('snr');
-                }}
-                title="SNR in dB — only meaningful for direct (0-hop) RF neighbors"
-              >
-                SNR <SortIcon field="snr" sortField={sortField} sortAsc={sortAsc} />
-              </th>
+              {mode !== 'meshcore' && (
+                <>
+                  <th
+                    scope="col"
+                    aria-sort={
+                      sortField === 'rssi' ? (sortAsc ? 'ascending' : 'descending') : 'none'
+                    }
+                    className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
+                    onClick={() => {
+                      handleSort('rssi');
+                    }}
+                  >
+                    Signal <SortIcon field="rssi" sortField={sortField} sortAsc={sortAsc} />
+                  </th>
+                  <th
+                    scope="col"
+                    aria-sort={
+                      sortField === 'snr' ? (sortAsc ? 'ascending' : 'descending') : 'none'
+                    }
+                    className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
+                    onClick={() => {
+                      handleSort('snr');
+                    }}
+                    title="SNR in dB — only meaningful for direct (0-hop) RF neighbors"
+                  >
+                    SNR <SortIcon field="snr" sortField={sortField} sortAsc={sortAsc} />
+                  </th>
+                </>
+              )}
               <th
                 scope="col"
                 aria-sort={
@@ -483,78 +543,82 @@ export default function NodeListPanel({
               >
                 Battery <SortIcon field="battery" sortField={sortField} sortAsc={sortAsc} />
               </th>
-              <th
-                scope="col"
-                aria-sort={
-                  sortField === 'voltage' ? (sortAsc ? 'ascending' : 'descending') : 'none'
-                }
-                className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => {
-                  handleSort('voltage');
-                }}
-              >
-                Voltage <SortIcon field="voltage" sortField={sortField} sortAsc={sortAsc} />
-              </th>
-              <th
-                scope="col"
-                aria-sort={
-                  sortField === 'channel_utilization'
-                    ? sortAsc
-                      ? 'ascending'
-                      : 'descending'
-                    : 'none'
-                }
-                className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => {
-                  handleSort('channel_utilization');
-                }}
-              >
-                Ch.Util{' '}
-                <SortIcon field="channel_utilization" sortField={sortField} sortAsc={sortAsc} />
-              </th>
-              <th
-                scope="col"
-                aria-sort={
-                  sortField === 'air_util_tx' ? (sortAsc ? 'ascending' : 'descending') : 'none'
-                }
-                className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => {
-                  handleSort('air_util_tx');
-                }}
-              >
-                Air Tx <SortIcon field="air_util_tx" sortField={sortField} sortAsc={sortAsc} />
-              </th>
-              <th
-                scope="col"
-                aria-sort={
-                  sortField === 'altitude' ? (sortAsc ? 'ascending' : 'descending') : 'none'
-                }
-                className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => {
-                  handleSort('altitude');
-                }}
-              >
-                Alt <SortIcon field="altitude" sortField={sortField} sortAsc={sortAsc} />
-              </th>
-              <th
-                scope="col"
-                aria-sort={
-                  sortField === 'redundancy' ? (sortAsc ? 'ascending' : 'descending') : 'none'
-                }
-                className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => {
-                  handleSort('redundancy');
-                }}
-                title="Echoes: same packet received via multiple paths (e.g. RF + MQTT or multiple RF hops). Higher means better mesh redundancy."
-              >
-                Redund. <SortIcon field="redundancy" sortField={sortField} sortAsc={sortAsc} />
-              </th>
+              {mode !== 'meshcore' && (
+                <>
+                  <th
+                    scope="col"
+                    aria-sort={
+                      sortField === 'voltage' ? (sortAsc ? 'ascending' : 'descending') : 'none'
+                    }
+                    className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
+                    onClick={() => {
+                      handleSort('voltage');
+                    }}
+                  >
+                    Voltage <SortIcon field="voltage" sortField={sortField} sortAsc={sortAsc} />
+                  </th>
+                  <th
+                    scope="col"
+                    aria-sort={
+                      sortField === 'channel_utilization'
+                        ? sortAsc
+                          ? 'ascending'
+                          : 'descending'
+                        : 'none'
+                    }
+                    className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
+                    onClick={() => {
+                      handleSort('channel_utilization');
+                    }}
+                  >
+                    Ch.Util{' '}
+                    <SortIcon field="channel_utilization" sortField={sortField} sortAsc={sortAsc} />
+                  </th>
+                  <th
+                    scope="col"
+                    aria-sort={
+                      sortField === 'air_util_tx' ? (sortAsc ? 'ascending' : 'descending') : 'none'
+                    }
+                    className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
+                    onClick={() => {
+                      handleSort('air_util_tx');
+                    }}
+                  >
+                    Air Tx <SortIcon field="air_util_tx" sortField={sortField} sortAsc={sortAsc} />
+                  </th>
+                  <th
+                    scope="col"
+                    aria-sort={
+                      sortField === 'altitude' ? (sortAsc ? 'ascending' : 'descending') : 'none'
+                    }
+                    className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
+                    onClick={() => {
+                      handleSort('altitude');
+                    }}
+                  >
+                    Alt <SortIcon field="altitude" sortField={sortField} sortAsc={sortAsc} />
+                  </th>
+                  <th
+                    scope="col"
+                    aria-sort={
+                      sortField === 'redundancy' ? (sortAsc ? 'ascending' : 'descending') : 'none'
+                    }
+                    className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
+                    onClick={() => {
+                      handleSort('redundancy');
+                    }}
+                    title="Echoes: same packet received via multiple paths (e.g. RF + MQTT or multiple RF hops). Higher means better mesh redundancy."
+                  >
+                    Redund. <SortIcon field="redundancy" sortField={sortField} sortAsc={sortAsc} />
+                  </th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-700/50">
             {nodeList.length === 0 ? (
               <tr>
-                <td colSpan={19} className="text-center text-muted py-8">
+                <td colSpan={mode === 'meshcore' ? 9 : 19} className="text-center text-muted py-8">
                   {searchQuery
                     ? 'No nodes match your search.'
                     : 'No nodes discovered yet. Connect to a device to see the mesh network.'}
@@ -680,72 +744,86 @@ export default function NodeListPanel({
                           );
                         })()}
                     </td>
-                    <td
-                      className={`px-3 py-2 text-gray-300 ${isMqttOnlyDimmed ? 'line-through' : ''}`}
-                    >
-                      {node.short_name || '-'}
-                    </td>
+                    {mode !== 'meshcore' && (
+                      <td
+                        className={`px-3 py-2 text-gray-300 ${isMqttOnlyDimmed ? 'line-through' : ''}`}
+                      >
+                        {node.short_name || '-'}
+                      </td>
+                    )}
                     <td className="px-3 py-2 text-muted">{formatTime(node.last_heard)}</td>
                     <td className="px-3 py-2 text-xs">
-                      <RoleDisplay role={node.role} />
-                    </td>
-                    <td
-                      className={`px-3 py-2 text-right text-xs ${(isSelf && (node.hops_away === undefined || node.hops_away === null) ? 0 : node.hops_away) === 0 ? 'text-bright-green' : 'text-gray-300'}`}
-                    >
-                      {node.heard_via_mqtt_only ? (
-                        <span className="text-muted">—</span>
+                      {mode === 'meshcore' ? (
+                        <span className="text-gray-300">{node.hw_model || '—'}</span>
                       ) : (
-                        (node.hops_away ?? (isSelf ? 0 : '-'))
+                        <RoleDisplay role={node.role} />
                       )}
                     </td>
-                    <td className="px-3 py-2 text-center text-gray-300 text-xs">
-                      {node.heard_via_mqtt_only ? (
-                        <span title="Heard only via MQTT" className="text-blue-400">
-                          🌐
-                        </span>
-                      ) : isSelf && mqttConnected ? (
-                        <span title="Connected via MQTT" className="text-blue-400">
-                          🌐
-                        </span>
-                      ) : node.via_mqtt ? (
-                        <span title="Relay uses MQTT" className="text-gray-400 text-xs">
-                          relay
-                        </span>
-                      ) : (
-                        '-'
-                      )}
-                    </td>
+                    {mode !== 'meshcore' && (
+                      <td
+                        className={`px-3 py-2 text-right text-xs ${(isSelf && (node.hops_away === undefined || node.hops_away === null) ? 0 : node.hops_away) === 0 ? 'text-bright-green' : 'text-gray-300'}`}
+                      >
+                        {node.heard_via_mqtt_only ? (
+                          <span className="text-muted">—</span>
+                        ) : (
+                          (node.hops_away ?? (isSelf ? 0 : '-'))
+                        )}
+                      </td>
+                    )}
+                    {mode !== 'meshcore' && (
+                      <td className="px-3 py-2 text-center text-gray-300 text-xs">
+                        {node.heard_via_mqtt_only ? (
+                          <span title="Heard only via MQTT" className="text-blue-400">
+                            🌐
+                          </span>
+                        ) : isSelf && mqttConnected ? (
+                          <span title="Connected via MQTT" className="text-blue-400">
+                            🌐
+                          </span>
+                        ) : node.via_mqtt ? (
+                          <span title="Relay uses MQTT" className="text-gray-400 text-xs">
+                            relay
+                          </span>
+                        ) : (
+                          '-'
+                        )}
+                      </td>
+                    )}
                     <td className="px-3 py-2 text-right font-mono text-xs text-muted">
                       {formatCoord(node.latitude)}
                     </td>
                     <td className="px-3 py-2 text-right font-mono text-xs text-muted">
                       {formatCoord(node.longitude)}
                     </td>
-                    <td className="px-3 py-2 text-right">
-                      <div className="flex justify-end">
-                        {node.heard_via_mqtt_only ? (
-                          <span className="text-muted text-xs">—</span>
-                        ) : isSelf || snrMeaningfulForNodeDiagnostics(node) ? (
-                          <SignalBars rssi={node.rssi} isSelf={isSelf} />
-                        ) : (
-                          <span
-                            className="text-muted text-xs"
-                            title="Signal bars (RSSI) only for direct (0-hop) RF neighbors"
-                          >
-                            —
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono text-xs text-muted">
-                      {node.heard_via_mqtt_only
-                        ? '—'
-                        : isSelf || snrMeaningfulForNodeDiagnostics(node)
-                          ? node.snr != null && node.snr !== 0
-                            ? `${node.snr.toFixed(1)} dB`
-                            : '—'
-                          : '—'}
-                    </td>
+                    {mode !== 'meshcore' && (
+                      <>
+                        <td className="px-3 py-2 text-right">
+                          <div className="flex justify-end">
+                            {node.heard_via_mqtt_only ? (
+                              <span className="text-muted text-xs">—</span>
+                            ) : isSelf || snrMeaningfulForNodeDiagnostics(node) ? (
+                              <SignalBars rssi={node.rssi} isSelf={isSelf} />
+                            ) : (
+                              <span
+                                className="text-muted text-xs"
+                                title="Signal bars (RSSI) only for direct (0-hop) RF neighbors"
+                              >
+                                —
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono text-xs text-muted">
+                          {node.heard_via_mqtt_only
+                            ? '—'
+                            : isSelf || snrMeaningfulForNodeDiagnostics(node)
+                              ? node.snr != null && node.snr !== 0
+                                ? `${node.snr.toFixed(1)} dB`
+                                : '—'
+                              : '—'}
+                        </td>
+                      </>
+                    )}
                     <td className="px-3 py-2 text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         {node.battery > 0 && (
@@ -779,38 +857,44 @@ export default function NodeListPanel({
                         </span>
                       </div>
                     </td>
-                    <td className="px-3 py-2 text-right text-gray-300 text-xs">
-                      {node.voltage != null ? `${node.voltage.toFixed(2)} V` : '-'}
-                    </td>
-                    <td className="px-3 py-2 text-right text-gray-300 text-xs">
-                      {node.channel_utilization != null
-                        ? `${node.channel_utilization.toFixed(1)}%`
-                        : '-'}
-                    </td>
-                    <td className="px-3 py-2 text-right text-gray-300 text-xs">
-                      {node.air_util_tx != null ? `${node.air_util_tx.toFixed(1)}%` : '-'}
-                    </td>
-                    <td className="px-3 py-2 text-right text-gray-300 text-xs">
-                      {node.altitude != null && node.altitude !== 0 ? `${node.altitude} m` : '-'}
-                    </td>
-                    {(() => {
-                      const red = nodeRedundancy.get(node.node_id);
-                      const echoes = red ? red.maxPaths - 1 : 0;
-                      return (
-                        <td
-                          className={`px-3 py-2 text-right text-xs font-mono ${
-                            echoes >= 3
-                              ? 'text-lime-400'
-                              : echoes > 0
-                                ? 'text-gray-300'
-                                : 'text-muted'
-                          }`}
-                          title={red ? `${red.score}% connection health` : undefined}
-                        >
-                          {echoes > 0 ? `+${echoes}` : '-'}
+                    {mode !== 'meshcore' && (
+                      <>
+                        <td className="px-3 py-2 text-right text-gray-300 text-xs">
+                          {node.voltage != null ? `${node.voltage.toFixed(2)} V` : '-'}
                         </td>
-                      );
-                    })()}
+                        <td className="px-3 py-2 text-right text-gray-300 text-xs">
+                          {node.channel_utilization != null
+                            ? `${node.channel_utilization.toFixed(1)}%`
+                            : '-'}
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-300 text-xs">
+                          {node.air_util_tx != null ? `${node.air_util_tx.toFixed(1)}%` : '-'}
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-300 text-xs">
+                          {node.altitude != null && node.altitude !== 0
+                            ? `${node.altitude} m`
+                            : '-'}
+                        </td>
+                        {(() => {
+                          const red = nodeRedundancy.get(node.node_id);
+                          const echoes = red ? red.maxPaths - 1 : 0;
+                          return (
+                            <td
+                              className={`px-3 py-2 text-right text-xs font-mono ${
+                                echoes >= 3
+                                  ? 'text-lime-400'
+                                  : echoes > 0
+                                    ? 'text-gray-300'
+                                    : 'text-muted'
+                              }`}
+                              title={red ? `${red.score}% connection health` : undefined}
+                            >
+                              {echoes > 0 ? `+${echoes}` : '-'}
+                            </td>
+                          );
+                        })()}
+                      </>
+                    )}
                   </tr>
                 );
               })
