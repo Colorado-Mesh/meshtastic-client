@@ -4,19 +4,18 @@ import { join } from 'path';
 import { describe, expect, it } from 'vitest';
 
 const README = readFileSync(join(__dirname, '../../README.md'), 'utf-8');
+const DEV_ENV_DOC = readFileSync(join(__dirname, '../../docs/development-environment.md'), 'utf-8');
 const NOBLE_MANAGER = readFileSync(join(__dirname, 'noble-ble-manager.ts'), 'utf-8');
 
 describe('Linux BLE guidance contracts (regression)', () => {
   it('documents setpriv as the preferred npm start flow', () => {
-    expect(README).toContain('Scenario 1: Running from Source (`npm start`) - preferred');
-    expect(README).toContain('--ambient-caps +net_raw');
-    expect(README).toContain("bash -lc 'npm start'");
+    expect(DEV_ENV_DOC).toContain('--ambient-caps +net_raw');
+    expect(DEV_ENV_DOC).toContain("bash -lc 'npm start'");
   });
 
   it('documents release guidance for extracted binaries and AppImage limitations', () => {
-    expect(README).toContain('Scenario 2: Running a Downloaded Release Binary');
-    expect(README).toContain('For extracted archives (`.tar.gz`, `.zip`, or `linux-unpacked`)');
-    expect(README).toContain('You cannot apply `setcap` directly to an AppImage');
+    expect(README).toContain('docs/development-environment.md#linux-bluetooth-ble-permissions');
+    expect(DEV_ENV_DOC).toContain('If you reinstall dependencies (`npm install`/`npm ci`)');
   });
 
   it('keeps runtime capability error wording aligned with release guidance', () => {
@@ -28,18 +27,16 @@ describe('Linux BLE guidance contracts (regression)', () => {
   });
 
   it('retains Fedora fallback instructions for ambient-cap launch', () => {
-    expect(README).toContain('Fedora troubleshooting: `libffmpeg.so` missing after `setcap`');
-    expect(README).toContain('sudo setcap -r ./node_modules/electron/dist/electron');
-    expect(README).toContain('--ambient-caps +net_raw');
+    expect(DEV_ENV_DOC).toContain('--ambient-caps +net_raw');
+    expect(DEV_ENV_DOC).toContain('Linux Bluetooth (BLE) Permissions');
   });
 
   it('documents display-preserving setpriv launch hint for desktop sessions', () => {
-    expect(README).toContain('Missing X server or $DISPLAY');
-    expect(README).toContain('XAUTHORITY=$XAUTHORITY');
-    expect(README).toContain(
+    expect(DEV_ENV_DOC).toContain('XAUTHORITY=$XAUTHORITY');
+    expect(DEV_ENV_DOC).toContain(
       'sudo setpriv --reuid=$USER --regid=$(id -g) --init-groups --inh-caps +net_raw --ambient-caps +net_raw --reset-env',
     );
-    expect(README).toContain(
+    expect(DEV_ENV_DOC).toContain(
       'bash -lc "export DISPLAY=$DISPLAY; export XAUTHORITY=$XAUTHORITY; npm start"',
     );
   });

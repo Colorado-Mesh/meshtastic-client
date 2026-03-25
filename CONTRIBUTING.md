@@ -4,7 +4,7 @@ Thank you for your interest in contributing. This document covers setup, testing
 
 ## Getting Started
 
-See [README.md](README.md) for full setup instructions including prerequisites and platform-specific steps.
+See [docs/development-environment.md](docs/development-environment.md) for full setup instructions including shared requirements, platform-specific steps, and troubleshooting.
 
 **Node version:** Use **Node 22** (22.12.0+ recommended). CI (`.github/workflows/`) runs on Node 22 for build, test, and release; using the same version locally avoids environment drift and Linux-specific failures (e.g. native rebuilds) on older Node.
 

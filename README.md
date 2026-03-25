@@ -30,7 +30,7 @@ From real-time diagnostics to permanent message archives, Mesh-Client delivers t
 
 **Known Bugs:**
 
-- **Linux BLE permissions** — BLE uses `@stoprocent/noble` (native BlueZ), which needs raw socket access (`cap_net_raw`) on the executable you launch. If capability setup is missing, the app reports `BLE_LINUX_CAPABILITY_MISSING`. See [Linux Bluetooth (BLE) Permissions](#linux-bluetooth-ble-permissions).
+- **Linux BLE permissions** — BLE uses `@stoprocent/noble` (native BlueZ), which needs raw socket access (`cap_net_raw`) on the executable you launch. If capability setup is missing, the app reports `BLE_LINUX_CAPABILITY_MISSING`. See [Linux Bluetooth (BLE) Permissions](docs/development-environment.md#linux-bluetooth-ble-permissions).
 
 ---
 
@@ -230,178 +230,7 @@ xattr -r -d com.apple.quarantine /Applications/Mesh-client.app
 
 See [Troubleshooting — macOS: File is damaged…](#macos-file-is-damaged-and-cannot-be-opened) and [this explanation for a similar Electron app](https://github.com/jeffvli/feishin/issues/104#issuecomment-1553914730).
 
-**To build from source**, you need:
-
-- **Node.js** 22.12.0+ (matches `@electron/rebuild` / `node-abi`) and **npm** 9+
-- **Native build tools** (for SQLite) — see platform notes below
-- A **Meshtastic** or **MeshCore** device
-
-### Mac & Linux
-
-```bash
-git clone https://github.com/Colorado-Mesh/mesh-client
-cd mesh-client
-npm install
-npm start
-```
-
-<details>
-<summary>Mac — extra notes</summary>
-
-Install Xcode Command Line Tools if `npm install` fails:
-
-```bash
-xcode-select --install
-```
-
-On first Bluetooth connection, macOS shows a system popup requesting Bluetooth permission — you must accept. If you accidentally denied it, go to **System Settings > Privacy & Security > Bluetooth** and toggle Mesh-Client on.
-
-</details>
-
-<details>
-<summary>Linux — extra notes</summary>
-
-Install Node.js (22.12.0+ recommended) and build tools:
-
-```bash
-# Debian/Ubuntu — install nvm, then Node 22 LTS:
-curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-nvm install 22
-
-# Build tools for native modules:
-sudo apt install build-essential python3
-
-# Fedora/RedHat — Node 22 via nvm, then dev tools:
-curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-nvm install 22
-sudo dnf groupinstall "Development Tools" && sudo dnf install python3
-```
-
-**Building distributables:**
-
-On Debian/Ubuntu, to also build `.rpm` packages you need the `rpm` package:
-
-```bash
-sudo apt install rpm
-```
-
-On Fedora/RedHat, building `.deb` packages is not easily supported. Use these targets instead:
-
-```bash
-npm run dist:linux -- --linux rpm
-npm run dist:linux -- --linux appimage
-```
-
-BLE uses `@stoprocent/noble` (native BlueZ) and requires raw socket capability on the exact executable you launch. Follow [Linux Bluetooth (BLE) Permissions](#linux-bluetooth-ble-permissions).
-
-**Sandbox issues (dev mode or AppImage):**
-
-Some Linux configurations require disabling Electron's sandbox. If the app fails to launch, try:
-
-```bash
-npm run dev -- --no-sandbox        # dev mode
-./MeshClient.AppImage --no-sandbox # AppImage
-```
-
-For serial access, add yourself to the `dialout` group (then log out and back in):
-
-```bash
-sudo usermod -a -G dialout $USER
-```
-
-**ARM architecture (Raspberry Pi, etc.) — additional requirements:**
-
-Install these extra libraries before running in development mode:
-
-```bash
-sudo apt install zlib1g-dev libfuse2
-```
-
-Electron's sandbox requires elevated privileges on ARM. Either grant sandbox permissions:
-
-```bash
-sudo sysctl -w kernel.unprivileged_userns_clone=1
-```
-
-Or launch with the no-sandbox flag:
-
-```bash
-npm run dev -- --no-sandbox
-# or
-electron . --no-sandbox
-```
-
-**SIGILL during `npm install`** (`electron exited with signal SIGILL`):
-
-`postinstall` runs `scripts/rebuild-native.mjs`, which invokes electron-builder's `install-app-deps` — that **executes** the Electron binary. Sandboxed or minimal-CPU environments may not support instructions in the prebuilt Linux binary, so the process dies with SIGILL before the app starts (this is not the same as Chromium's `--no-sandbox` runtime flag).
-
-If you see `npm WARN EBADENGINE` for `@electron/rebuild` or `node-abi` (for example `required: { node: '>=22.12.0' }` while your current Node is older), install Node 22+ first (for example via nvm as shown above). Running with an older Node version may appear to work but is unsupported by those tools and more likely to fail during native rebuilds.
-
-```bash
-# Install without running Electron / native rebuild; patch-package still runs.
-MESHTASTIC_SKIP_ELECTRON_REBUILD=1 npm install
-```
-
-Then run **`npm run rebuild`** on a normal Linux machine (or same host outside the sandbox) where `node_modules/electron/dist/electron --version` works. Lint/tests that do not load the Electron main process may still pass without a successful rebuild.
-
-**SIGSEGV on startup** (`electron exited with signal SIGSEGV`):
-
-`npm start` runs `npm run build && electron .` — extra args after `npm start --` are **not** passed to Electron. Use one of:
-
-```bash
-npm run build && npx electron . --no-sandbox --disable-gpu
-# or (after build once)
-npm run electron:open -- --no-sandbox --disable-gpu
-```
-
-If that works, make it persistent:
-
-- **Shell:** `export MESH_CLIENT_DISABLE_GPU=1` then `npm start` (main process disables GPU before windows open).
-- **Wayland → X11:** `ELECTRON_OZONE_PLATFORM_HINT=x11 npm run electron:open -- --no-sandbox`
-- **Packaged AppImage:** `./MeshClient.AppImage --no-sandbox --disable-gpu`
-
-See [electron#41980](https://github.com/electron/electron/issues/41980) and related GPU/Wayland issues.
-
-</details>
-
-<a id="windows--extra-notes"></a>
-
-<details>
-<summary>Windows — extra notes</summary>
-
-**1. Install prerequisites** (if not already):
-
-```powershell
-winget install git.git
-winget install openjs.nodejs
-```
-
-**2. Allow npm scripts:**
-
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-
-**3. Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)** with the "Desktop development with C++" workload (required for native SQLite and Serial).
-
-**4. Install Python 3** — node-gyp (used to build native modules including `@serialport/bindings-cpp` and `@stoprocent/noble`) requires Python on Windows. Install from [python.org](https://www.python.org/downloads/) or `winget install Python.Python.3.12`, and during setup check **"Add Python to PATH"**. If Python is installed but not found, set it explicitly: `npm config set python "C:\Path\To\python.exe"`.
-
-**5. Clone and run:**
-
-```bash
-git clone https://github.com/Colorado-Mesh/mesh-client
-cd mesh-client
-npm install
-npm start
-```
-
-If serial isn't detected, install the correct USB drivers for your device (CP210x or CH340).
-
-</details>
+**Building from source / development setup:** see [docs/development-environment.md](docs/development-environment.md) for complete shared requirements, clone/install steps, test harness setup, and detailed macOS/Windows/Linux instructions.
 
 ---
 
@@ -633,25 +462,9 @@ Output goes to the `release/` directory.
 
 ## Contributing / Development
 
-To run in development mode with hot reload:
+For full local setup (shared requirements, npm/tooling install, test harness, and OS-specific steps/troubleshooting), see [docs/development-environment.md](docs/development-environment.md).
 
-```bash
-npm run dev
-```
-
-This starts the Vite dev server, watches main/preload for changes, and launches Electron automatically. For the best experience, install [React DevTools](https://react.dev/link/react-devtools).
-
-CI (GitHub Actions) runs on **Node 22** for build, test, and release jobs. Use Node 22 locally to match CI and avoid Linux-specific issues on older Node versions. To run workflows locally, use [act](https://github.com/nektos/act) with the amd64 image so Linux jobs match the runner environment:
-
-```bash
-act --container-architecture linux/amd64
-```
-
-Under act, artifact upload is skipped automatically; the rest of the pipeline runs as on GitHub.
-
-Install **[actionlint](https://github.com/rhysd/actionlint)** so the pre-commit hook can validate GitHub Actions workflows (e.g. `brew install actionlint` on macOS; see [actionlint releases](https://github.com/rhysd/actionlint/releases) for other platforms).
-
-The pre-commit hook runs format, lint, typecheck, **npm audit**, **actionlint** (workflow lint), and tests. See [CONTRIBUTING.md](CONTRIBUTING.md) for coding conventions, branch workflow, and PR guidelines.
+For coding conventions and PR workflow, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
@@ -665,41 +478,19 @@ Join the `#mesh-client` channel on Discord for help, feedback, and development d
 
 ### npm 11: `Unknown env config "devdir"`
 
-**Cause:** npm 11+ rejects configuration keys it does not define. `devdir` is a legacy node-gyp-related value; it may be set in `~/.npmrc` or via `npm_config_devdir` / `NPM_CONFIG_DEVDIR` (some editors or sandboxes inject it).
-
-**Fix:** Run `npm config delete devdir` and `npm config delete devdir --global` if present; optionally `unset npm_config_devdir NPM_CONFIG_DEVDIR` in your shell. The project’s pre-commit hook unsets these before running npm. See [CONTRIBUTING.md](CONTRIBUTING.md) (Getting Started).
+See [docs/development-environment.md](docs/development-environment.md#linux) for setup and troubleshooting details.
 
 ### `npm install` fails on native module compilation
 
-You're missing build tools for the native modules (e.g. `@serialport/bindings-cpp`, `@stoprocent/noble`):
-
-- **Mac**: `xcode-select --install`
-- **Linux**: `sudo apt install build-essential python3`
-- **Windows**: Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the "Desktop development with C++" workload, and **Python 3** (see [Windows — extra notes](#windows--extra-notes) step 4). If you see "Could not find any Python installation to use", see the [Python troubleshooting](#windows-could-not-find-any-python-installation-to-use-eg-when-building-serialportbindings-cpp) section. If you see "Could not find any Visual Studio installation to use", see the [Visual Studio troubleshooting](#windows-could-not-find-any-visual-studio-installation-to-use) section.
+See [docs/development-environment.md](docs/development-environment.md) for OS-specific prerequisite installation and troubleshooting.
 
 ### Windows: "Could not find any Visual Studio installation to use"
 
-**Cause**: The version of `node-gyp` bundled with Electron is often outdated and cannot "see" newer versions of Visual Studio. This leads to the error "Could not find any Visual Studio installation to use" even when the tools are correctly installed.
-
-**Fix**: Update `node-gyp` to the latest version and ensure the C++ workload is present:
-
-1. **Upgrade node-gyp**: Force the latest version globally and as a dev dependency to override the downlevel Electron version:
-   ```sh
-   npm install node-gyp@latest -g && npm install node-gyp@latest --save-dev
-   ```
-2. **Install Visual Studio Build Tools**: If not already present, download [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) and select the **"Desktop development with C++"** workload.
-3. **Retry**: Restart your terminal and run `npm install` again.
+See [docs/development-environment.md](docs/development-environment.md#windows) for required build tools and the full recovery steps.
 
 ### Windows: "Could not find any Python installation to use" (e.g. when building `@serialport/bindings-cpp`)
 
-**Cause**: node-gyp (used to compile native addons such as `@serialport/bindings-cpp` and `@stoprocent/noble`) requires Python on Windows. The build fails during `npm install` (postinstall) or during `npm run dist:win` when Python is not installed or not on PATH.
-
-**Fix**:
-
-1. Install **Python 3** from [python.org](https://www.python.org/downloads/) or run `winget install Python.Python.3.12`.
-2. During installation, enable **"Add Python to PATH"**.
-3. Close and reopen your terminal (or restart the IDE), then run `npm install` or `npm run dist:win` again.
-4. If Python is installed but node-gyp still can't find it, point npm at it: `npm config set python "C:\Users\YourName\AppData\Local\Programs\Python\Python312\python.exe"` (adjust the path to your Python executable).
+See [docs/development-environment.md](docs/development-environment.md#windows) for Python setup and npm/node-gyp troubleshooting.
 
 ### BLE connection fails with "Connection attempt failed"
 
@@ -725,131 +516,15 @@ You're missing build tools for the native modules (e.g. `@serialport/bindings-cp
 
 ### Linux Bluetooth (BLE) Permissions
 
-On Linux, applications require `CAP_NET_RAW` to scan for and connect to Bluetooth devices. For development (`npm start`), the preferred approach is to launch with an ambient capability using `setpriv` (instead of applying file capabilities directly to Electron).
-
-At startup, the app now performs a Linux BLE capability preflight and shows a friendly warning in the Connection tab when `CAP_NET_RAW` is missing, so you get actionable guidance before scan/connect attempts fail.
-
-How you do this depends on how you are running the application:
-
-#### Scenario 1: Running from Source (`npm start`) - preferred
-
-When running the app in development mode, `npm start` uses the local Electron binary in your project's `node_modules` folder.
-
-1. Install project dependencies:
-
-```bash
-npm install
-```
-
-2. Launch with ambient capability:
-
-```bash
-sudo setpriv --reuid=$USER --regid=$(id -g) --init-groups --inh-caps +net_raw --ambient-caps +net_raw --reset-env bash -lc 'npm start'
-```
-
-If your desktop session then fails with `Missing X server or $DISPLAY`, preserve display auth:
-
-```bash
-sudo setpriv --reuid=$USER --regid=$(id -g) --init-groups --inh-caps +net_raw --ambient-caps +net_raw --reset-env bash -lc "export DISPLAY=$DISPLAY; export XAUTHORITY=$XAUTHORITY; npm start"
-```
-
-#### Scenario 2: Running a Downloaded Release Binary
-
-For compiled releases, the command depends on the package format:
-
-For extracted archives (`.tar.gz`, `.zip`, or `linux-unpacked`):
-
-```bash
-sudo setcap cap_net_raw+eip /path/to/extracted/mesh-client
-```
-
-For installed system packages (`.deb` or `.rpm`):
-
-```bash
-getcap /opt/mesh-client/mesh-client
-```
-
-`.deb` and `.rpm` builds now attempt to apply `cap_net_raw` automatically at install time via package post-install scripts. If your distro image does not include `setcap`/libcap tools, run:
-
-```bash
-sudo setcap cap_net_raw+eip /opt/mesh-client/mesh-client
-```
-
-- **AppImage (`.AppImage`)**
-
-You cannot apply `setcap` directly to an AppImage because it mounts a read-only filesystem at runtime. Extract it first:
-
-```bash
-./mesh-client-linux.AppImage --appimage-extract
-sudo setcap cap_net_raw+eip squashfs-root/mesh-client
-./squashfs-root/AppRun
-```
-
-#### Fedora troubleshooting: `libffmpeg.so` missing after `setcap`
-
-If `npm start` exits before opening the app with:
-
-```bash
-.../node_modules/electron/dist/electron: error while loading shared libraries: libffmpeg.so: cannot open shared object file: No such file or directory
-```
-
-this is typically caused by applying file capabilities directly to the Electron binary on some Fedora/glibc setups.
-
-1. Remove file capability from the local Electron binary:
-
-```bash
-sudo setcap -r ./node_modules/electron/dist/electron
-```
-
-2. Use ambient capability for launch instead (recommended for source runs):
-
-```bash
-sudo setpriv --reuid=$USER --regid=$(id -g) --init-groups --inh-caps +net_raw --ambient-caps +net_raw --reset-env bash -lc 'npm start'
-```
-
-If your desktop session then fails with `Missing X server or $DISPLAY` (or the app only starts when preserving display auth), run:
-
-```bash
-sudo setpriv --reuid=$USER --regid=$(id -g) --init-groups --inh-caps +net_raw --ambient-caps +net_raw --reset-env bash -lc "export DISPLAY=$DISPLAY; export XAUTHORITY=$XAUTHORITY; npm start"
-```
-
-#### Important troubleshooting note
-
-If you run `npm install` / `npm ci` again, or download a newer release binary, capabilities are reset on the new executable. Re-run the appropriate capability command for that new binary.
+See [docs/development-environment.md#linux-bluetooth-ble-permissions](docs/development-environment.md#linux-bluetooth-ble-permissions) for full source-development and packaged-binary guidance.
 
 ### Serial port not detected
 
-- Ensure USB drivers are installed for your device (CP210x, CH340, etc.)
-- On Linux, add yourself to the `dialout` group: `sudo usermod -a -G dialout $USER`
-- On Windows, open **Device Manager** and look for an unknown/COM device under **Ports (COM & LPT)**. Install the matching driver:
-  - **CH340/CH341** (common on many boards): [WCH CH340 driver](http://www.wch-ic.com/downloads/CH341SER_EXE.html)
-  - **CP210x** (Silicon Labs): install from **Device Manager → Update driver → Search automatically**, or download from [Silicon Labs](https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers)
-  - **FTDI** (FT232): install from [FTDI VCP drivers](https://ftdichip.com/drivers/vcp-drivers/)
+See [docs/development-environment.md](docs/development-environment.md) for OS-specific serial setup and driver guidance.
 
 ### Linux: `Serial: serial_io_handler.cc:147 Failed to open serial port: FILE_ERROR_ACCESS_DENIED`
 
-This error means your user doesn't have permission to access the serial port.
-
-**Fix**:
-
-1. Add yourself to the `dialout` group and re-login:
-
-   ```sh
-   sudo usermod -a -G dialout $USER
-   ```
-
-   Then **log out and back in** for the group membership to take effect.
-
-2. If the error persists after re-logging, verify the group was applied:
-   ```sh
-   groups
-   ```
-   If `dialout` is not listed, the group may not exist on your distro. Create it and activate it in your current session without logging out:
-   ```sh
-   sudo groupadd dialout
-   sudo usermod -a -G dialout $USER
-   newgrp dialout
-   ```
+See [docs/development-environment.md#linux](docs/development-environment.md#linux) for serial permission recovery steps.
 
 ### macOS: File is damaged and cannot be opened
 
