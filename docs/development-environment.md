@@ -307,7 +307,8 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 nvm install 25
 nvm use 25
-sudo apt install build-essential make g++ python3 libnspr4 libnss3
+sudo apt install build-essential
+sudo apt install python3 libnspr4 libnss3
 ```
 
 Fedora/RedHat:
@@ -318,14 +319,20 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 nvm install 25
 nvm use 25
-sudo dnf groupinstall "Development Tools"
-sudo dnf install make gcc-c++ python3 nspr nss
+sudo dnf install @development-tools
+sudo dnf install python3 nspr nss
 ```
 
 For Fedora / Bazzite / Aurora (inside a Distrobox/Toolbox):
 
 ```bash
 sudo dnf install cups-libs nspr nss atk at-spi2-atk libXcomposite libXdamage libXrandr mesa-libgbm alsa-lib libdrm libxshmfence cairo
+```
+
+If your environment needs development headers (for example, native build/debug tooling), install:
+
+```bash
+sudo dnf install cairo-devel pango-devel nspr-devel nss-devel cups-devel atk-devel at-spi2-atk-devel libXcomposite-devel libXdamage-devel libXrandr-devel mesa-libgbm-devel alsa-lib-devel libdrm-devel libxshmfence-devel
 ```
 
 For Ubuntu / Debian:
