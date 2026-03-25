@@ -323,31 +323,6 @@ sudo dnf install @development-tools
 sudo dnf install python3 nspr nss
 ```
 
-For Fedora / Bazzite / Aurora (inside a Distrobox/Toolbox):
-
-```bash
-sudo dnf install cups-libs nspr nss atk at-spi2-atk libXcomposite libXdamage libXrandr mesa-libgbm alsa-lib libdrm libxshmfence cairo
-```
-
-If GTK/Pango/GDK runtime shared objects are missing, install:
-
-```bash
-sudo dnf install libgtk-3.so.0 libgdk-3.so.0 libpangocairo-1.0.so.0 libpangoft2-1.0.so.0 libgdk_pixbuf-2.0.so.0
-```
-
-If your environment needs development headers (for example, native build/debug tooling), install:
-
-```bash
-sudo dnf install cairo-devel pango-devel nspr-devel nss-devel cups-devel atk-devel at-spi2-atk-devel libXcomposite-devel libXdamage-devel libXrandr-devel mesa-libgbm-devel alsa-lib-devel libdrm-devel libxshmfence-devel
-```
-
-For Ubuntu / Debian:
-
-```bash
-sudo apt update
-sudo apt install libcups2 libnspr4 libnss3 libatk1.0-0 libatk-bridge2.0-0 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libasound2 libdrm2 libxshmfence1 libcairo2
-```
-
 ### Build/run flow
 
 ```bash
