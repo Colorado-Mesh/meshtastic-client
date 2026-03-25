@@ -88,7 +88,7 @@ From real-time diagnostics to permanent message archives, Mesh-Client delivers t
 - Anomaly badges inline in node list; status aura circles on the map; congestion halos toggle; global and per-node MQTT ignore
 - **Environment Profile** segmented control — Standard (3 km), City (1.6× threshold), Canyon (2.6× threshold)
 
-> See [DIAGNOSTICS.md](DIAGNOSTICS.md) for a full reference on what triggers each finding and how to interpret it.
+> See [Diagnostics Reference](docs/diagnostics.md) for a full reference on what triggers each finding and how to interpret it.
 
 **Environment Telemetry**
 
@@ -421,7 +421,11 @@ mesh-client/
 ├── patches/                     # patch-package patches (e.g. electron-builder)
 ├── docs/
 │   ├── accessibility-checklist.md
+│   ├── credits.md               # Authors, contributors, community, and libraries
+│   ├── development-environment.md  # Development guide and environment setup
+│   ├── diagnostics.md           # Full diagnostics reference
 │   ├── letsmesh-mqtt-auth.md    # LetsMesh broker auth and analyzer-related notes
+│   ├── meshcore-deferred-epics.md   # MeshCore deferred roadmap items
 │   ├── meshcore-meshtastic-parity.md  # Meshtastic vs MeshCore feature parity
 │   └── images/                  # README screenshots (nodes, map, diagnostics, node-detail, chat, connection, repeaters)
 ├── release.sh                   # Release automation script
@@ -444,7 +448,7 @@ mesh-client/
 
 ### Diagnostics Reference
 
-For a detailed explanation of every diagnostic output — routing anomalies, RF findings, packet redundancy scores, map halos, and MQTT filtering — see [DIAGNOSTICS.md](DIAGNOSTICS.md).
+For a detailed explanation of every diagnostic output — routing anomalies, RF findings, packet redundancy scores, map halos, and MQTT filtering — see [Diagnostics Reference](docs/diagnostics.md).
 
 ---
 
@@ -732,4 +736,4 @@ MIT — see [LICENSE](LICENSE)
 
 ## Credits
 
-See [CREDITS.md](CREDITS.md). Created by **[Joey (NV0N)](https://github.com/rinchen)** & **[dude.eth](https://github.com/defidude)**. Based on the [original Mac client](https://github.com/Colorado-Mesh/meshtastic_mac_client). Part of **[Colorado Mesh](https://github.com/Colorado-Mesh/mesh-client)**.
+See [Credits](docs/credits.md). Created by **[Joey (NV0N)](https://github.com/rinchen)** & **[dude.eth](https://github.com/defidude)**. Based on the [original Mac client](https://github.com/Colorado-Mesh/meshtastic_mac_client). Part of **[Colorado Mesh](https://github.com/Colorado-Mesh/mesh-client)**.
