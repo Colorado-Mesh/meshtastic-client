@@ -119,6 +119,24 @@ describe('NobleBleManager — notify-first fromRadio read pump strategy (regress
     );
     expect(SOURCE).toMatch(/scheduleReadPump[\s\S]{0,400}postWriteReadPumpTimer/);
   });
+
+  it('adds Linux MeshCore bounded early-read polling when notify-first receives no payload', () => {
+    expect(SOURCE).toContain('MESHCORE_LINUX_EARLY_READ_POLL_MAX_ATTEMPTS');
+    expect(SOURCE).toContain('MESHCORE_LINUX_EARLY_READ_POLL_BACKOFF_MS');
+    expect(SOURCE).toContain('maybeScheduleLinuxMeshcoreEarlyReadPoll');
+    expect(SOURCE).toContain('linux early-read polling exhausted');
+  });
+
+  it('logs MeshCore first-packet diagnostics with source and latency', () => {
+    expect(SOURCE).toContain('first fromRadio packet via');
+    expect(SOURCE).toContain('readPumpFallbackUsed=');
+    expect(SOURCE).toContain('linuxEarlyPollAttempts=');
+  });
+
+  it('records whether read-pump fallback delivered payloads in session summary logs', () => {
+    expect(SOURCE).toContain('fromRadioUsedReadPumpFallback');
+    expect(SOURCE).toContain('session fromRadio summary');
+  });
 });
 
 /**

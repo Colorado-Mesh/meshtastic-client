@@ -357,6 +357,10 @@ If desktop auth variables are needed:
 sudo setpriv --reuid=$USER --regid=$(id -g) --init-groups --inh-caps +net_raw --ambient-caps +net_raw --reset-env bash -lc "export DISPLAY=$DISPLAY; export XAUTHORITY=$XAUTHORITY; npm start"
 ```
 
+If you see lines like `cannot create /sys/kernel/debug/bluetooth/hci0/conn_min_interval: Permission denied`, those are emitted by native noble internals trying to write debugfs connection tuning. Those lines alone do **not** prove `CAP_NET_RAW` is missing and can appear even when `setpriv` is correct.
+
+Treat this as actionable only when paired with BLE data-path failures (for example, MeshCore protocol handshake timeout with zero inbound `fromRadio` packets). In that case: keep the device awake/nearby, reset the adapter (`bluetoothctl power off; power on`), retry, or use Serial/TCP fallback.
+
 If you reinstall dependencies (`npm install`/`npm ci`) or switch binaries, re-apply capability setup.
 
 ### Sandbox and ARM notes

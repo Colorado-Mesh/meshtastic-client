@@ -147,6 +147,31 @@ describe('useMeshCore BLE Noble IPC timeout handling', () => {
     );
   });
 
+  it('does not misclassify native debugfs permission stderr as BLE timeout stage', async () => {
+    vi.mocked(window.electronAPI.connectNobleBle).mockRejectedValue(
+      new Error(
+        'cannot create /sys/kernel/debug/bluetooth/hci0/conn_min_interval: Permission denied',
+      ),
+    );
+
+    const { result } = renderHook(() => useMeshCore());
+
+    await expect(
+      act(async () => {
+        await result.current.connect('ble', undefined, 'ble-device-debugfs');
+      }),
+    ).rejects.toThrow(
+      'cannot create /sys/kernel/debug/bluetooth/hci0/conn_min_interval: Permission denied',
+    );
+
+    expect(window.electronAPI.connectNobleBle).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /\[useMeshCore\] connect: BLE Noble IPC attempt failed \{"attempt":1,"maxAttempts":2,"isTimeout":false,"isRetryable":false,"stage":"unknown"/,
+      ),
+    );
+  });
+
   it('logs peripheral disconnect signal during handshake timeout path', async () => {
     let onDisconnected: ((sessionId: 'meshtastic' | 'meshcore') => void) | null = null;
     vi.mocked(window.electronAPI.onNobleBleDisconnected).mockImplementation((cb) => {

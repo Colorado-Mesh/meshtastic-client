@@ -32,12 +32,16 @@ const POST_WRITE_READ_PUMP_DELAY_MS = 100;
 // CBCentralManager. Use generous timeouts on those platforms.
 const IS_DARWIN = process.platform === 'darwin';
 const IS_WIN32 = process.platform === 'win32';
+const IS_LINUX = process.platform === 'linux';
 /** Timeout for peripheral.connectAsync(). */
 const BLE_CONNECT_TIMEOUT_MS = IS_DARWIN ? 15_000 : 30_000;
 /** Timeout for GATT service/characteristic discovery. */
 const BLE_DISCOVERY_TIMEOUT_MS = IS_DARWIN ? 15_000 : 30_000;
 /** Timeout for characteristic subscribeAsync(). */
 const BLE_SUBSCRIBE_TIMEOUT_MS = IS_DARWIN ? 10_000 : 20_000;
+/** Linux MeshCore: keep polling briefly for first packet when notify delivers nothing yet. */
+const MESHCORE_LINUX_EARLY_READ_POLL_MAX_ATTEMPTS = 40;
+const MESHCORE_LINUX_EARLY_READ_POLL_BACKOFF_MS = 250;
 const BLE_LINUX_CAPABILITY_MISSING = 'BLE_LINUX_CAPABILITY_MISSING';
 const CAP_NET_RAW_BIT = 13n;
 
@@ -202,6 +206,14 @@ interface NobleBleSession {
   fromRadioDeliveryCount: number;
   /** Total bytes in those payloads (for disconnect diagnostics). */
   fromRadioDeliveryBytes: number;
+  /** True once first-packet diagnostics have been logged for this session. */
+  firstPacketLogged: boolean;
+  /** Unix ms when the current connect attempt started (for first-packet latency logs). */
+  connectStartedAtMs: number | null;
+  /** Tracks whether read-pump fallback actually delivered payloads this session. */
+  fromRadioUsedReadPumpFallback: boolean;
+  /** Linux MeshCore early-read polling attempt count before first payload. */
+  meshcoreLinuxEarlyReadPollAttempts: number;
   /**
    * MeshCore only: set after link-up while GATT discovery/subscribe is still running.
    * A second `connect(samePeripheral)` awaits this instead of calling `disconnect()` first,
@@ -296,6 +308,10 @@ export class NobleBleManager extends EventEmitter {
       fromRadioNotifyOnly: false,
       fromRadioDeliveryCount: 0,
       fromRadioDeliveryBytes: 0,
+      firstPacketLogged: false,
+      connectStartedAtMs: null,
+      fromRadioUsedReadPumpFallback: false,
+      meshcoreLinuxEarlyReadPollAttempts: 0,
       meshcoreGattInflight: null,
     };
   }
@@ -333,13 +349,50 @@ export class NobleBleManager extends EventEmitter {
     session.fromRadioNotifyOnly = false;
     session.fromRadioDeliveryCount = 0;
     session.fromRadioDeliveryBytes = 0;
+    session.firstPacketLogged = false;
+    session.connectStartedAtMs = null;
+    session.fromRadioUsedReadPumpFallback = false;
+    session.meshcoreLinuxEarlyReadPollAttempts = 0;
   }
 
-  private emitFromRadio(sessionId: NobleSessionId, bytes: Uint8Array): void {
+  private emitFromRadio(
+    sessionId: NobleSessionId,
+    bytes: Uint8Array,
+    source: 'notify' | 'read-pump',
+  ): void {
     const session = this.getSession(sessionId);
+    if (source === 'read-pump') {
+      session.fromRadioUsedReadPumpFallback = true;
+      session.meshcoreLinuxEarlyReadPollAttempts = 0;
+    }
     session.fromRadioDeliveryCount += 1;
     session.fromRadioDeliveryBytes += bytes.length;
+    if (!session.firstPacketLogged && sessionId === 'meshcore') {
+      session.firstPacketLogged = true;
+      const latencyMs =
+        session.connectStartedAtMs == null ? null : Date.now() - session.connectStartedAtMs;
+      console.info(
+        `[BLE:meshcore] first fromRadio packet via ${source} after ${latencyMs ?? 'unknown'}ms (bytes=${bytes.length} readPumpFallbackUsed=${session.fromRadioUsedReadPumpFallback} linuxEarlyPollAttempts=${session.meshcoreLinuxEarlyReadPollAttempts})`,
+      );
+    }
     this.emit('fromRadio', { sessionId, bytes });
+  }
+
+  private maybeScheduleLinuxMeshcoreEarlyReadPoll(sessionId: NobleSessionId): boolean {
+    if (!(sessionId === 'meshcore' && IS_LINUX)) return false;
+    const session = this.getSession(sessionId);
+    if (!session.fromRadioNotifyOnly || session.fromRadioDeliveryCount > 0 || session.closing) {
+      return false;
+    }
+    if (session.meshcoreLinuxEarlyReadPollAttempts >= MESHCORE_LINUX_EARLY_READ_POLL_MAX_ATTEMPTS) {
+      console.warn(
+        `[BLE:meshcore] linux early-read polling exhausted after ${session.meshcoreLinuxEarlyReadPollAttempts} attempts with no fromRadio payload; debugfs conn_* permission-denied lines from noble internals may be non-fatal noise, but this session still saw zero inbound data.`,
+      );
+      return false;
+    }
+    session.meshcoreLinuxEarlyReadPollAttempts += 1;
+    session.readPumpRequested = true;
+    return true;
   }
 
   /**
@@ -409,6 +462,13 @@ export class NobleBleManager extends EventEmitter {
             );
             if (meshcoreWinEarlyReadPoll && !session.closing) {
               session.readPumpRequested = true;
+            } else if (
+              this.maybeScheduleLinuxMeshcoreEarlyReadPoll(sessionId) &&
+              !session.closing
+            ) {
+              await new Promise<void>((r) =>
+                setTimeout(r, MESHCORE_LINUX_EARLY_READ_POLL_BACKOFF_MS),
+              );
             }
             // Back off before the outer while can re-trigger to avoid hammering a failing characteristic.
             await new Promise<void>((r) => setTimeout(r, 500));
@@ -419,11 +479,19 @@ export class NobleBleManager extends EventEmitter {
             if (meshcoreWinEarlyReadPoll && i === 0 && !session.closing) {
               session.readPumpRequested = true;
               await new Promise<void>((r) => setTimeout(r, 150));
+            } else if (
+              i === 0 &&
+              this.maybeScheduleLinuxMeshcoreEarlyReadPoll(sessionId) &&
+              !session.closing
+            ) {
+              await new Promise<void>((r) =>
+                setTimeout(r, MESHCORE_LINUX_EARLY_READ_POLL_BACKOFF_MS),
+              );
             }
             break;
           }
           console.debug(`[BLE:${sessionId}] emitting fromRadio: ${data.length} bytes → renderer`);
-          this.emitFromRadio(sessionId, new Uint8Array(Buffer.from(data)));
+          this.emitFromRadio(sessionId, new Uint8Array(Buffer.from(data)), 'read-pump');
           // Small floor delay between consecutive reads to avoid flooding the CBQueue.
           await new Promise<void>((r) => setTimeout(r, 10));
         }
@@ -743,6 +811,10 @@ export class NobleBleManager extends EventEmitter {
       console.debug(
         `[BLE:${sessionId}] peripheral info — address=${peripheral.address ?? 'unknown'} addressType=${peripheral.addressType ?? 'unknown'} rssi=${peripheral.rssi ?? 'unknown'} state=${peripheral.state} platform=${process.platform}`,
       );
+      session.connectStartedAtMs = Date.now();
+      session.firstPacketLogged = false;
+      session.fromRadioUsedReadPumpFallback = false;
+      session.meshcoreLinuxEarlyReadPollAttempts = 0;
 
       if (peripheral.state === 'connected') {
         let releasedOtherSession = false;
@@ -789,11 +861,11 @@ export class NobleBleManager extends EventEmitter {
         );
         if (sessionId === 'meshcore' && session.fromRadioDeliveryCount === 0) {
           console.warn(
-            `[BLE:meshcore] session ended with no fromRadio data (platform=${process.platform} notify subscribed but 0 packets; check signal/link or stack). disconnectReason=${sanitizeLogMessage(reasonStr)}`,
+            `[BLE:meshcore] session ended with no fromRadio data (platform=${process.platform} notify subscribed but 0 packets; check signal/link or stack). disconnectReason=${sanitizeLogMessage(reasonStr)} linuxEarlyPollAttempts=${session.meshcoreLinuxEarlyReadPollAttempts} readPumpFallbackUsed=${session.fromRadioUsedReadPumpFallback} note=debugfs conn_* permission-denied lines can come from noble internals and do not always mean cap_net_raw is missing.`,
           );
         } else if (sessionId === 'meshcore') {
           console.debug(
-            `[BLE:meshcore] session fromRadio summary packets=${session.fromRadioDeliveryCount} bytes=${session.fromRadioDeliveryBytes} disconnectReason=${sanitizeLogMessage(reasonStr)}`,
+            `[BLE:meshcore] session fromRadio summary packets=${session.fromRadioDeliveryCount} bytes=${session.fromRadioDeliveryBytes} readPumpFallbackUsed=${session.fromRadioUsedReadPumpFallback} disconnectReason=${sanitizeLogMessage(reasonStr)}`,
           );
         }
         if (session.fromRadioChar && session.fromRadioDataHandler) {
@@ -957,7 +1029,7 @@ export class NobleBleManager extends EventEmitter {
             console.debug(
               `[BLE:${sessionId}] fromRadio data: ${data.length} bytes isNotification=${isNotification}`,
             );
-            this.emitFromRadio(sessionId, new Uint8Array(Buffer.from(data)));
+            this.emitFromRadio(sessionId, new Uint8Array(Buffer.from(data)), 'notify');
           };
           session.fromRadioChar.on('data', session.fromRadioDataHandler);
           await withTimeout(
