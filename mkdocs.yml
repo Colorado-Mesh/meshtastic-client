@@ -4,17 +4,38 @@ edit_uri: edit/main/docs/
 
 theme:
   name: material
+  language: en
   palette:
-    primary: indigo
-    accent: blue
+    - scheme: default
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - search.suggest
+    - search.highlight
 
 nav:
   - Home: index.md
-  - Development Guide: development-environment.md
-  - Hardware Setup: development-environment.md
-  - Accessibility Checklist: accessibility-checklist.md
-  - MeshCore Deferred Epics: meshcore-deferred-epics.md
-  - MeshCore/Meshtastic Parity: meshcore-meshtastic-parity.md
-  - LetsMesh MQTT Auth: letsmesh-mqtt-auth.md
-  - Diagnostics: diagnostics.md
-  - Credits: credits.md
+  - Engineering:
+      - Development Guide: development-environment.md
+      - Hardware Setup: development-environment.md
+      - Accessibility: accessibility-checklist.md
+  - MeshCore Roadmap:
+      - Deferred Epics: meshcore-deferred-epics.md
+      - Feature Parity: meshcore-meshtastic-parity.md
+      - MQTT Auth: letsmesh-mqtt-auth.md
+  - Support:
+      - Diagnostics: diagnostics.md
+      - Contributing: https://github.com/Colorado-Mesh/mesh-client/blob/main/CONTRIBUTING.md
+      - License: https://github.com/Colorado-Mesh/mesh-client/blob/main/LICENSE
+      - Credits: credits.md
