@@ -124,6 +124,8 @@ export interface ElectronAPI {
     updateMeshcoreMessageStatus: (packetId: number, status: string) => Promise<unknown>;
     deleteMeshcoreContact: (nodeId: number) => Promise<unknown>;
     clearMeshcoreMessages: () => Promise<unknown>;
+    getMeshcoreMessageChannels: () => Promise<{ channel: number }[]>;
+    clearMeshcoreMessagesByChannel: (channelIdx: number) => Promise<unknown>;
     clearMeshcoreContacts: () => Promise<unknown>;
     clearMeshcoreRepeaters: () => Promise<unknown>;
     updateMeshcoreContactNickname: (nodeId: number, nickname: string | null) => Promise<unknown>;

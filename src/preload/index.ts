@@ -104,6 +104,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     deleteMeshcoreContact: (nodeId: number) =>
       ipcRenderer.invoke('db:deleteMeshcoreContact', nodeId),
     clearMeshcoreMessages: () => ipcRenderer.invoke('db:clearMeshcoreMessages'),
+    getMeshcoreMessageChannels: () => ipcRenderer.invoke('db:getMeshcoreMessageChannels'),
+    clearMeshcoreMessagesByChannel: (channelIdx: number) =>
+      ipcRenderer.invoke('db:clearMeshcoreMessagesByChannel', channelIdx),
     clearMeshcoreContacts: () => ipcRenderer.invoke('db:clearMeshcoreContacts'),
     clearMeshcoreRepeaters: () => ipcRenderer.invoke('db:clearMeshcoreRepeaters'),
     updateMeshcoreContactNickname: (nodeId: number, nickname: string | null) =>

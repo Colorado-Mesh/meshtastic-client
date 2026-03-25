@@ -15,7 +15,7 @@ import {
   THEME_TOKEN_META,
   type ThemeColorKey,
 } from '../lib/themeColors';
-import type { MeshNode } from '../lib/types';
+import type { MeshNode, MeshProtocol } from '../lib/types';
 import { useDiagnosticsStore } from '../stores/diagnosticsStore';
 import { usePositionHistoryStore } from '../stores/positionHistoryStore';
 import { useToast } from './Toast';
@@ -27,6 +27,9 @@ const GPS_REFRESH_INTERVAL_LABELS: Record<number, string> = {
   3600: 'Every hour',
   7200: 'Every 2 hours',
 };
+
+/** Sentinel for "clear all channels" so MeshCore DM (`channel_idx === -1`) does not collide with "All". */
+const CLEAR_ALL_CHANNELS_VALUE = -999_999;
 
 const HISTORY_WINDOW_LABELS: Record<number, string> = {
   1: '1 hour',
@@ -118,6 +121,7 @@ function loadSettings(): AdminSettings {
 }
 
 interface Props {
+  protocol: MeshProtocol;
   logPanelVisible?: boolean;
   onLogPanelVisibleChange?: (visible: boolean) => void;
   nodes: Map<number, MeshNode>;
@@ -144,6 +148,7 @@ interface PendingAction {
 }
 
 export default function AppPanel({
+  protocol,
   logPanelVisible = false,
   onLogPanelVisibleChange,
   nodes,
@@ -326,21 +331,37 @@ export default function AppPanel({
 
   // ─── Message channel selection ──────────────────────────────
   const [msgChannels, setMsgChannels] = useState<number[]>([]);
-  const [clearChannelTarget, setClearChannelTarget] = useState<number>(-1);
+  const [clearChannelTarget, setClearChannelTarget] = useState<number>(CLEAR_ALL_CHANNELS_VALUE);
 
   useEffect(() => {
-    window.electronAPI.db
-      .getMessageChannels()
-      .then((rows) => {
-        setMsgChannels(rows.map((r) => r.channel));
-      })
-      .catch((e: unknown) => {
-        console.debug('[AppPanel] getMessageChannels', e);
-      });
-  }, []);
+    if (protocol === 'meshcore') {
+      window.electronAPI.db
+        .getMeshcoreMessageChannels()
+        .then((rows) => {
+          setMsgChannels(rows.map((r) => r.channel));
+        })
+        .catch((e: unknown) => {
+          console.debug('[AppPanel] getMeshcoreMessageChannels', e);
+        });
+    } else {
+      window.electronAPI.db
+        .getMessageChannels()
+        .then((rows) => {
+          setMsgChannels(rows.map((r) => r.channel));
+        })
+        .catch((e: unknown) => {
+          console.debug('[AppPanel] getMessageChannels', e);
+        });
+    }
+  }, [protocol]);
+
+  useEffect(() => {
+    setClearChannelTarget(CLEAR_ALL_CHANNELS_VALUE);
+  }, [protocol]);
 
   const getChannelLabel = useCallback(
     (ch: number) => {
+      if (ch === -1) return 'Direct messages';
       const named = channels.find((c) => c.index === ch);
       return named ? `Channel ${ch} — ${named.name}` : `Channel ${ch}`;
     },
@@ -1244,12 +1265,12 @@ export default function AppPanel({
                 id="apppanel-clear-channel"
                 value={clearChannelTarget}
                 onChange={(e) => {
-                  setClearChannelTarget(parseInt(e.target.value));
+                  setClearChannelTarget(parseInt(e.target.value, 10));
                 }}
                 aria-label="Channel:"
                 className="flex-1 px-3 py-1.5 bg-deep-black border border-red-800/60 rounded-lg text-gray-200 text-sm focus:border-red-500 focus:outline-none"
               >
-                <option value={-1}>All Channels</option>
+                <option value={CLEAR_ALL_CHANNELS_VALUE}>All Channels</option>
                 {msgChannels.map((ch) => (
                   <option key={ch} value={ch}>
                     {getChannelLabel(ch)}
@@ -1261,7 +1282,7 @@ export default function AppPanel({
               type="button"
               aria-label={`Clear Messages (${messageCount})`}
               onClick={() => {
-                const isAll = clearChannelTarget === -1;
+                const isAll = clearChannelTarget === CLEAR_ALL_CHANNELS_VALUE;
                 const channelName = isAll ? '' : getChannelLabel(clearChannelTarget);
                 executeWithConfirmation({
                   name: 'Clear Messages',
@@ -1272,7 +1293,15 @@ export default function AppPanel({
                   confirmLabel: isAll ? `Clear ${messageCount} Messages` : `Clear ${channelName}`,
                   danger: true,
                   action: async () => {
-                    if (isAll) {
+                    if (protocol === 'meshcore') {
+                      if (isAll) {
+                        await window.electronAPI.db.clearMeshcoreMessages();
+                      } else {
+                        await window.electronAPI.db.clearMeshcoreMessagesByChannel(
+                          clearChannelTarget,
+                        );
+                      }
+                    } else if (isAll) {
                       await window.electronAPI.db.clearMessages();
                     } else {
                       await window.electronAPI.db.clearMessagesByChannel(clearChannelTarget);

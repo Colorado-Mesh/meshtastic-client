@@ -222,6 +222,15 @@ function safeNonNegativeInt(value: unknown): number {
   return n >>> 0;
 }
 
+/** MeshCore chat channel index (includes -1 for DMs). */
+function safeMeshcoreChannelIndex(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n) || n < -1 || n > 1_000_000) {
+    throw new Error('Invalid MeshCore channel index');
+  }
+  return Math.trunc(n);
+}
+
 function validateSaveMessage(message: unknown): asserts message is Record<string, unknown> & {
   sender_id: number;
   sender_name: string;
@@ -2380,6 +2389,41 @@ ipcMain.handle('db:clearMeshcoreMessages', () => {
   } catch (err) {
     console.error(
       '[IPC] db:clearMeshcoreMessages failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
+});
+
+ipcMain.handle('db:getMeshcoreMessageChannels', () => {
+  try {
+    return getDatabase()
+      .prepareOnce(
+        'SELECT DISTINCT channel_idx AS channel FROM meshcore_messages ORDER BY channel_idx',
+      )
+      .all();
+  } catch (err) {
+    console.error(
+      '[IPC] db:getMeshcoreMessageChannels failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
+});
+
+ipcMain.handle('db:clearMeshcoreMessagesByChannel', (_event, channelIdx: number) => {
+  try {
+    const ch = safeMeshcoreChannelIndex(channelIdx);
+    const result = getDatabase()
+      .prepareOnce('DELETE FROM meshcore_messages WHERE channel_idx = ?')
+      .run(ch);
+    console.debug(
+      `[IPC] db:clearMeshcoreMessagesByChannel: deleted ${result.changes} messages from channel_idx ${ch}`,
+    );
+    return result;
+  } catch (err) {
+    console.error(
+      '[IPC] db:clearMeshcoreMessagesByChannel failed:',
       sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
     );
     throw err;

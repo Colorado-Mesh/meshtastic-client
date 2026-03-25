@@ -1,6 +1,11 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import { parseStoredJson } from '../lib/parseStoredJson';
+import {
+  lastReadStorageKey,
+  loadOpenDmTabsInitial,
+  loadPersistedLastReadInitial,
+  openDmTabsStorageKey,
+} from '../lib/chatPanelProtocolStorage';
 import { emojiDisplayChar, emojiDisplayLabel } from '../lib/reactions';
 import type { ChatMessage, MeshNode, MeshProtocol } from '../lib/types';
 
@@ -250,16 +255,7 @@ function ChatPanel({
 
   // Two-section UI state — load DM tabs from localStorage for restart persistence
   const [viewMode, setViewMode] = useState<'channels' | 'dm'>('channels');
-  const [openDmTabs, setOpenDmTabs] = useState<number[]>(() => {
-    const parsed = parseStoredJson<unknown>(
-      localStorage.getItem('mesh-client:openDmTabs'),
-      'ChatPanel openDmTabs',
-    );
-    if (Array.isArray(parsed) && parsed.every((n: unknown) => typeof n === 'number')) {
-      return parsed;
-    }
-    return [];
-  });
+  const [openDmTabs, setOpenDmTabs] = useState<number[]>(() => loadOpenDmTabsInitial(protocol));
   const openDmTabsRef = useRef(openDmTabs);
   openDmTabsRef.current = openDmTabs;
   const channelsRef = useRef(channels);
@@ -269,25 +265,20 @@ function ChatPanel({
   // Persist openDmTabs to localStorage whenever it changes
   useEffect(() => {
     try {
-      localStorage.setItem('mesh-client:openDmTabs', JSON.stringify(openDmTabs));
+      localStorage.setItem(openDmTabsStorageKey(protocol), JSON.stringify(openDmTabs));
     } catch (e) {
       console.warn('[ChatPanel] persist openDmTabs failed', e);
     }
-  }, [openDmTabs]);
+  }, [openDmTabs, protocol]);
 
   // Track unread counts per channel
   const lastReadRef = useRef<Map<number, number>>(new Map());
   const [unreadCounts, setUnreadCounts] = useState<Map<number, number>>(new Map());
 
   // Persisted lastRead: { "ch:0": timestamp, "ch:2": ..., "dm:12345678": ... }
-  const [persistedLastRead, setPersistedLastRead] = useState<Record<string, number>>(() => {
-    const parsed = parseStoredJson<Record<string, number>>(
-      localStorage.getItem('mesh-client:lastRead'),
-      'ChatPanel lastRead',
-    );
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
-    return {};
-  });
+  const [persistedLastRead, setPersistedLastRead] = useState<Record<string, number>>(() =>
+    loadPersistedLastReadInitial(protocol),
+  );
   // Ref mirror — lets view-switch effect read latest value without adding it to deps
   const persistedLastReadRef = useRef(persistedLastRead);
   persistedLastReadRef.current = persistedLastRead;
@@ -304,11 +295,11 @@ function ChatPanel({
   // Persist lastRead timestamps to localStorage
   useEffect(() => {
     try {
-      localStorage.setItem('mesh-client:lastRead', JSON.stringify(persistedLastRead));
+      localStorage.setItem(lastReadStorageKey(protocol), JSON.stringify(persistedLastRead));
     } catch (e) {
       console.warn('[ChatPanel] persist lastRead failed', e);
     }
-  }, [persistedLastRead]);
+  }, [persistedLastRead, protocol]);
 
   const getDmLabel = useCallback(
     (nodeNum: number) => {

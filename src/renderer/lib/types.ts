@@ -352,6 +352,8 @@ declare global {
         getMeshcoreContacts: () => Promise<unknown[]>;
         deleteMeshcoreContact: (nodeId: number) => Promise<unknown>;
         clearMeshcoreMessages: () => Promise<unknown>;
+        getMeshcoreMessageChannels: () => Promise<{ channel: number }[]>;
+        clearMeshcoreMessagesByChannel: (channelIdx: number) => Promise<unknown>;
         clearMeshcoreContacts: () => Promise<unknown>;
         clearMeshcoreRepeaters: () => Promise<unknown>;
         updateMeshcoreContactNickname: (

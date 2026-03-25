@@ -76,6 +76,8 @@ const electronAPIMock = {
     updateMeshcoreMessageStatus: vi.fn().mockResolvedValue(undefined),
     deleteMeshcoreContact: vi.fn().mockResolvedValue(undefined),
     clearMeshcoreMessages: vi.fn().mockResolvedValue(undefined),
+    getMeshcoreMessageChannels: vi.fn().mockResolvedValue([]),
+    clearMeshcoreMessagesByChannel: vi.fn().mockResolvedValue(undefined),
     clearMeshcoreContacts: vi.fn().mockResolvedValue(undefined),
     clearMeshcoreRepeaters: vi.fn().mockResolvedValue(undefined),
     updateMeshcoreContactNickname: vi.fn().mockResolvedValue(undefined),

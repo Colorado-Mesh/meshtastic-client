@@ -877,6 +877,7 @@ export default function App() {
                 </div>
                 <div id="panel-1" role="tabpanel" aria-labelledby="tab-1" hidden={activeTab !== 1}>
                   <ChatPanel
+                    key={protocol}
                     messages={chatMessagesForPanel}
                     channels={chatChannelsForPanel}
                     myNodeNum={device.selfNodeId}
@@ -1066,6 +1067,7 @@ export default function App() {
                     <ErrorBoundary>
                       <Suspense fallback={<PanelSkeleton />}>
                         <AppPanel
+                          protocol={protocol}
                           logPanelVisible={logPanelVisible}
                           onLogPanelVisibleChange={(visible) => {
                             setLogPanelVisible(visible);

@@ -580,17 +580,6 @@ export default function RepeatersPanel({
                       </td>
                       <td className="py-2">
                         <div className="flex flex-wrap gap-1">
-                          {onSelectRepeater && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                onSelectRepeater(node);
-                              }}
-                              className="px-2 py-0.5 rounded text-xs font-medium bg-brand-green/20 text-brand-green border border-brand-green/40 hover:bg-brand-green/30"
-                            >
-                              Manage
-                            </button>
-                          )}
                           <button
                             onClick={() => void handlePing(node.node_id)}
                             disabled={!isConnected || isPingLoading}
