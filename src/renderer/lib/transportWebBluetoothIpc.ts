@@ -6,7 +6,6 @@ import { WebBluetoothManager } from './webbluetooth-ble-manager';
 export class TransportWebBluetoothIpc implements Types.Transport {
   private readonly sessionId: NobleBleSessionId;
   private _fromDeviceController: ReadableStreamDefaultController<Types.DeviceOutput> | null = null;
-  private _fromRadioUnsub: (() => void) | null = null;
   private _bleManager: WebBluetoothManager | null = null;
 
   public readonly toDevice: WritableStream<Uint8Array>;
@@ -58,6 +57,22 @@ export class TransportWebBluetoothIpc implements Types.Transport {
       throw new Error('No device selected. Call requestDevice() first.');
     }
     await this._bleManager.connect();
+
+    // Pipe the BLE manager's fromDevice stream to our fromDevice stream
+    const reader = this._bleManager.fromDevice.getReader();
+    void this._readLoop(reader);
+  }
+
+  private async _readLoop(reader: ReadableStreamDefaultReader<Types.DeviceOutput>): Promise<void> {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done || !this._fromDeviceController) break;
+        this._fromDeviceController.enqueue(value);
+      }
+    } catch {
+      // catch-no-log-ok reader error or closed
+    }
   }
 
   async disconnect(): Promise<void> {

@@ -9,6 +9,7 @@ import {
   selectGrantedSerialPort,
 } from './serialPortSignature';
 import { TransportNobleIpc } from './transportNobleIpc';
+import { TransportWebBluetoothIpc } from './transportWebBluetoothIpc';
 import type { ConnectionType, NobleBleSessionId } from './types';
 
 // HTTP base connection: timeouts and retries to avoid hanging on slow mDNS or flaky networks.
@@ -59,16 +60,28 @@ async function httpPreflightWithRetries(connectionUrl: string): Promise<void> {
 }
 
 /**
- * Create a BLE connection to a Meshtastic device via @stoprocent/noble.
- * The main process NobleBleManager must have already discovered the peripheral
+ * Create a BLE connection to a Meshtastic device.
+ *
+ * On Mac/Windows: The main process NobleBleManager must have already discovered the peripheral
  * (via startNobleBleScanning) before this is called.
+ *
+ * On Linux: Uses Web Bluetooth directly in the renderer.
  */
 export async function createBleConnection(
   peripheralId: string,
   sessionId: NobleBleSessionId = 'meshtastic',
 ): Promise<MeshDevice> {
+  const isLinux = navigator.userAgent.toLowerCase().includes('linux');
   const connectStartedAt = Date.now();
-  console.debug('[connection] createBleConnection start', peripheralId);
+  console.debug('[connection] createBleConnection start', peripheralId, { isLinux });
+
+  if (isLinux) {
+    const transport = new TransportWebBluetoothIpc(sessionId);
+    console.debug('[connection] createBleConnection: using Web Bluetooth transport on Linux');
+    return new MeshDevice(transport as any);
+  }
+
+  // Mac/Windows: use Noble IPC transport
   // Subscribe to IPC events before telling main to connect, so no fromRadio
   // packets emitted during the initial drain are dropped.
   const transport = new TransportNobleIpc(sessionId);
