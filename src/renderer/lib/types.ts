@@ -481,6 +481,9 @@ declare global {
       onSerialPortsDiscovered: (cb: (ports: SerialPortInfo[]) => void) => () => void;
       selectSerialPort: (portId: string) => void;
       cancelSerialSelection: () => void;
+      onBluetoothDevicesDiscovered: (cb: (devices: NobleBleDevice[]) => void) => () => void;
+      selectBluetoothDevice: (deviceId: string) => void;
+      cancelBluetoothSelection: () => void;
       clearSessionData: () => Promise<void>;
       notifyDeviceConnected: () => void;
       notifyDeviceDisconnected: () => void;

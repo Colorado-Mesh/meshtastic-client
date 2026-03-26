@@ -668,6 +668,18 @@ export default function ConnectionPanel({
     return cleanup;
   }, [lastConnection, onConnect, protocol]); // isAutoConnecting intentionally omitted — ref handles it
 
+  // Listen for Bluetooth devices discovered by main process (Linux Web Bluetooth)
+  useEffect(() => {
+    const cleanup = window.electronAPI.onBluetoothDevicesDiscovered((devices) => {
+      setBleDevices(devices);
+      if (connectionTypeRef.current === 'ble') {
+        setShowBlePicker(true);
+        setConnectionStage('Select your Bluetooth device below');
+      }
+    });
+    return cleanup;
+  }, []); // no deps — this listener is stable for the lifetime of the component
+
   // Listen for serial ports discovered by main process
   useEffect(() => {
     const cleanup = window.electronAPI.onSerialPortsDiscovered((ports) => {
@@ -764,9 +776,14 @@ export default function ConnectionPanel({
       autoConnectTimeoutRef.current = null;
     }
     if (showBlePicker || connectionType === 'ble') {
-      if (isLinux && webBluetoothDevice) {
-        // Web Bluetooth disconnect is handled by onDisconnect
-        setWebBluetoothDevice(null);
+      if (isLinux) {
+        if (showBlePicker) {
+          // Cancel the in-flight requestDevice() if the picker was visible
+          window.electronAPI.cancelBluetoothSelection();
+        }
+        if (webBluetoothDevice) {
+          setWebBluetoothDevice(null);
+        }
       } else {
         void window.electronAPI.stopNobleBleScanning(protocol);
       }
@@ -802,19 +819,25 @@ export default function ConnectionPanel({
       // Save BLE advertisement name for use in LastConnection display
       const found = bleDevices.find((d) => d.deviceId === deviceId);
       lastSelectedBleNameRef.current = found?.deviceName ?? null;
-      void window.electronAPI.stopNobleBleScanning(protocol);
       setShowBlePicker(false);
       setConnectionStage('Connecting to device...');
-      // Trigger the actual connection with the peripheral ID
-      onConnect('ble', undefined, deviceId).catch((err: unknown) => {
-        console.warn('[ConnectionPanel] BLE connect after selection failed', err);
-        const bleErrMsg = humanizeBleError(err);
-        if (bleErrMsg) setError(bleErrMsg);
-        setConnecting(false);
-        setConnectionStage('');
-      });
+      if (isLinux) {
+        // Web Bluetooth path: requestDevice() is already in-flight in the renderer.
+        // Resolving the main-process select-bluetooth-device callback will let it complete.
+        window.electronAPI.selectBluetoothDevice(deviceId);
+      } else {
+        void window.electronAPI.stopNobleBleScanning(protocol);
+        // Trigger the actual connection with the peripheral ID
+        onConnect('ble', undefined, deviceId).catch((err: unknown) => {
+          console.warn('[ConnectionPanel] BLE connect after selection failed', err);
+          const bleErrMsg = humanizeBleError(err);
+          if (bleErrMsg) setError(bleErrMsg);
+          setConnecting(false);
+          setConnectionStage('');
+        });
+      }
     },
-    [bleDevices, onConnect, protocol],
+    [bleDevices, isLinux, onConnect, protocol],
   );
 
   const handleSelectSerialPort = useCallback((portId: string) => {

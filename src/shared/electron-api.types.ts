@@ -227,6 +227,11 @@ export interface ElectronAPI {
   selectSerialPort: (portId: string) => void;
   cancelSerialSelection: () => void;
 
+  // ─── Bluetooth device selection (Linux Web Bluetooth) ────────────────────────
+  onBluetoothDevicesDiscovered: (callback: (devices: NobleBleDevice[]) => void) => () => void;
+  selectBluetoothDevice: (deviceId: string) => void;
+  cancelBluetoothSelection: () => void;
+
   // ─── Session management ──────────────────────────────────────────────────────
   clearSessionData: () => Promise<unknown>;
 

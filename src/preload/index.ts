@@ -312,6 +312,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send('serial-port-cancelled');
   },
 
+  // ─── Bluetooth device selection (Linux Web Bluetooth) ──────────────
+  // Main process intercepts select-bluetooth-device and sends the device
+  // list here. Renderer shows a picker, then calls selectBluetoothDevice.
+  onBluetoothDevicesDiscovered: (callback: (devices: NobleBleDevice[]) => void) => {
+    const handler = (_event: unknown, devices: NobleBleDevice[]) => {
+      callback(devices);
+    };
+    ipcRenderer.on('bluetooth-devices-discovered', handler);
+    return () => {
+      ipcRenderer.removeListener('bluetooth-devices-discovered', handler);
+    };
+  },
+
+  selectBluetoothDevice: (deviceId: string) => {
+    ipcRenderer.send('bluetooth-device-selected', deviceId);
+  },
+
+  cancelBluetoothSelection: () => {
+    ipcRenderer.send('bluetooth-device-cancelled');
+  },
+
   // ─── Session management ────────────────────────────────────────
   clearSessionData: () => ipcRenderer.invoke('session:clearData'),
 

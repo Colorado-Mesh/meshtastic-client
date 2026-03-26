@@ -164,6 +164,10 @@ let pendingSerialCallback: ((portId: string) => void) | null = null;
 // Last serial port discovery set: only allow selection IPC to resolve with ids from this set
 // (empty string always allowed = cancel). Prevents arbitrary id injection from a compromised renderer.
 let lastSerialPortIds = new Set<string>();
+
+// Pending Web Bluetooth callback (Linux only — select-bluetooth-device on webContents)
+let pendingBluetoothCallback: ((deviceId: string) => void) | null = null;
+let lastBluetoothDeviceIds = new Set<string>();
 let hasInstalledOsmReferrerHook = false;
 const OSM_HTTP_REFERRER = 'https://meshtastic-client.app/';
 
@@ -907,6 +911,38 @@ function createWindow() {
     },
   );
 
+  // ─── Web Bluetooth: Device Selection (Linux) ───────────────────────
+  // On Linux, Electron does not show a native Bluetooth chooser. Instead it fires
+  // select-bluetooth-device on the webContents. Without a handler the request is
+  // immediately cancelled ("User cancelled the requestDevice() chooser.").
+  // We intercept, forward the device list to the renderer, and resolve the callback
+  // when the user picks a device (or cancels) via IPC.
+  mainWindow.webContents.on('select-bluetooth-device', (event, deviceList, callback) => {
+    event.preventDefault();
+
+    const isNewRequest = !pendingBluetoothCallback;
+    pendingBluetoothCallback = callback;
+
+    if (isNewRequest) {
+      // Auto-cancel after 60s to prevent indefinite block if renderer unmounts mid-flow
+      setTimeout(() => {
+        if (pendingBluetoothCallback === callback) {
+          console.warn('[IPC] Bluetooth device selection stale after 60s — auto-cancelling');
+          pendingBluetoothCallback('');
+          pendingBluetoothCallback = null;
+          lastBluetoothDeviceIds.clear();
+        }
+      }, 60_000);
+    }
+
+    console.debug(`[IPC] select-bluetooth-device: ${deviceList.length} device(s) found`);
+    lastBluetoothDeviceIds = new Set(deviceList.map((d) => d.deviceId));
+    mainWindow?.webContents.send(
+      'bluetooth-devices-discovered',
+      deviceList.map((d) => ({ deviceId: d.deviceId, deviceName: d.deviceName })),
+    );
+  });
+
   // Allow serial and geolocation only; media and web-app-installation are not used
   mainWindow.webContents.session.setPermissionCheckHandler((_webContents, permission) => {
     const granted = permission === 'serial' || permission === 'geolocation';
@@ -1100,6 +1136,29 @@ ipcMain.on('serial-port-cancelled', () => {
     pendingSerialCallback = null;
   }
   lastSerialPortIds.clear();
+});
+
+// ─── IPC: Bluetooth device selected by user (Linux Web Bluetooth) ────
+ipcMain.on('bluetooth-device-selected', (_event, deviceId: unknown) => {
+  if (!pendingBluetoothCallback) return;
+  const id = typeof deviceId === 'string' ? deviceId : '';
+  if (id !== '' && !lastBluetoothDeviceIds.has(id)) {
+    console.warn('[IPC] bluetooth-device-selected: ignoring unknown deviceId');
+    return;
+  }
+  console.debug('[IPC] bluetooth-device-selected:', sanitizeLogMessage(id || '(cancelled)'));
+  pendingBluetoothCallback(id);
+  pendingBluetoothCallback = null;
+  lastBluetoothDeviceIds.clear();
+});
+
+// ─── IPC: Cancel Bluetooth selection ────────────────────────────────
+ipcMain.on('bluetooth-device-cancelled', () => {
+  if (pendingBluetoothCallback) {
+    pendingBluetoothCallback(''); // Empty string cancels the request
+    pendingBluetoothCallback = null;
+  }
+  lastBluetoothDeviceIds.clear();
 });
 
 // ─── IPC: Connection status tracking (module-scope, not per-window) ─

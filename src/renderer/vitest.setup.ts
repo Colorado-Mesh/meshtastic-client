@@ -117,6 +117,9 @@ const electronAPIMock = {
   onSerialPortsDiscovered: vi.fn().mockReturnValue(() => {}),
   selectSerialPort: vi.fn(),
   cancelSerialSelection: vi.fn(),
+  onBluetoothDevicesDiscovered: vi.fn().mockReturnValue(() => {}),
+  selectBluetoothDevice: vi.fn(),
+  cancelBluetoothSelection: vi.fn(),
   clearSessionData: vi.fn().mockResolvedValue(undefined),
   getGpsFix: vi.fn().mockResolvedValue({ lat: 0, lon: 0, source: 'ip' }),
   update: {
