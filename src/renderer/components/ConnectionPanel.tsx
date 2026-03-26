@@ -1353,8 +1353,7 @@ export default function ConnectionPanel({
             <button
               type="button"
               onClick={handleRePair}
-              disabled={connecting}
-              className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50"
+              className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white font-medium rounded-lg transition-colors"
             >
               Remove &amp; Re-pair Device
             </button>
