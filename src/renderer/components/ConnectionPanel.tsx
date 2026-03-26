@@ -608,6 +608,11 @@ export default function ConnectionPanel({
     setLastConnection(loadLastConnection(protocol));
   }, [protocol]);
 
+  // Debug: track showRePairButton changes
+  useEffect(() => {
+    console.debug('[ConnectionPanel] showRePairButton changed:', showRePairButton);
+  }, [showRePairButton]);
+
   // Update connection stage based on state transitions, and save last connection on success
   useEffect(() => {
     if (state.status === 'connecting') {
