@@ -173,6 +173,7 @@ export class WebBluetoothManager {
         domErr?.message,
         isPairing ? '(pairing-related)' : '',
       );
+      console.debug('[WebBluetooth] raw error:', err);
       // Wrap the error with classification info for the UI layer
       const error = new Error(
         `Bluetooth connection failed${isPairing ? ' (pairing issue)' : ''}: ${domErr?.message ?? String(err)}`,
@@ -206,6 +207,7 @@ export class WebBluetoothManager {
         domErr?.message,
         isPairing ? '(pairing-related)' : '',
       );
+      console.debug('[WebBluetooth] GATT discovery raw error:', err);
       // "GATT Error: Not supported" typically means device requires pairing before GATT operations
       const error = new Error(
         `GATT Error: Not supported. The device may require pairing. ${domErr?.message ?? String(err)}`,
@@ -243,6 +245,7 @@ export class WebBluetoothManager {
         domErr?.message,
         isPairing ? '(pairing-related)' : '',
       );
+      console.debug('[WebBluetooth] startNotifications raw error:', err);
       const error = new Error(
         `Failed to start Bluetooth notifications${isPairing ? ' (pairing issue)' : ''}: ${domErr?.message ?? String(err)}`,
       ) as Error & { isPairingRelated?: boolean };

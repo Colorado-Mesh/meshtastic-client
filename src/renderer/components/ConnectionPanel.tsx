@@ -927,7 +927,7 @@ export default function ConnectionPanel({
 
   const handleSelectBleDevice = useCallback(
     (deviceId: string) => {
-      console.debug('[ConnectionPanel] BLE device selected', deviceId);
+      console.debug('[ConnectionPanel] BLE device selected', deviceId, { isLinux });
       saveLastBleDevice(protocol, deviceId);
       // Save BLE advertisement name for use in LastConnection display
       const found = bleDevices.find((d) => d.deviceId === deviceId);
@@ -940,7 +940,40 @@ export default function ConnectionPanel({
       if (isLinux) {
         // Web Bluetooth path: requestDevice() is already in-flight in the renderer.
         // Resolving the main-process select-bluetooth-device callback will let it complete.
+        // Then onConnect() will call createBleConnection which will call transport.connect()
+        // and that can throw on error, so we need to catch it here.
+        console.debug('[ConnectionPanel] calling selectBluetoothDevice and then onConnect');
         window.electronAPI.selectBluetoothDevice(deviceId);
+        onConnect('ble', undefined).catch((err: unknown) => {
+          console.warn('[ConnectionPanel] Linux BLE connect failed after device selection:', err);
+          const bleErrMsg = humanizeBleError(err);
+          console.debug('[ConnectionPanel] humanized error:', bleErrMsg);
+          if (bleErrMsg) setError(bleErrMsg);
+          const errWithPairingFlag = err as { isPairingRelated?: boolean } | null | undefined;
+          console.debug(
+            '[ConnectionPanel] isPairingRelated flag:',
+            errWithPairingFlag?.isPairingRelated,
+          );
+          console.debug(
+            '[ConnectionPanel] DOMException name:',
+            err instanceof DOMException ? err.name : 'not a DOMException',
+          );
+          const isPairingRelatedError =
+            bleErrMsg.includes('not be properly paired') ||
+            bleErrMsg.includes('Connection attempt failed') ||
+            bleErrMsg.includes('GATT Error: Not supported') ||
+            bleErrMsg.includes('authentication failed') ||
+            errWithPairingFlag?.isPairingRelated === true ||
+            (err instanceof DOMException &&
+              (err.name === 'SecurityError' || err.name === 'NetworkError'));
+          console.debug('[ConnectionPanel] isPairingRelatedError:', isPairingRelatedError);
+          if (isPairingRelatedError) {
+            console.debug('[ConnectionPanel] showing re-pair button');
+            setShowRePairButton(true);
+          }
+          setConnecting(false);
+          setConnectionStage('');
+        });
       } else {
         void window.electronAPI.stopNobleBleScanning(protocol);
         // Trigger the actual connection with the peripheral ID
