@@ -465,9 +465,12 @@ app.commandLine.appendSwitch('enable-blink-features', 'Serial');
 // Enable Web Bluetooth on Linux (experimental - required for BLE on Linux)
 // --no-sandbox is required for navigator.bluetooth to be available in the renderer on Linux;
 // without it the Web Bluetooth API is undefined and BLE cannot be used.
+// --disable-setuid-sandbox prevents a fatal crash when the chrome-sandbox binary exists
+// in node_modules/electron/dist but has not been given root/setuid permissions (common in dev).
 if (process.platform === 'linux') {
   app.commandLine.appendSwitch('enable-experimental-web-platform-features');
   app.commandLine.appendSwitch('no-sandbox');
+  app.commandLine.appendSwitch('disable-setuid-sandbox');
 }
 
 // ─── Icon Path Helper ──────────────────────────────────────────────
