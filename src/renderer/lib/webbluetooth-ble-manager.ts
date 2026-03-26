@@ -69,11 +69,9 @@ export class WebBluetoothManager {
 
     console.debug(`[WebBluetooth:${this.sessionId}] calling navigator.bluetooth.requestDevice...`);
     try {
+      // Only filter by the service UUID for the current mode
       this.device = await navigator.bluetooth.requestDevice({
-        filters: [
-          { services: ['6e400001-b5a3-f393-e0a9-e50e24dcca9e'] },
-          { services: ['6ba1b218-15a8-461f-9fa8-5dcae273eafd'] },
-        ],
+        filters: [{ services: [serviceUuid] }],
       });
       console.debug('[WebBluetooth] requestDevice succeeded');
     } catch (err) {

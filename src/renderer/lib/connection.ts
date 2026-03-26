@@ -76,6 +76,9 @@ export async function createBleConnection(
   console.debug('[connection] createBleConnection start', peripheralId, { isLinux });
 
   if (isLinux) {
+    // Reset the pairing retry count so the first attempt uses the default PIN
+    window.electronAPI.resetBlePairingRetryCount();
+
     const transport = new TransportWebBluetoothIpc(sessionId);
     console.debug('[connection] createBleConnection: using Web Bluetooth transport on Linux');
 

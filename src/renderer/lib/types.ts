@@ -488,6 +488,7 @@ declare global {
       onBluetoothPinRequired: (cb: (data: { deviceId: string }) => void) => () => void;
       provideBluetoothPin: (pin: string) => void;
       cancelBluetoothPairing: () => void;
+      resetBlePairingRetryCount: () => void;
       clearSessionData: () => Promise<void>;
       notifyDeviceConnected: () => void;
       notifyDeviceDisconnected: () => void;

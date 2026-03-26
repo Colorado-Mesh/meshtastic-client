@@ -124,6 +124,7 @@ const electronAPIMock = {
   onBluetoothPinRequired: vi.fn().mockReturnValue(() => {}),
   provideBluetoothPin: vi.fn(),
   cancelBluetoothPairing: vi.fn(),
+  resetBlePairingRetryCount: vi.fn(),
   clearSessionData: vi.fn().mockResolvedValue(undefined),
   getGpsFix: vi.fn().mockResolvedValue({ lat: 0, lon: 0, source: 'ip' }),
   update: {

@@ -359,6 +359,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send('bluetooth-cancel-pairing');
   },
 
+  // Reset pairing retry count (call before starting a new BLE connection)
+  resetBlePairingRetryCount: () => {
+    ipcRenderer.send('ble-reset-pairing-retry-count');
+  },
+
   // ─── Session management ────────────────────────────────────────
   clearSessionData: () => ipcRenderer.invoke('session:clearData'),
 

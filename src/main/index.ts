@@ -170,9 +170,13 @@ let lastSerialPortIds = new Set<string>();
 let pendingBluetoothCallback: ((deviceId: string) => void) | null = null;
 let lastBluetoothDeviceIds = new Set<string>();
 
-// Bluetooth pairing state (Linux only — bluetooth-pairing-request event)
-let pendingPairingCallback: ((response: { pin?: string; confirmed?: boolean }) => void) | null =
-  null;
+// Bluetooth pairing state (Linux only — setBluetoothPairingHandler)
+// Electron's Response type requires confirmed: boolean, pin is optional
+interface BluetoothPairingResponse {
+  confirmed: boolean;
+  pin?: string;
+}
+let pendingPairingCallback: ((response: BluetoothPairingResponse) => void) | null = null;
 let pendingPairingRetryCount = 0;
 
 let hasInstalledOsmReferrerHook = false;
@@ -221,55 +225,8 @@ process.on('unhandledRejection', (reason) => {
 app.on('browser-window-created', () => {});
 
 // ─── Bluetooth pairing handler (Linux only) ──────────────────────────
-// Electron fires this event when a BLE device requires pairing during
-// Web Bluetooth connection. We intercept it to:
-// 1. Auto-provide Meshtastic PIN (123456) on first attempt
-// 2. Prompt user for MeshCore PIN (random) via renderer
-// Note: TypeScript definitions may not include this event, but it exists in Electron 30+
-type BluetoothPairingCallback = (response: { pin?: string; confirmed?: boolean }) => void;
-
-const electronApp = app as unknown as {
-  on: (event: string, listener: (...args: unknown[]) => void) => void;
-};
-
-electronApp.on('bluetooth-pairing-request', (...args: unknown[]) => {
-  const event = args[0] as { preventDefault: () => void };
-  const details = args[1] as { pairingKind: string; deviceId: string };
-  const callback = args[2] as BluetoothPairingCallback;
-
-  event.preventDefault();
-
-  console.debug('[main] bluetooth-pairing-request:', details.pairingKind, details.deviceId);
-
-  if (details.pairingKind === 'providePin') {
-    // First attempt: try default Meshtastic PIN
-    // If that fails, the renderer will prompt for user input
-    if (pendingPairingRetryCount === 0) {
-      console.debug('[main] bluetooth-pairing: auto-providing default PIN (attempt 1)');
-      pendingPairingRetryCount++;
-      callback({ pin: '123456' });
-      return;
-    }
-
-    // Second attempt: prompt user via renderer
-    console.debug('[main] bluetooth-pairing: prompting user for PIN (attempt 2+)');
-    pendingPairingCallback = (response) => {
-      callback(response);
-      pendingPairingCallback = null;
-    };
-    mainWindow?.webContents.send('bluetooth-pin-required', {
-      deviceId: details.deviceId,
-    });
-  } else if (details.pairingKind === 'confirmPin') {
-    // User confirms the PIN matches device display
-    console.debug('[main] bluetooth-pairing: confirming PIN match');
-    callback({ confirmed: true });
-  } else {
-    // Unknown pairing kind - just confirm
-    console.debug('[main] bluetooth-pairing: unknown kind, confirming', details.pairingKind);
-    callback({ confirmed: true });
-  }
-});
+// Note: Bluetooth pairing for Web Bluetooth is handled via session.setBluetoothPairingHandler()
+// which is set up after mainWindow creation. See the setup below near select-bluetooth-device.
 
 process.on('exit', () => {});
 
@@ -1001,6 +958,46 @@ function createWindow() {
     );
   });
 
+  // ─── Web Bluetooth: Pairing Handler (Linux) ───────────────────────────
+  // Required for devices that require PIN/confirmation during pairing.
+  // This is called by Chromium when a device requires pairing during GATT connect.
+  mainWindow.webContents.session.setBluetoothPairingHandler((details, callback) => {
+    console.debug('[main] bluetooth-pairing-request:', details.pairingKind, details.deviceId);
+
+    if (details.pairingKind === 'providePin') {
+      // Meshtastic devices use fixed PIN 123456. MeshCore uses random PIN displayed on device.
+      // On first attempt, try the Meshtastic default PIN. If it fails, prompt user.
+      if (pendingPairingRetryCount === 0) {
+        console.debug('[main] bluetooth-pairing: auto-providing default PIN (attempt 1)');
+        pendingPairingRetryCount++;
+        callback({ pin: '123456', confirmed: true });
+        return;
+      }
+
+      // Second attempt: prompt user for PIN (MeshCore or failed Meshtastic pairing)
+      console.debug('[main] bluetooth-pairing: prompting user for PIN (attempt 2+)');
+      pendingPairingCallback = (response: BluetoothPairingResponse) => {
+        callback(response);
+        pendingPairingCallback = null;
+      };
+      mainWindow?.webContents.send('bluetooth-pin-required', {
+        deviceId: details.deviceId,
+      });
+    } else if (details.pairingKind === 'confirmPin') {
+      // Device shows a PIN, user must confirm it matches
+      console.debug('[main] bluetooth-pairing: confirming PIN match');
+      callback({ confirmed: true });
+    } else if (details.pairingKind === 'confirm') {
+      // Just confirm without PIN
+      console.debug('[main] bluetooth-pairing: confirming pairing');
+      callback({ confirmed: true });
+    } else {
+      // Unknown pairing kind - log and confirm
+      console.debug('[main] bluetooth-pairing: unknown kind, confirming', details.pairingKind);
+      callback({ confirmed: true });
+    }
+  });
+
   // Allow serial and geolocation only; media and web-app-installation are not used
   mainWindow.webContents.session.setPermissionCheckHandler((_webContents, permission) => {
     const granted = permission === 'serial' || permission === 'geolocation';
@@ -1269,7 +1266,7 @@ ipcMain.on('bluetooth-provide-pin', (_event, pin: unknown) => {
   }
   const pinStr = typeof pin === 'string' ? pin : '';
   console.debug('[IPC] bluetooth-provide-pin:', pinStr.length > 0 ? '****' : '(empty)');
-  pendingPairingCallback({ pin: pinStr });
+  pendingPairingCallback({ pin: pinStr, confirmed: pinStr.length > 0 });
   pendingPairingCallback = null;
   // Reset retry count so next pairing starts fresh
   pendingPairingRetryCount = 0;
@@ -1279,10 +1276,16 @@ ipcMain.on('bluetooth-provide-pin', (_event, pin: unknown) => {
 ipcMain.on('bluetooth-cancel-pairing', () => {
   if (pendingPairingCallback) {
     console.debug('[IPC] bluetooth-cancel-pairing: cancelling');
-    pendingPairingCallback({ pin: '' }); // Empty pin cancels
+    pendingPairingCallback({ pin: '', confirmed: false }); // confirmed: false cancels
     pendingPairingCallback = null;
   }
   // Reset retry count so next pairing starts fresh
+  pendingPairingRetryCount = 0;
+});
+
+// ─── IPC: Reset BLE pairing retry count (Linux) ───────────────────────────
+// Called when starting a new BLE connection so the first pairing attempt uses the default PIN
+ipcMain.on('ble-reset-pairing-retry-count', () => {
   pendingPairingRetryCount = 0;
 });
 

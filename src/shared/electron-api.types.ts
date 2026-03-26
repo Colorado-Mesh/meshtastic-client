@@ -237,6 +237,7 @@ export interface ElectronAPI {
   onBluetoothPinRequired: (callback: (data: { deviceId: string }) => void) => () => void;
   provideBluetoothPin: (pin: string) => void;
   cancelBluetoothPairing: () => void;
+  resetBlePairingRetryCount: () => void;
 
   // ─── Session management ──────────────────────────────────────────────────────
   clearSessionData: () => Promise<unknown>;
