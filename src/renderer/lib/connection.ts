@@ -68,7 +68,7 @@ async function httpPreflightWithRetries(connectionUrl: string): Promise<void> {
  * On Linux: Uses Web Bluetooth directly in the renderer.
  */
 export async function createBleConnection(
-  peripheralId: string,
+  peripheralId?: string,
   sessionId: NobleBleSessionId = 'meshtastic',
 ): Promise<MeshDevice> {
   const isLinux = navigator.userAgent.toLowerCase().includes('linux');
@@ -78,12 +78,31 @@ export async function createBleConnection(
   if (isLinux) {
     const transport = new TransportWebBluetoothIpc(sessionId);
     console.debug('[connection] createBleConnection: using Web Bluetooth transport on Linux');
+
+    // On Linux, requestDevice() must be called with a user gesture
+    // If no peripheralId provided, initiate device selection now
+    let deviceId = peripheralId;
+    let deviceName = 'Unknown Device';
+    if (!deviceId) {
+      console.debug('[connection] createBleConnection: requesting device selection (Linux)');
+      const deviceInfo = await transport.requestDevice();
+      deviceId = deviceInfo.deviceId;
+      deviceName = deviceInfo.deviceName;
+      console.debug('[connection] createBleConnection: device selected', deviceId, deviceName);
+    }
+
+    // Now connect to the device
+    await transport.connect();
+    console.debug('[connection] createBleConnection: connected on Linux');
     return new MeshDevice(transport as any);
   }
 
   // Mac/Windows: use Noble IPC transport
   // Subscribe to IPC events before telling main to connect, so no fromRadio
   // packets emitted during the initial drain are dropped.
+  if (!peripheralId) {
+    throw new Error('BLE peripheral ID required on Mac/Windows');
+  }
   const transport = new TransportNobleIpc(sessionId);
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= BLE_CONNECT_MAX_ATTEMPTS; attempt++) {

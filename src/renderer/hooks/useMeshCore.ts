@@ -1608,15 +1608,14 @@ export function useMeshCore() {
       try {
         const setupGen = meshcoreSetupGenerationRef.current;
         if (type === 'ble') {
-          if (!blePeripheralId) {
-            throw new Error('BLE peripheral ID required');
-          }
           const isLinux = navigator.userAgent.toLowerCase().includes('linux');
           if (isLinux) {
             console.debug('[useMeshCore] connect: BLE via Web Bluetooth (Linux)');
             const transport = new TransportWebBluetoothIpc('meshcore');
             webBluetoothTransportRef.current = transport;
             try {
+              // On Linux, requestDevice() must be called with a user gesture
+              await transport.requestDevice();
               await transport.connect();
               const { Connection: MeshCoreConn } = await import('@liamcottle/meshcore.js');
               const meshcoreConn = new MeshCoreConn();
@@ -1631,6 +1630,9 @@ export function useMeshCore() {
               throw bleErr;
             }
           } else {
+            if (!blePeripheralId) {
+              throw new Error('BLE peripheral ID required');
+            }
             let connected = false;
             let lastBleError: unknown = null;
             for (let attempt = 1; attempt <= NOBLE_IPC_CONNECT_MAX_ATTEMPTS; attempt++) {

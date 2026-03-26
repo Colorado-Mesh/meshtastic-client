@@ -25,7 +25,6 @@ import type {
   NobleBleDevice,
   SerialPortInfo,
 } from '../lib/types';
-import { WebBluetoothManager } from '../lib/webbluetooth-ble-manager';
 import { HelpTooltip } from './HelpTooltip';
 // ─── Last Connection (localStorage) ───────────────────────────────
 interface LastConnection {
@@ -711,18 +710,7 @@ export default function ConnectionPanel({
       if (isLinux) {
         setConnectionStage('Select your Bluetooth device...');
         try {
-          const webBleManager = new WebBluetoothManager(
-            protocol === 'meshcore' ? 'meshcore' : 'meshtastic',
-          );
-          const device = await webBleManager.requestDevice();
-          await webBleManager.connect();
-          const deviceInfo = {
-            deviceId: device.id,
-            deviceName: device.name ?? 'Unknown Device',
-          };
-          setWebBluetoothDevice(deviceInfo);
-          setConnectionStage('Connecting to device...');
-          await onConnect('ble', undefined, deviceInfo.deviceId);
+          await onConnect('ble', undefined);
           setConnecting(false);
           setConnectionStage('');
           return;
