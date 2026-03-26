@@ -749,6 +749,28 @@ export default function ConnectionPanel({
     try {
       await window.electronAPI.bluetoothUnpair(mac);
       console.debug('[ConnectionPanel] Successfully unpaired device:', mac);
+
+      // After unpairing from bluez, we MUST also clear the Web Bluetooth device cache.
+      // Chromium caches paired devices per-origin. Without this, requestDevice() returns
+      // the stale cached device, causing connection failures.
+      if (navigator.bluetooth) {
+        try {
+          const devices = await navigator.bluetooth.getDevices();
+          for (const device of devices) {
+            if (device.name?.includes(mac) || device.id.includes(mac)) {
+              console.debug(
+                '[ConnectionPanel] Forgetting cached Web Bluetooth device:',
+                device.name,
+                device.id,
+              );
+              await device.forget();
+            }
+          }
+        } catch (e) {
+          console.warn('[ConnectionPanel] Failed to forget Web Bluetooth device:', e);
+        }
+      }
+
       // Show the BLE picker so user can re-select the device after unpairing
       setShowBlePicker(true);
       setBleDevices([]);

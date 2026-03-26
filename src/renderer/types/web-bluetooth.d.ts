@@ -7,6 +7,7 @@ interface BluetoothDevice {
   readonly id: string;
   readonly name?: string;
   readonly gatt?: BluetoothRemoteGATTServer;
+  forget(): Promise<void>;
   addEventListener(type: 'gattserverdisconnected', callback: (event: Event) => void): void;
   removeEventListener(type: 'gattserverdisconnected', callback: (event: Event) => void): void;
 }
