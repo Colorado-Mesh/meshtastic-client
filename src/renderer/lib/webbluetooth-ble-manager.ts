@@ -48,11 +48,26 @@ export class WebBluetoothManager {
     console.debug(`[WebBluetooth:${this.sessionId}] requestDevice for service ${serviceUuid}`);
 
     if (!navigator.bluetooth) {
+      console.error('[WebBluetooth] navigator.bluetooth is UNDEFINED!');
       throw new Error(
-        'Web Bluetooth is not available. Ensure you are using a Chromium-based browser with Web Bluetooth enabled.',
+        'Web Bluetooth is not available. Ensure you are using a Chromium-based browser with Web Bluetooth enabled. Check chrome://flags for "Experimental Web Platform Features".',
       );
     }
 
+    console.debug('[WebBluetooth] navigator.bluetooth available, checking getAvailability...');
+    try {
+      const availability = await navigator.bluetooth.getAvailability();
+      console.debug('[WebBluetooth] getAvailability:', availability);
+      if (!availability) {
+        throw new Error(
+          'No Bluetooth adapters available. Make sure Bluetooth is enabled on your system.',
+        );
+      }
+    } catch (err) {
+      console.debug('[WebBluetooth] getAvailability failed (expected on some platforms):', err);
+    }
+
+    console.debug(`[WebBluetooth:${this.sessionId}] calling navigator.bluetooth.requestDevice...`);
     try {
       this.device = await navigator.bluetooth.requestDevice({
         filters: [
@@ -60,16 +75,31 @@ export class WebBluetoothManager {
           { services: ['6ba1b218-15a8-461f-9fa8-5dcae273eafd'] },
         ],
       });
+      console.debug('[WebBluetooth] requestDevice succeeded');
     } catch (err) {
       const domErr = err as DOMException;
+      const errName = domErr?.name ?? 'unknown';
+      const errMessage = domErr?.message ?? String(err);
+
       console.error(
         `[WebBluetooth:${this.sessionId}] requestDevice EXCEPTION:`,
         err,
         'name:',
-        domErr?.name,
+        errName,
         'message:',
-        domErr?.message,
+        errMessage,
       );
+
+      // Distinguish between user cancellation and "no devices found"
+      // On Linux, "no devices found" often shows as NotFoundError with "User cancelled" message
+      if (errName === 'NotFoundError') {
+        if (errMessage.includes('No devices')) {
+          throw new Error(
+            `No BLE devices found with Meshtastic or Meshcore services. Make sure your device is powered on and nearby.`,
+          );
+        }
+        // Otherwise re-throw the original error
+      }
       throw err;
     }
 
