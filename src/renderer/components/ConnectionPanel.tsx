@@ -840,6 +840,7 @@ export default function ConnectionPanel({
           setConnectionStage('');
           return;
         } catch (err) {
+          console.warn('[ConnectionPanel] handleConnect CATCH BLOCK ENTERED');
           console.warn('[ConnectionPanel] handleConnect caught error:', err);
           const bleErrMsg = humanizeBleError(err);
           console.debug('[ConnectionPanel] handleConnect humanized:', bleErrMsg);
