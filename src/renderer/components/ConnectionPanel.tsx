@@ -785,13 +785,25 @@ export default function ConnectionPanel({
   useEffect(() => {
     const cleanup = window.electronAPI.onBluetoothDevicesDiscovered((devices) => {
       setBleDevices(devices);
+      const lastId = lastConnectionRef.current?.bleDeviceId ?? loadLastBleDevice(protocol);
+      if (
+        isLinux &&
+        isAutoConnectingRef.current &&
+        lastId &&
+        devices.some((d) => d.deviceId === lastId)
+      ) {
+        setShowBlePicker(false);
+        setConnectionStage('Connecting to saved Bluetooth device…');
+        window.electronAPI.selectBluetoothDevice(lastId);
+        return;
+      }
       if (connectionTypeRef.current === 'ble') {
         setShowBlePicker(true);
         setConnectionStage('Select your Bluetooth device below');
       }
     });
     return cleanup;
-  }, []); // no deps — this listener is stable for the lifetime of the component
+  }, [protocol, isLinux]);
 
   // Listen for Bluetooth PIN required event (Linux Web Bluetooth pairing)
   useEffect(() => {
@@ -1272,7 +1284,7 @@ export default function ConnectionPanel({
         if (isLinux) {
           // Web Bluetooth path: use onConnect directly (NOT connectAutomatic which skips BLE for MeshCore)
           // This is a user gesture, so requestDevice() is allowed.
-          setConnectionStage('Select your Bluetooth device...');
+          setConnectionStage('Reconnecting to last Bluetooth device…');
           void onConnect('ble', undefined).catch((err: unknown) => {
             isAutoConnectingRef.current = false;
             setIsAutoConnecting(false);
