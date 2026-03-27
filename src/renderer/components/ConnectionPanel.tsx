@@ -735,12 +735,15 @@ export default function ConnectionPanel({
 
   // Handle re-pair button click (automated remove, scan, pair, and connect)
   const handleRePair = useCallback(async () => {
+    console.debug('[ConnectionPanel] handleRePair START');
     const mac = lastSelectedBleMacRef.current;
     if (!mac) {
+      console.debug('[ConnectionPanel] handleRePair: no MAC available');
       setError('No device MAC address available for re-pairing');
       return;
     }
 
+    console.debug('[ConnectionPanel] handleRePair: MAC=', mac);
     setConnecting(true);
     setConnectionStage('Removing device...');
     setShowRePairButton(false);
@@ -748,17 +751,21 @@ export default function ConnectionPanel({
 
     try {
       // Step 1: Remove device from bluez
+      console.debug('[ConnectionPanel] handleRePair: Step 1 - bluetoothUnpair');
       await window.electronAPI.bluetoothUnpair(mac);
-      console.debug('[ConnectionPanel] Successfully unpaired device:', mac);
+      console.debug('[ConnectionPanel] handleRePair: Step 1 complete');
 
       // Step 2: Untrust device (ignore failures - best effort)
+      console.debug('[ConnectionPanel] handleRePair: Step 2 - bluetoothUntrust');
       try {
         await window.electronAPI.bluetoothUntrust(mac);
       } catch {
         // catch-no-log-ok -- untrust is best-effort, ignore all failures
       }
+      console.debug('[ConnectionPanel] handleRePair: Step 2 complete');
 
       // Step 3: Clear Chromium's Web Bluetooth cache
+      console.debug('[ConnectionPanel] handleRePair: Step 3 - clear Chromium cache');
       if (navigator.bluetooth) {
         try {
           const devices = await navigator.bluetooth.getDevices();
@@ -776,26 +783,34 @@ export default function ConnectionPanel({
           console.warn('[ConnectionPanel] Failed to forget Web Bluetooth device:', e);
         }
       }
+      console.debug('[ConnectionPanel] handleRePair: Step 3 complete');
 
       // Step 4: Start BLE scan
+      console.debug('[ConnectionPanel] handleRePair: Step 4 - bluetoothStartScan');
       setConnectionStage('Scanning for device...');
       try {
         await window.electronAPI.bluetoothStartScan();
       } catch (e) {
         console.warn('[ConnectionPanel] bluetoothStartScan warning:', e);
       }
+      console.debug('[ConnectionPanel] handleRePair: Step 4 complete');
 
       // Step 5: Wait 10 seconds for device to appear
+      console.debug('[ConnectionPanel] handleRePair: Step 5 - waiting 10s');
       await new Promise((r) => setTimeout(r, 10000));
+      console.debug('[ConnectionPanel] handleRePair: Step 5 complete');
 
       // Step 6: Stop scan
+      console.debug('[ConnectionPanel] handleRePair: Step 6 - bluetoothStopScan');
       try {
         await window.electronAPI.bluetoothStopScan();
       } catch (e) {
         console.warn('[ConnectionPanel] bluetoothStopScan warning:', e);
       }
+      console.debug('[ConnectionPanel] handleRePair: Step 6 complete');
 
       // Step 7: Pair with device (this triggers PIN flow automatically)
+      console.debug('[ConnectionPanel] handleRePair: Step 7 - bluetoothPair');
       setConnectionStage('Pairing with device...');
       window.electronAPI.resetBlePairingRetryCount();
       try {
@@ -804,8 +819,10 @@ export default function ConnectionPanel({
         console.warn('[ConnectionPanel] bluetoothPair warning:', pairErr);
         // Continue anyway - the pairing might still be in progress
       }
+      console.debug('[ConnectionPanel] handleRePair: Step 7 complete');
 
       // Step 8: Connect at OS level
+      console.debug('[ConnectionPanel] handleRePair: Step 8 - bluetoothConnect');
       setConnectionStage('Connecting to device...');
       try {
         await window.electronAPI.bluetoothConnect(mac);
@@ -813,13 +830,16 @@ export default function ConnectionPanel({
         console.warn('[ConnectionPanel] bluetoothConnect warning:', connectErr);
         // Continue anyway - OS-level connect might already be established
       }
+      console.debug('[ConnectionPanel] handleRePair: Step 8 complete');
 
       // Step 9: Complete connection via handleConnect (this goes through Web Bluetooth flow)
+      console.debug('[ConnectionPanel] handleRePair: Step 9 - showing picker');
       setConnectionStage('Completing connection...');
       setConnecting(false);
       setShowBlePicker(true);
       setBleDevices([]);
       setConnectionStage('Select your device and complete pairing...');
+      console.debug('[ConnectionPanel] handleRePair END');
     } catch (err) {
       console.warn('[ConnectionPanel] Re-pair failed:', err);
       const msg = err instanceof Error ? err.message : String(err);
