@@ -814,8 +814,13 @@ export default function ConnectionPanel({
       }
       console.debug('[ConnectionPanel] handleRePair: Step 5 complete');
 
-      // Step 6: Pair with device (while scan is still running)
-      console.debug('[ConnectionPanel] handleRePair: Step 6 - bluetoothPair');
+      // Step 6: Give BlueZ time to settle after finding the device
+      console.debug('[ConnectionPanel] handleRePair: Step 6 - waiting for BlueZ to settle');
+      await new Promise((r) => setTimeout(r, 1500));
+      console.debug('[ConnectionPanel] handleRePair: Step 6 complete');
+
+      // Step 7: Pair with device (while scan is still running)
+      console.debug('[ConnectionPanel] handleRePair: Step 7 - bluetoothPair');
       setConnectionStage('Pairing with device...');
       window.electronAPI.resetBlePairingRetryCount();
       try {
@@ -823,29 +828,29 @@ export default function ConnectionPanel({
       } catch (pairErr) {
         console.warn('[ConnectionPanel] bluetoothPair warning:', pairErr);
       }
-      console.debug('[ConnectionPanel] handleRePair: Step 6 complete');
+      console.debug('[ConnectionPanel] handleRePair: Step 7 complete');
 
-      // Step 7: Connect at OS level
-      console.debug('[ConnectionPanel] handleRePair: Step 7 - bluetoothConnect');
+      // Step 8: Connect at OS level
+      console.debug('[ConnectionPanel] handleRePair: Step 8 - bluetoothConnect');
       setConnectionStage('Connecting to device...');
       try {
         await window.electronAPI.bluetoothConnect(mac);
       } catch (connectErr) {
         console.warn('[ConnectionPanel] bluetoothConnect warning:', connectErr);
       }
-      console.debug('[ConnectionPanel] handleRePair: Step 7 complete');
+      console.debug('[ConnectionPanel] handleRePair: Step 8 complete');
 
-      // Step 8: Stop scan
-      console.debug('[ConnectionPanel] handleRePair: Step 8 - bluetoothStopScan');
+      // Step 9: Stop scan
+      console.debug('[ConnectionPanel] handleRePair: Step 9 - bluetoothStopScan');
       try {
         await window.electronAPI.bluetoothStopScan();
       } catch (e) {
         console.warn('[ConnectionPanel] bluetoothStopScan warning:', e);
       }
-      console.debug('[ConnectionPanel] handleRePair: Step 8 complete');
+      console.debug('[ConnectionPanel] handleRePair: Step 9 complete');
 
-      // Step 9: Complete connection via handleConnect (this goes through Web Bluetooth flow)
-      console.debug('[ConnectionPanel] handleRePair: Step 9 - showing picker');
+      // Step 10: Complete connection via handleConnect (this goes through Web Bluetooth flow)
+      console.debug('[ConnectionPanel] handleRePair: Step 10 - showing picker');
       setConnectionStage('Completing connection...');
       setConnecting(false);
       setShowBlePicker(true);
