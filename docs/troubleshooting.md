@@ -35,9 +35,10 @@ See [development-environment.md](development-environment.md#windows) for Python 
 
 **Linux-specific:**
 
-- The app uses Web Bluetooth (Chromium's built-in BLE API) which requires no special permissions.
+- The app uses Web Bluetooth (Chromium's built-in BLE API). You still need a working Bluetooth stack (`systemctl status bluetooth`).
 - Linux BLE uses the in-app Bluetooth picker (triggered from a button click); if no picker appears, restart the app and try Connect again.
 - If the Bluetooth adapter isn't detected, check: `systemctl status bluetooth` and `rfkill list`.
+- **MeshCore:** After you pick a radio, the app checks `bluetoothctl info <MAC>`. If the device is **not** paired at the OS level, you are prompted for the **PIN shown on the device** and pairing runs via **`bluetooth-pair`** before Web Bluetooth finishes connecting. Meshtastic does not use this gate in the same way (it may use PIN `123456` on the first pairing prompt from Chromium).
 - If device pairing fails with "Connection attempt failed", try the **"Remove & Re-pair Device"** button in the app, or manually remove via `bluetoothctl`:
   ```bash
   bluetoothctl
@@ -45,13 +46,13 @@ See [development-environment.md](development-environment.md#windows) for Python 
   remove XX:XX:XX:XX:XX:XX  # Replace with your device MAC
   # Then re-pair from the app
   ```
-- For Meshtastic devices, the app automatically uses PIN `123456`. For MeshCore devices, enter the PIN shown on the device.
+- For **Meshtastic** devices, the first Chromium pairing attempt may use PIN `123456`. For **MeshCore**, always use the PIN shown on the radio (and the pre-connect prompt when BlueZ reports not paired).
 - If devices won't pair or connect, power-cycle Bluetooth:
   ```bash
   bluetoothctl power off
   bluetoothctl power on
   ```
-- MeshCore devices must be in Bluetooth Companion mode and paired with a PIN. If Linux pairs without asking for a PIN, remove and re-pair using the steps above.
+- MeshCore devices must be in Bluetooth Companion mode. If you still see bonds without a PIN, remove the device in `bluetoothctl` or use **Remove & Re-pair Device**, then connect again.
 
 ### Serial port not detected
 

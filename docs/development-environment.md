@@ -9,7 +9,7 @@ These requirements apply to all platforms.
 ### 1) Required software
 
 - Git
-- Node.js **25.8.1+** (prefer the latest stable release for development when possible)
+- Node.js **22.12.0+** (match [CI](https://github.com/Colorado-Mesh/mesh-client/blob/main/.github/workflows/ci.yaml); `CONTRIBUTING.md` recommends the same)
 - npm **9+**
 - Python 3 + `pip` (needed for MkDocs documentation build)
 
@@ -354,9 +354,14 @@ The app automatically enables `--enable-experimental-web-platform-features` on L
 
 #### Bluetooth Pairing on Linux
 
-For Meshtastic devices, the app will automatically use the default PIN `123456` when pairing. If that fails, you'll be prompted to enter the PIN.
+Web Bluetooth may invoke the **Electron pairing handler** during GATT connect. Behavior differs by protocol:
 
-For MeshCore devices, you'll be prompted to enter the random PIN displayed on the device.
+- **Meshtastic:** On the first Chromium `providePin` request, the client tries the standard Meshtastic PIN `123456`. If that fails, you are prompted to enter the PIN manually.
+- **MeshCore:** The MeshCore session does **not** auto-submit `123456`. When Chromium asks for a PIN, you enter the random code shown on the radio.
+
+**MeshCore and OS-level pairing (Linux / BlueZ):** A stable GATT session usually requires a bond in BlueZ first. After you choose a device in the in-app picker, the client runs `bluetoothctl info <MAC>`. If the device is **not** paired (`Paired: no`) or not yet known to the adapter, the UI prompts for the PIN on the **radio** and runs **`bluetooth-pair`** (main-process `bluetoothctl` pairing) **before** resolving the pending Web Bluetooth selection. If `Paired: yes` already, connection continues without that step.
+
+Handshake retries reuse the **same granted Web Bluetooth device** (`navigator.bluetooth.getDevices()`) so the second attempt does not call `requestDevice()` without a user gesture.
 
 If you encounter pairing issues (e.g., "Connection attempt failed" or device was previously paired with wrong PIN):
 

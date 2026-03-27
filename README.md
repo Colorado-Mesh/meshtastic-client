@@ -30,7 +30,7 @@ From real-time diagnostics to permanent message archives, Mesh-Client delivers t
 
 **Known Bugs:**
 
-- **Linux BLE** — uses Web Bluetooth (Chromium's built-in BLE API), with a user-visible picker and user gesture requirement to select a device.
+- **Linux BLE** — uses Web Bluetooth (Chromium's built-in BLE API), with a user-visible picker and user gesture requirement to select a device. **MeshCore** may prompt for the radio’s PIN and run OS-level pairing (`bluetoothctl`) before the connection completes when BlueZ reports the device as not paired (see [docs/development-environment.md](docs/development-environment.md#linux-bluetooth-ble)).
 
 ---
 
@@ -198,7 +198,7 @@ MeshCore runs simultaneously alongside Meshtastic. Use the protocol switcher pil
 
 **Transport Notes**
 
-- BLE: waits for GATT init (`connected` event) before issuing commands; includes nudge timeout for stuck `deviceQuery` on some devices. On **Windows**, **pair the MeshCore device in Settings → Bluetooth & devices** before connecting in the app; WinRT may need a bonded device for a stable Nordic UART session. A **second connect attempt** may run automatically after some transient GATT discovery errors.
+- BLE: waits for GATT init (`connected` event) before issuing commands; includes nudge timeout for stuck `deviceQuery` on some devices. On **Windows**, **pair the MeshCore device in Settings → Bluetooth & devices** before connecting in the app; WinRT may need a bonded device for a stable Nordic UART session. On **Linux**, the app checks BlueZ pairing and may prompt for the PIN **before** Web Bluetooth completes when the radio is not bonded. A **second connect attempt** may run automatically after some transient GATT discovery or handshake timeouts (retry reuses the granted device without a new picker gesture).
 - Serial: auto-reconnects on startup using a saved port signature so reconnect targets the same physical device when possible
 - TCP: connects to MeshCore companion radio on port **5000**
 - **MQTT (JSON v1):** The Connection tab MQTT card includes **Network Preset** buttons — **LetsMesh** (WebSocket on port 443, topic prefix `meshcore`; broker auth uses `@michaelhart/meshcore-decoder`’s `createAuthToken` — MQTT username `v1_<64-hex public key>`, password token with JWT `aud` matching the **MQTT server hostname** (e.g. `mqtt-us-v1.letsmesh.net` for the US preset); optional **Packet logger (Analyzer)** forwards RX packet summaries to the broker when enabled; see [docs/letsmesh-mqtt-auth.md](docs/letsmesh-mqtt-auth.md)), **Ripple Networks** (TLS on port 8883, same topic prefix, preset default credentials, and **Allow insecure TLS** for brokers that use a non–public CA), and **Custom** for your own broker
@@ -265,7 +265,7 @@ After a successful connection, Mesh-Client remembers your last device per protoc
 
 - **Serial** — auto-connects silently in the background (both protocols)
 - **Bluetooth (macOS/Windows)** — auto-scans on launch and reconnects when the last device is discovered (no user gesture required)
-- **Bluetooth (Linux)** — Web Bluetooth requires a user gesture; click **Reconnect** or **Connect** to open the picker
+- **Bluetooth (Linux)** — Web Bluetooth requires a user gesture; click **Reconnect** or **Connect** to open the picker. **MeshCore:** if the device is not paired in BlueZ, enter the PIN from the radio when prompted (OS pairing runs before the connection finishes).
 - **WiFi / TCP** — a one-click reconnect card appears; click **Reconnect**
 - **MQTT** — auto-reconnects using saved broker settings (Meshtastic protobuf pipeline; MeshCore JSON v1 adapter — select transport when connecting)
 
