@@ -32,6 +32,7 @@ import {
   minimalMeshcoreChatNode,
   pubkeyToNodeId,
 } from '../lib/meshcoreUtils';
+import { MeshcoreWebBluetoothConnection } from '../lib/meshcoreWebBluetoothConnection';
 import { parseStoredJson } from '../lib/parseStoredJson';
 import {
   getPortSignature,
@@ -1612,16 +1613,10 @@ export function useMeshCore() {
           if (isLinux) {
             console.debug('[useMeshCore] connect: BLE via Web Bluetooth (Linux)');
             const transport = new TransportWebBluetoothIpc('meshcore');
-            webBluetoothTransportRef.current = transport;
             try {
-              // On Linux, requestDevice() must be called with a user gesture
-              await transport.requestDevice();
-              await transport.connect();
-              const { Connection: MeshCoreConn } = await import('@liamcottle/meshcore.js');
-              const meshcoreConn = new MeshCoreConn();
-              meshcoreConn.on('RX', (data: unknown) => {
-                meshcoreConn.onFrameReceived(data as Uint8Array);
-              });
+              const meshcoreConn = new MeshcoreWebBluetoothConnection(transport);
+              await meshcoreConn.connect();
+              webBluetoothTransportRef.current = transport;
               conn = meshcoreConn as unknown as MeshCoreConnection;
               console.info('[useMeshCore] connect: BLE via Web Bluetooth connected');
             } catch (bleErr) {
