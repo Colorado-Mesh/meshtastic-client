@@ -1,5 +1,5 @@
 import { act, renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../shared/withTimeout', () => ({
   withTimeout: vi.fn((promise: Promise<unknown>) => promise),
@@ -11,14 +11,23 @@ import { useMeshCore } from './useMeshCore';
 describe('useMeshCore BLE Noble IPC timeout handling', () => {
   const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
   const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  let userAgentSpy: { mockRestore: () => void } | null = null;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    userAgentSpy = vi
+      .spyOn(window.navigator, 'userAgent', 'get')
+      .mockReturnValue('Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
     vi.mocked(window.electronAPI.db.getMeshcoreContacts).mockResolvedValue([]);
     vi.mocked(window.electronAPI.db.getMeshcoreMessages).mockResolvedValue([]);
     vi.mocked(window.electronAPI.connectNobleBle).mockResolvedValue({ ok: true });
     vi.mocked(window.electronAPI.disconnectNobleBle).mockResolvedValue(undefined);
     vi.mocked(withTimeout).mockImplementation((promise: Promise<unknown>) => promise);
+  });
+
+  afterEach(() => {
+    userAgentSpy?.mockRestore();
+    userAgentSpy = null;
   });
 
   it('fails fast with user-facing timeout guidance when IPC open times out', async () => {

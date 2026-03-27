@@ -16,7 +16,6 @@ import {
 import { meshcoreMqttUserFacingHint } from '../lib/meshcoreMqttUserHint';
 import { parseStoredJson } from '../lib/parseStoredJson';
 import { LAST_SERIAL_PORT_KEY } from '../lib/serialPortSignature';
-import { TransportWebBluetoothIpc } from '../lib/transportWebBluetoothIpc';
 import type {
   ConnectionType,
   DeviceState,
@@ -1056,12 +1055,6 @@ export default function ConnectionPanel({
           '[ConnectionPanel] handleSelectBleDevice Linux: resolving pending requestDevice',
         );
         window.electronAPI.selectBluetoothDevice(deviceId);
-        // Reuse 'found' from above to avoid duplicate lookup
-        const manager = TransportWebBluetoothIpc.getManager(protocol);
-        if (found && manager) {
-          const device = { id: found.deviceId, name: found.deviceName } as BluetoothDevice;
-          manager.resolveDevice(device);
-        }
         // Don't call onConnect again - the original onConnect will continue from requestDevice()
         // and proceed to connect(), which triggers the pairing handler.
       } else {

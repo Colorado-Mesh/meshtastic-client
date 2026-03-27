@@ -72,6 +72,7 @@ export class WebBluetoothManager {
   private sessionId: NobleBleSessionId;
   private _pendingDevicePromise?: Promise<BluetoothDevice>;
   private _resolvePendingDevice?: (device: BluetoothDevice) => void;
+  private _rejectPendingDevice?: (reason?: unknown) => void;
 
   public readonly toDevice: WritableStream<Uint8Array>;
   public readonly fromDevice: ReadableStream<Types.DeviceOutput>;
@@ -139,14 +140,34 @@ export class WebBluetoothManager {
 
     // Create deferred promise for custom picker flow on Linux
     // The promise will be resolved when resolveDevice() is called from handleSelectBleDevice
-    this._pendingDevicePromise = new Promise<BluetoothDevice>((resolve) => {
+    this._pendingDevicePromise = new Promise<BluetoothDevice>((resolve, reject) => {
       this._resolvePendingDevice = resolve;
+      this._rejectPendingDevice = reject;
     });
 
     console.debug(`[WebBluetooth:${this.sessionId}] waiting for device selection via picker...`);
 
-    // Set up listener for when device is resolved from the picker
-    // The actual device resolution happens via resolveDevice() called from ConnectionPanel
+    // Trigger Chromium's Web Bluetooth chooser flow.
+    // On Linux, main intercepts select-bluetooth-device and forwards devices to our custom picker.
+    // Choosing a device there resolves this requestDevice promise.
+    void navigator.bluetooth
+      .requestDevice({
+        filters: [{ services: [serviceUuid] }],
+        optionalServices: [serviceUuid],
+      })
+      .then((device) => {
+        this.resolveDevice(device);
+      })
+      .catch((err: unknown) => {
+        if (this._rejectPendingDevice) {
+          this._rejectPendingDevice(err);
+        }
+        this._pendingDevicePromise = undefined;
+        this._resolvePendingDevice = undefined;
+        this._rejectPendingDevice = undefined;
+      });
+
+    // Set up listener for when device is resolved from the chooser
     this._pendingDevicePromise
       .then((device) => {
         console.debug(
@@ -162,6 +183,7 @@ export class WebBluetoothManager {
         console.error(`[WebBluetooth:${this.sessionId}] requestDevice failed:`, err);
         this._pendingDevicePromise = undefined;
         this._resolvePendingDevice = undefined;
+        this._rejectPendingDevice = undefined;
       });
 
     return this._pendingDevicePromise;
@@ -173,6 +195,7 @@ export class WebBluetoothManager {
       this._resolvePendingDevice(device);
       this._pendingDevicePromise = undefined;
       this._resolvePendingDevice = undefined;
+      this._rejectPendingDevice = undefined;
     }
   }
 

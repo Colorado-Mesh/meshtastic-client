@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
 
 import type { DeviceState } from '../lib/types';
@@ -160,6 +160,10 @@ describe('ConnectionPanel MQTT connect error', () => {
 });
 
 describe('ConnectionPanel BLE error humanization', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('shows Windows handshake guidance for MeshCore BLE handshake timeout/disconnect', async () => {
     const user = userEvent.setup();
     const userAgentSpy = vi.spyOn(window.navigator, 'userAgent', 'get');
@@ -194,6 +198,10 @@ describe('ConnectionPanel BLE error humanization', () => {
 
   it('renders object-shaped BLE errors as JSON instead of [object Object]', async () => {
     const user = userEvent.setup();
+    const userAgentSpy = vi.spyOn(window.navigator, 'userAgent', 'get');
+    userAgentSpy.mockReturnValue(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36',
+    );
     vi.mocked(window.electronAPI.startNobleBleScanning).mockRejectedValueOnce({
       reason: 'adapter glitch',
       code: 'BLE_OBJECT_ERR',
@@ -217,6 +225,7 @@ describe('ConnectionPanel BLE error humanization', () => {
 
     expect(await screen.findByText(/"reason":"adapter glitch"/)).toBeInTheDocument();
     expect(screen.queryByText(/\[object Object\]/)).not.toBeInTheDocument();
+    userAgentSpy.mockRestore();
   });
 
   it('shows Windows adapter guidance when BLE adapter is unavailable', async () => {
