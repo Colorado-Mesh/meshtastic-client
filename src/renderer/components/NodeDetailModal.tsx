@@ -10,7 +10,8 @@ import { meshcoreEnsureRepeaterRemoteAuthPrompt } from '../lib/meshcoreUtils';
 import type { MeshNode, MeshProtocol, NeighborInfoRecord } from '../lib/types';
 import { useCoordFormatStore } from '../stores/coordFormatStore';
 import { useDiagnosticsStore } from '../stores/diagnosticsStore';
-import NodeInfoBody from './NodeInfoBody';
+import NodeInfoBody, { formatSecondsAgo } from './NodeInfoBody';
+import SnrIndicator from './SnrIndicator';
 
 interface NodeDetailModalProps {
   /** Optional: enables originator list for Mesh Congestion (RF duplicate-prone by node). */
@@ -415,13 +416,11 @@ export default function NodeDetailModal({
                     >
                       <div>
                         <span className="text-gray-300">{label}</span>
-                        <span className="text-muted ml-2">{nb.heardSecondsAgo}s ago</span>
+                        <span className="text-muted ml-2">
+                          {formatSecondsAgo(nb.heardSecondsAgo)}
+                        </span>
                       </div>
-                      <span
-                        className={`font-mono ${nb.snr >= 5 ? 'text-green-400' : nb.snr >= 0 ? 'text-yellow-400' : 'text-red-400'}`}
-                      >
-                        {nb.snr.toFixed(1)} dB
-                      </span>
+                      <SnrIndicator snr={nb.snr} />
                     </div>
                   );
                 })}
@@ -597,11 +596,12 @@ export default function NodeDetailModal({
                         className="flex items-center justify-between text-xs bg-secondary-dark rounded px-2 py-1"
                       >
                         <span className="text-gray-300">{label}</span>
-                        <span
-                          className={`font-mono ${nb.snr >= 5 ? 'text-green-400' : nb.snr >= 0 ? 'text-yellow-400' : 'text-red-400'}`}
-                        >
-                          SNR: {nb.snr.toFixed(1)} dB
+                        <span className="text-gray-500 text-xs">
+                          {formatSecondsAgo(
+                            Math.max(0, Math.floor(Date.now() / 1000 - nb.lastRxTime)),
+                          )}
                         </span>
+                        <SnrIndicator snr={nb.snr} />
                       </div>
                     );
                   })}

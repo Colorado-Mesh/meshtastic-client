@@ -10,6 +10,8 @@ import { meshcoreEnsureRepeaterRemoteAuthPrompt } from '../lib/meshcoreUtils';
 import type { MeshNode } from '../lib/types';
 import { useCoordFormatStore } from '../stores/coordFormatStore';
 import { useRepeaterSignalStore } from '../stores/repeaterSignalStore';
+import { formatSecondsAgo } from './NodeInfoBody';
+import SnrIndicator from './SnrIndicator';
 import { useToast } from './Toast';
 
 interface ImportResult {
@@ -712,17 +714,9 @@ export default function RepeatersPanel({
                                   <div key={i} className="flex items-center gap-3 text-xs">
                                     <span className="font-mono text-gray-500">{nb.prefixHex}</span>
                                     <span className="text-gray-300">[{name}]</span>
-                                    <span className="text-brand-green">
-                                      SNR: {nb.snr > 0 ? '+' : ''}
-                                      {nb.snr.toFixed(1)} dB
-                                    </span>
+                                    <SnrIndicator snr={nb.snr} />
                                     <span className="text-gray-500">
-                                      Heard:{' '}
-                                      {nb.heardSecondsAgo < 60
-                                        ? `${nb.heardSecondsAgo}s ago`
-                                        : nb.heardSecondsAgo < 3600
-                                          ? `${Math.floor(nb.heardSecondsAgo / 60)}m ago`
-                                          : `${Math.floor(nb.heardSecondsAgo / 3600)}h ago`}
+                                      Heard: {formatSecondsAgo(nb.heardSecondsAgo)}
                                     </span>
                                   </div>
                                 );
