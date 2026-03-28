@@ -2618,7 +2618,8 @@ export function useMeshCore() {
           result.lastSnr * 0.25,
         );
       } catch (e: unknown) {
-        const errMsg = e instanceof Error ? e.message : String(e);
+        const rawErr = e instanceof Error ? e.message : String(e);
+        const errMsg = rawErr && rawErr !== 'undefined' ? rawErr : 'request failed';
         const friendlyErr = errMsg.toLowerCase().includes('timeout')
           ? `Request timed out (~${Math.round(MESHCORE_TRACE_TIMEOUT_MS / 1000)}s)`
           : `Failed: ${errMsg}`;
@@ -2690,7 +2691,8 @@ export function useMeshCore() {
         useRepeaterSignalStore.getState().recordSignal(nodeId, status.lastSnr);
         bumpMeshcoreNodeLastHeardFromRpc(nodeId);
       } catch (e: unknown) {
-        const errMsg = e instanceof Error ? e.message : String(e);
+        const rawErr = e instanceof Error ? e.message : String(e);
+        const errMsg = rawErr && rawErr !== 'undefined' ? rawErr : 'request failed';
         const friendlyErr = errMsg.toLowerCase().includes('timeout')
           ? `Request timed out (~${Math.round(MESHCORE_STATUS_TIMEOUT_MS / 1000)}s)`
           : errMsg.toLowerCase().includes('auth') || errMsg.toLowerCase().includes('login')
@@ -2790,7 +2792,8 @@ export function useMeshCore() {
       }
       console.debug('[useMeshCore] requestTelemetry result:', result);
     } catch (e: unknown) {
-      const errMsg = e instanceof Error ? e.message : String(e);
+      const rawErr = e instanceof Error ? e.message : String(e);
+      const errMsg = rawErr && rawErr !== 'undefined' ? rawErr : 'request failed';
       const friendlyErr = errMsg.toLowerCase().includes('timeout')
         ? `Request timed out (~${Math.round(MESHCORE_TELEMETRY_TIMEOUT_MS / 1000)}s)`
         : errMsg.toLowerCase().includes('auth') || errMsg.toLowerCase().includes('login')
