@@ -73,6 +73,13 @@ const BROADCAST_ID = 0xffffffff >>> 0;
 
 /** TCP/TLS/WSS + MQTT CONNACK window (30s, same as meshcore-mqtt-adapter). */
 const MESHTASTIC_MQTT_CONNECT_ACK_MS = 30_000;
+/** Send WebSocket-level ping frames so LB/proxy idle timers see traffic before the first MQTT PINGREQ. */
+const MESHTASTIC_MQTT_WSS_PING_MS = 25_000;
+/**
+ * Periodic reschedulePing(true) resets mqtt.js KeepaliveManager without waiting for PINGRESP/SUBACK
+ * on proxied WSS paths (LetsMesh broker).
+ */
+const MESHTASTIC_MQTT_RESCHEDULE_MS = 30_000;
 
 export class MQTTManager extends EventEmitter {
   private client: mqtt.MqttClient | null = null;
@@ -85,6 +92,8 @@ export class MQTTManager extends EventEmitter {
   private clientId = '';
   /** Parsed additional PSKs from settings.channelPsks, tried after DEFAULT_PSK. */
   private extraPsks: Buffer[] = [];
+  private wssPingTimer: ReturnType<typeof setInterval> | null = null;
+  private keepaliveRescheduleTimer: ReturnType<typeof setInterval> | null = null;
 
   connect(settings: MQTTSettings): void {
     // Disconnect any existing connection first
@@ -122,6 +131,7 @@ export class MQTTManager extends EventEmitter {
         keepalive: 60,
         connectTimeout: MESHTASTIC_MQTT_CONNECT_ACK_MS,
         reconnectPeriod: 0,
+        protocolVersion: 4, // force MQTT 3.1.1; avoids v5 negotiation issues
         rejectUnauthorized: settings.port === 443 ? true : rejectUnauthorized,
       };
       this.client = mqtt.connect(connectOpts);
@@ -177,6 +187,19 @@ export class MQTTManager extends EventEmitter {
           console.debug('[MQTT] Subscribed to', topic);
         }
       });
+
+      if (settings.useWebSocket) {
+        this.clearWssPing();
+        this.wssPingTimer = setInterval(() => {
+          const s = this.client?.stream as { ping?: () => void } | undefined;
+          try {
+            s?.ping?.();
+          } catch {
+            // catch-no-log-ok ws ping after teardown
+          }
+        }, MESHTASTIC_MQTT_WSS_PING_MS);
+        this.startKeepaliveReschedule();
+      }
     });
 
     this.client.on('message', (topic: string, payload: Buffer | string) => {
@@ -187,13 +210,24 @@ export class MQTTManager extends EventEmitter {
       // Transient network errors will trigger 'close' → our backoff handler; don't
       // flip status to "error" for them — that would hide the "connecting" state.
       const code = String(err.code ?? '');
-      const isTransient =
+      const isCodeTransient =
         code === 'ECONNRESET' ||
         code === 'ECONNREFUSED' ||
         code === 'ETIMEDOUT' ||
         code === 'ENOTFOUND';
+      // mqtt.js emits these with no .code; they're transient broker/proxy conditions.
+      const isMsgTransient =
+        err.message === 'Keepalive timeout' || err.message === 'connack timeout';
+      const isTransient = isCodeTransient || isMsgTransient;
       if (isTransient) {
-        console.warn('[MQTT] Network error (will reconnect):', sanitizeLogMessage(err.message));
+        if (isMsgTransient) {
+          console.warn(
+            '[MQTT] Connection timeout (will reconnect):',
+            sanitizeLogMessage(err.message),
+          );
+        } else {
+          console.warn('[MQTT] Network error (will reconnect):', sanitizeLogMessage(err.message));
+        }
       } else {
         console.error('[MQTT] Fatal connection error:', sanitizeLogMessage(err.message));
         this.setError(err.message);
@@ -201,6 +235,8 @@ export class MQTTManager extends EventEmitter {
     });
 
     this.client.on('close', () => {
+      this.clearWssPing();
+      this.clearKeepaliveReschedule();
       if (this.status === 'disconnected' || !this.currentSettings) return;
 
       const maxRetries = this.currentSettings.maxRetries ?? 5;
@@ -229,6 +265,35 @@ export class MQTTManager extends EventEmitter {
         this.setStatus('connecting');
       }
     });
+  }
+
+  private clearWssPing(): void {
+    if (this.wssPingTimer) {
+      clearInterval(this.wssPingTimer);
+      this.wssPingTimer = null;
+    }
+  }
+
+  private clearKeepaliveReschedule(): void {
+    if (this.keepaliveRescheduleTimer) {
+      clearInterval(this.keepaliveRescheduleTimer);
+      this.keepaliveRescheduleTimer = null;
+    }
+  }
+
+  private startKeepaliveReschedule(): void {
+    this.clearKeepaliveReschedule();
+    this.keepaliveRescheduleTimer = setInterval(() => {
+      if (!this.client?.connected) return;
+      try {
+        this.client.reschedulePing(true);
+      } catch (e) {
+        console.debug(
+          '[MQTT] reschedulePing failed',
+          sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+        );
+      }
+    }, MESHTASTIC_MQTT_RESCHEDULE_MS);
   }
 
   /**
@@ -377,6 +442,8 @@ export class MQTTManager extends EventEmitter {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    this.clearWssPing();
+    this.clearKeepaliveReschedule();
     this.currentSettings = null;
     this.retryCount = 0;
     if (this.client) {

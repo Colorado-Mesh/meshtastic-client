@@ -444,11 +444,19 @@ function loadMeshcoreMqttSettings(): MQTTSettings {
   return parsed ? { ...MESHCORE_MQTT_DEFAULTS, ...parsed } : MESHCORE_MQTT_DEFAULTS;
 }
 
-function MqttGlobeIcon({ connected }: { connected: boolean }) {
+function MqttGlobeIcon({ status }: { status: MQTTStatus }) {
+  const color =
+    status === 'connected'
+      ? 'text-brand-green'
+      : status === 'connecting'
+        ? 'text-yellow-400'
+        : status === 'error'
+          ? 'text-red-400'
+          : 'text-gray-400';
   return (
     <svg
       aria-hidden="true"
-      className={`w-5 h-5 ${connected ? 'text-brand-green' : 'text-gray-400'}`}
+      className={`w-5 h-5 ${color}`}
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -1736,7 +1744,7 @@ export default function ConnectionPanel({
       className={`flex items-center justify-between px-4 py-3 bg-secondary-dark border-b ${mqttStatus === 'connected' ? 'border-brand-green/20' : 'border-gray-700'}`}
     >
       <div className="flex items-center gap-2">
-        <MqttGlobeIcon connected={mqttStatus === 'connected'} />
+        <MqttGlobeIcon status={mqttStatus} />
         <span className="font-medium text-gray-200">MQTT Connection</span>
       </div>
       <span

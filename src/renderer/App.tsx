@@ -46,7 +46,7 @@ import { parseStoredJson } from './lib/parseStoredJson';
 import { useRadioProvider } from './lib/radio/providerFactory';
 import { getStoredMeshProtocol, MESH_PROTOCOL_STORAGE_KEY } from './lib/storedMeshProtocol';
 import { applyThemeColors, loadThemeColors } from './lib/themeColors';
-import type { ChatMessage, MeshProtocol, MQTTSettings } from './lib/types';
+import type { ChatMessage, MeshProtocol, MQTTSettings, MQTTStatus } from './lib/types';
 import { useDiagnosticsStore } from './stores/diagnosticsStore';
 
 // Tabs (0-indexed) that are disabled in MeshCore mode
@@ -143,10 +143,18 @@ function PanelSkeleton() {
   );
 }
 
-function MqttGlobeIcon({ connected }: { connected: boolean }) {
+function MqttGlobeIcon({ status }: { status: MQTTStatus }) {
+  const color =
+    status === 'connected'
+      ? 'text-brand-green'
+      : status === 'connecting'
+        ? 'text-yellow-400'
+        : status === 'error'
+          ? 'text-red-400'
+          : 'text-gray-400';
   return (
     <svg
-      className={`w-4 h-4 ${connected ? 'text-brand-green' : 'text-gray-400'}`}
+      className={`w-4 h-4 ${color}`}
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -730,14 +738,20 @@ export default function App() {
 
           <div className="flex min-w-0 shrink-0 items-center justify-end gap-2 xl:justify-self-end">
             <div className="flex items-center gap-1.5 mr-3 pr-3 border-r border-gray-700">
-              <MqttGlobeIcon connected={device.mqttStatus === 'connected'} />
+              <MqttGlobeIcon status={device.mqttStatus ?? 'disconnected'} />
               <span
-                aria-label={
-                  device.mqttStatus === 'connected' ? 'MQTT connected' : 'MQTT disconnected'
-                }
-                className={`text-xs ${device.mqttStatus === 'connected' ? 'text-brand-green' : 'text-gray-500'}`}
+                aria-label={`MQTT ${device.mqttStatus ?? 'disconnected'}`}
+                className={`text-xs ${
+                  device.mqttStatus === 'connected'
+                    ? 'text-brand-green'
+                    : device.mqttStatus === 'connecting'
+                      ? 'text-yellow-400 animate-pulse'
+                      : device.mqttStatus === 'error'
+                        ? 'text-red-400'
+                        : 'text-gray-500'
+                }`}
               >
-                MQTT {device.mqttStatus === 'connected' ? 'connected' : 'disconnected'}
+                MQTT {device.mqttStatus ?? 'disconnected'}
               </span>
             </div>
             {isConnectedOrOperational && <LinkIcon className="w-4 h-4" aria-hidden="true" />}
@@ -749,7 +763,15 @@ export default function App() {
             <div role="status" aria-live="polite" aria-atomic="true">
               <span
                 aria-label={`${device.state.status}${device.state.connectionType ? ` (${device.state.connectionType.toUpperCase()})` : ''}`}
-                className="text-sm text-muted capitalize"
+                className={`text-sm capitalize ${
+                  device.state.status === 'connecting'
+                    ? 'text-yellow-400 animate-pulse'
+                    : device.state.status === 'stale'
+                      ? 'text-yellow-400 animate-pulse'
+                      : device.state.status === 'reconnecting'
+                        ? 'text-orange-400 animate-pulse'
+                        : 'text-muted'
+                }`}
               >
                 {device.state.status}
                 {device.state.connectionType
