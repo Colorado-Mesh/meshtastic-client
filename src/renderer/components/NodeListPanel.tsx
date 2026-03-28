@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import type { LocationFilter } from '../App';
+import { formatCoordColumns } from '../lib/coordUtils';
 import { getRoutingRowForNode } from '../lib/diagnostics/diagnosticRows';
 import { snrMeaningfulForNodeDiagnostics } from '../lib/diagnostics/snrMeaningfulForNodeDiagnostics';
 import { getNodeStatus, haversineDistanceKm, normalizeLastHeardMs } from '../lib/nodeStatus';
 import { RoleDisplay } from '../lib/roleInfo';
 import type { MeshNode } from '../lib/types';
+import { useCoordFormatStore } from '../stores/coordFormatStore';
 import { useDiagnosticsStore } from '../stores/diagnosticsStore';
 import SignalBars from './SignalBars';
 
@@ -106,6 +108,7 @@ export default function NodeListPanel({
   onToggleFavorite,
   mode = 'meshtastic',
 }: Props) {
+  const coordinateFormat = useCoordFormatStore((s) => s.coordinateFormat);
   const diagnosticRows = useDiagnosticsStore((s) => s.diagnosticRows);
   const ignoreMqttEnabled = useDiagnosticsStore((s) => s.ignoreMqttEnabled);
   const nodeRedundancy = useDiagnosticsStore((s) => s.nodeRedundancy);
@@ -306,11 +309,6 @@ export default function NodeListPanel({
     return new Date(normalizedTs).toLocaleDateString();
   }
 
-  function formatCoord(val: number | null | undefined): string {
-    if (val == null || val === 0) return '-';
-    return val.toFixed(4);
-  }
-
   return (
     <div className="flex flex-col min-h-0 h-full gap-3">
       <div className="flex justify-between items-center gap-3 shrink-0">
@@ -488,20 +486,23 @@ export default function NodeListPanel({
                   handleSort('latitude');
                 }}
               >
-                Lat <SortIcon field="latitude" sortField={sortField} sortAsc={sortAsc} />
+                {coordinateFormat === 'mgrs' ? 'MGRS' : 'Lat'}{' '}
+                <SortIcon field="latitude" sortField={sortField} sortAsc={sortAsc} />
               </th>
-              <th
-                scope="col"
-                aria-sort={
-                  sortField === 'longitude' ? (sortAsc ? 'ascending' : 'descending') : 'none'
-                }
-                className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
-                onClick={() => {
-                  handleSort('longitude');
-                }}
-              >
-                Lon <SortIcon field="longitude" sortField={sortField} sortAsc={sortAsc} />
-              </th>
+              {coordinateFormat !== 'mgrs' && (
+                <th
+                  scope="col"
+                  aria-sort={
+                    sortField === 'longitude' ? (sortAsc ? 'ascending' : 'descending') : 'none'
+                  }
+                  className="px-3 py-2 text-right cursor-pointer hover:text-gray-200 transition-colors select-none"
+                  onClick={() => {
+                    handleSort('longitude');
+                  }}
+                >
+                  Lon <SortIcon field="longitude" sortField={sortField} sortAsc={sortAsc} />
+                </th>
+              )}
               {mode !== 'meshcore' && (
                 <>
                   <th
@@ -618,7 +619,10 @@ export default function NodeListPanel({
           <tbody className="divide-y divide-gray-700/50">
             {nodeList.length === 0 ? (
               <tr>
-                <td colSpan={mode === 'meshcore' ? 9 : 19} className="text-center text-muted py-8">
+                <td
+                  colSpan={(mode === 'meshcore' ? 9 : 19) - (coordinateFormat === 'mgrs' ? 1 : 0)}
+                  className="text-center text-muted py-8"
+                >
                   {searchQuery
                     ? 'No nodes match your search.'
                     : 'No nodes discovered yet. Connect to a device to see the mesh network.'}
@@ -789,12 +793,25 @@ export default function NodeListPanel({
                         )}
                       </td>
                     )}
-                    <td className="px-3 py-2 text-right font-mono text-xs text-muted">
-                      {formatCoord(node.latitude)}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono text-xs text-muted">
-                      {formatCoord(node.longitude)}
-                    </td>
+                    {(() => {
+                      const { latCell, lonCell } = formatCoordColumns(
+                        node.latitude,
+                        node.longitude,
+                        coordinateFormat,
+                      );
+                      return (
+                        <>
+                          <td className="px-3 py-2 text-right font-mono text-xs text-muted">
+                            {latCell}
+                          </td>
+                          {coordinateFormat !== 'mgrs' && (
+                            <td className="px-3 py-2 text-right font-mono text-xs text-muted">
+                              {lonCell}
+                            </td>
+                          )}
+                        </>
+                      );
+                    })()}
                     {mode !== 'meshcore' && (
                       <>
                         <td className="px-3 py-2 text-right">

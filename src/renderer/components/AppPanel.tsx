@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { LocationFilter } from '../App';
+import { formatCoordPair } from '../lib/coordUtils';
 import { DEFAULT_ADMIN_SETTINGS_SHARED } from '../lib/defaultAdminSettings';
 import type { OurPosition } from '../lib/gpsSource';
 import { haversineDistanceKm } from '../lib/nodeStatus';
@@ -16,6 +17,7 @@ import {
   type ThemeColorKey,
 } from '../lib/themeColors';
 import type { MeshNode, MeshProtocol } from '../lib/types';
+import { useCoordFormatStore } from '../stores/coordFormatStore';
 import { useDiagnosticsStore } from '../stores/diagnosticsStore';
 import { usePositionHistoryStore } from '../stores/positionHistoryStore';
 import { useToast } from './Toast';
@@ -100,6 +102,7 @@ interface AdminSettings {
   distanceFilterEnabled: boolean;
   distanceFilterMax: number;
   distanceUnit: 'miles' | 'km';
+  coordinateFormat: 'decimal' | 'mgrs';
   filterMqttOnly: boolean;
   messageLimitEnabled: boolean;
   messageLimitCount: number;
@@ -172,6 +175,7 @@ export default function AppPanel({
   const historyWindowHours = usePositionHistoryStore((s) => s.historyWindowHours);
   const setHistoryWindow = usePositionHistoryStore((s) => s.setHistoryWindow);
   const clearHistory = usePositionHistoryStore((s) => s.clearHistory);
+  const coordinateFormat = useCoordFormatStore((s) => s.coordinateFormat);
 
   // ─── Node retention settings ────────────────────────────────
   const [settings, setSettings] = useState<AdminSettings>(loadSettings);
@@ -441,12 +445,12 @@ export default function AppPanel({
           {ourPosition && (
             <p className="text-xs text-brand-green">
               {ourPosition.source === 'device'
-                ? `Device GPS: ${ourPosition.lat.toFixed(5)}, ${ourPosition.lon.toFixed(5)}`
+                ? `Device GPS: ${formatCoordPair(ourPosition.lat, ourPosition.lon, coordinateFormat)}`
                 : ourPosition.source === 'static'
-                  ? `Static position: ${ourPosition.lat.toFixed(5)}, ${ourPosition.lon.toFixed(5)}`
+                  ? `Static position: ${formatCoordPair(ourPosition.lat, ourPosition.lon, coordinateFormat)}`
                   : ourPosition.source === 'browser'
-                    ? `Browser location: ${ourPosition.lat.toFixed(5)}, ${ourPosition.lon.toFixed(5)}`
-                    : `IP location (city-level): ${ourPosition.lat.toFixed(5)}, ${ourPosition.lon.toFixed(5)}`}
+                    ? `Browser location: ${formatCoordPair(ourPosition.lat, ourPosition.lon, coordinateFormat)}`
+                    : `IP location (city-level): ${formatCoordPair(ourPosition.lat, ourPosition.lon, coordinateFormat)}`}
             </p>
           )}
           {!ourPosition && <p className="text-xs text-muted">No GPS position resolved yet.</p>}
@@ -539,6 +543,25 @@ export default function AppPanel({
               Auto-refresh is disabled while a static position is active.
             </p>
           )}
+          <div className="flex items-center gap-2">
+            <label htmlFor="apppanel-coord-format" className="text-sm text-gray-300 flex-1">
+              Coordinate format:
+            </label>
+            <select
+              id="apppanel-coord-format"
+              value={settings.coordinateFormat}
+              onChange={(e) => {
+                const fmt = e.target.value as 'decimal' | 'mgrs';
+                updateSetting('coordinateFormat', fmt);
+                useCoordFormatStore.getState().setCoordinateFormat(fmt);
+              }}
+              aria-label={`Coordinate format: ${settings.coordinateFormat === 'mgrs' ? 'MGRS' : 'Decimal Degrees'}`}
+              className="px-2 py-1 bg-deep-black border border-gray-600 rounded text-gray-200 text-sm focus:border-brand-green focus:outline-none"
+            >
+              <option value="decimal">Decimal Degrees</option>
+              <option value="mgrs">MGRS</option>
+            </select>
+          </div>
           <button
             onClick={() => onRefreshGps?.()}
             disabled={gpsLoading}

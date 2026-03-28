@@ -11,4 +11,5 @@ export const DEFAULT_ADMIN_SETTINGS_SHARED = {
   distanceFilterEnabled: false,
   distanceFilterMax: 500,
   distanceUnit: 'miles' as const,
+  coordinateFormat: 'decimal' as const,
 };

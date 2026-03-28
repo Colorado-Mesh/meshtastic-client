@@ -5,8 +5,10 @@ import type {
   MeshCoreNodeTelemetry,
   MeshCoreRepeaterStatus,
 } from '../hooks/useMeshCore';
+import { formatCoordPair } from '../lib/coordUtils';
 import { meshcoreEnsureRepeaterRemoteAuthPrompt } from '../lib/meshcoreUtils';
 import type { MeshNode, MeshProtocol, NeighborInfoRecord } from '../lib/types';
+import { useCoordFormatStore } from '../stores/coordFormatStore';
 import { useDiagnosticsStore } from '../stores/diagnosticsStore';
 import NodeInfoBody from './NodeInfoBody';
 
@@ -58,6 +60,7 @@ export default function NodeDetailModal({
   meshcoreNeighbors,
   onRequestNeighbors,
 }: NodeDetailModalProps) {
+  const coordinateFormat = useCoordFormatStore((s) => s.coordinateFormat);
   const [actionStatus, setActionStatus] = useState<string | null>(null);
   const [repeaterStatusPending, setRepeaterStatusPending] = useState(false);
   const [showRepeaterStats, setShowRepeaterStats] = useState(false);
@@ -367,8 +370,11 @@ export default function NodeDetailModal({
                   <>
                     <div className="text-muted">GPS</div>
                     <div className="font-mono text-gray-200">
-                      {meshcoreNodeTelemetry.gps.latitude.toFixed(5)},{' '}
-                      {meshcoreNodeTelemetry.gps.longitude.toFixed(5)}
+                      {formatCoordPair(
+                        meshcoreNodeTelemetry.gps.latitude,
+                        meshcoreNodeTelemetry.gps.longitude,
+                        coordinateFormat,
+                      )}
                     </div>
                   </>
                 )}

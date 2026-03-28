@@ -1,5 +1,6 @@
 import { useState } from 'react';
 
+import { formatCoordPair } from '../lib/coordUtils';
 import {
   diagnosticRowsToRoutingMap,
   getRoutingRowForNode,
@@ -21,6 +22,7 @@ import { normalizeLastHeardMs } from '../lib/nodeStatus';
 import { RoleDisplay } from '../lib/roleInfo';
 import type { HopHistoryPoint, MeshNode, MeshProtocol, NodeAnomaly } from '../lib/types';
 import { routingRowToNodeAnomaly } from '../lib/types';
+import { useCoordFormatStore } from '../stores/coordFormatStore';
 import { useDiagnosticsStore } from '../stores/diagnosticsStore';
 import MeshCongestionAttributionBlock from './MeshCongestionAttributionBlock';
 
@@ -98,6 +100,7 @@ export default function NodeInfoBody({
   useFahrenheit = false,
   protocol = 'meshtastic',
 }: NodeInfoBodyProps) {
+  const coordinateFormat = useCoordFormatStore((s) => s.coordinateFormat);
   const diagnosticRows = useDiagnosticsStore((s) => s.diagnosticRows);
   const routingRow = getRoutingRowForNode(diagnosticRows, node.node_id);
   const anomaly: NodeAnomaly | null = routingRow ? routingRowToNodeAnomaly(routingRow) : null;
@@ -262,7 +265,7 @@ export default function NodeInfoBody({
         (node.latitude !== 0 || node.longitude !== 0) && (
           <InfoRow
             label="Position"
-            value={`${node.latitude.toFixed(5)}, ${node.longitude.toFixed(5)}`}
+            value={formatCoordPair(node.latitude, node.longitude, coordinateFormat)}
             className="text-gray-300 font-mono text-xs"
           />
         )}

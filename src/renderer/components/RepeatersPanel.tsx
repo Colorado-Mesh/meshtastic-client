@@ -5,8 +5,10 @@ import type {
   MeshCoreNodeTelemetry,
   MeshCoreRepeaterStatus,
 } from '../hooks/useMeshCore';
+import { formatCoordPair } from '../lib/coordUtils';
 import { meshcoreEnsureRepeaterRemoteAuthPrompt } from '../lib/meshcoreUtils';
 import type { MeshNode } from '../lib/types';
+import { useCoordFormatStore } from '../stores/coordFormatStore';
 import { useRepeaterSignalStore } from '../stores/repeaterSignalStore';
 import { useToast } from './Toast';
 
@@ -127,6 +129,7 @@ export default function RepeatersPanel({
   onSelectRepeater,
 }: Props) {
   const { addToast } = useToast();
+  const coordinateFormat = useCoordFormatStore((s) => s.coordinateFormat);
   const signalHistory = useRepeaterSignalStore((s) => s.history);
   const [statusLoadingSet, setStatusLoadingSet] = useState<Set<number>>(new Set());
   const [pingLoadingSet, setPingLoadingSet] = useState<Set<number>>(new Set());
@@ -757,8 +760,12 @@ export default function RepeatersPanel({
                             )}
                             {telemetryData.gps && (
                               <span className="text-green-300">
-                                GPS: {telemetryData.gps.latitude.toFixed(4)}°,{' '}
-                                {telemetryData.gps.longitude.toFixed(4)}°
+                                GPS:{' '}
+                                {formatCoordPair(
+                                  telemetryData.gps.latitude,
+                                  telemetryData.gps.longitude,
+                                  coordinateFormat,
+                                )}
                                 {telemetryData.gps.altitude
                                   ? ` alt ${telemetryData.gps.altitude}m`
                                   : ''}

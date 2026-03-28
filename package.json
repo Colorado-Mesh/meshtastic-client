@@ -122,6 +122,7 @@
   "dependencies": {
     "@stoprocent/noble": "^2.3.17",
     "electron-updater": "^6.8.3",
+    "mgrs": "^2.1.0",
     "systeminformation": "^5.25.0"
   }
 }

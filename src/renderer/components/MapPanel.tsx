@@ -14,12 +14,14 @@ import {
 } from 'react-leaflet';
 
 import type { LocationFilter } from '../App';
+import { formatCoordPair } from '../lib/coordUtils';
 import { getRoutingRowForNode, routingAnomalyNodeIds } from '../lib/diagnostics/diagnosticRows';
 import { escapeSvgAttr } from '../lib/escapeSvg';
 import type { OurPosition } from '../lib/gpsSource';
 import { getNodeStatus, haversineDistanceKm } from '../lib/nodeStatus';
 import type { MeshNode, MeshProtocol, MeshWaypoint, NodeAnomaly } from '../lib/types';
 import { routingRowToNodeAnomaly } from '../lib/types';
+import { useCoordFormatStore } from '../stores/coordFormatStore';
 import { useDiagnosticsStore } from '../stores/diagnosticsStore';
 import { useMapViewportStore } from '../stores/mapViewportStore';
 import { usePositionHistoryStore } from '../stores/positionHistoryStore';
@@ -540,6 +542,7 @@ export default function MapPanel({
   const diagnosticRows = useDiagnosticsStore((s) => s.diagnosticRows);
   const routingNodeIds = useMemo(() => routingAnomalyNodeIds(diagnosticRows), [diagnosticRows]);
 
+  const coordinateFormat = useCoordFormatStore((s) => s.coordinateFormat);
   const positionHistory = usePositionHistoryStore((s) => s.history);
   const showPaths = usePositionHistoryStore((s) => s.showPaths);
   const loadHistoryFromDb = usePositionHistoryStore((s) => s.loadHistoryFromDb);
@@ -800,7 +803,7 @@ export default function MapPanel({
                   <div className="font-medium text-gray-100 text-sm">{wp.name || 'Waypoint'}</div>
                   {wp.description && <div className="text-xs text-gray-400">{wp.description}</div>}
                   <div className="text-xs text-gray-500 font-mono">
-                    {wp.latitude.toFixed(5)}, {wp.longitude.toFixed(5)}
+                    {formatCoordPair(wp.latitude, wp.longitude, coordinateFormat)}
                   </div>
                   {onDeleteWaypoint && (
                     <button
