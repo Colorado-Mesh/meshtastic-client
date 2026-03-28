@@ -1096,7 +1096,7 @@ export function useMeshCore() {
             node_id: myNodeId,
             long_name: displayLongName,
             short_name: displayShortName,
-            hw_model: 'Unknown',
+            hw_model: CONTACT_TYPE_LABELS[self.type] ?? 'Unknown',
             battery: 0,
             snr: 0,
             rssi: 0,
@@ -2463,7 +2463,7 @@ export function useMeshCore() {
                 node_id: selfNodeId,
                 long_name: trimmedName || `Node-${selfNodeId.toString(16).toUpperCase()}`,
                 short_name: '',
-                hw_model: 'Unknown',
+                hw_model: CONTACT_TYPE_LABELS[selfInfo?.type ?? 0] ?? 'Unknown',
                 battery: 0,
                 snr: 0,
                 rssi: 0,
@@ -2488,7 +2488,7 @@ export function useMeshCore() {
         throw err;
       }
     },
-    [selfInfo?.name],
+    [selfInfo?.name, selfInfo?.type],
   );
 
   const traceRoute = useCallback(async (nodeId: number) => {
