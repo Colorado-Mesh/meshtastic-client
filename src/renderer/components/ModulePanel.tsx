@@ -264,6 +264,21 @@ export default function ModulePanel({
   const [paxEnabled, setPaxEnabled] = useState<boolean>(paxCfg.enabled ?? false);
   const [paxInterval, setPaxInterval] = useState<number>(paxCfg.paxcounterUpdateInterval ?? 0);
 
+  // ─── Ambient Lighting module ───────────────────────────────────
+  const ambientCfg = (moduleConfigs.ambientLighting as any) ?? {};
+  const [ambientLedState, setAmbientLedState] = useState<boolean>(ambientCfg.ledState ?? false);
+  const [ambientRed, setAmbientRed] = useState<number>(ambientCfg.red ?? 0);
+  const [ambientGreen, setAmbientGreen] = useState<number>(ambientCfg.green ?? 0);
+  const [ambientBlue, setAmbientBlue] = useState<number>(ambientCfg.blue ?? 0);
+  const [ambientCurrent, setAmbientCurrent] = useState<number>(ambientCfg.current ?? 10);
+
+  const ambientHex = `#${[ambientRed, ambientGreen, ambientBlue].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+  const handleAmbientColorChange = (hex: string) => {
+    setAmbientRed(parseInt(hex.slice(1, 3), 16));
+    setAmbientGreen(parseInt(hex.slice(3, 5), 16));
+    setAmbientBlue(parseInt(hex.slice(5, 7), 16));
+  };
+
   const applyModule = async (sectionName: string, moduleCase: string, value: unknown) => {
     setApplyingSection(sectionName);
     try {
@@ -653,6 +668,69 @@ export default function ModulePanel({
           unit="seconds"
           description="How far back in time to return messages (seconds)."
         />
+      </ModuleSection>
+
+      {/* ═══ Ambient Lighting Module ═══ */}
+      <ModuleSection
+        title="Ambient Lighting Module"
+        onApply={() =>
+          applyModule('Ambient Lighting', 'ambientLighting', {
+            ledState: ambientLedState,
+            red: ambientRed,
+            green: ambientGreen,
+            blue: ambientBlue,
+            current: ambientCurrent,
+          })
+        }
+        applying={applyingSection === 'Ambient Lighting'}
+        disabled={disabled}
+      >
+        <ConfigToggle
+          label="LED enabled"
+          checked={ambientLedState}
+          onChange={setAmbientLedState}
+          disabled={disabled}
+          description="Turn the onboard RGB LED on or off."
+        />
+        <div className="space-y-1">
+          <label htmlFor="module-ambient-color" className="text-sm text-muted">
+            Color
+          </label>
+          <div className="flex items-center gap-3">
+            <input
+              id="module-ambient-color"
+              type="color"
+              value={ambientHex}
+              onChange={(e) => {
+                handleAmbientColorChange(e.target.value);
+              }}
+              disabled={disabled || !ambientLedState}
+              className="h-9 w-16 cursor-pointer rounded border border-gray-600 bg-secondary-dark p-0.5 disabled:opacity-50"
+            />
+            <span className="font-mono text-sm text-gray-400">{ambientHex.toUpperCase()}</span>
+            <span className="text-xs text-muted">
+              R:{ambientRed} G:{ambientGreen} B:{ambientBlue}
+            </span>
+          </div>
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="module-ambient-current" className="text-sm text-muted">
+            Brightness / current: {ambientCurrent}
+          </label>
+          <input
+            id="module-ambient-current"
+            type="range"
+            min={0}
+            max={31}
+            value={ambientCurrent}
+            onChange={(e) => {
+              setAmbientCurrent(Number(e.target.value));
+            }}
+            disabled={disabled || !ambientLedState}
+            className="w-full accent-readable-green disabled:opacity-50"
+          />
+          <p className="text-xs text-muted">LED drive current (0–31). Higher = brighter.</p>
+        </div>
       </ModuleSection>
 
       {/* ═══ Telemetry Module ═══ */}
