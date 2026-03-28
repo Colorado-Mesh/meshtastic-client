@@ -202,9 +202,14 @@ export default function SecurityPanel({
 
   // Check safeStorage availability and backup presence on mount
   useEffect(() => {
-    void window.electronAPI.safeStorage.isAvailable().then((available) => {
-      setSafeStorageAvailable(available);
-    });
+    void window.electronAPI.safeStorage
+      .isAvailable()
+      .then((available) => {
+        setSafeStorageAvailable(available);
+      })
+      .catch(() => {
+        setSafeStorageAvailable(false);
+      });
     setBackupAvailable(localStorage.getItem(KEY_BACKUP_STORAGE_KEY) !== null);
   }, []);
 
@@ -236,7 +241,7 @@ export default function SecurityPanel({
       });
       addToast('Key regeneration requested. Device will generate new keys.', 'success');
     } catch (err) {
-      console.debug('[SecurityPanel] handleRegenerate', err);
+      console.warn('[SecurityPanel] handleRegenerate', err);
       addToast(`Failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
     } finally {
       setApplyingRegen(false);
@@ -258,7 +263,7 @@ export default function SecurityPanel({
       await applyConfig({ adminKey: parsed });
       addToast('Admin keys applied.', 'success');
     } catch (err) {
-      console.debug('[SecurityPanel] handleApplyAdminKeys', err);
+      console.warn('[SecurityPanel] handleApplyAdminKeys', err);
       addToast(`Failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
     } finally {
       setApplyingAdmin(false);
@@ -272,7 +277,7 @@ export default function SecurityPanel({
       await applyConfig({ isManaged, serialEnabled, debugLogApiEnabled, adminChannelEnabled });
       addToast('Administration settings applied.', 'success');
     } catch (err) {
-      console.debug('[SecurityPanel] handleApplyToggles', err);
+      console.warn('[SecurityPanel] handleApplyToggles', err);
       addToast(`Failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
     } finally {
       setApplyingToggles(false);
@@ -294,7 +299,7 @@ export default function SecurityPanel({
       setBackupAvailable(true);
       addToast('Keys backed up to system keychain.', 'success');
     } catch (err) {
-      console.debug('[SecurityPanel] handleBackup', err);
+      console.warn('[SecurityPanel] handleBackup', err);
       addToast(`Backup failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
     } finally {
       setBackupInProgress(false);
@@ -316,7 +321,7 @@ export default function SecurityPanel({
       await applyConfig({ publicKey, privateKey });
       addToast('Keys restored from backup.', 'success');
     } catch (err) {
-      console.debug('[SecurityPanel] handleRestore', err);
+      console.warn('[SecurityPanel] handleRestore', err);
       addToast(`Restore failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
     } finally {
       setBackupInProgress(false);

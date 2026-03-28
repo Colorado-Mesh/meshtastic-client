@@ -8,6 +8,7 @@ export interface PendingCommand {
   path: Uint8Array[];
   retryCount: number;
   maxRetries: number;
+  timerId: ReturnType<typeof setTimeout>;
 }
 
 export interface CliHistoryEntry {
@@ -89,6 +90,12 @@ export class RepeaterCommandService {
       reject = rej;
     });
 
+    const timerId = setTimeout(() => {
+      if (this.pendingCommands.delete(token)) {
+        reject(new Error(`CLI command timed out after ${timeoutMs}ms`));
+      }
+    }, timeoutMs);
+
     const pending: PendingCommand = {
       command,
       token,
@@ -99,6 +106,7 @@ export class RepeaterCommandService {
       path,
       retryCount: 0,
       maxRetries,
+      timerId,
     };
 
     this.pendingCommands.set(token, pending);
@@ -112,6 +120,7 @@ export class RepeaterCommandService {
     const pending = this.pendingCommands.get(token);
     if (!pending) return false;
 
+    clearTimeout(pending.timerId);
     this.pendingCommands.delete(token);
     pending.resolve(body);
     return true;
@@ -123,6 +132,7 @@ export class RepeaterCommandService {
 
     pending.retryCount++;
     if (pending.retryCount >= pending.maxRetries) {
+      clearTimeout(pending.timerId);
       this.pendingCommands.delete(token);
       pending.reject(error);
       return true;
@@ -139,18 +149,14 @@ export class RepeaterCommandService {
     return this.pendingCommands.has(token);
   }
 
+  /** @deprecated Timeouts are now self-managed via internal setTimeout in registerPendingCommand. */
   clearTimeouts(): void {
-    const now = Date.now();
-    for (const [token, pending] of this.pendingCommands) {
-      if (now - pending.sentAt > pending.timeoutMs) {
-        this.pendingCommands.delete(token);
-        pending.reject(new Error(`CLI command timed out after ${pending.timeoutMs}ms`));
-      }
-    }
+    // no-op: each pending command self-rejects via its own setTimeout
   }
 
   clear(): void {
     for (const pending of this.pendingCommands.values()) {
+      clearTimeout(pending.timerId);
       pending.reject(new Error('CLI command cancelled'));
     }
     this.pendingCommands.clear();

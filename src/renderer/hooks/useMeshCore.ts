@@ -1428,6 +1428,12 @@ export function useMeshCore() {
               );
               return;
             }
+          } else {
+            console.warn(
+              '[useMeshCore] event 7: CLI response received but no command service active (sender:',
+              senderId.toString(16).toUpperCase(),
+              ')',
+            );
           }
           // CLI response without matching pending command - log and add to history
           console.debug(

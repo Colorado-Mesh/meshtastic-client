@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ContactGroup } from '../../shared/electron-api.types';
 import { isMeshcoreContactEligibleForUserGroup } from '../lib/meshcoreUtils';
 import type { MeshNode } from '../lib/types';
+import { useToast } from './Toast';
 
 interface ContactGroupsModalProps {
   groups: ContactGroup[];
@@ -32,6 +33,7 @@ export default function ContactGroupsModal({
   memberIds,
 }: ContactGroupsModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const { addToast } = useToast();
 
   // Group list state
   const [newGroupName, setNewGroupName] = useState('');
@@ -125,8 +127,13 @@ export default function ContactGroupsModal({
   }
 
   async function handleOpenMembers(group: ContactGroup) {
-    await onLoadMembers(group.group_id);
-    setManagingGroup(group);
+    try {
+      await onLoadMembers(group.group_id);
+      setManagingGroup(group);
+    } catch (e) {
+      console.warn('[ContactGroupsModal] loadMembers failed:', e);
+      addToast(`Failed to load members: ${e instanceof Error ? e.message : String(e)}`, 'error');
+    }
   }
 
   async function handleToggleMember(contactNodeId: number) {
@@ -138,6 +145,9 @@ export default function ContactGroupsModal({
       } else {
         await onAddMember(managingGroup.group_id, contactNodeId);
       }
+    } catch (e) {
+      console.warn('[ContactGroupsModal] toggleMember failed:', e);
+      addToast(`Failed to update member: ${e instanceof Error ? e.message : String(e)}`, 'error');
     } finally {
       setBusy(false);
     }

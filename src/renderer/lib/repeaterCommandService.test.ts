@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   type CliHistoryEntry,
@@ -195,6 +195,72 @@ describe('RepeaterCommandService', () => {
       // Suppress unhandled rejection warning
       promise.catch(() => {});
       service.clear();
+      await expect(promise).rejects.toThrow('CLI command cancelled');
+    });
+  });
+
+  describe('handleError', () => {
+    it('should increment retry count and return false when under maxRetries', () => {
+      const { token } = service.registerPendingCommand('cmd', [], { maxRetries: 3 });
+      const rejected = service.handleError(token, new Error('nack'));
+      expect(rejected).toBe(false);
+      expect(service.getPendingCommand(token)?.retryCount).toBe(1);
+    });
+
+    it('should reject and remove pending command when maxRetries is reached', async () => {
+      const { token, promise } = service.registerPendingCommand('cmd', [], { maxRetries: 2 });
+      promise.catch(() => {});
+
+      service.handleError(token, new Error('nack'));
+      expect(service.hasPendingCommand(token)).toBe(true);
+
+      const rejected = service.handleError(token, new Error('nack'));
+      expect(rejected).toBe(true);
+      expect(service.hasPendingCommand(token)).toBe(false);
+      await expect(promise).rejects.toThrow('nack');
+    });
+
+    it('should return false for unknown token', () => {
+      const rejected = service.handleError('FF', new Error('nack'));
+      expect(rejected).toBe(false);
+    });
+  });
+
+  describe('internal timeout', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('should auto-reject promise after timeoutMs', async () => {
+      const { promise } = service.registerPendingCommand('cmd', [], { timeoutMs: 1000 });
+      promise.catch(() => {});
+
+      vi.advanceTimersByTime(1001);
+      await expect(promise).rejects.toThrow('CLI command timed out after 1000ms');
+    });
+
+    it('should not fire timeout after handleResponse resolves the command', async () => {
+      const { token, promise } = service.registerPendingCommand('cmd', [], { timeoutMs: 1000 });
+      service.handleResponse(`${token}|ok`);
+      await promise;
+
+      // Advancing past timeout should not throw a second time
+      vi.advanceTimersByTime(2000);
+      // promise is already resolved — no additional rejection
+      await expect(promise).resolves.toBe('ok');
+    });
+
+    it('should cancel timer on clear()', async () => {
+      const { promise } = service.registerPendingCommand('cmd', [], { timeoutMs: 1000 });
+      promise.catch(() => {});
+      service.clear();
+
+      // Advancing past timeout should not cause a second rejection
+      vi.advanceTimersByTime(2000);
       await expect(promise).rejects.toThrow('CLI command cancelled');
     });
   });

@@ -248,6 +248,7 @@ export default function RepeatersPanel({
       await onRequestRepeaterStatus(nodeId);
     } catch (e) {
       console.warn('[RepeatersPanel] requestRepeaterStatus error', e);
+      addToast(`Status failed: ${e instanceof Error ? e.message : String(e)}`, 'error');
     } finally {
       setStatusLoadingSet((prev) => {
         const next = new Set(prev);
@@ -263,6 +264,7 @@ export default function RepeatersPanel({
       await onPing(nodeId);
     } catch (e) {
       console.warn('[RepeatersPanel] ping error', e);
+      addToast(`Ping failed: ${e instanceof Error ? e.message : String(e)}`, 'error');
     } finally {
       setPingLoadingSet((prev) => {
         const next = new Set(prev);
@@ -373,12 +375,13 @@ export default function RepeatersPanel({
       return;
     }
     if (!(await ensureConfigured())) return;
-    setExpandedTelemetry((prev) => new Set([...prev, nodeId]));
     setTelemetryLoadingSet((prev) => new Set([...prev, nodeId]));
     try {
       await onRequestTelemetry?.(nodeId);
+      setExpandedTelemetry((prev) => new Set([...prev, nodeId]));
     } catch (e) {
       console.warn('[RepeatersPanel] requestTelemetry error', e);
+      addToast(`Telemetry failed: ${e instanceof Error ? e.message : String(e)}`, 'error');
     } finally {
       setTelemetryLoadingSet((prev) => {
         const n = new Set(prev);
