@@ -540,6 +540,11 @@ interface MeshCoreConnection {
   setOtherParams(manualAddContacts: boolean): Promise<void>;
   setAutoAddContacts(): Promise<void>;
   setManualAddContacts(): Promise<void>;
+  deviceQuery(appTargetVer: number): Promise<{
+    firmwareVer: number;
+    firmware_build_date: string;
+    manufacturerModel: string;
+  }>;
 }
 
 async function meshcoreTryRepeaterLogin(
@@ -1551,6 +1556,15 @@ export function useMeshCore() {
       setState((prev) => ({ ...prev, myNodeNum: myNodeId, status: 'configured' }));
       if (getStoredMeshProtocol() === 'meshcore') {
         useDiagnosticsStore.getState().migrateForeignLoraFromZero(myNodeId);
+      }
+
+      try {
+        const deviceInfo = await conn.deviceQuery(0);
+        if (deviceInfo?.firmware_build_date) {
+          setState((prev) => ({ ...prev, firmwareVersion: deviceInfo.firmware_build_date }));
+        }
+      } catch (e) {
+        console.debug('[useMeshCore] deviceQuery failed (firmware version unavailable):', e);
       }
 
       const contacts = await awaitUnlessMeshcoreSetupCancelled(

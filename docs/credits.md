@@ -14,6 +14,15 @@ megabear - KD5IHC created the icon
 
 Thanks to the [Colorado Mesh](https://coloradomesh.org) community for fostering open-source Meshtastic development in Colorado.
 
+## Acknowledgements
+
+After creating the initial application, we were inspired by features from these projects:
+
+- [Meshtastic](https://github.com/meshtastic) — Open-source, off-grid mesh communication ecosystem
+- [MeshCore](https://github.com/meshcore-dev) — Lightweight hybrid routing mesh protocol for packet radios
+- [meshcore-open](https://github.com/zjs81/meshcore-open) — Flutter client for MeshCore devices
+- [meshtastic-cli](https://github.com/statico/meshtastic-cli) — Terminal UI for monitoring Meshtastic mesh networks
+
 ## Libraries & Tools
 
 - [Meshtastic](https://meshtastic.org) — Open source mesh networking

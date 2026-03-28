@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
 
+import type { FirmwareCheckResult } from '../lib/firmwareCheck';
 import type { DeviceState } from '../lib/types';
 import ConnectionPanel from './ConnectionPanel';
 
@@ -326,5 +327,91 @@ describe('ConnectionPanel Linux BLE path', () => {
     expect(await screen.findByText(/Bluetooth Companion mode/i)).toBeInTheDocument();
     expect(screen.getByText(/paired with your computer using a PIN/i)).toBeInTheDocument();
     userAgentSpy.mockRestore();
+  });
+});
+
+// ─── Firmware status indicator ────────────────────────────────────
+
+const configuredState: DeviceState = {
+  status: 'configured',
+  myNodeNum: 1,
+  connectionType: 'ble',
+  firmwareVersion: '2.5.3',
+};
+
+function renderWithFirmware(
+  firmwareCheckState?: FirmwareCheckResult,
+  onOpenFirmwareReleases?: () => void,
+) {
+  return render(
+    <ConnectionPanel
+      state={configuredState}
+      onConnect={vi.fn().mockResolvedValue(undefined)}
+      onAutoConnect={vi.fn().mockResolvedValue(undefined)}
+      onDisconnect={vi.fn().mockResolvedValue(undefined)}
+      mqttStatus="disconnected"
+      protocol="meshtastic"
+      onProtocolChange={vi.fn()}
+      firmwareCheckState={firmwareCheckState}
+      onOpenFirmwareReleases={onOpenFirmwareReleases}
+    />,
+  );
+}
+
+describe('ConnectionPanel firmware status indicator', () => {
+  it('shows plain firmware version text without indicator when firmwareCheckState is not passed', () => {
+    renderWithFirmware();
+    expect(screen.getByText('2.5.3')).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Firmware is up to date')).not.toBeInTheDocument();
+  });
+
+  it('hides firmware row entirely when firmwareVersion is undefined', () => {
+    render(
+      <ConnectionPanel
+        state={{ ...configuredState, firmwareVersion: undefined }}
+        onConnect={vi.fn().mockResolvedValue(undefined)}
+        onAutoConnect={vi.fn().mockResolvedValue(undefined)}
+        onDisconnect={vi.fn().mockResolvedValue(undefined)}
+        mqttStatus="disconnected"
+        protocol="meshtastic"
+        onProtocolChange={vi.fn()}
+        firmwareCheckState={{ phase: 'up-to-date', latestVersion: '2.5.4' }}
+        onOpenFirmwareReleases={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(/Firmware/)).not.toBeInTheDocument();
+  });
+
+  it('shows spinner for checking phase', () => {
+    renderWithFirmware({ phase: 'checking' }, vi.fn());
+    expect(screen.getByRole('status')).toBeInTheDocument();
+  });
+
+  it('shows green checkmark for up-to-date phase', () => {
+    renderWithFirmware({ phase: 'up-to-date', latestVersion: '2.5.3' }, vi.fn());
+    expect(screen.getByLabelText('Firmware is up to date')).toBeInTheDocument();
+  });
+
+  it('shows amber update button with version for update-available phase', () => {
+    renderWithFirmware({ phase: 'update-available', latestVersion: '2.5.4' }, vi.fn());
+    expect(screen.getByLabelText('Firmware update available: v2.5.4')).toBeInTheDocument();
+    expect(screen.getByText('v2.5.4')).toBeInTheDocument();
+  });
+
+  it('calls onOpenFirmwareReleases when update-available button is clicked', async () => {
+    const user = userEvent.setup();
+    const onOpen = vi.fn();
+    renderWithFirmware({ phase: 'update-available', latestVersion: '2.5.4' }, onOpen);
+    await user.click(screen.getByLabelText('Firmware update available: v2.5.4'));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it('has no axe violations with update-available indicator', async () => {
+    const { container } = renderWithFirmware(
+      { phase: 'update-available', latestVersion: '2.5.4' },
+      vi.fn(),
+    );
+    expect(await axe(container)).toHaveNoViolations();
   });
 });

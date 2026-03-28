@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { MESHCORE_SETUP_ABORT_MESSAGE } from '../lib/bleConnectErrors';
+import type { FirmwareCheckResult } from '../lib/firmwareCheck';
 import {
   letsMeshPresetConfigurationDeviation,
   validateLetsMeshManualCredentials,
@@ -25,6 +26,7 @@ import type {
   NobleBleDevice,
   SerialPortInfo,
 } from '../lib/types';
+import FirmwareStatusIndicator from './FirmwareStatusIndicator';
 import { HelpTooltip } from './HelpTooltip';
 // ─── Last Connection (localStorage) ───────────────────────────────
 interface LastConnection {
@@ -491,6 +493,8 @@ interface Props {
   onProtocolChange: (p: MeshProtocol) => void;
   manualAddContacts?: boolean;
   onToggleManualContacts?: (manual: boolean) => Promise<void>;
+  firmwareCheckState?: FirmwareCheckResult;
+  onOpenFirmwareReleases?: () => void;
 }
 
 export default function ConnectionPanel({
@@ -506,6 +510,8 @@ export default function ConnectionPanel({
   onProtocolChange,
   manualAddContacts,
   onToggleManualContacts,
+  firmwareCheckState,
+  onOpenFirmwareReleases,
 }: Props) {
   const [connectionType, setConnectionType] = useState<ConnectionType>('ble');
   const [httpAddress, setHttpAddress] = useState(() => {
@@ -2336,7 +2342,16 @@ export default function ConnectionPanel({
             {state.firmwareVersion && (
               <div className="flex justify-between text-sm">
                 <span className="text-muted">Firmware</span>
-                <span className="text-gray-300 font-mono text-xs">{state.firmwareVersion}</span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="text-gray-300 font-mono text-xs">{state.firmwareVersion}</span>
+                  {firmwareCheckState && onOpenFirmwareReleases && (
+                    <FirmwareStatusIndicator
+                      phase={firmwareCheckState.phase}
+                      latestVersion={firmwareCheckState.latestVersion}
+                      onOpenReleases={onOpenFirmwareReleases}
+                    />
+                  )}
+                </span>
               </div>
             )}
             {state.lastDataReceived && (

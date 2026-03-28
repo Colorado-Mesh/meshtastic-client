@@ -33,6 +33,15 @@ import {
 } from './lazyTabPanels';
 import { DEFAULT_ADMIN_SETTINGS_SHARED } from './lib/defaultAdminSettings';
 import {
+  fetchLatestMeshCoreRelease,
+  fetchLatestMeshtasticRelease,
+  type FirmwareCheckResult,
+  MESHCORE_FIRMWARE_RELEASES_URL,
+  MESHTASTIC_FIRMWARE_RELEASES_URL,
+  parseMeshCoreBuildDate,
+  semverGt,
+} from './lib/firmwareCheck';
+import {
   validateLetsMeshManualCredentials,
   validateLetsMeshPresetConnect,
 } from './lib/letsMeshConnectionGuards';
@@ -46,7 +55,7 @@ import { parseStoredJson } from './lib/parseStoredJson';
 import { useRadioProvider } from './lib/radio/providerFactory';
 import { getStoredMeshProtocol, MESH_PROTOCOL_STORAGE_KEY } from './lib/storedMeshProtocol';
 import { applyThemeColors, loadThemeColors } from './lib/themeColors';
-import type { ChatMessage, MeshProtocol, MQTTSettings, MQTTStatus } from './lib/types';
+import type { ChatMessage, DeviceState, MeshProtocol, MQTTSettings, MQTTStatus } from './lib/types';
 import { useDiagnosticsStore } from './stores/diagnosticsStore';
 
 // Tabs (0-indexed) that are disabled in MeshCore mode
@@ -195,6 +204,12 @@ export default function App() {
   const isMeshtasticInitialRef = useRef(true);
   const isMeshcoreInitialRef = useRef(true);
   const [updateState, setUpdateState] = useState<UpdateState>({ phase: 'idle' });
+  const [firmwareCheckState, setFirmwareCheckState] = useState<FirmwareCheckResult>({
+    phase: 'idle',
+  });
+  const handleFirmwareResult = useCallback((r: FirmwareCheckResult) => {
+    setFirmwareCheckState(r);
+  }, []);
   const [telemetryNoticeDismissed, setTelemetryNoticeDismissed] = useState(false);
   const [useFahrenheit, setUseFahrenheit] = useState(
     () => localStorage.getItem('mesh-client:useFahrenheit') === 'true',
@@ -667,6 +682,13 @@ export default function App() {
         meshtasticDevice={meshtasticDevice}
         meshcoreDevice={meshcoreDevice}
       />
+      {/* Firmware update check on connect */}
+      <FirmwareUpdateNotifier
+        meshtasticState={meshtasticDevice.state}
+        meshcoreState={meshcoreDevice.state}
+        protocol={protocol}
+        onResult={handleFirmwareResult}
+      />
       <div className="flex flex-col h-screen">
         {/* Header */}
         <header
@@ -863,6 +885,18 @@ export default function App() {
                       }
                       protocol="meshtastic"
                       onProtocolChange={handleProtocolChange}
+                      firmwareCheckState={
+                        protocol === 'meshtastic' ? firmwareCheckState : undefined
+                      }
+                      onOpenFirmwareReleases={
+                        protocol === 'meshtastic'
+                          ? () => {
+                              void window.electronAPI.update.openReleases(
+                                firmwareCheckState.releaseUrl ?? MESHTASTIC_FIRMWARE_RELEASES_URL,
+                              );
+                            }
+                          : undefined
+                      }
                     />
                   </div>
                   <div hidden={protocol !== 'meshcore'}>
@@ -891,6 +925,16 @@ export default function App() {
                       onSendAdvert={meshcoreDevice.sendAdvert}
                       manualAddContacts={meshcoreDevice.manualAddContacts}
                       onToggleManualContacts={meshcoreDevice.toggleManualAddContacts}
+                      firmwareCheckState={protocol === 'meshcore' ? firmwareCheckState : undefined}
+                      onOpenFirmwareReleases={
+                        protocol === 'meshcore'
+                          ? () => {
+                              void window.electronAPI.update.openReleases(
+                                firmwareCheckState.releaseUrl ?? MESHCORE_FIRMWARE_RELEASES_URL,
+                              );
+                            }
+                          : undefined
+                      }
                     />
                   </div>
                 </div>
@@ -1396,6 +1440,87 @@ function InactiveProtocolNotifier({
     }
     prevMeshcoreRef.current = count;
   }, [meshcoreDevice.messages, protocol, addToast]);
+
+  return null;
+}
+
+// ─── Firmware update check on device connect ──────────────────────
+function FirmwareUpdateNotifier({
+  meshtasticState,
+  meshcoreState,
+  protocol,
+  onResult,
+}: {
+  meshtasticState: DeviceState;
+  meshcoreState: DeviceState;
+  protocol: MeshProtocol;
+  onResult: (r: FirmwareCheckResult) => void;
+}) {
+  const { addToast } = useToast();
+  const toastShownRef = useRef(false);
+  const activeState = protocol === 'meshcore' ? meshcoreState : meshtasticState;
+
+  useEffect(() => {
+    const { status, firmwareVersion } = activeState;
+    if (status !== 'configured' || !firmwareVersion) return;
+
+    toastShownRef.current = false;
+    onResult({ phase: 'checking' });
+    let cancelled = false;
+
+    const doCheck =
+      protocol === 'meshcore'
+        ? fetchLatestMeshCoreRelease().then((release) => {
+            const deviceDate = parseMeshCoreBuildDate(firmwareVersion);
+            const updateAvailable = deviceDate === null || deviceDate < release.publishedAt;
+            return { updateAvailable, release };
+          })
+        : fetchLatestMeshtasticRelease().then((release) => {
+            const updateAvailable = semverGt(release.version, firmwareVersion);
+            return { updateAvailable, release };
+          });
+
+    doCheck
+      .then(({ updateAvailable, release }) => {
+        if (cancelled) return;
+        onResult(
+          updateAvailable
+            ? {
+                phase: 'update-available',
+                latestVersion: release.version,
+                releaseUrl: release.releaseUrl,
+              }
+            : {
+                phase: 'up-to-date',
+                latestVersion: release.version,
+                releaseUrl: release.releaseUrl,
+              },
+        );
+        if (updateAvailable && !toastShownRef.current) {
+          toastShownRef.current = true;
+          addToast(`Firmware update available: v${release.version}`, 'warning', 8000);
+        }
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        console.warn(
+          '[FirmwareUpdateNotifier] check failed:',
+          err instanceof Error ? err.message : String(err),
+        );
+        onResult({ phase: 'error' });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeState, protocol, onResult, addToast]);
+
+  useEffect(() => {
+    if (activeState.status === 'disconnected') {
+      onResult({ phase: 'idle' });
+      toastShownRef.current = false;
+    }
+  }, [activeState.status, onResult]);
 
   return null;
 }
