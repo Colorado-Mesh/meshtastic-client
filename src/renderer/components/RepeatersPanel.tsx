@@ -477,8 +477,9 @@ export default function RepeatersPanel({
           <div className="text-gray-400 text-sm mt-8 text-center">
             <p>No repeaters discovered yet.</p>
             <p className="mt-1 text-gray-500">
-              Repeaters appear when contacts with type &ldquo;Repeater&rdquo; advertise. Use Import
-              to pre-load nicknames.
+              Repeaters appear when contacts with type &ldquo;Repeater&rdquo; advertise. Use{' '}
+              <strong>Import Contacts</strong> on the <strong>Nodes</strong> tab to pre-load
+              nicknames.
             </p>
           </div>
         ) : repeatersFiltered.length === 0 ? (

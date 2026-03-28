@@ -77,7 +77,11 @@ From real-time diagnostics to permanent message archives, Mesh-Client delivers t
 
 **Module Configuration**
 
-- Telemetry module (device, environment, air quality intervals), MQTT relay settings, Canned Messages, Serial module, Range Test, Store & Forward, Detection Sensor, and Pax Counter — all editable from the Modules tab
+- Telemetry module (device, environment, air quality intervals), MQTT relay settings, Canned Messages, Serial module, Range Test, Store & Forward, Detection Sensor, Pax Counter, **External Notification**, **Ambient Lighting**, and **RTTTL** (ringtone) — all editable from the Modules tab; module sections are listed **alphabetically**
+
+**Security (PKI)** — Meshtastic only
+
+- **Security** tab (between Telemetry and App): admin / PKI key management — backup, restore, regenerate, and apply keys and related toggles from the device. Not available in MeshCore mode (no matching firmware surface; the tab is hidden).
 
 **Network Diagnostics**
 
@@ -119,7 +123,7 @@ From real-time diagnostics to permanent message archives, Mesh-Client delivers t
 
 **Node Management**
 
-- Node list with SNR, battery, GPS, last heard — **signal bars** appear only for direct (0-hop) RF neighbors; multi-hop and MQTT-only paths omit bars
+- Node list with SNR, battery, GPS, last heard — **signal bars** appear only for direct (0-hop) RF neighbors; multi-hop and MQTT-only paths omit bars; SNR in traces and neighbor views uses **color-coded quality** (good / marginal / poor)
 - **Cross-Protocol Signal Analyzer** — foreign LoRa traffic detection (non-mesh packets); shown in Node Detail when present
 - Distance filter, favorite/pin nodes, device role icons
 - Node Detail Modal: DM, trace route with per-hop display, delete node, neighbor info
@@ -136,8 +140,8 @@ From real-time diagnostics to permanent message archives, Mesh-Client delivers t
 
 **Productivity**
 
-- **Log panel** (right rail) — live app log stream, optional debug toggle, export or delete the log file
-- Full keyboard navigation — press `?` for shortcut reference; `Cmd/Ctrl+1–9` switches tabs; `Cmd/Ctrl+[` switches to Meshtastic; `Cmd/Ctrl+]` switches to MeshCore; `Cmd/Ctrl+Shift+F` opens **chat search** across all channels (optional `user:name` and `channel:name` filters)
+- **Log panel** (right rail) — live app log stream, optional debug toggle, **Analyze** (scans the buffered log for connection, BLE, MQTT, and related patterns and suggests fixes), export or delete the log file
+- Full keyboard navigation — press `?` for shortcut reference; `Cmd/Ctrl+1–9` switches the **first nine** main tabs (on **Meshtastic**, **Diagnostics** is the tenth tab — use the tab strip); `Cmd/Ctrl+[` switches to Meshtastic; `Cmd/Ctrl+]` switches to MeshCore; `Cmd/Ctrl+Shift+F` opens **chat search** across all channels (optional `user:name` and `channel:name` filters)
 - **Updates** — permanent status in the footer (up to date, update available, errors, download progress, etc.); automatic check runs a few seconds after every launch; **Check for Updates…** in the app menu (macOS) or **Help** (Windows/Linux), or tap **Up to date** in the footer to re-check; Windows/Linux packaged builds can download in-app, macOS and dev builds open the GitHub release page
 - System tray with live unread badge; app stays accessible when window is closed
 - Persistent SQLite storage; DB export/import/clear in the App tab; Clear GPS Data and Reset Diagnostics without a full DB wipe
@@ -155,19 +159,21 @@ From real-time diagnostics to permanent message archives, Mesh-Client delivers t
 
 ### MeshCore Features
 
-MeshCore runs simultaneously alongside Meshtastic. Use the protocol switcher pill in the header to bring MeshCore into view — the Meshtastic session stays connected in the background. When viewing MeshCore, the sixth tab is **Repeaters** (instead of Modules); all other tabs, including Network Diagnostics, are available.
+MeshCore runs simultaneously alongside Meshtastic. Use the protocol switcher pill in the header to bring MeshCore into view — the Meshtastic session stays connected in the background. **Meshtastic** shows **10** main tabs (including **Security**); **MeshCore** shows **9** (**Security** is hidden; the sixth tab is **Repeaters** instead of **Modules**). Network Diagnostics and the rest of the shell stay available.
 
 **Contacts & Discovery**
 
 - Contact list with advert-based positions, contact types (Chat, Repeater, Room), and GPS coordinates persisted to SQLite; contacts seed from DB on reconnect as a fallback cache
 - **Favorite / pin** — persisted per contact in SQLite (`meshcore_contacts.favorited`)
+- **Contact groups** — create and manage groups from the **Nodes** toolbar; filter the list by group; built-in type filters; **Room** contacts are excluded from groups by default
+- **Import Contacts** — **Nodes** tab: bulk **JSON nickname import** to pre-fill contact names (not on the Repeaters panel)
 - **Refresh Contacts** — pull the full contact list from the device on demand
 - **Send Advert** — broadcast your node's presence (flood advert) to the mesh
 - **Manual Contact Approval** — toggle between auto-add (contacts appear automatically when heard) and manual-add (new contacts require approval before appearing); preference is persisted and re-applied on reconnect
 
 **Messaging**
 
-- Channel messaging and **direct messages (DMs)** with delivery ACK tracking (`expectedAckCrc`) and failure timeout
+- Channel messaging and **direct messages (DMs)** with delivery ACK tracking (`expectedAckCrc`) and failure timeout; **DM threads can be closed** from the chat UI
 - **Transport badges** on received messages — **RF**, **MQTT**, or **both** (persisted as `received_via` in `meshcore_messages`); MQTT JSON chat can be used when RF is down
 - Incoming push events: periodic advert (0x80), path update (0x81), send confirmed (0x82), message waiting (0x83), new contact (0x8A), incoming DM (7), incoming channel message (8)
 - All messages and contacts persisted to SQLite (`meshcore_messages`, `meshcore_contacts` tables)
@@ -181,7 +187,8 @@ MeshCore runs simultaneously alongside Meshtastic. Use the protocol switcher pil
 
 **Repeaters**
 
-- **Repeaters panel** (MeshCore-only tab) — list repeaters with on-demand status (noise floor, RSSI/SNR, packet counts, air time, uptime, TX queue); JSON nickname import for bulk contact names; **Path** column shows a per-hop SNR sparkline from the last trace; per-row **Neighbors** expands an inline neighbor list (same query as node detail)
+- **Repeaters panel** (MeshCore-only tab) — list repeaters with on-demand status (noise floor, RSSI/SNR, packet counts, air time, uptime, TX queue); **Path** column shows a per-hop SNR sparkline from the last trace; per-row **Neighbors** expands an inline neighbor list (same query as node detail)
+- **Remote session authentication** — when the firmware requires it, a banner guides you through one-time setup so status and neighbor RPCs can run; credentials are session-scoped
 - **Panel toolbar** — **Send Advert**, **Sync Clock**, and **Reboot Device** (shown when the device supports the corresponding commands)
 - **Per-repeater removal** — two-click confirm button on each row; removes from in-memory state and deletes from the SQLite contacts DB
 - **Clear All Repeaters** — Danger Zone entry in the App tab that deletes all Repeater-type contacts (contact_type = 2) from the DB while leaving Chat and Room contacts intact
@@ -214,6 +221,7 @@ MeshCore runs simultaneously alongside Meshtastic. Use the protocol switcher pil
 - **MeshCore — remote telemetry availability**: `getTelemetry` requires the remote node to have environment sensors. A timeout is returned if the node has no sensor data.
 - **MeshCore — neighbor info availability**: `getNeighbours` is supported only by Repeater-type nodes running firmware v1.9.0+. The button is hidden for Chat and Room contacts.
 - **MeshCore — contact type labels**: MeshCore reports a numeric `type` field (0 = None, 1 = Chat, 2 = Repeater, 3 = Room); displayed in the hw_model field in the node list.
+- **MeshCore — no Security / PKI tab**: Meshtastic-style admin key management is not exposed for MeshCore; the **Security** tab is omitted in MeshCore mode (`hasSecurityPanel`).
 - **Map tiles — OpenStreetMap Referer requirement**: Packaged desktop builds load the UI from the local filesystem. The main process now loads the renderer with an explicit HTTP referrer so OpenStreetMap tile requests include a valid `Referer` header and comply with the [tile usage policy](https://operations.osmfoundation.org/policies/tiles/). If you point the app at a different tile server, ensure its usage policy permits this client.
 
 ---
@@ -341,19 +349,23 @@ mesh-client/
 │   └── renderer/
 │       ├── index.html            # HTML entry
 │       ├── main.tsx              # React entry point
-│       ├── App.tsx               # Shell: 9 tabs (protocol-dependent: Modules vs Repeaters), Log panel, shortcuts, status
+│       ├── App.tsx               # Shell: 10 tabs Meshtastic / 9 MeshCore (Security hidden; Modules vs Repeaters), Log panel, shortcuts
 │       ├── styles.css            # Global styles, theme variables
 │       ├── components/           # Panels and UI (many have co-located *.test.tsx)
 │       │   ├── ChatPanel.tsx         # Chat UI, DMs, emoji reactions, channel switching
 │       │   ├── SearchModal.tsx       # Cross-channel chat search (`user:` / `channel:` filters)
 │       │   ├── NodeListPanel.tsx     # Node & contact list; MeshCore: groups, Import Contacts JSON; online/stale/MQTT
+│       │   ├── ContactGroupsModal.tsx # MeshCore: contact group create/edit and members
+│       │   ├── SecurityPanel.tsx     # Meshtastic: PKI / admin keys (tab gated by hasSecurityPanel)
+│       │   ├── LogAnalyzeModal.tsx   # Log pattern analysis + recommendations
+│       │   ├── SnrIndicator.tsx      # SNR quality chip (color by threshold)
 │       │   ├── MapPanel.tsx          # Node positions on OpenStreetMap (Leaflet)
 │       │   ├── TelemetryPanel.tsx    # Battery/voltage/SNR charts (Recharts)
 │       │   ├── ModulePanel.tsx       # Meshtastic: modules tab (telemetry, MQTT, etc.)
 │       │   ├── ConnectionPanel.tsx   # BLE/Serial/HTTP/MQTT; protocol toggle; MeshCore manual contact toggle
 │       │   ├── DiagnosticsPanel.tsx  # Health band + counts, diagnosticRows table, halos, max age
 │       │   ├── MeshCongestionAttributionBlock.tsx  # Shared mesh congestion / duplicate-traffic copy
-│       │   ├── LogPanel.tsx          # Live app log, debug toggle, export/delete log file
+│       │   ├── LogPanel.tsx          # Live app log, Analyze modal, debug toggle, export/delete log file
 │       │   ├── RadioPanel.tsx        # Radio settings, position, GPS send; MeshCore: channels, Import Config JSON
 │       │   ├── RepeatersPanel.tsx    # MeshCore: repeater status/trace/neighbors/console (contacts: Nodes tab)
 │       │   ├── AppPanel.tsx          # App settings, theme presets, GPS interval, database management
@@ -368,7 +380,8 @@ mesh-client/
 │       │   └── Tabs.tsx
 │       ├── hooks/
 │       │   ├── useDevice.ts          # Meshtastic: device lifecycle, 3 transports, auto-reconnect
-│       │   └── useMeshCore.ts        # MeshCore: BLE/Serial/TCP/MQTT, contacts, messages, ACK, trace, telemetry
+│       │   ├── useMeshCore.ts        # MeshCore: BLE/Serial/TCP/MQTT, contacts, messages, ACK, trace, telemetry
+│       │   └── useContactGroups.ts   # MeshCore: contact groups state + IPC
 │       ├── stores/
 │       │   ├── diagnosticsStore.ts   # Anomalies, halo flags, MQTT ignore, foreign LoRa (both protocols)
 │       │   ├── mapViewportStore.ts   # Persisted map center/zoom
@@ -388,6 +401,9 @@ mesh-client/
 │       │   ├── signal.ts             # Signal strength → level for SignalBars (direct RF only)
 │       │   ├── themeColors.ts        # Theme color helpers
 │       │   ├── parseStoredJson.ts    # Safe JSON parse for persisted values
+│       │   ├── appSettingsStorage.ts # Renderer app settings persistence helpers
+│       │   ├── defaultAppSettings.ts # Default app settings shape
+│       │   ├── logAnalyzer.ts        # Heuristic log analysis for connection issues
 │       │   ├── radio/
 │       │   │   ├── BaseRadioProvider.ts  # ProtocolCapabilities; MESHTASTIC_CAPABILITIES, MESHCORE_CAPABILITIES
 │       │   │   └── providerFactory.ts    # useRadioProvider(protocol) — memoized capabilities

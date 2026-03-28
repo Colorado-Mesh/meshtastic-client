@@ -85,6 +85,10 @@ xattr -r -d com.apple.quarantine /Applications/Mesh-client.app
 - The Bluetooth connection can drop silently — click Disconnect, then Connect again
 - For serial: the USB cable may have been bumped — reconnect
 
+### Connection or transport issues — use Log **Analyze**
+
+Open the **Log** panel (right rail), enable **debug** if needed, reproduce the problem, then click **Analyze**. The app scans recent buffered log lines for patterns (BLE, serial, TCP, MQTT, handshake timeouts, etc.) and lists **suggested next steps**. This complements export/delete: use it before filing an issue so you have concrete log context. Analysis is **heuristic** — treat recommendations as hints, not guarantees.
+
 ### Permission messages in the console
 
 `[permissions] checkHandler: media → denied` and `web-app-installation → denied` are expected. The app only uses **serial** and **geolocation** — media and web-app-installation are intentionally denied.
