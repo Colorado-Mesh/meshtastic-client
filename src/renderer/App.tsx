@@ -1099,6 +1099,8 @@ export default function App() {
                           moduleConfigs={device.moduleConfigs}
                           onSetModuleConfig={device.setModuleConfig}
                           onSetCannedMessages={device.setCannedMessages}
+                          onSetRingtone={device.setRingtone}
+                          ringtone={device.ringtone}
                           onCommit={device.commitConfig}
                           isConnected={isOperational}
                         />

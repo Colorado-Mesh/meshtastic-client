@@ -1,6 +1,6 @@
-import { create } from '@bufbuild/protobuf';
+import { create, toBinary } from '@bufbuild/protobuf';
 import type { MeshDevice } from '@meshtastic/core';
-import { Channel as ProtobufChannel, Mesh, Portnums } from '@meshtastic/protobufs';
+import { Admin, Channel as ProtobufChannel, Mesh, Portnums } from '@meshtastic/protobufs';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { meshtasticShortNameAfterClearingDefault } from '../../shared/nodeNameUtils';
@@ -2095,6 +2095,21 @@ export function useDevice() {
     await (deviceRef.current as any).setCannedMessages({ messages: messages.join('\n') });
   }, []);
 
+  const [ringtone, setRingtoneState] = useState<string>('');
+
+  const setRingtone = useCallback(async (ringtoneStr: string) => {
+    if (!deviceRef.current) return;
+    const msg = create(Admin.AdminMessageSchema, {
+      payloadVariant: { case: 'setRingtoneMessage', value: ringtoneStr },
+    });
+    await (deviceRef.current as any).sendPacket(
+      toBinary(Admin.AdminMessageSchema, msg),
+      Portnums.PortNum.ADMIN_APP,
+      'self',
+    );
+    setRingtoneState(ringtoneStr);
+  }, []);
+
   const requestPosition = useCallback(async (nodeNum: number) => {
     if (!deviceRef.current) return;
     await deviceRef.current.requestPosition(nodeNum);
@@ -2434,6 +2449,8 @@ export function useDevice() {
     moduleConfigs,
     setModuleConfig,
     setCannedMessages,
+    ringtone,
+    setRingtone,
   };
 }
 

@@ -6,6 +6,8 @@ interface Props {
   moduleConfigs: Record<string, unknown>;
   onSetModuleConfig: (config: unknown) => Promise<void>;
   onSetCannedMessages: (messages: string[]) => Promise<void>;
+  onSetRingtone?: (ringtone: string) => Promise<void>;
+  ringtone?: string;
   onCommit: () => Promise<void>;
   isConnected: boolean;
 }
@@ -182,10 +184,39 @@ function ModuleSection({
   );
 }
 
+const RTTTL_PRESETS = [
+  { name: 'Beep', value: 'Beep:d=8,o=5,b=180:a' },
+  { name: 'Two Beeps', value: 'TwoBeeps:d=8,o=5,b=180:a,p,a' },
+  {
+    name: 'Thunderbirds',
+    value:
+      'Thunderbirds:d=4,o=5,b=160:32c,32d#,32f,32g,16a#,16a,16g,16f,16d#,32c,32d#,32f,16g,8a#,8a,8g,8f,8d#,8c',
+  },
+  {
+    name: 'Star Wars',
+    value:
+      'StarWars:d=4,o=5,b=45:32p,32f#,32f#,32f#,8b.,8f#.16p,16e,16d#,16c#,8b.16p,32f#,32f#,32f#,8e.,16p,16e,16d#,16c#,8b.',
+  },
+  { name: 'Nokia', value: 'NokiaTune:d=4,o=5,b=225:8e6,8d6,f#,g#,8c#6,8b,d,e,8b,8a,c#,e,2a' },
+];
+
+function isValidRtttl(s: string): boolean {
+  const parts = s.split(':');
+  return (
+    parts.length === 3 &&
+    parts[0].trim().length > 0 &&
+    /d=\d+/.test(parts[1]) &&
+    /o=\d+/.test(parts[1]) &&
+    /b=\d+/.test(parts[1])
+  );
+}
+
 export default function ModulePanel({
   moduleConfigs,
   onSetModuleConfig,
   onSetCannedMessages,
+  onSetRingtone,
+  ringtone,
   onCommit,
   isConnected,
 }: Props) {
@@ -303,6 +334,9 @@ export default function ModulePanel({
   const [ambientGreen, setAmbientGreen] = useState<number>(ambientCfg.green ?? 0);
   const [ambientBlue, setAmbientBlue] = useState<number>(ambientCfg.blue ?? 0);
   const [ambientCurrent, setAmbientCurrent] = useState<number>(ambientCfg.current ?? 10);
+
+  // ─── RTTTL Ringtone ───────────────────────────────────────────
+  const [ringtoneText, setRingtoneText] = useState<string>(ringtone ?? '');
 
   const ambientHex = `#${[ambientRed, ambientGreen, ambientBlue].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
   const handleAmbientColorChange = (hex: string) => {
@@ -802,6 +836,77 @@ export default function ModulePanel({
           description="Log range test results to the device filesystem."
         />
       </ModuleSection>
+
+      {/* ═══ RTTTL Ringtone ═══ */}
+      {onSetRingtone && (
+        <ModuleSection
+          title="RTTTL Ringtone"
+          onApply={async () => {
+            setApplyingSection('RTTTL Ringtone');
+            try {
+              await onSetRingtone(ringtoneText);
+              await onCommit();
+              addToast('RTTTL ringtone saved.', 'success');
+            } catch (err) {
+              console.warn('[ModulePanel] RTTTL apply failed', err);
+              addToast(`Failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
+            } finally {
+              setApplyingSection(null);
+            }
+          }}
+          applying={applyingSection === 'RTTTL Ringtone'}
+          disabled={disabled}
+        >
+          <div className="space-y-1">
+            <label htmlFor="module-rtttl-preset" className="text-sm text-muted">
+              Load preset
+            </label>
+            <select
+              id="module-rtttl-preset"
+              disabled={disabled}
+              className="w-full px-3 py-2 bg-secondary-dark rounded-lg text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none disabled:opacity-50 text-sm"
+              value=""
+              onChange={(e) => {
+                if (e.target.value) setRingtoneText(e.target.value);
+              }}
+            >
+              <option value="">Select a preset…</option>
+              {RTTTL_PRESETS.map((p) => (
+                <option key={p.name} value={p.value}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="module-rtttl-ringtone" className="text-sm text-muted">
+              Ringtone string (RTTTL format)
+            </label>
+            <textarea
+              id="module-rtttl-ringtone"
+              value={ringtoneText}
+              onChange={(e) => {
+                setRingtoneText(e.target.value.slice(0, 230));
+              }}
+              disabled={disabled}
+              rows={4}
+              placeholder="Name:d=4,o=5,b=120:notes..."
+              spellCheck={false}
+              className="w-full px-3 py-2 bg-secondary-dark rounded-lg text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none disabled:opacity-50 font-mono text-xs resize-y"
+            />
+            <div className="flex justify-between text-xs text-muted">
+              <span>
+                {ringtoneText.length > 0 && !isValidRtttl(ringtoneText) && (
+                  <span className="text-red-400">
+                    Invalid RTTTL — expected Name:d=N,o=N,b=N:notes
+                  </span>
+                )}
+              </span>
+              <span>{ringtoneText.length}/230</span>
+            </div>
+          </div>
+        </ModuleSection>
+      )}
 
       {/* ═══ Serial Module ═══ */}
       <ModuleSection
