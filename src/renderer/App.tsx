@@ -29,6 +29,7 @@ import {
   ModulePanel,
   RadioPanel,
   RepeatersPanel,
+  SecurityPanel,
   TelemetryPanel,
 } from './lazyTabPanels';
 import { getAppSettingsRaw } from './lib/appSettingsStorage';
@@ -62,7 +63,8 @@ import { useDiagnosticsStore } from './stores/diagnosticsStore';
 // Tabs (0-indexed) that are disabled in MeshCore mode
 // Tab 6 (Telemetry) re-enabled — capabilities-aware rendering handles battery/signal differences
 // Tab 8 (Diagnostics) re-enabled — foreign LoRa detection works in both Meshtastic and MeshCore modes
-const MESHCORE_DISABLED_TABS = new Set<number>([]);
+// Tab 9 (Security) — Meshtastic-only (PKI config not supported by MeshCore)
+const MESHCORE_DISABLED_TABS = new Set<number>([9]);
 
 const STATUS_COLOR: Record<string, string> = {
   disconnected: 'bg-red-500',
@@ -83,6 +85,7 @@ const TAB_NAMES = [
   'Telemetry',
   'App',
   'Diagnostics',
+  'Security',
 ];
 
 export interface LocationFilter {
@@ -1179,6 +1182,20 @@ export default function App() {
                             setSelectedNodeId(node.node_id);
                           }}
                           capabilities={capabilities}
+                        />
+                      </Suspense>
+                    </ErrorBoundary>
+                  ) : null}
+                </div>
+                <div id="panel-9" role="tabpanel" aria-labelledby="tab-9" hidden={activeTab !== 9}>
+                  {activeTab === 9 ? (
+                    <ErrorBoundary>
+                      <Suspense fallback={<PanelSkeleton />}>
+                        <SecurityPanel
+                          onSetConfig={device.setConfig}
+                          onCommit={device.commitConfig}
+                          isConnected={isOperational}
+                          securityConfig={device.securityConfig}
                         />
                       </Suspense>
                     </ErrorBoundary>

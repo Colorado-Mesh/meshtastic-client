@@ -192,6 +192,15 @@ export function useDevice() {
   const [neighborInfo, setNeighborInfo] = useState<Map<number, NeighborInfoRecord>>(new Map());
   const [waypoints, setWaypoints] = useState<Map<number, MeshWaypoint>>(new Map());
   const [moduleConfigs, setModuleConfigs] = useState<Record<string, unknown>>({});
+  const [securityConfig, setSecurityConfig] = useState<{
+    publicKey: Uint8Array;
+    privateKey: Uint8Array;
+    adminKey: Uint8Array[];
+    isManaged: boolean;
+    serialEnabled: boolean;
+    debugLogApiEnabled: boolean;
+    adminChannelEnabled: boolean;
+  } | null>(null);
 
   // Keep nodesRef in sync with state
   const updateNodes = useCallback(
@@ -776,6 +785,7 @@ export function useDevice() {
           setNeighborInfo(new Map());
           setWaypoints(new Map());
           setModuleConfigs({});
+          setSecurityConfig(null);
           deviceRef.current = null;
           setState((s) => ({
             ...s,
@@ -1481,6 +1491,19 @@ export function useDevice() {
           if (typeof interval === 'number') {
             setTelemetryDeviceUpdateInterval(interval);
           }
+        }
+        if (cfg.payloadVariant?.case === 'security' && cfg.payloadVariant.value != null) {
+          setSecurityConfig(
+            cfg.payloadVariant.value as {
+              publicKey: Uint8Array;
+              privateKey: Uint8Array;
+              adminKey: Uint8Array[];
+              isManaged: boolean;
+              serialEnabled: boolean;
+              debugLogApiEnabled: boolean;
+              adminChannelEnabled: boolean;
+            },
+          );
         }
       });
       unsubscribesRef.current.push(unsubConfig);
@@ -2451,6 +2474,7 @@ export function useDevice() {
     setCannedMessages,
     ringtone,
     setRingtone,
+    securityConfig,
   };
 }
 

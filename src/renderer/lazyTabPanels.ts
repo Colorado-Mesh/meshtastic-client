@@ -11,6 +11,7 @@ const mapPanelPromise = import('./components/MapPanel');
 const modulePanelPromise = import('./components/ModulePanel');
 const radioPanelPromise = import('./components/RadioPanel');
 const repeatersPanelPromise = import('./components/RepeatersPanel');
+const securityPanelPromise = import('./components/SecurityPanel');
 const telemetryPanelPromise = import('./components/TelemetryPanel');
 
 export const AppPanel = lazy(() => appPanelPromise);
@@ -19,4 +20,5 @@ export const MapPanel = lazy(() => mapPanelPromise);
 export const ModulePanel = lazy(() => modulePanelPromise);
 export const RadioPanel = lazy(() => radioPanelPromise);
 export const RepeatersPanel = lazy(() => repeatersPanelPromise);
+export const SecurityPanel = lazy(() => securityPanelPromise);
 export const TelemetryPanel = lazy(() => telemetryPanelPromise);

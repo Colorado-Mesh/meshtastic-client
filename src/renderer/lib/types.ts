@@ -533,6 +533,11 @@ declare global {
         onDownloaded: (cb: () => void) => () => void;
         onError: (cb: (info: { message: string }) => void) => () => void;
       };
+      safeStorage: {
+        encrypt: (plaintext: string) => Promise<string | null>;
+        decrypt: (ciphertext: string) => Promise<string | null>;
+        isAvailable: () => Promise<boolean>;
+      };
     };
   }
 }
