@@ -39,6 +39,11 @@ import { MeshcoreWebBluetoothConnection } from '../lib/meshcoreWebBluetoothConne
 import { lastHeardToUnixSeconds, mergeMeshcoreLastHeardFromAdvert } from '../lib/nodeStatus';
 import { parseStoredJson } from '../lib/parseStoredJson';
 import {
+  type CliHistoryEntry,
+  createRepeaterCommandService,
+  type RepeaterCommandService,
+} from '../lib/repeaterCommandService';
+import {
   getPortSignature,
   LAST_SERIAL_PORT_KEY,
   persistSerialPortIdentity,
@@ -468,6 +473,8 @@ export interface MeshCoreNeighborResult {
   fetchedAt: number;
 }
 
+export type { CliHistoryEntry } from '../lib/repeaterCommandService';
+
 // The connection object returned by meshcore.js is typed loosely — use unknown and cast
 interface MeshCoreConnection {
   on(event: string | number, cb: (...args: unknown[]) => void): void;
@@ -781,6 +788,10 @@ export function useMeshCore() {
   const [meshcoreNeighborErrors, setMeshcoreNeighborErrors] = useState<Map<number, string>>(
     new Map(),
   );
+  const [meshcoreCliHistories, setMeshcoreCliHistories] = useState<Map<number, CliHistoryEntry[]>>(
+    new Map(),
+  );
+  const [meshcoreCliErrors, setMeshcoreCliErrors] = useState<Map<number, string>>(new Map());
   const [manualAddContacts, setManualAddContacts] = useState<boolean>(() => {
     try {
       return localStorage.getItem(MANUAL_CONTACTS_KEY) === 'true';
@@ -823,6 +834,29 @@ export function useMeshCore() {
   /** Rate-limit debug logs when optional packet-logger IPC publish fails. */
   const lastPacketLogPublishFailureLogAtRef = useRef(0);
   const meshcoreHookMountedRef = useRef(true);
+  const repeaterCommandServiceRef = useRef<RepeaterCommandService | null>(null);
+
+  const addCliHistoryEntry = useCallback((nodeId: number, entry: CliHistoryEntry) => {
+    setMeshcoreCliHistories((prev) => {
+      const next = new Map(prev);
+      const existing = next.get(nodeId) ?? [];
+      const updated = [...existing, entry];
+      if (updated.length > 100) {
+        next.set(nodeId, updated.slice(-100));
+      } else {
+        next.set(nodeId, updated);
+      }
+      return next;
+    });
+  }, []);
+
+  const clearCliHistory = useCallback((nodeId: number) => {
+    setMeshcoreCliHistories((prev) => {
+      const next = new Map(prev);
+      next.delete(nodeId);
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     meshcoreHookMountedRef.current = true;
@@ -1369,12 +1403,49 @@ export function useMeshCore() {
 
       // Incoming DM — event 7
       conn.on(7, (data: unknown) => {
-        const d = data as { pubKeyPrefix: Uint8Array; text: string; senderTimestamp: number };
+        const d = data as {
+          pubKeyPrefix: Uint8Array;
+          text: string;
+          senderTimestamp: number;
+          txtType?: number;
+        };
         const prefix = Array.from(d.pubKeyPrefix)
           .map((b) => b.toString(16).padStart(2, '0'))
           .join('');
         const senderId = pubKeyPrefixMapRef.current.get(prefix) ?? 0;
         const sender = nodesRef.current.get(senderId);
+
+        // CLI data response (txtType === 1)
+        if (d.txtType === 1) {
+          const service = repeaterCommandServiceRef.current;
+          if (service) {
+            const handled = service.handleResponse(d.text);
+            if (handled) {
+              console.debug(
+                '[useMeshCore] event 7: CLI response from',
+                senderId.toString(16).toUpperCase(),
+                'token matched',
+              );
+              return;
+            }
+          }
+          // CLI response without matching pending command - log and add to history
+          console.debug(
+            '[useMeshCore] event 7: CLI response from',
+            senderId.toString(16).toUpperCase(),
+            'no pending command',
+          );
+          if (senderId !== 0) {
+            const { body } = service ? service.parseResponseToken(d.text) : { body: d.text };
+            addCliHistoryEntry(senderId, {
+              type: 'received',
+              text: body,
+              timestamp: Date.now(),
+            });
+          }
+          return;
+        }
+
         if (senderId !== 0) {
           setNodes((prev) => {
             const node = prev.get(senderId);
@@ -1532,7 +1603,7 @@ export function useMeshCore() {
           }, 0);
       });
     },
-    [addMessage, updateNode, setDeviceLogs],
+    [addMessage, updateNode, setDeviceLogs, addCliHistoryEntry],
   );
 
   /** Reject promptly when `disconnect()` bumps `meshcoreSetupGenerationRef` (avoids hanging on getChannels, etc.). */
@@ -2146,6 +2217,8 @@ export function useMeshCore() {
       clearTimeout(timeoutId);
     }
     pendingAcksRef.current.clear();
+    // Clear pending CLI commands
+    repeaterCommandServiceRef.current?.clear();
 
     try {
       await connRef.current?.close();
@@ -2176,6 +2249,8 @@ export function useMeshCore() {
     setMeshcoreNodeTelemetry(new Map());
     setMeshcoreTelemetryErrors(new Map());
     setMeshcoreNeighbors(new Map());
+    setMeshcoreCliHistories(new Map());
+    setMeshcoreCliErrors(new Map());
     setEnvironmentTelemetry([]);
     setState(INITIAL_STATE);
     console.debug('[useMeshCore] disconnect: complete');
@@ -2901,6 +2976,100 @@ export function useMeshCore() {
     }
   }, []);
 
+  const sendRepeaterCliCommand = useCallback(
+    async (nodeId: number, command: string, useSavedPath = false): Promise<string> => {
+      const pubKey = pubKeyMapRef.current.get(nodeId);
+      if (!pubKey) {
+        setMeshcoreCliErrors((prev) => {
+          const next = new Map(prev);
+          next.set(nodeId, 'Node not found (no encryption key)');
+          return next;
+        });
+        throw new Error('Node not found (no encryption key)');
+      }
+      if (!connRef.current) {
+        setMeshcoreCliErrors((prev) => {
+          const next = new Map(prev);
+          next.set(nodeId, 'Not connected to device');
+          return next;
+        });
+        throw new Error('Not connected to device');
+      }
+
+      setMeshcoreCliErrors((prev) => {
+        const next = new Map(prev);
+        next.delete(nodeId);
+        return next;
+      });
+
+      const service = repeaterCommandServiceRef.current ?? createRepeaterCommandService();
+      repeaterCommandServiceRef.current ??= service;
+
+      const path: Uint8Array[] = useSavedPath
+        ? (() => {
+            const trace = meshcoreTraceResults.get(nodeId);
+            if (!trace || trace.hops.length === 0) return [];
+            return trace.hops.map(() => pubKey);
+          })()
+        : [];
+
+      const { token, promise } = service.registerPendingCommand(command, path);
+      const commandWithToken = service.formatCommandWithToken(command, token);
+
+      addCliHistoryEntry(nodeId, {
+        type: 'sent',
+        text: command,
+        timestamp: Date.now(),
+      });
+
+      console.debug(
+        '[useMeshCore] sendRepeaterCliCommand nodeId=',
+        nodeId.toString(16).toUpperCase(),
+        'token=',
+        token,
+        'command=',
+        command,
+      );
+
+      try {
+        await meshcoreRepeaterTryLogin(connRef.current, pubKey);
+        const txtType = 1; // TxtTypes.CliData
+        await connRef.current.sendTextMessage(pubKey, commandWithToken, txtType);
+
+        const response = await promise;
+        addCliHistoryEntry(nodeId, {
+          type: 'received',
+          text: response,
+          timestamp: Date.now(),
+        });
+        bumpMeshcoreNodeLastHeardFromRpc(nodeId);
+        return response;
+      } catch (e: unknown) {
+        const rawErr = e instanceof Error ? e.message : String(e);
+        const errMsg = rawErr && rawErr !== 'undefined' ? rawErr : 'request failed';
+        let friendlyErr = errMsg.toLowerCase().includes('timeout')
+          ? `Request timed out`
+          : errMsg.toLowerCase().includes('auth') || errMsg.toLowerCase().includes('login')
+            ? 'Authentication failed'
+            : `Failed: ${errMsg}`;
+        friendlyErr = meshcoreAppendRepeaterAuthHint(friendlyErr);
+        setMeshcoreCliErrors((prev) => {
+          const next = new Map(prev);
+          next.set(nodeId, friendlyErr);
+          return next;
+        });
+        addCliHistoryEntry(nodeId, {
+          type: 'received',
+          text: `[Error: ${friendlyErr}]`,
+          timestamp: Date.now(),
+        });
+        console.warn('[useMeshCore] sendRepeaterCliCommand error', e);
+        throw new Error(friendlyErr);
+      }
+    },
+    [addCliHistoryEntry, bumpMeshcoreNodeLastHeardFromRpc, meshcoreTraceResults],
+  );
+
   const toggleManualAddContacts = useCallback(async (manual: boolean) => {
     if (!connRef.current) return;
     try {
@@ -3265,6 +3434,10 @@ export function useMeshCore() {
     meshcorePingErrors,
     meshcoreNeighbors,
     meshcoreNeighborErrors,
+    meshcoreCliHistories,
+    meshcoreCliErrors,
+    sendRepeaterCliCommand,
+    clearCliHistory,
     manualAddContacts,
     // Stubs for interface compatibility
     mqttStatus,

@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
+  CliHistoryEntry,
   MeshCoreNeighborResult,
   MeshCoreNodeTelemetry,
   MeshCoreRepeaterStatus,
@@ -42,6 +43,10 @@ interface Props {
   meshcoreTelemetry?: Map<number, MeshCoreNodeTelemetry>;
   meshcoreTelemetryErrors?: Map<number, string>;
   onSelectRepeater?: (node: MeshNode) => void;
+  onSendCliCommand?: (nodeId: number, command: string, useSavedPath: boolean) => Promise<string>;
+  meshcoreCliHistories?: Map<number, CliHistoryEntry[]>;
+  meshcoreCliErrors?: Map<number, string>;
+  onClearCliHistory?: (nodeId: number) => void;
 }
 
 const STALE_THRESHOLD_MS = 15 * 60 * 1000;
@@ -145,6 +150,10 @@ export default function RepeatersPanel({
   meshcoreTelemetry,
   meshcoreTelemetryErrors,
   onSelectRepeater,
+  onSendCliCommand,
+  meshcoreCliHistories,
+  meshcoreCliErrors,
+  onClearCliHistory,
 }: Props) {
   const { addToast } = useToast();
   const { ensureConfigured, RemoteAuthModal } = useMeshcoreRepeaterRemoteAuth();
@@ -167,6 +176,10 @@ export default function RepeatersPanel({
   const [expandedNeighbors, setExpandedNeighbors] = useState<Set<number>>(new Set());
   const [expandedTelemetry, setExpandedTelemetry] = useState<Set<number>>(new Set());
   const [expandedPath, setExpandedPath] = useState<Set<number>>(new Set());
+  const [expandedCli, setExpandedCli] = useState<Set<number>>(new Set());
+  const [cliInputValues, setCliInputValues] = useState<Map<number, string>>(new Map());
+  const [cliLoadingSet, setCliLoadingSet] = useState<Set<number>>(new Set());
+  const [cliUseSavedPath, setCliUseSavedPath] = useState<Map<number, boolean>>(new Map());
   const [searchQuery, setSearchQuery] = useState('');
 
   const repeaters = Array.from(nodes.values())
@@ -384,6 +397,69 @@ export default function RepeatersPanel({
     });
   };
 
+  const toggleCli = (nodeId: number) => {
+    setExpandedCli((prev) => {
+      const n = new Set(prev);
+      if (n.has(nodeId)) n.delete(nodeId);
+      else n.add(nodeId);
+      return n;
+    });
+  };
+
+  const handleCliCommand = async (nodeId: number, command: string) => {
+    if (!onSendCliCommand || !command.trim()) return;
+    const useSavedPath = cliUseSavedPath.get(nodeId) ?? false;
+    setCliLoadingSet((prev) => new Set([...prev, nodeId]));
+    try {
+      await onSendCliCommand(nodeId, command.trim(), useSavedPath);
+    } catch (e) {
+      console.warn('[RepeatersPanel] CLI command error', e);
+    } finally {
+      setCliLoadingSet((prev) => {
+        const n = new Set(prev);
+        n.delete(nodeId);
+        return n;
+      });
+    }
+  };
+
+  const handleCliQuickCommand = async (nodeId: number, command: string) => {
+    setCliInputValues((prev) => {
+      const n = new Map(prev);
+      n.set(nodeId, command);
+      return n;
+    });
+    await handleCliCommand(nodeId, command);
+  };
+
+  const toggleCliRoutingMode = (nodeId: number) => {
+    setCliUseSavedPath((prev) => {
+      const n = new Map(prev);
+      const current = prev.get(nodeId) ?? false;
+      n.set(nodeId, !current);
+      return n;
+    });
+  };
+
+  const handleCliClear = (nodeId: number) => {
+    onClearCliHistory?.(nodeId);
+  };
+
+  const handleCliKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, nodeId: number) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      const value = cliInputValues.get(nodeId) ?? '';
+      if (value.trim()) {
+        void handleCliCommand(nodeId, value);
+        setCliInputValues((prev) => {
+          const n = new Map(prev);
+          n.delete(nodeId);
+          return n;
+        });
+      }
+    }
+  };
+
   return (
     <>
       <div className="flex flex-col gap-4">
@@ -539,11 +615,17 @@ export default function RepeatersPanel({
                   const isNeighborsExpanded = expandedNeighbors.has(node.node_id);
                   const isTelemetryExpanded = expandedTelemetry.has(node.node_id);
                   const isPathExpanded = expandedPath.has(node.node_id);
+                  const isCliExpanded = expandedCli.has(node.node_id);
+                  const isCliLoading = cliLoadingSet.has(node.node_id);
+                  const cliHistory = meshcoreCliHistories?.get(node.node_id) ?? [];
+                  const cliError = meshcoreCliErrors?.get(node.node_id);
+                  const cliUseAutoPath = cliUseSavedPath.get(node.node_id) ?? false;
                   const neighborError = meshcoreNeighborErrors?.get(node.node_id);
                   const actionErrorSummary = [
                     statusError && `Status: ${statusError}`,
                     pingError && `Ping: ${pingError}`,
                     neighborError && !isNeighborsExpanded && `Neighbors: ${neighborError}`,
+                    cliError && !isCliExpanded && `CLI: ${cliError}`,
                   ]
                     .filter(Boolean)
                     .join(' · ');
@@ -732,6 +814,24 @@ export default function RepeatersPanel({
                                 )}
                               </button>
                             )}
+                            {onSendCliCommand && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  toggleCli(node.node_id);
+                                }}
+                                disabled={!isConnected}
+                                title="Open CLI interface"
+                                aria-label="CLI interface"
+                                className={`px-2 py-0.5 rounded text-xs font-medium transition-colors disabled:opacity-40 ${
+                                  isCliExpanded
+                                    ? 'bg-cyan-900/60 text-cyan-300 border border-cyan-700'
+                                    : 'bg-gray-800 text-gray-300 border border-gray-600 hover:bg-gray-700'
+                                }`}
+                              >
+                                CLI
+                              </button>
+                            )}
                             <button
                               onClick={() => void handleDelete(node.node_id)}
                               disabled={isDeleteLoading}
@@ -893,6 +993,124 @@ export default function RepeatersPanel({
                                 ) : null}
                               </div>
                             )}
+                          </td>
+                        </tr>
+                      )}
+
+                      {/* CLI detail row */}
+                      {isCliExpanded && onSendCliCommand && (
+                        <tr className="bg-gray-900/60">
+                          <td colSpan={10} className="px-4 py-2">
+                            <div className="flex flex-col gap-2">
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="text"
+                                  value={cliInputValues.get(node.node_id) ?? ''}
+                                  onChange={(e) => {
+                                    setCliInputValues((prev) => {
+                                      const n = new Map(prev);
+                                      n.set(node.node_id, e.target.value);
+                                      return n;
+                                    });
+                                  }}
+                                  onKeyDown={(e) => {
+                                    handleCliKeyDown(e, node.node_id);
+                                  }}
+                                  placeholder="Enter command..."
+                                  disabled={!isConnected || isCliLoading}
+                                  className="flex-1 min-w-[200px] px-2 py-1 bg-gray-800 rounded text-sm text-gray-200 border border-gray-600 focus:border-cyan-500 focus:outline-none disabled:opacity-40"
+                                  aria-label="CLI command input"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const cmd = cliInputValues.get(node.node_id) ?? '';
+                                    if (cmd.trim()) {
+                                      void handleCliCommand(node.node_id, cmd);
+                                      setCliInputValues((prev) => {
+                                        const n = new Map(prev);
+                                        n.delete(node.node_id);
+                                        return n;
+                                      });
+                                    }
+                                  }}
+                                  disabled={
+                                    !isConnected ||
+                                    isCliLoading ||
+                                    !cliInputValues.get(node.node_id)?.trim()
+                                  }
+                                  className="px-3 py-1 rounded text-xs font-medium bg-cyan-900/60 text-cyan-300 border border-cyan-700 hover:bg-cyan-800/60 transition-colors disabled:opacity-40"
+                                >
+                                  {isCliLoading ? (
+                                    <span className="w-3 h-3 border border-cyan-400 border-t-transparent rounded-full animate-spin inline-block" />
+                                  ) : (
+                                    'Send'
+                                  )}
+                                </button>
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                <span className="text-xs text-gray-500 mr-1">Quick:</span>
+                                {[
+                                  'name',
+                                  'radio',
+                                  'neighbors',
+                                  'version',
+                                  'status',
+                                  'config',
+                                  'help',
+                                ].map((cmd) => (
+                                  <button
+                                    key={cmd}
+                                    type="button"
+                                    onClick={() => void handleCliQuickCommand(node.node_id, cmd)}
+                                    disabled={!isConnected || isCliLoading}
+                                    className="px-1.5 py-0.5 rounded text-xs bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-40"
+                                  >
+                                    {cmd}
+                                  </button>
+                                ))}
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <label className="flex items-center gap-1 text-xs text-gray-400">
+                                  <input
+                                    type="checkbox"
+                                    checked={cliUseAutoPath}
+                                    onChange={() => {
+                                      toggleCliRoutingMode(node.node_id);
+                                    }}
+                                    className="w-3 h-3"
+                                  />
+                                  <span>Use saved path</span>
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    handleCliClear(node.node_id);
+                                  }}
+                                  className="text-xs text-gray-500 hover:text-gray-300 underline"
+                                >
+                                  Clear history
+                                </button>
+                              </div>
+                              <div className="max-h-40 overflow-y-auto bg-gray-950/50 rounded border border-gray-700">
+                                {cliHistory.length === 0 ? (
+                                  <div className="px-2 py-1 text-xs text-gray-500 italic">
+                                    No commands yet
+                                  </div>
+                                ) : (
+                                  cliHistory.map((entry, idx) => (
+                                    <div
+                                      key={`${entry.timestamp}-${idx}`}
+                                      className={`px-2 py-0.5 text-xs font-mono ${
+                                        entry.type === 'sent' ? 'text-cyan-300' : 'text-gray-300'
+                                      }`}
+                                    >
+                                      {entry.type === 'sent' ? '>' : '<'} {entry.text}
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            </div>
                           </td>
                         </tr>
                       )}
