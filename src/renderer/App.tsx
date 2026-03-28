@@ -1176,6 +1176,10 @@ export default function App() {
                           onSelectRepeater={(node) => {
                             setSelectedNodeId(node.node_id);
                           }}
+                          onSendCliCommand={meshcoreDevice.sendRepeaterCliCommand}
+                          meshcoreCliHistories={meshcoreDevice.meshcoreCliHistories}
+                          meshcoreCliErrors={meshcoreDevice.meshcoreCliErrors}
+                          onClearCliHistory={meshcoreDevice.clearCliHistory}
                         />
                       </Suspense>
                     </ErrorBoundary>
