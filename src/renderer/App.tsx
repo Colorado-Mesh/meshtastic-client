@@ -763,7 +763,7 @@ export default function App() {
             <div role="status" aria-live="polite" aria-atomic="true">
               <span
                 aria-label={`${device.state.status}${device.state.connectionType ? ` (${device.state.connectionType.toUpperCase()})` : ''}`}
-                className={`text-sm capitalize ${
+                className={`text-xs capitalize ${
                   device.state.status === 'connecting'
                     ? 'text-yellow-400 animate-pulse'
                     : device.state.status === 'stale'

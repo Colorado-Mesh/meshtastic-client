@@ -34,13 +34,13 @@ describe('isDeviceEntry — Meshtastic protocol', () => {
     );
   });
 
-  it('classifies [MQTT] message as Meshtastic device entry', () => {
+  it('classifies [MQTT] message as app-level (not Meshtastic device entry)', () => {
     expect(
       isDeviceEntry(
         entry('main', '[MQTT] ServiceEnvelope decode failed: illegal tag'),
         'meshtastic',
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('classifies [NobleBleManager] message as Meshtastic device entry', () => {
@@ -133,8 +133,8 @@ describe('isDeviceEntry — no protocol (fallback)', () => {
     expect(isDeviceEntry(entry('meshcore', 'msg'))).toBe(true);
   });
 
-  it('classifies [MQTT] message as device entry', () => {
-    expect(isDeviceEntry(entry('main', '[MQTT] something'))).toBe(true);
+  it('classifies [MQTT] message as app-level when no protocol', () => {
+    expect(isDeviceEntry(entry('main', '[MQTT] something'))).toBe(false);
   });
 
   it('classifies [MeshcoreMqttAdapter] message as device entry', () => {
@@ -156,11 +156,10 @@ describe('isDeviceEntry — no protocol (fallback)', () => {
 });
 
 describe('dual-mode appEntries guard', () => {
-  it('Meshtastic [MQTT] entry is excluded from app view when MeshCore is active protocol', () => {
+  it('Meshtastic [MQTT] entry appears in app view (not treated as device log)', () => {
     const mqttEntry = entry('main', '[MQTT] ServiceEnvelope decode failed');
-    // In dual-mode, appEntries filters out BOTH protocols' device entries
     const isApp = !isDeviceEntry(mqttEntry, 'meshtastic') && !isDeviceEntry(mqttEntry, 'meshcore');
-    expect(isApp).toBe(false);
+    expect(isApp).toBe(true);
   });
 
   it('MeshCore [MeshcoreMqttAdapter] entry is excluded from app view when Meshtastic is active', () => {
