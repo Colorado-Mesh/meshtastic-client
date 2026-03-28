@@ -1128,31 +1128,55 @@ export function useMeshCore() {
         });
       };
 
-      // Push: periodic advert — event 0x80 = 128
+      // Push: periodic advert — event 0x80 = 128 (meshcore.js emits publicKey only; lat/lastAdvert may be absent)
       conn.on(128, (data: unknown) => {
         const d = data as {
           publicKey: Uint8Array;
-          advLat: number;
-          advLon: number;
-          lastAdvert: number;
+          advLat?: number;
+          advLon?: number;
+          lastAdvert?: number;
         };
         const nodeId = pubkeyToNodeId(d.publicKey);
+        const nowSec = Math.floor(Date.now() / 1000);
         console.debug('[useMeshCore] event 128: advert from', nodeId.toString(16).toUpperCase());
+        let persistLastAdvert = nowSec;
+        let persistLat: number | null = null;
+        let persistLon: number | null = null;
+        let didUpdateNode = false;
         setNodes((prev) => {
           const existing = prev.get(nodeId);
           if (!existing) return prev;
+          didUpdateNode = true;
           const nick = nicknameMapRef.current.get(nodeId);
           const next = new Map(prev);
+          const hasLat =
+            typeof d.advLat === 'number' && Number.isFinite(d.advLat) && d.advLat !== 0;
+          const hasLon =
+            typeof d.advLon === 'number' && Number.isFinite(d.advLon) && d.advLon !== 0;
+          const lastHeard =
+            typeof d.lastAdvert === 'number' && Number.isFinite(d.lastAdvert) && d.lastAdvert > 0
+              ? d.lastAdvert
+              : nowSec;
+          persistLastAdvert = lastHeard;
+          persistLat = hasLat ? d.advLat! / MESHCORE_COORD_SCALE : (existing.latitude ?? null);
+          persistLon = hasLon ? d.advLon! / MESHCORE_COORD_SCALE : (existing.longitude ?? null);
           next.set(nodeId, {
             ...existing,
-            last_heard: d.lastAdvert,
-            latitude: d.advLat !== 0 ? d.advLat / MESHCORE_COORD_SCALE : existing.latitude,
-            longitude: d.advLon !== 0 ? d.advLon / MESHCORE_COORD_SCALE : existing.longitude,
+            last_heard: lastHeard,
+            latitude: hasLat ? d.advLat! / MESHCORE_COORD_SCALE : existing.latitude,
+            longitude: hasLon ? d.advLon! / MESHCORE_COORD_SCALE : existing.longitude,
             ...(nick ? { long_name: nick, short_name: '' } : {}),
           });
           return next;
         });
-        if (d.advLat !== 0 && d.advLon !== 0) {
+        if (
+          typeof d.advLat === 'number' &&
+          Number.isFinite(d.advLat) &&
+          d.advLat !== 0 &&
+          typeof d.advLon === 'number' &&
+          Number.isFinite(d.advLon) &&
+          d.advLon !== 0
+        ) {
           usePositionHistoryStore
             .getState()
             .recordPosition(
@@ -1161,17 +1185,13 @@ export function useMeshCore() {
               d.advLon / MESHCORE_COORD_SCALE,
             );
         }
-        // Persist updated advert position to DB
-        void window.electronAPI.db
-          .updateMeshcoreContactAdvert(
-            nodeId,
-            d.lastAdvert ?? null,
-            d.advLat !== 0 ? d.advLat / MESHCORE_COORD_SCALE : null,
-            d.advLon !== 0 ? d.advLon / MESHCORE_COORD_SCALE : null,
-          )
-          .catch((e: unknown) => {
-            console.warn('[useMeshCore] updateMeshcoreContactAdvert error', e);
-          });
+        if (didUpdateNode) {
+          void window.electronAPI.db
+            .updateMeshcoreContactAdvert(nodeId, persistLastAdvert, persistLat, persistLon)
+            .catch((e: unknown) => {
+              console.warn('[useMeshCore] updateMeshcoreContactAdvert error', e);
+            });
+        }
       });
 
       // Push: path updated — event 0x81 = 129; update last_heard for that contact
@@ -2562,7 +2582,12 @@ export function useMeshCore() {
     try {
       await meshcoreTryRepeaterLogin(connRef.current, pubKey);
       const raw = await connRef.current.getTelemetry(pubKey);
-      const entries = CayenneLpp.parse(raw.lppSensorData) as CayenneLppEntry[];
+      let entries: CayenneLppEntry[] = [];
+      try {
+        entries = CayenneLpp.parse(raw.lppSensorData) as CayenneLppEntry[];
+      } catch (parseErr) {
+        console.warn('[useMeshCore] requestTelemetry CayenneLpp.parse error', parseErr);
+      }
       const result: MeshCoreNodeTelemetry = { fetchedAt: Date.now(), entries };
       for (const entry of entries) {
         if (entry.type === CayenneLpp.LPP_TEMPERATURE && typeof entry.value === 'number') {

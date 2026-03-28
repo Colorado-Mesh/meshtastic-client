@@ -7,6 +7,7 @@ import type {
 } from '../hooks/useMeshCore';
 import { formatCoordPair } from '../lib/coordUtils';
 import { meshcoreEnsureRepeaterRemoteAuthPrompt } from '../lib/meshcoreUtils';
+import { normalizeLastHeardMs } from '../lib/nodeStatus';
 import type { MeshNode } from '../lib/types';
 import { useCoordFormatStore } from '../stores/coordFormatStore';
 import { useRepeaterSignalStore } from '../stores/repeaterSignalStore';
@@ -43,14 +44,19 @@ const STALE_THRESHOLD_MS = 15 * 60 * 1000;
 
 function getRepeaterStatus(lastHeard: number | null | undefined): 'active' | 'stale' | 'unknown' {
   if (!lastHeard) return 'unknown';
-  const ageMs = Date.now() - lastHeard * 1000;
+  const lastMs = normalizeLastHeardMs(lastHeard);
+  if (!lastMs) return 'unknown';
+  const ageMs = Date.now() - lastMs;
   return ageMs < STALE_THRESHOLD_MS ? 'active' : 'stale';
 }
 
 function formatRelativeTime(lastHeard: number | null | undefined): string {
   if (!lastHeard) return 'Never';
-  const ageMs = Date.now() - lastHeard * 1000;
+  const lastMs = normalizeLastHeardMs(lastHeard);
+  if (!lastMs) return 'Never';
+  const ageMs = Date.now() - lastMs;
   const ageSec = Math.floor(ageMs / 1000);
+  if (ageSec < 0) return 'Unknown';
   if (ageSec < 60) return `${ageSec}s ago`;
   const ageMin = Math.floor(ageSec / 60);
   if (ageMin < 60) return `${ageMin}m ago`;
@@ -152,7 +158,9 @@ export default function RepeatersPanel({
 
   const repeaters = Array.from(nodes.values())
     .filter((n) => n.hw_model === 'Repeater')
-    .sort((a, b) => (b.last_heard ?? 0) - (a.last_heard ?? 0));
+    .sort(
+      (a, b) => normalizeLastHeardMs(b.last_heard ?? 0) - normalizeLastHeardMs(a.last_heard ?? 0),
+    );
 
   const repeatersFiltered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -326,10 +334,10 @@ export default function RepeatersPanel({
       return;
     }
     if (!meshcoreEnsureRepeaterRemoteAuthPrompt()) return;
+    setExpandedTelemetry((prev) => new Set([...prev, nodeId]));
     setTelemetryLoadingSet((prev) => new Set([...prev, nodeId]));
     try {
       await onRequestTelemetry?.(nodeId);
-      setExpandedTelemetry((prev) => new Set([...prev, nodeId]));
     } catch (e) {
       console.warn('[RepeatersPanel] requestTelemetry error', e);
     } finally {
@@ -728,50 +736,60 @@ export default function RepeatersPanel({
                     )}
 
                     {/* Telemetry detail row */}
-                    {isTelemetryExpanded && telemetryData && (
+                    {isTelemetryExpanded && (
                       <tr className="bg-gray-900/60">
                         <td colSpan={10} className="px-4 py-2">
-                          <div className="flex items-center gap-4 text-xs flex-wrap">
-                            {telemetryData.voltage != null && (
-                              <span className="text-amber-300">
-                                Battery: {telemetryData.voltage.toFixed(2)}V
-                              </span>
-                            )}
-                            {telemetryData.temperature != null && (
-                              <span className="text-blue-300">
-                                Temp: {telemetryData.temperature.toFixed(1)}°C
-                              </span>
-                            )}
-                            {telemetryData.relativeHumidity != null && (
-                              <span className="text-cyan-300">
-                                Humidity: {telemetryData.relativeHumidity.toFixed(0)}%
-                              </span>
-                            )}
-                            {telemetryData.barometricPressure != null && (
-                              <span className="text-gray-300">
-                                Pressure: {telemetryData.barometricPressure.toFixed(1)} hPa
-                              </span>
-                            )}
-                            {telemetryData.gps && (
-                              <span className="text-green-300">
-                                GPS:{' '}
-                                {formatCoordPair(
-                                  telemetryData.gps.latitude,
-                                  telemetryData.gps.longitude,
-                                  coordinateFormat,
-                                )}
-                                {telemetryData.gps.altitude
-                                  ? ` alt ${telemetryData.gps.altitude}m`
-                                  : ''}
-                              </span>
-                            )}
-                            {!telemetryData.voltage &&
-                              !telemetryData.temperature &&
-                              !telemetryData.relativeHumidity &&
-                              !telemetryData.gps && (
-                                <span className="text-gray-500">No telemetry data available</span>
+                          {isTelemetryLoading ? (
+                            <p className="text-xs text-gray-500">Fetching telemetry…</p>
+                          ) : telemetryData ? (
+                            <div className="flex items-center gap-4 text-xs flex-wrap">
+                              {telemetryData.voltage != null && (
+                                <span className="text-amber-300">
+                                  Battery: {telemetryData.voltage.toFixed(2)}V
+                                </span>
                               )}
-                          </div>
+                              {telemetryData.temperature != null && (
+                                <span className="text-blue-300">
+                                  Temp: {telemetryData.temperature.toFixed(1)}°C
+                                </span>
+                              )}
+                              {telemetryData.relativeHumidity != null && (
+                                <span className="text-cyan-300">
+                                  Humidity: {telemetryData.relativeHumidity.toFixed(0)}%
+                                </span>
+                              )}
+                              {telemetryData.barometricPressure != null && (
+                                <span className="text-gray-300">
+                                  Pressure: {telemetryData.barometricPressure.toFixed(1)} hPa
+                                </span>
+                              )}
+                              {telemetryData.gps && (
+                                <span className="text-green-300">
+                                  GPS:{' '}
+                                  {formatCoordPair(
+                                    telemetryData.gps.latitude,
+                                    telemetryData.gps.longitude,
+                                    coordinateFormat,
+                                  )}
+                                  {telemetryData.gps.altitude
+                                    ? ` alt ${telemetryData.gps.altitude}m`
+                                    : ''}
+                                </span>
+                              )}
+                              {telemetryData.voltage == null &&
+                                telemetryData.temperature == null &&
+                                telemetryData.relativeHumidity == null &&
+                                telemetryData.barometricPressure == null &&
+                                !telemetryData.gps && (
+                                  <span className="text-gray-500">No telemetry data available</span>
+                                )}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-gray-500">
+                              No telemetry response yet (timeout, auth, or repeater has no sensors).
+                              Try Telemetry again.
+                            </p>
+                          )}
                         </td>
                       </tr>
                     )}
