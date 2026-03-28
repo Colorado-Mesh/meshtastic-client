@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { LocationFilter } from '../App';
+import { getAppSettingsRaw, setAppSettingsRaw } from '../lib/appSettingsStorage';
 import { formatCoordPair } from '../lib/coordUtils';
-import { DEFAULT_ADMIN_SETTINGS_SHARED } from '../lib/defaultAdminSettings';
+import { DEFAULT_APP_SETTINGS_SHARED } from '../lib/defaultAppSettings';
 import type { OurPosition } from '../lib/gpsSource';
 import { haversineDistanceKm } from '../lib/nodeStatus';
 import { parseStoredJson } from '../lib/parseStoredJson';
@@ -92,8 +93,8 @@ function ConfirmModal({
   );
 }
 
-// ─── Admin Settings ─────────────────────────────────────────────
-interface AdminSettings {
+// ─── App settings (persisted) ────────────────────────────────────
+interface AppSettings {
   autoPruneEnabled: boolean;
   autoPruneDays: number;
   pruneEmptyNamesEnabled: boolean;
@@ -108,16 +109,16 @@ interface AdminSettings {
   messageLimitCount: number;
 }
 
-const DEFAULT_SETTINGS: AdminSettings = {
-  ...DEFAULT_ADMIN_SETTINGS_SHARED,
+const DEFAULT_SETTINGS: AppSettings = {
+  ...DEFAULT_APP_SETTINGS_SHARED,
   filterMqttOnly: false,
   messageLimitEnabled: true,
   messageLimitCount: 1000,
 };
 
-function loadSettings(): AdminSettings {
-  const parsed = parseStoredJson<Partial<AdminSettings>>(
-    localStorage.getItem('mesh-client:adminSettings'),
+function loadSettings(): AppSettings {
+  const parsed = parseStoredJson<Partial<AppSettings>>(
+    getAppSettingsRaw(),
     'AppPanel loadSettings',
   );
   return parsed ? { ...DEFAULT_SETTINGS, ...parsed } : DEFAULT_SETTINGS;
@@ -178,7 +179,7 @@ export default function AppPanel({
   const coordinateFormat = useCoordFormatStore((s) => s.coordinateFormat);
 
   // ─── Node retention settings ────────────────────────────────
-  const [settings, setSettings] = useState<AdminSettings>(loadSettings);
+  const [settings, setSettings] = useState<AppSettings>(loadSettings);
   const [themeColors, setThemeColors] = useState<Record<ThemeColorKey, string>>(loadThemeColors);
   const [deleteAgeDays, setDeleteAgeDays] = useState(90);
 
@@ -196,7 +197,7 @@ export default function AppPanel({
   useEffect(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      localStorage.setItem('mesh-client:adminSettings', JSON.stringify(settings));
+      setAppSettingsRaw(JSON.stringify(settings));
     }, 300);
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -218,7 +219,7 @@ export default function AppPanel({
     onLocationFilterChange,
   ]);
 
-  const updateSetting = <K extends keyof AdminSettings>(key: K, value: AdminSettings[K]) => {
+  const updateSetting = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
   };
 

@@ -10,6 +10,7 @@ import {
 
 import ChatPanel from './components/ChatPanel';
 import ConnectionPanel from './components/ConnectionPanel';
+import ContactGroupsModal from './components/ContactGroupsModal';
 import ErrorBoundary from './components/ErrorBoundary';
 import KeyboardShortcutsModal from './components/KeyboardShortcutsModal';
 import LogPanel from './components/LogPanel';
@@ -20,6 +21,7 @@ import { LinkIcon } from './components/SignalBars';
 import Tabs from './components/Tabs';
 import { ToastProvider, useToast } from './components/Toast';
 import UpdateStatusIndicator from './components/UpdateStatusIndicator';
+import { useContactGroups } from './hooks/useContactGroups';
 import { useDevice } from './hooks/useDevice';
 import { useMeshCore } from './hooks/useMeshCore';
 import {
@@ -29,9 +31,11 @@ import {
   ModulePanel,
   RadioPanel,
   RepeatersPanel,
+  SecurityPanel,
   TelemetryPanel,
 } from './lazyTabPanels';
-import { DEFAULT_ADMIN_SETTINGS_SHARED } from './lib/defaultAdminSettings';
+import { getAppSettingsRaw } from './lib/appSettingsStorage';
+import { DEFAULT_APP_SETTINGS_SHARED } from './lib/defaultAppSettings';
 import {
   fetchLatestMeshCoreRelease,
   fetchLatestMeshtasticRelease,
@@ -52,6 +56,7 @@ import {
   readMeshcoreIdentity,
 } from './lib/letsMeshJwt';
 import { parseStoredJson } from './lib/parseStoredJson';
+import type { ProtocolCapabilities } from './lib/radio/BaseRadioProvider';
 import { useRadioProvider } from './lib/radio/providerFactory';
 import { getStoredMeshProtocol, MESH_PROTOCOL_STORAGE_KEY } from './lib/storedMeshProtocol';
 import { applyThemeColors, loadThemeColors } from './lib/themeColors';
@@ -59,9 +64,20 @@ import type { ChatMessage, DeviceState, MeshProtocol, MQTTSettings, MQTTStatus }
 import { useDiagnosticsStore } from './stores/diagnosticsStore';
 
 // Tabs (0-indexed) that are disabled in MeshCore mode
-// Tab 6 (Telemetry) re-enabled — capabilities-aware rendering handles battery/signal differences
-// Tab 8 (Diagnostics) re-enabled — foreign LoRa detection works in both Meshtastic and MeshCore modes
-const MESHCORE_DISABLED_TABS = new Set<number>([]);
+// Security tab (index 7) is hidden for MeshCore since PKI config is not supported
+// These map tab index → required capability (undefined = always shown)
+const TAB_CAPABILITY_REQUIREMENTS: (keyof ProtocolCapabilities | undefined)[] = [
+  undefined, // Connection
+  undefined, // Chat
+  undefined, // Nodes
+  undefined, // Map
+  undefined, // Radio
+  undefined, // Modules
+  undefined, // Telemetry
+  'hasSecurityPanel', // Security
+  undefined, // App
+  undefined, // Diagnostics
+];
 
 const STATUS_COLOR: Record<string, string> = {
   disconnected: 'bg-red-500',
@@ -80,6 +96,7 @@ const TAB_NAMES = [
   'Radio',
   'Modules',
   'Telemetry',
+  'Security',
   'App',
   'Diagnostics',
 ];
@@ -185,7 +202,7 @@ export default function App() {
   const [locationFilter, setLocationFilter] = useState<LocationFilter>(() => {
     const s =
       parseStoredJson<Record<string, unknown>>(
-        localStorage.getItem('mesh-client:adminSettings'),
+        getAppSettingsRaw(),
         'App locationFilter initial state',
       ) ?? {};
     return {
@@ -231,6 +248,10 @@ export default function App() {
 
   const meshtasticDevice = useDevice();
   const meshcoreDevice = useMeshCore();
+  const contactGroups = useContactGroups(
+    protocol === 'meshcore' ? meshcoreDevice.selfNodeId : null,
+  );
+  const [showGroupsModal, setShowGroupsModal] = useState(false);
   const device =
     protocol === 'meshcore'
       ? (meshcoreDevice as unknown as typeof meshtasticDevice)
@@ -252,10 +273,31 @@ export default function App() {
 
   const capabilities = useRadioProvider(protocol);
 
-  const displayTabNames = useMemo(
-    () => TAB_NAMES.map((name, i) => (protocol === 'meshcore' && i === 5 ? 'Repeaters' : name)),
-    [protocol],
-  );
+  const { displayTabNames, tabIndexToPanelIndex } = useMemo(() => {
+    const filtered: { name: string; panelIndex: number }[] = [];
+    TAB_NAMES.forEach((name, panelIndex) => {
+      const requiredCap = TAB_CAPABILITY_REQUIREMENTS[panelIndex];
+      if (requiredCap === undefined || capabilities[requiredCap]) {
+        filtered.push({
+          name: panelIndex === 5 && protocol === 'meshcore' ? 'Repeaters' : name,
+          panelIndex,
+        });
+      }
+    });
+    return {
+      displayTabNames: filtered.map((t) => t.name),
+      tabIndexToPanelIndex: filtered.map((t) => t.panelIndex),
+    };
+  }, [protocol, capabilities]);
+
+  const activePanelIndex = tabIndexToPanelIndex[activeTab] ?? 0;
+
+  // Reset activeTab if it's out of bounds (e.g., switching to meshcore while on Security tab)
+  useEffect(() => {
+    if (activeTab >= displayTabNames.length) {
+      setActiveTab(0);
+    }
+  }, [activeTab, displayTabNames.length]);
 
   const handleProtocolChange = useCallback(
     (p: MeshProtocol) => {
@@ -362,15 +404,13 @@ export default function App() {
     setSearchModalOpen(true);
   }, []);
 
-  // ─── Startup node pruning based on persisted admin settings ─────
+  // ─── Startup node pruning based on persisted app settings ─────
   const { refreshNodesFromDb } = device;
   useEffect(() => {
     const raw =
-      parseStoredJson<Record<string, unknown>>(
-        localStorage.getItem('mesh-client:adminSettings'),
-        'App startup node pruning',
-      ) ?? {};
-    const s = { ...DEFAULT_ADMIN_SETTINGS_SHARED, ...raw };
+      parseStoredJson<Record<string, unknown>>(getAppSettingsRaw(), 'App startup node pruning') ??
+      {};
+    const s = { ...DEFAULT_APP_SETTINGS_SHARED, ...raw };
     const ops: Promise<unknown>[] = [
       // One-time migration: rename legacy "RF !xxxxxxxx" stub nodes to "!xxxxxxxx"
       window.electronAPI.db.migrateRfStubNodes().catch((e: unknown) => {
@@ -861,13 +901,17 @@ export default function App() {
               active={activeTab}
               onChange={setActiveTab}
               chatUnread={protocol === 'meshtastic' ? meshtasticUnread : meshcoreUnread}
-              disabledTabs={protocol === 'meshcore' ? MESHCORE_DISABLED_TABS : undefined}
             />
 
             {/* Content */}
             <main className="flex-1 overflow-auto p-4 min-h-0">
               <ErrorBoundary>
-                <div id="panel-0" role="tabpanel" aria-labelledby="tab-0" hidden={activeTab !== 0}>
+                <div
+                  id="panel-0"
+                  role="tabpanel"
+                  aria-labelledby="tab-0"
+                  hidden={activePanelIndex !== 0}
+                >
                   {/* Both panels are always mounted so each protocol auto-connects at startup */}
                   <div hidden={protocol !== 'meshtastic'}>
                     <ConnectionPanel
@@ -938,7 +982,12 @@ export default function App() {
                     />
                   </div>
                 </div>
-                <div id="panel-1" role="tabpanel" aria-labelledby="tab-1" hidden={activeTab !== 1}>
+                <div
+                  id="panel-1"
+                  role="tabpanel"
+                  aria-labelledby="tab-1"
+                  hidden={activePanelIndex !== 1}
+                >
                   <ChatPanel
                     key={protocol}
                     messages={chatMessagesForPanel}
@@ -959,8 +1008,13 @@ export default function App() {
                     protocol={protocol}
                   />
                 </div>
-                <div id="panel-2" role="tabpanel" aria-labelledby="tab-2" hidden={activeTab !== 2}>
-                  {activeTab === 2 ? (
+                <div
+                  id="panel-2"
+                  role="tabpanel"
+                  aria-labelledby="tab-2"
+                  hidden={activePanelIndex !== 2}
+                >
+                  {activePanelIndex === 2 ? (
                     <NodeListPanel
                       nodes={nodesForUi}
                       myNodeNum={device.selfNodeId}
@@ -971,6 +1025,26 @@ export default function App() {
                       locationFilter={locationFilter}
                       onToggleFavorite={device.setNodeFavorited}
                       mode={protocol}
+                      groups={protocol === 'meshcore' ? contactGroups.groups : undefined}
+                      selectedGroupId={
+                        protocol === 'meshcore' ? contactGroups.selectedGroupId : undefined
+                      }
+                      onGroupChange={
+                        protocol === 'meshcore' ? contactGroups.setSelectedGroupId : undefined
+                      }
+                      onManageGroups={
+                        protocol === 'meshcore'
+                          ? () => {
+                              setShowGroupsModal(true);
+                            }
+                          : undefined
+                      }
+                      groupMemberIds={
+                        protocol === 'meshcore' ? contactGroups.groupMemberIds : undefined
+                      }
+                      onImportContacts={
+                        protocol === 'meshcore' ? meshcoreDevice.importContacts : undefined
+                      }
                     />
                   ) : null}
                 </div>
@@ -978,10 +1052,10 @@ export default function App() {
                   id="panel-3"
                   role="tabpanel"
                   aria-labelledby="tab-3"
-                  hidden={activeTab !== 3}
+                  hidden={activePanelIndex !== 3}
                   className="h-full"
                 >
-                  {activeTab === 3 ? (
+                  {activePanelIndex === 3 ? (
                     <ErrorBoundary>
                       <Suspense fallback={<PanelSkeleton />}>
                         <MapPanel
@@ -1003,8 +1077,13 @@ export default function App() {
                     </ErrorBoundary>
                   ) : null}
                 </div>
-                <div id="panel-4" role="tabpanel" aria-labelledby="tab-4" hidden={activeTab !== 4}>
-                  {activeTab === 4 ? (
+                <div
+                  id="panel-4"
+                  role="tabpanel"
+                  aria-labelledby="tab-4"
+                  hidden={activePanelIndex !== 4}
+                >
+                  {activePanelIndex === 4 ? (
                     <ErrorBoundary>
                       <Suspense fallback={<PanelSkeleton />}>
                         <RadioPanel
@@ -1066,17 +1145,23 @@ export default function App() {
                     </ErrorBoundary>
                   ) : null}
                 </div>
-                <div id="panel-5" role="tabpanel" aria-labelledby="tab-5" hidden={activeTab !== 5}>
-                  {activeTab === 5 && protocol === 'meshcore' ? (
+                <div
+                  id="panel-5"
+                  role="tabpanel"
+                  aria-labelledby="tab-5"
+                  hidden={activePanelIndex !== 5}
+                >
+                  {activePanelIndex === 5 && protocol === 'meshcore' ? (
                     <ErrorBoundary>
                       <Suspense fallback={<PanelSkeleton />}>
                         <RepeatersPanel
                           nodes={meshcoreDevice.nodes}
                           meshcoreNodeStatus={meshcoreDevice.meshcoreNodeStatus}
+                          meshcoreStatusErrors={meshcoreDevice.meshcoreStatusErrors}
                           meshcoreTraceResults={meshcoreDevice.meshcoreTraceResults}
+                          meshcorePingErrors={meshcoreDevice.meshcorePingErrors}
                           onRequestRepeaterStatus={meshcoreDevice.requestRepeaterStatus}
                           onPing={meshcoreDevice.traceRoute}
-                          onImportRepeaters={meshcoreDevice.importRepeaters}
                           onDeleteRepeater={meshcoreDevice.deleteNode}
                           isConnected={isOperational}
                           onSendAdvert={meshcoreDevice.sendAdvert}
@@ -1084,22 +1169,30 @@ export default function App() {
                           onReboot={meshcoreDevice.reboot}
                           onRequestNeighbors={meshcoreDevice.requestNeighbors}
                           meshcoreNeighbors={meshcoreDevice.meshcoreNeighbors}
+                          meshcoreNeighborErrors={meshcoreDevice.meshcoreNeighborErrors}
                           onRequestTelemetry={meshcoreDevice.requestTelemetry}
                           meshcoreTelemetry={meshcoreDevice.meshcoreNodeTelemetry}
+                          meshcoreTelemetryErrors={meshcoreDevice.meshcoreTelemetryErrors}
                           onSelectRepeater={(node) => {
                             setSelectedNodeId(node.node_id);
                           }}
+                          onSendCliCommand={meshcoreDevice.sendRepeaterCliCommand}
+                          meshcoreCliHistories={meshcoreDevice.meshcoreCliHistories}
+                          meshcoreCliErrors={meshcoreDevice.meshcoreCliErrors}
+                          onClearCliHistory={meshcoreDevice.clearCliHistory}
                         />
                       </Suspense>
                     </ErrorBoundary>
                   ) : null}
-                  {activeTab === 5 && protocol !== 'meshcore' ? (
+                  {activePanelIndex === 5 && protocol !== 'meshcore' ? (
                     <ErrorBoundary>
                       <Suspense fallback={<PanelSkeleton />}>
                         <ModulePanel
                           moduleConfigs={device.moduleConfigs}
                           onSetModuleConfig={device.setModuleConfig}
                           onSetCannedMessages={device.setCannedMessages}
+                          onSetRingtone={device.setRingtone}
+                          ringtone={device.ringtone}
                           onCommit={device.commitConfig}
                           isConnected={isOperational}
                         />
@@ -1107,8 +1200,13 @@ export default function App() {
                     </ErrorBoundary>
                   ) : null}
                 </div>
-                <div id="panel-6" role="tabpanel" aria-labelledby="tab-6" hidden={activeTab !== 6}>
-                  {activeTab === 6 ? (
+                <div
+                  id="panel-6"
+                  role="tabpanel"
+                  aria-labelledby="tab-6"
+                  hidden={activePanelIndex !== 6}
+                >
+                  {activePanelIndex === 6 ? (
                     <ErrorBoundary>
                       <Suspense fallback={<PanelSkeleton />}>
                         <TelemetryPanel
@@ -1125,8 +1223,32 @@ export default function App() {
                     </ErrorBoundary>
                   ) : null}
                 </div>
-                <div id="panel-7" role="tabpanel" aria-labelledby="tab-7" hidden={activeTab !== 7}>
-                  {activeTab === 7 ? (
+                <div
+                  id="panel-7"
+                  role="tabpanel"
+                  aria-labelledby="tab-7"
+                  hidden={activePanelIndex !== 7}
+                >
+                  {activePanelIndex === 7 ? (
+                    <ErrorBoundary>
+                      <Suspense fallback={<PanelSkeleton />}>
+                        <SecurityPanel
+                          onSetConfig={device.setConfig}
+                          onCommit={device.commitConfig}
+                          isConnected={isOperational}
+                          securityConfig={device.securityConfig}
+                        />
+                      </Suspense>
+                    </ErrorBoundary>
+                  ) : null}
+                </div>
+                <div
+                  id="panel-8"
+                  role="tabpanel"
+                  aria-labelledby="tab-8"
+                  hidden={activePanelIndex !== 8}
+                >
+                  {activePanelIndex === 8 ? (
                     <ErrorBoundary>
                       <Suspense fallback={<PanelSkeleton />}>
                         <AppPanel
@@ -1162,8 +1284,13 @@ export default function App() {
                     </ErrorBoundary>
                   ) : null}
                 </div>
-                <div id="panel-8" role="tabpanel" aria-labelledby="tab-8" hidden={activeTab !== 8}>
-                  {activeTab === 8 ? (
+                <div
+                  id="panel-9"
+                  role="tabpanel"
+                  aria-labelledby="tab-9"
+                  hidden={activePanelIndex !== 9}
+                >
+                  {activePanelIndex === 9 ? (
                     <ErrorBoundary>
                       <Suspense fallback={<PanelSkeleton />}>
                         <DiagnosticsPanel
@@ -1315,6 +1442,25 @@ export default function App() {
           }}
         />
 
+        {/* Contact Groups Modal */}
+        {showGroupsModal && protocol === 'meshcore' && (
+          <ContactGroupsModal
+            groups={contactGroups.groups}
+            contacts={meshcoreDevice.nodes}
+            selfNodeId={meshcoreDevice.selfNodeId}
+            onClose={() => {
+              setShowGroupsModal(false);
+            }}
+            onCreate={contactGroups.createGroup}
+            onRename={contactGroups.updateGroup}
+            onDelete={contactGroups.deleteGroup}
+            onAddMember={contactGroups.addMember}
+            onRemoveMember={contactGroups.removeMember}
+            onLoadMembers={contactGroups.loadMembers}
+            memberIds={contactGroups.groupMemberIds}
+          />
+        )}
+
         {/* Node Detail Modal — rendered outside main for proper z-indexing */}
         <NodeDetailModal
           nodes={nodesForUi}
@@ -1363,6 +1509,11 @@ export default function App() {
               : undefined
           }
           onRequestNeighbors={protocol === 'meshcore' ? meshcoreDevice.requestNeighbors : undefined}
+          meshcoreNeighborError={
+            protocol === 'meshcore' && selectedNode
+              ? meshcoreDevice.meshcoreNeighborErrors.get(selectedNode.node_id)
+              : undefined
+          }
         />
       </div>
     </ToastProvider>

@@ -23,17 +23,24 @@ import zlib from 'zlib';
 
 import type { MQTTSettings } from '../renderer/lib/types';
 import {
+  addContactToGroup,
   closeDatabase,
+  createContactGroup,
+  deleteContactGroup,
   deleteNodesBySource,
   deleteNodesWithoutLongname,
   exportDatabase,
+  getContactGroupMembers,
+  getContactGroups,
   getDatabase,
   initDatabase,
   mergeDatabase,
   migrateRfStubNodes,
+  removeContactFromGroup,
   runDeferredPositionHistoryPrune,
   searchMeshcoreMessages,
   searchMessages,
+  updateContactGroup,
 } from './database';
 import { getGpsFix } from './gps';
 import {
@@ -240,6 +247,7 @@ const MAX_STATUS_STRING = 1024;
 // Align with reasonable Meshtastic/DB bounds to prevent unbounded string allocation
 const MAX_NODE_STRING = 512;
 const MAX_HW_MODEL = 128;
+const MAX_GROUP_NAME = 100;
 
 function safeNonNegativeInt(value: unknown): number {
   const n = Number(value);
@@ -2960,7 +2968,7 @@ ipcMain.handle(
 ipcMain.handle('meshcore:openJsonFile', async () => {
   if (!mainWindow) return null;
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Import Repeaters JSON',
+    title: 'Import Contacts JSON',
     filters: [{ name: 'JSON', extensions: ['json'] }],
     properties: ['openFile'],
   });
@@ -3081,6 +3089,100 @@ ipcMain.handle('db:clearMeshcoreRepeaters', () => {
   }
 });
 
+// ─── IPC: Contact groups ──────────────────────────────────────────────────────
+
+ipcMain.handle('db:getContactGroups', (_event, selfNodeId: number) => {
+  try {
+    return getContactGroups(safeNonNegativeInt(selfNodeId));
+  } catch (err) {
+    console.error(
+      '[IPC] db:getContactGroups failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
+});
+
+ipcMain.handle('db:createContactGroup', (_event, selfNodeId: number, name: string) => {
+  try {
+    const id = safeNonNegativeInt(selfNodeId);
+    if (typeof name !== 'string' || name.trim().length === 0)
+      throw new Error('db:createContactGroup: name must be a non-empty string');
+    if (name.length > MAX_GROUP_NAME) throw new Error('db:createContactGroup: name too long');
+    return createContactGroup(id, name.trim());
+  } catch (err) {
+    console.error(
+      '[IPC] db:createContactGroup failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
+});
+
+ipcMain.handle('db:updateContactGroup', (_event, groupId: number, name: string) => {
+  try {
+    const id = safeNonNegativeInt(groupId);
+    if (typeof name !== 'string' || name.trim().length === 0)
+      throw new Error('db:updateContactGroup: name must be a non-empty string');
+    if (name.length > MAX_GROUP_NAME) throw new Error('db:updateContactGroup: name too long');
+    updateContactGroup(id, name.trim());
+  } catch (err) {
+    console.error(
+      '[IPC] db:updateContactGroup failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
+});
+
+ipcMain.handle('db:deleteContactGroup', (_event, groupId: number) => {
+  try {
+    deleteContactGroup(safeNonNegativeInt(groupId));
+  } catch (err) {
+    console.error(
+      '[IPC] db:deleteContactGroup failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
+});
+
+ipcMain.handle('db:addContactToGroup', (_event, groupId: number, contactNodeId: number) => {
+  try {
+    addContactToGroup(safeNonNegativeInt(groupId), safeNonNegativeInt(contactNodeId));
+  } catch (err) {
+    console.error(
+      '[IPC] db:addContactToGroup failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
+});
+
+ipcMain.handle('db:removeContactFromGroup', (_event, groupId: number, contactNodeId: number) => {
+  try {
+    removeContactFromGroup(safeNonNegativeInt(groupId), safeNonNegativeInt(contactNodeId));
+  } catch (err) {
+    console.error(
+      '[IPC] db:removeContactFromGroup failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
+});
+
+ipcMain.handle('db:getContactGroupMembers', (_event, groupId: number) => {
+  try {
+    return getContactGroupMembers(safeNonNegativeInt(groupId));
+  } catch (err) {
+    console.error(
+      '[IPC] db:getContactGroupMembers failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
+});
+
 ipcMain.handle(
   'db:updateMeshcoreContactAdvert',
   (_e, nodeId: number, lastAdvert: number | null, advLat: number | null, advLon: number | null) => {
@@ -3094,6 +3196,30 @@ ipcMain.handle(
     } catch (err) {
       console.error(
         '[IPC] db:updateMeshcoreContactAdvert error:',
+        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+      );
+      throw err;
+    }
+  },
+);
+
+ipcMain.handle(
+  'db:updateMeshcoreContactLastRf',
+  (_e, nodeId: number, lastSnr: number, lastRssi: number) => {
+    try {
+      const safeNodeId = safeNonNegativeInt(nodeId);
+      if (typeof lastSnr !== 'number' || !Number.isFinite(lastSnr)) {
+        throw new Error('db:updateMeshcoreContactLastRf: lastSnr must be a finite number');
+      }
+      if (typeof lastRssi !== 'number' || !Number.isFinite(lastRssi)) {
+        throw new Error('db:updateMeshcoreContactLastRf: lastRssi must be a finite number');
+      }
+      getDatabase()
+        .prepareOnce('UPDATE meshcore_contacts SET last_snr = ?, last_rssi = ? WHERE node_id = ?')
+        .run(lastSnr, lastRssi, safeNodeId);
+    } catch (err) {
+      console.error(
+        '[IPC] db:updateMeshcoreContactLastRf error:',
         sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
       );
       throw err;

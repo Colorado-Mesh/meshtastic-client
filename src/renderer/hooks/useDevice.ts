@@ -1,9 +1,10 @@
-import { create } from '@bufbuild/protobuf';
+import { create, toBinary } from '@bufbuild/protobuf';
 import type { MeshDevice } from '@meshtastic/core';
-import { Channel as ProtobufChannel, Mesh, Portnums } from '@meshtastic/protobufs';
+import { Admin, Channel as ProtobufChannel, Mesh, Portnums } from '@meshtastic/protobufs';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { meshtasticShortNameAfterClearingDefault } from '../../shared/nodeNameUtils';
+import { getAppSettingsRaw } from '../lib/appSettingsStorage';
 import {
   createBleConnection,
   createConnection,
@@ -39,7 +40,7 @@ function getMessageLoadLimit(): number {
   const s = parseStoredJson<{
     messageLimitEnabled?: boolean;
     messageLimitCount?: number;
-  }>(localStorage.getItem('mesh-client:adminSettings'), 'useDevice getMessageLoadLimit');
+  }>(getAppSettingsRaw(), 'useDevice getMessageLoadLimit');
   if (!s) return 1000;
   if (s.messageLimitEnabled === false) return 10000;
   return Math.max(1, s.messageLimitCount ?? 1000);
@@ -191,6 +192,15 @@ export function useDevice() {
   const [neighborInfo, setNeighborInfo] = useState<Map<number, NeighborInfoRecord>>(new Map());
   const [waypoints, setWaypoints] = useState<Map<number, MeshWaypoint>>(new Map());
   const [moduleConfigs, setModuleConfigs] = useState<Record<string, unknown>>({});
+  const [securityConfig, setSecurityConfig] = useState<{
+    publicKey: Uint8Array;
+    privateKey: Uint8Array;
+    adminKey: Uint8Array[];
+    isManaged: boolean;
+    serialEnabled: boolean;
+    debugLogApiEnabled: boolean;
+    adminChannelEnabled: boolean;
+  } | null>(null);
 
   // Keep nodesRef in sync with state
   const updateNodes = useCallback(
@@ -775,6 +785,7 @@ export function useDevice() {
           setNeighborInfo(new Map());
           setWaypoints(new Map());
           setModuleConfigs({});
+          setSecurityConfig(null);
           deviceRef.current = null;
           setState((s) => ({
             ...s,
@@ -1481,6 +1492,19 @@ export function useDevice() {
             setTelemetryDeviceUpdateInterval(interval);
           }
         }
+        if (cfg.payloadVariant?.case === 'security' && cfg.payloadVariant.value != null) {
+          setSecurityConfig(
+            cfg.payloadVariant.value as {
+              publicKey: Uint8Array;
+              privateKey: Uint8Array;
+              adminKey: Uint8Array[];
+              isManaged: boolean;
+              serialEnabled: boolean;
+              debugLogApiEnabled: boolean;
+              adminChannelEnabled: boolean;
+            },
+          );
+        }
       });
       unsubscribesRef.current.push(unsubConfig);
 
@@ -2094,6 +2118,21 @@ export function useDevice() {
     await (deviceRef.current as any).setCannedMessages({ messages: messages.join('\n') });
   }, []);
 
+  const [ringtone, setRingtoneState] = useState<string>('');
+
+  const setRingtone = useCallback(async (ringtoneStr: string) => {
+    if (!deviceRef.current) return;
+    const msg = create(Admin.AdminMessageSchema, {
+      payloadVariant: { case: 'setRingtoneMessage', value: ringtoneStr },
+    });
+    await (deviceRef.current as any).sendPacket(
+      toBinary(Admin.AdminMessageSchema, msg),
+      Portnums.PortNum.ADMIN_APP,
+      'self',
+    );
+    setRingtoneState(ringtoneStr);
+  }, []);
+
   const requestPosition = useCallback(async (nodeNum: number) => {
     if (!deviceRef.current) return;
     await deviceRef.current.requestPosition(nodeNum);
@@ -2433,6 +2472,9 @@ export function useDevice() {
     moduleConfigs,
     setModuleConfig,
     setCannedMessages,
+    ringtone,
+    setRingtone,
+    securityConfig,
   };
 }
 

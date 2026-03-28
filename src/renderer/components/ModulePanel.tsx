@@ -6,6 +6,8 @@ interface Props {
   moduleConfigs: Record<string, unknown>;
   onSetModuleConfig: (config: unknown) => Promise<void>;
   onSetCannedMessages: (messages: string[]) => Promise<void>;
+  onSetRingtone?: (ringtone: string) => Promise<void>;
+  ringtone?: string;
   onCommit: () => Promise<void>;
   isConnected: boolean;
 }
@@ -80,7 +82,9 @@ function ConfigNumber({
           type="number"
           value={value}
           onChange={(e) => {
-            onChange(Number(e.target.value));
+            const n = Number(e.target.value);
+            if (!Number.isFinite(n)) return;
+            onChange(n);
           }}
           min={min}
           max={max}
@@ -180,10 +184,39 @@ function ModuleSection({
   );
 }
 
+const RTTTL_PRESETS = [
+  { name: 'Beep', value: 'Beep:d=8,o=5,b=180:a' },
+  { name: 'Two Beeps', value: 'TwoBeeps:d=8,o=5,b=180:a,p,a' },
+  {
+    name: 'Thunderbirds',
+    value:
+      'Thunderbirds:d=4,o=5,b=160:32c,32d#,32f,32g,16a#,16a,16g,16f,16d#,32c,32d#,32f,16g,8a#,8a,8g,8f,8d#,8c',
+  },
+  {
+    name: 'Star Wars',
+    value:
+      'StarWars:d=4,o=5,b=45:32p,32f#,32f#,32f#,8b.,8f#.16p,16e,16d#,16c#,8b.16p,32f#,32f#,32f#,8e.,16p,16e,16d#,16c#,8b.',
+  },
+  { name: 'Nokia', value: 'NokiaTune:d=4,o=5,b=225:8e6,8d6,f#,g#,8c#6,8b,d,e,8b,8a,c#,e,2a' },
+];
+
+function isValidRtttl(s: string): boolean {
+  const parts = s.split(':');
+  return (
+    parts.length === 3 &&
+    parts[0].trim().length > 0 &&
+    /d=\d+/.test(parts[1]) &&
+    /o=\d+/.test(parts[1]) &&
+    /b=\d+/.test(parts[1])
+  );
+}
+
 export default function ModulePanel({
   moduleConfigs,
   onSetModuleConfig,
   onSetCannedMessages,
+  onSetRingtone,
+  ringtone,
   onCommit,
   isConnected,
 }: Props) {
@@ -264,6 +297,36 @@ export default function ModulePanel({
   const [paxEnabled, setPaxEnabled] = useState<boolean>(paxCfg.enabled ?? false);
   const [paxInterval, setPaxInterval] = useState<number>(paxCfg.paxcounterUpdateInterval ?? 0);
 
+  // ─── External Notification module ─────────────────────────────
+  const extNotifCfg = (moduleConfigs.externalNotification as any) ?? {};
+  const [extEnabled, setExtEnabled] = useState<boolean>(extNotifCfg.enabled ?? false);
+  const [extActive, setExtActive] = useState<boolean>(extNotifCfg.active ?? false);
+  const [extOutput, setExtOutput] = useState<number>(extNotifCfg.output ?? 0);
+  const [extOutputBuzzer, setExtOutputBuzzer] = useState<number>(extNotifCfg.outputBuzzer ?? 0);
+  const [extOutputVibra, setExtOutputVibra] = useState<number>(extNotifCfg.outputVibra ?? 0);
+  const [extOutputMs, setExtOutputMs] = useState<number>(extNotifCfg.outputMs ?? 1000);
+  const [extNagTimeout, setExtNagTimeout] = useState<number>(extNotifCfg.nagTimeout ?? 0);
+  const [extAlertMessage, setExtAlertMessage] = useState<boolean>(
+    extNotifCfg.alertMessage ?? false,
+  );
+  const [extAlertMessageBuzzer, setExtAlertMessageBuzzer] = useState<boolean>(
+    extNotifCfg.alertMessageBuzzer ?? false,
+  );
+  const [extAlertMessageVibra, setExtAlertMessageVibra] = useState<boolean>(
+    extNotifCfg.alertMessageVibra ?? false,
+  );
+  const [extAlertBell, setExtAlertBell] = useState<boolean>(extNotifCfg.alertBell ?? false);
+  const [extAlertBellBuzzer, setExtAlertBellBuzzer] = useState<boolean>(
+    extNotifCfg.alertBellBuzzer ?? false,
+  );
+  const [extAlertBellVibra, setExtAlertBellVibra] = useState<boolean>(
+    extNotifCfg.alertBellVibra ?? false,
+  );
+  const [extUsePwm, setExtUsePwm] = useState<boolean>(extNotifCfg.usePwm ?? false);
+  const [extUseI2sAsBuzzer, setExtUseI2sAsBuzzer] = useState<boolean>(
+    extNotifCfg.useI2sAsBuzzer ?? false,
+  );
+
   // ─── Ambient Lighting module ───────────────────────────────────
   const ambientCfg = (moduleConfigs.ambientLighting as any) ?? {};
   const [ambientLedState, setAmbientLedState] = useState<boolean>(ambientCfg.ledState ?? false);
@@ -271,6 +334,9 @@ export default function ModulePanel({
   const [ambientGreen, setAmbientGreen] = useState<number>(ambientCfg.green ?? 0);
   const [ambientBlue, setAmbientBlue] = useState<number>(ambientCfg.blue ?? 0);
   const [ambientCurrent, setAmbientCurrent] = useState<number>(ambientCfg.current ?? 10);
+
+  // ─── RTTTL Ringtone ───────────────────────────────────────────
+  const [ringtoneText, setRingtoneText] = useState<string>(ringtone ?? '');
 
   const ambientHex = `#${[ambientRed, ambientGreen, ambientBlue].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
   const handleAmbientColorChange = (hex: string) => {
@@ -308,6 +374,69 @@ export default function ModulePanel({
           Waiting for module config from device…
         </div>
       )}
+
+      {/* ═══ Ambient Lighting Module ═══ */}
+      <ModuleSection
+        title="Ambient Lighting Module"
+        onApply={() =>
+          applyModule('Ambient Lighting', 'ambientLighting', {
+            ledState: ambientLedState,
+            red: ambientRed,
+            green: ambientGreen,
+            blue: ambientBlue,
+            current: ambientCurrent,
+          })
+        }
+        applying={applyingSection === 'Ambient Lighting'}
+        disabled={disabled}
+      >
+        <ConfigToggle
+          label="LED enabled"
+          checked={ambientLedState}
+          onChange={setAmbientLedState}
+          disabled={disabled}
+          description="Turn the onboard RGB LED on or off."
+        />
+        <div className="space-y-1">
+          <label htmlFor="module-ambient-color" className="text-sm text-muted">
+            Color
+          </label>
+          <div className="flex items-center gap-3">
+            <input
+              id="module-ambient-color"
+              type="color"
+              value={ambientHex}
+              onChange={(e) => {
+                handleAmbientColorChange(e.target.value);
+              }}
+              disabled={disabled || !ambientLedState}
+              className="h-9 w-16 cursor-pointer rounded border border-gray-600 bg-secondary-dark p-0.5 disabled:opacity-50"
+            />
+            <span className="font-mono text-sm text-gray-400">{ambientHex.toUpperCase()}</span>
+            <span className="text-xs text-muted">
+              R:{ambientRed} G:{ambientGreen} B:{ambientBlue}
+            </span>
+          </div>
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="module-ambient-current" className="text-sm text-muted">
+            Brightness / current: {ambientCurrent}
+          </label>
+          <input
+            id="module-ambient-current"
+            type="range"
+            min={0}
+            max={31}
+            value={ambientCurrent}
+            onChange={(e) => {
+              setAmbientCurrent(Number(e.target.value));
+            }}
+            disabled={disabled || !ambientLedState}
+            className="w-full accent-readable-green disabled:opacity-50"
+          />
+          <p className="text-xs text-muted">LED drive current (0–31). Higher = brighter.</p>
+        </div>
+      </ModuleSection>
 
       {/* ═══ Canned Messages ═══ */}
       <ModuleSection
@@ -411,6 +540,150 @@ export default function ModulePanel({
           min={0}
           unit="seconds"
           description="How often to broadcast the current state even without a change."
+        />
+      </ModuleSection>
+
+      {/* ═══ External Notification Module ═══ */}
+      <ModuleSection
+        title="External Notification Module"
+        onApply={() =>
+          applyModule('External Notification', 'externalNotification', {
+            enabled: extEnabled,
+            active: extActive,
+            output: extOutput,
+            outputBuzzer: extOutputBuzzer,
+            outputVibra: extOutputVibra,
+            outputMs: extOutputMs,
+            nagTimeout: extNagTimeout,
+            alertMessage: extAlertMessage,
+            alertMessageBuzzer: extAlertMessageBuzzer,
+            alertMessageVibra: extAlertMessageVibra,
+            alertBell: extAlertBell,
+            alertBellBuzzer: extAlertBellBuzzer,
+            alertBellVibra: extAlertBellVibra,
+            usePwm: extUsePwm,
+            useI2sAsBuzzer: extUseI2sAsBuzzer,
+          })
+        }
+        applying={applyingSection === 'External Notification'}
+        disabled={disabled}
+      >
+        <ConfigToggle
+          label="Module enabled"
+          checked={extEnabled}
+          onChange={setExtEnabled}
+          disabled={disabled}
+          description="Enable GPIO-based external alerts for buzzers, vibration motors, and LEDs."
+        />
+        <ConfigToggle
+          label="Active high"
+          checked={extActive}
+          onChange={setExtActive}
+          disabled={disabled || !extEnabled}
+          description="GPIO active level. On = active high (3.3 V triggers output); Off = active low."
+        />
+        <ConfigNumber
+          label="Primary output GPIO"
+          value={extOutput}
+          onChange={setExtOutput}
+          disabled={disabled || !extEnabled}
+          min={0}
+          max={48}
+          description="GPIO pin for primary notification output. 0 = unset."
+        />
+        <ConfigNumber
+          label="Buzzer GPIO"
+          value={extOutputBuzzer}
+          onChange={setExtOutputBuzzer}
+          disabled={disabled || !extEnabled}
+          min={0}
+          max={48}
+          description="GPIO pin for buzzer. 0 = unset."
+        />
+        <ConfigNumber
+          label="Vibration motor GPIO"
+          value={extOutputVibra}
+          onChange={setExtOutputVibra}
+          disabled={disabled || !extEnabled}
+          min={0}
+          max={48}
+          description="GPIO pin for vibration motor. 0 = unset."
+        />
+        <ConfigNumber
+          label="Output duration"
+          value={extOutputMs}
+          onChange={setExtOutputMs}
+          disabled={disabled || !extEnabled}
+          min={0}
+          max={32767}
+          unit="ms"
+          description="How long to keep the output active per alert (milliseconds)."
+        />
+        <ConfigNumber
+          label="Nag timeout"
+          value={extNagTimeout}
+          onChange={setExtNagTimeout}
+          disabled={disabled || !extEnabled}
+          min={0}
+          max={32767}
+          unit="seconds"
+          description="Keep repeating the alert for this many seconds. 0 = single trigger only."
+        />
+        <ConfigToggle
+          label="Alert on message"
+          checked={extAlertMessage}
+          onChange={setExtAlertMessage}
+          disabled={disabled || !extEnabled}
+          description="Trigger primary output GPIO when a text message is received."
+        />
+        <ConfigToggle
+          label="Buzzer on message"
+          checked={extAlertMessageBuzzer}
+          onChange={setExtAlertMessageBuzzer}
+          disabled={disabled || !extEnabled || !extAlertMessage}
+          description="Also trigger buzzer GPIO on incoming messages."
+        />
+        <ConfigToggle
+          label="Vibration on message"
+          checked={extAlertMessageVibra}
+          onChange={setExtAlertMessageVibra}
+          disabled={disabled || !extEnabled || !extAlertMessage}
+          description="Also trigger vibration GPIO on incoming messages."
+        />
+        <ConfigToggle
+          label="Alert on bell"
+          checked={extAlertBell}
+          onChange={setExtAlertBell}
+          disabled={disabled || !extEnabled}
+          description="Trigger primary output GPIO on bell / tapback signals."
+        />
+        <ConfigToggle
+          label="Buzzer on bell"
+          checked={extAlertBellBuzzer}
+          onChange={setExtAlertBellBuzzer}
+          disabled={disabled || !extEnabled || !extAlertBell}
+          description="Also trigger buzzer GPIO on bell signals."
+        />
+        <ConfigToggle
+          label="Vibration on bell"
+          checked={extAlertBellVibra}
+          onChange={setExtAlertBellVibra}
+          disabled={disabled || !extEnabled || !extAlertBell}
+          description="Also trigger vibration GPIO on bell signals."
+        />
+        <ConfigToggle
+          label="Use PWM buzzer mode"
+          checked={extUsePwm}
+          onChange={setExtUsePwm}
+          disabled={disabled || !extEnabled}
+          description="Use PWM frequency for tone-capable buzzers (e.g. RAK buzzer)."
+        />
+        <ConfigToggle
+          label="Use I2S as buzzer"
+          checked={extUseI2sAsBuzzer}
+          onChange={setExtUseI2sAsBuzzer}
+          disabled={disabled || !extEnabled}
+          description="Use I2S audio output as buzzer (T-Watch S3, T-Deck with speaker)."
         />
       </ModuleSection>
 
@@ -564,6 +837,77 @@ export default function ModulePanel({
         />
       </ModuleSection>
 
+      {/* ═══ RTTTL Ringtone ═══ */}
+      {onSetRingtone && (
+        <ModuleSection
+          title="RTTTL Ringtone"
+          onApply={async () => {
+            setApplyingSection('RTTTL Ringtone');
+            try {
+              await onSetRingtone(ringtoneText);
+              await onCommit();
+              addToast('RTTTL ringtone saved.', 'success');
+            } catch (err) {
+              console.warn('[ModulePanel] RTTTL apply failed', err);
+              addToast(`Failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
+            } finally {
+              setApplyingSection(null);
+            }
+          }}
+          applying={applyingSection === 'RTTTL Ringtone'}
+          disabled={disabled}
+        >
+          <div className="space-y-1">
+            <label htmlFor="module-rtttl-preset" className="text-sm text-muted">
+              Load preset
+            </label>
+            <select
+              id="module-rtttl-preset"
+              disabled={disabled}
+              className="w-full px-3 py-2 bg-secondary-dark rounded-lg text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none disabled:opacity-50 text-sm"
+              value=""
+              onChange={(e) => {
+                if (e.target.value) setRingtoneText(e.target.value);
+              }}
+            >
+              <option value="">Select a preset…</option>
+              {RTTTL_PRESETS.map((p) => (
+                <option key={p.name} value={p.value}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="module-rtttl-ringtone" className="text-sm text-muted">
+              Ringtone string (RTTTL format)
+            </label>
+            <textarea
+              id="module-rtttl-ringtone"
+              value={ringtoneText}
+              onChange={(e) => {
+                setRingtoneText(e.target.value.slice(0, 230));
+              }}
+              disabled={disabled}
+              rows={4}
+              placeholder="Name:d=4,o=5,b=120:notes..."
+              spellCheck={false}
+              className="w-full px-3 py-2 bg-secondary-dark rounded-lg text-gray-200 border border-gray-600 focus:border-brand-green focus:outline-none disabled:opacity-50 font-mono text-xs resize-y"
+            />
+            <div className="flex justify-between text-xs text-muted">
+              <span>
+                {ringtoneText.length > 0 && !isValidRtttl(ringtoneText) && (
+                  <span className="text-red-400">
+                    Invalid RTTTL — expected Name:d=N,o=N,b=N:notes
+                  </span>
+                )}
+              </span>
+              <span>{ringtoneText.length}/230</span>
+            </div>
+          </div>
+        </ModuleSection>
+      )}
+
       {/* ═══ Serial Module ═══ */}
       <ModuleSection
         title="Serial Module"
@@ -668,69 +1012,6 @@ export default function ModulePanel({
           unit="seconds"
           description="How far back in time to return messages (seconds)."
         />
-      </ModuleSection>
-
-      {/* ═══ Ambient Lighting Module ═══ */}
-      <ModuleSection
-        title="Ambient Lighting Module"
-        onApply={() =>
-          applyModule('Ambient Lighting', 'ambientLighting', {
-            ledState: ambientLedState,
-            red: ambientRed,
-            green: ambientGreen,
-            blue: ambientBlue,
-            current: ambientCurrent,
-          })
-        }
-        applying={applyingSection === 'Ambient Lighting'}
-        disabled={disabled}
-      >
-        <ConfigToggle
-          label="LED enabled"
-          checked={ambientLedState}
-          onChange={setAmbientLedState}
-          disabled={disabled}
-          description="Turn the onboard RGB LED on or off."
-        />
-        <div className="space-y-1">
-          <label htmlFor="module-ambient-color" className="text-sm text-muted">
-            Color
-          </label>
-          <div className="flex items-center gap-3">
-            <input
-              id="module-ambient-color"
-              type="color"
-              value={ambientHex}
-              onChange={(e) => {
-                handleAmbientColorChange(e.target.value);
-              }}
-              disabled={disabled || !ambientLedState}
-              className="h-9 w-16 cursor-pointer rounded border border-gray-600 bg-secondary-dark p-0.5 disabled:opacity-50"
-            />
-            <span className="font-mono text-sm text-gray-400">{ambientHex.toUpperCase()}</span>
-            <span className="text-xs text-muted">
-              R:{ambientRed} G:{ambientGreen} B:{ambientBlue}
-            </span>
-          </div>
-        </div>
-        <div className="space-y-1">
-          <label htmlFor="module-ambient-current" className="text-sm text-muted">
-            Brightness / current: {ambientCurrent}
-          </label>
-          <input
-            id="module-ambient-current"
-            type="range"
-            min={0}
-            max={31}
-            value={ambientCurrent}
-            onChange={(e) => {
-              setAmbientCurrent(Number(e.target.value));
-            }}
-            disabled={disabled || !ambientLedState}
-            className="w-full accent-readable-green disabled:opacity-50"
-          />
-          <p className="text-xs text-muted">LED drive current (0–31). Higher = brighter.</p>
-        </div>
       </ModuleSection>
 
       {/* ═══ Telemetry Module ═══ */}

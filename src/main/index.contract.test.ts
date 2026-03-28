@@ -46,6 +46,13 @@ describe('MQTT forwarder dropped-event logs (source contract)', () => {
   });
 });
 
+describe('MeshCore DB IPC (source contract)', () => {
+  it('registers updateMeshcoreContactLastRf for repeater Status persistence', () => {
+    expect(INDEX_SOURCE).toContain("'db:updateMeshcoreContactLastRf'");
+    expect(INDEX_SOURCE).toContain('UPDATE meshcore_contacts SET last_snr = ?, last_rssi = ?');
+  });
+});
+
 describe('External link routing (source contract)', () => {
   it('routes external http/https navigations to system browser', () => {
     expect(INDEX_SOURCE).toContain('setWindowOpenHandler');

@@ -357,6 +357,11 @@ declare global {
           advLat: number | null,
           advLon: number | null,
         ) => Promise<unknown>;
+        updateMeshcoreContactLastRf: (
+          nodeId: number,
+          lastSnr: number,
+          lastRssi: number,
+        ) => Promise<unknown>;
         getMeshcoreMessages: (channelIdx?: number, limit?: number) => Promise<unknown[]>;
         searchMessages: (query: string, limit?: number) => Promise<unknown[]>;
         searchMeshcoreMessages: (query: string, limit?: number) => Promise<unknown[]>;
@@ -393,6 +398,15 @@ declare global {
           }[]
         >;
         clearPositionHistory: () => Promise<unknown>;
+        getContactGroups: (
+          selfNodeId: number,
+        ) => Promise<{ group_id: number; name: string; member_count: number }[]>;
+        createContactGroup: (selfNodeId: number, name: string) => Promise<number>;
+        updateContactGroup: (groupId: number, name: string) => Promise<void>;
+        deleteContactGroup: (groupId: number) => Promise<void>;
+        addContactToGroup: (groupId: number, contactNodeId: number) => Promise<void>;
+        removeContactFromGroup: (groupId: number, contactNodeId: number) => Promise<void>;
+        getContactGroupMembers: (groupId: number) => Promise<number[]>;
       };
       mqtt: {
         connect: (settings: MQTTSettings) => Promise<void>;
@@ -532,6 +546,11 @@ declare global {
         onProgress: (cb: (info: { percent: number }) => void) => () => void;
         onDownloaded: (cb: () => void) => () => void;
         onError: (cb: (info: { message: string }) => void) => () => void;
+      };
+      safeStorage: {
+        encrypt: (plaintext: string) => Promise<string | null>;
+        decrypt: (ciphertext: string) => Promise<string | null>;
+        isAvailable: () => Promise<boolean>;
       };
     };
   }

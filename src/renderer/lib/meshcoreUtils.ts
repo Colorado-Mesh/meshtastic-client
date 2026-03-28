@@ -116,6 +116,17 @@ export const CONTACT_TYPE_LABELS: Record<number, string> = {
   3: 'Room',
 };
 
+/** MeshCore roles excluded from user contact-group membership (infrastructure / rooms). */
+export const MESHCORE_HW_MODELS_EXCLUDED_FROM_CONTACT_GROUPS: ReadonlySet<string> = new Set([
+  CONTACT_TYPE_LABELS[2],
+  CONTACT_TYPE_LABELS[3],
+]);
+
+export function isMeshcoreContactEligibleForUserGroup(node: Pick<MeshNode, 'hw_model'>): boolean {
+  const hw = node.hw_model ?? '';
+  return !MESHCORE_HW_MODELS_EXCLUDED_FROM_CONTACT_GROUPS.has(hw);
+}
+
 interface MeshCoreContact {
   publicKey: Uint8Array;
   type: number;
@@ -179,39 +190,58 @@ export function meshcoreSelfInfoBwToDisplayKhz(bw: number): number {
   return Math.round(bw);
 }
 
-const MESHCORE_REPEATER_AUTH_TOUCHED = 'meshclient:meshcoreRepeaterAuthTouched';
-const MESHCORE_REPEATER_PASSWORD = 'meshclient:meshcoreRepeaterPassword';
-
-/** Session-only repeater admin password from the optional prompt (for `login` before status/telemetry). */
-export function meshcoreGetRepeaterSessionPassword(): string {
-  if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') return '';
-  try {
-    return sessionStorage.getItem(MESHCORE_REPEATER_PASSWORD) ?? '';
-  } catch {
-    // catch-no-log-ok sessionStorage private mode / quota — return empty password
-    return '';
-  }
-}
+const REPEATER_AUTH_HINT =
+  'Set or change the repeater admin password from the Repeaters panel (session only).';
 
 /**
- * Once per browser session, prompts for an optional repeater admin password before remote
- * telemetry/status/neighbors. Password is stored in sessionStorage for future wiring to the
- * transport; cancel aborts the action.
+ * Raw SNR from MeshCore `getStatus` / `tracePath` uses the same quarter-dB scaling as trace hops.
+ * @see tracePath mapping in useMeshCore (`lastSnr * 0.25`)
  */
-export function meshcoreEnsureRepeaterRemoteAuthPrompt(): boolean {
-  if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') return true;
-  try {
-    if (sessionStorage.getItem(MESHCORE_REPEATER_AUTH_TOUCHED) === '1') return true;
-    const r = window.prompt(
-      'Optional repeater admin password for remote telemetry/status (leave empty if none). Stored for this session only.',
-      sessionStorage.getItem(MESHCORE_REPEATER_PASSWORD) ?? '',
-    );
-    if (r === null) return false;
-    sessionStorage.setItem(MESHCORE_REPEATER_AUTH_TOUCHED, '1');
-    sessionStorage.setItem(MESHCORE_REPEATER_PASSWORD, r);
-    return true;
-  } catch {
-    // catch-no-log-ok sessionStorage private mode / quota — fall through to unauthenticated requests
-    return true;
-  }
+export const MESHCORE_RPC_SNR_RAW_TO_DB = 0.25;
+
+// In-memory only — never written to any persistent or inspectable storage.
+let _repeaterAuthTouched = false;
+let _repeaterPassword = '';
+
+/** True after the user completed the Repeaters remote-auth step for this session (password or skip). */
+export function meshcoreIsRepeaterRemoteAuthTouched(): boolean {
+  return _repeaterAuthTouched;
+}
+
+/** Session-only repeater admin password (for `login` before status/telemetry/neighbors). */
+export function meshcoreGetRepeaterSessionPassword(): string {
+  return _repeaterPassword;
+}
+
+/** Store password and mark session auth as configured. */
+export function meshcoreApplyRepeaterSessionAuth(password: string): void {
+  _repeaterPassword = password;
+  _repeaterAuthTouched = true;
+}
+
+/** Mark session auth as configured with no password (repeaters without admin password). */
+export function meshcoreApplyRepeaterSessionAuthSkip(): void {
+  _repeaterPassword = '';
+  _repeaterAuthTouched = true;
+}
+
+/** Clear session repeater auth so the user can re-enter or skip again. */
+export function meshcoreClearRepeaterRemoteSessionAuth(): void {
+  _repeaterAuthTouched = false;
+  _repeaterPassword = '';
+}
+
+/** Append guidance when an error is likely auth-related. */
+export function meshcoreAppendRepeaterAuthHint(message: string): string {
+  const m = message.trim();
+  if (!m) return m;
+  if (m.includes(REPEATER_AUTH_HINT)) return m;
+  const lower = m.toLowerCase();
+  const authish =
+    lower.includes('authentication failed') ||
+    lower.includes('auth failed') ||
+    lower.includes('login failed') ||
+    (lower.includes('auth') && lower.includes('fail'));
+  if (!authish) return m;
+  return `${m} ${REPEATER_AUTH_HINT}`;
 }

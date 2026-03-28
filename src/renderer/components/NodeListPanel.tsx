@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import type { ContactGroup } from '../../shared/electron-api.types';
 import type { LocationFilter } from '../App';
 import { formatCoordColumns } from '../lib/coordUtils';
 import { getRoutingRowForNode } from '../lib/diagnostics/diagnosticRows';
@@ -10,6 +11,13 @@ import type { MeshNode } from '../lib/types';
 import { useCoordFormatStore } from '../stores/coordFormatStore';
 import { useDiagnosticsStore } from '../stores/diagnosticsStore';
 import SignalBars from './SignalBars';
+import { useToast } from './Toast';
+
+interface ImportContactsResult {
+  imported: number;
+  skipped: number;
+  errors: string[];
+}
 
 type SortField =
   | 'node_id'
@@ -30,6 +38,12 @@ type SortField =
   | 'air_util_tx'
   | 'altitude'
   | 'redundancy';
+
+const BUILTIN_TYPE_FILTERS = [
+  { group_id: -1, label: 'Chat', hw_model: 'Chat' },
+  { group_id: -2, label: 'Repeater', hw_model: 'Repeater' },
+  { group_id: -3, label: 'Room', hw_model: 'Room' },
+] as const;
 
 /** Sort fields that do not apply when the Nodes table is in MeshCore (contacts) layout. */
 const MESHCORE_INAPPLICABLE_SORT_FIELDS: readonly SortField[] = [
@@ -97,6 +111,12 @@ interface Props {
   locationFilter: LocationFilter;
   onToggleFavorite: (nodeId: number, favorited: boolean) => void;
   mode?: 'meshtastic' | 'meshcore';
+  groups?: ContactGroup[];
+  selectedGroupId?: number | null;
+  onGroupChange?: (id: number | null) => void;
+  onManageGroups?: () => void;
+  groupMemberIds?: Set<number>;
+  onImportContacts?: () => Promise<ImportContactsResult>;
 }
 
 export default function NodeListPanel({
@@ -107,7 +127,14 @@ export default function NodeListPanel({
   locationFilter,
   onToggleFavorite,
   mode = 'meshtastic',
+  groups,
+  selectedGroupId,
+  onGroupChange,
+  onManageGroups,
+  groupMemberIds,
+  onImportContacts,
 }: Props) {
+  const { addToast } = useToast();
   const coordinateFormat = useCoordFormatStore((s) => s.coordinateFormat);
   const diagnosticRows = useDiagnosticsStore((s) => s.diagnosticRows);
   const ignoreMqttEnabled = useDiagnosticsStore((s) => s.ignoreMqttEnabled);
@@ -115,6 +142,7 @@ export default function NodeListPanel({
   const [sortField, setSortField] = useState<SortField>('last_heard');
   const [sortAsc, setSortAsc] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [importLoading, setImportLoading] = useState(false);
 
   useEffect(() => {
     if (mode === 'meshcore' && MESHCORE_INAPPLICABLE_SORT_FIELDS.includes(sortField)) {
@@ -139,6 +167,25 @@ export default function NodeListPanel({
   const scrollToTop = () =>
     document.querySelector('main')?.scrollTo({ top: 0, behavior: 'smooth' });
 
+  const handleImport = async () => {
+    if (!onImportContacts) return;
+    setImportLoading(true);
+    try {
+      const result = await onImportContacts();
+      if (result.imported === 0 && result.skipped === 0 && result.errors.length === 0) return;
+      const msg =
+        result.errors.length > 0
+          ? `Imported ${result.imported}, skipped ${result.skipped}. Errors: ${result.errors.slice(0, 3).join('; ')}`
+          : `Imported ${result.imported} contact${result.imported !== 1 ? 's' : ''}${result.skipped > 0 ? `, skipped ${result.skipped}` : ''}.`;
+      addToast(msg, result.errors.length > 0 ? 'error' : 'success');
+    } catch (e) {
+      console.warn('[NodeListPanel] import failed:', e instanceof Error ? e.message : e);
+      addToast(`Import failed: ${e instanceof Error ? e.message : String(e)}`, 'error');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortAsc(!sortAsc);
@@ -161,6 +208,16 @@ export default function NodeListPanel({
           n.hw_model?.toLowerCase().includes(q) ||
           n.node_id.toString(16).includes(q),
       );
+    }
+
+    // Filter by group membership or built-in type filter (meshcore mode only)
+    if (mode === 'meshcore' && selectedGroupId != null) {
+      if (selectedGroupId < 0) {
+        const typeFilter = BUILTIN_TYPE_FILTERS.find((f) => f.group_id === selectedGroupId);
+        if (typeFilter) list = list.filter((n) => n.hw_model === typeFilter.hw_model);
+      } else if (groupMemberIds) {
+        list = list.filter((n) => groupMemberIds.has(n.node_id));
+      }
     }
 
     // Filter MQTT-only nodes
@@ -273,7 +330,18 @@ export default function NodeListPanel({
     });
 
     return list;
-  }, [nodes, sortField, sortAsc, searchQuery, myNodeNum, locationFilter, nodeRedundancy]);
+  }, [
+    nodes,
+    sortField,
+    sortAsc,
+    searchQuery,
+    myNodeNum,
+    locationFilter,
+    nodeRedundancy,
+    mode,
+    selectedGroupId,
+    groupMemberIds,
+  ]);
 
   const filterStatus = useMemo(() => {
     if (!locationFilter.enabled) return null;
@@ -311,23 +379,92 @@ export default function NodeListPanel({
 
   return (
     <div className="flex flex-col min-h-0 h-full gap-3">
-      <div className="flex justify-between items-center gap-3 shrink-0">
-        <h2 className="text-xl font-semibold text-gray-200">
+      <div className="flex flex-col min-[480px]:flex-row flex-wrap items-stretch min-[480px]:items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold text-bright-green">
           {mode === 'meshcore' ? 'Contacts' : 'Node Database'} ({headerCountLabel})
         </h2>
-        <div className="flex items-center gap-2 flex-1 max-w-xs">
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-            }}
-            placeholder={mode === 'meshcore' ? 'Search contacts…' : 'Search nodes…'}
-            aria-label={mode === 'meshcore' ? 'Search contacts' : 'Search nodes'}
-            className="flex-1 px-3 py-1.5 bg-secondary-dark/80 rounded-lg text-gray-200 text-sm border border-gray-600/50 focus:border-brand-green/50 focus:outline-none"
-          />
-        </div>
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => {
+            setSearchQuery(e.target.value);
+          }}
+          placeholder={mode === 'meshcore' ? 'Search contacts…' : 'Search nodes…'}
+          aria-label={mode === 'meshcore' ? 'Search contacts' : 'Search nodes'}
+          className="flex-1 min-w-[8rem] max-w-[20rem] px-3 py-1.5 bg-secondary-dark/80 rounded-lg text-gray-200 text-sm border border-gray-600/50 focus:border-brand-green/50 focus:outline-none"
+        />
+        {mode === 'meshcore' && onImportContacts && (
+          <button
+            onClick={handleImport}
+            disabled={importLoading}
+            className="flex items-center gap-2 px-3 py-1.5 rounded bg-brand-green/20 text-brand-green border border-brand-green/30 hover:bg-brand-green/30 transition-colors text-sm font-medium disabled:opacity-50"
+          >
+            {importLoading ? (
+              <span className="w-3 h-3 border border-brand-green border-t-transparent rounded-full animate-spin inline-block" />
+            ) : null}
+            Import Contacts
+          </button>
+        )}
       </div>
+      {mode === 'meshcore' && (
+        <p className="text-xs text-gray-500 max-w-2xl">
+          Imported contacts use the import time as Last heard until an RF advert or Ping / Status
+          updates it.
+        </p>
+      )}
+
+      {/* Group filter (MeshCore mode only) */}
+      {mode === 'meshcore' && onManageGroups && (
+        <div className="flex items-center gap-2 shrink-0">
+          <select
+            value={selectedGroupId ?? ''}
+            onChange={(e) => {
+              const val = e.target.value;
+              onGroupChange?.(val === '' ? null : Number(val));
+            }}
+            aria-label="Filter by contact group"
+            className="flex-1 px-3 py-1.5 bg-secondary-dark/80 rounded-lg text-gray-200 text-sm border border-gray-600/50 focus:border-brand-green/50 focus:outline-none"
+          >
+            <option value="">All contacts</option>
+            {BUILTIN_TYPE_FILTERS.map((f) => (
+              <option key={f.group_id} value={f.group_id}>
+                Type: {f.label}
+              </option>
+            ))}
+            {groups?.map((g) => (
+              <option key={g.group_id} value={g.group_id}>
+                Group: {g.name} ({g.member_count})
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={onManageGroups}
+            aria-label="Manage contact groups"
+            title="Manage groups"
+            className="p-1.5 rounded-lg hover:bg-secondary-dark text-muted hover:text-gray-200 transition-colors shrink-0"
+          >
+            <svg
+              className="w-4 h-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+              />
+            </svg>
+          </button>
+        </div>
+      )}
 
       {/* Distance filter status */}
       {filterStatus === 'no-gps' && (
