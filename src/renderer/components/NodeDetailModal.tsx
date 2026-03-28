@@ -318,7 +318,7 @@ export default function NodeDetailModal({
             <div className="mt-3 space-y-1">
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-medium text-muted uppercase tracking-wide">
-                  Telemetry
+                  Sensor telemetry (LPP)
                 </h4>
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-muted">
@@ -380,7 +380,14 @@ export default function NodeDetailModal({
                   </>
                 )}
                 {meshcoreNodeTelemetry.entries.length === 0 && (
-                  <div className="col-span-2 text-muted italic">No telemetry data</div>
+                  <>
+                    <div className="col-span-2 text-muted italic">No LPP sensor data</div>
+                    {node.latitude != null && node.longitude != null ? (
+                      <div className="col-span-2 text-muted text-xs">
+                        Map position is from advert/contact data, not this request.
+                      </div>
+                    ) : null}
+                  </>
                 )}
               </div>
             </div>
@@ -652,10 +659,13 @@ export default function NodeDetailModal({
             )}
             {protocol === 'meshcore' && onRequestTelemetry && (
               <button
+                type="button"
+                title="Cayenne LPP sensor payload (not advert GPS on the map)"
+                aria-label="Sensor telemetry LPP"
                 onClick={async () => {
                   if (!meshcoreEnsureRepeaterRemoteAuthPrompt()) return;
                   setTelemetryPending(true);
-                  setActionStatus('Requesting telemetry...');
+                  setActionStatus('Requesting sensor telemetry (LPP)...');
                   try {
                     await onRequestTelemetry(node.node_id);
                     setActionStatus(null);
@@ -668,7 +678,7 @@ export default function NodeDetailModal({
                 disabled={!isConnected || telemetryPending}
                 className="flex-1 min-w-[8rem] px-3 py-2 text-sm font-medium bg-secondary-dark hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-200 rounded-lg transition-colors"
               >
-                🌡 {telemetryPending ? 'Requesting...' : 'Get Telemetry'}
+                🌡 {telemetryPending ? 'Requesting...' : 'Sensor telemetry'}
               </button>
             )}
             {protocol === 'meshcore' && onRequestNeighbors && node.hw_model === 'Repeater' && (

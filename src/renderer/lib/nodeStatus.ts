@@ -10,6 +10,29 @@ export function normalizeLastHeardMs(lastHeard: number): number {
   return lastHeard < 1_000_000_000_000 ? lastHeard * 1000 : lastHeard;
 }
 
+/** Normalize epoch seconds or milliseconds to Unix seconds (for MeshCore contact merge). */
+export function lastHeardToUnixSeconds(lastHeard: number): number {
+  if (!lastHeard || !Number.isFinite(lastHeard)) return 0;
+  return lastHeard < 1_000_000_000_000 ? Math.floor(lastHeard) : Math.floor(lastHeard / 1000);
+}
+
+/**
+ * Prefer device `lastAdvert` when it is a positive Unix time (seconds). Otherwise keep the
+ * best previous `last_heard` from live events (adverts, paths, RPC) so `refreshContacts` does
+ * not wipe freshness when the radio reports `lastAdvert: 0`.
+ */
+export function mergeMeshcoreLastHeardFromAdvert(
+  advertSec: number | null | undefined,
+  previousLastHeard: number | null | undefined,
+): number {
+  const device =
+    typeof advertSec === 'number' && Number.isFinite(advertSec) && advertSec > 0
+      ? Math.floor(advertSec)
+      : 0;
+  if (device > 0) return device;
+  return Math.max(lastHeardToUnixSeconds(previousLastHeard ?? 0), 0);
+}
+
 export function getNodeStatus(lastHeard: number): NodeStatus {
   if (!lastHeard || !Number.isFinite(lastHeard)) return 'offline';
   const normalizedLastHeard = normalizeLastHeardMs(lastHeard);

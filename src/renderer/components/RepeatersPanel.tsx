@@ -383,6 +383,10 @@ export default function RepeatersPanel({
           Import Repeaters
         </button>
       </div>
+      <p className="text-xs text-gray-500 max-w-2xl">
+        Imported repeaters use the import time as Last heard until an RF advert or Ping / Status
+        updates it.
+      </p>
 
       {/* Device Action Bar */}
       {(onSendAdvert || onSyncClock || onReboot) && (
@@ -640,8 +644,11 @@ export default function RepeatersPanel({
                           )}
                           {onRequestTelemetry && (
                             <button
+                              type="button"
                               onClick={() => void handleTelemetry(node.node_id)}
                               disabled={!isConnected || isTelemetryLoading}
+                              title="Cayenne LPP sensor payload (not advert GPS on the map)"
+                              aria-label="Sensor telemetry LPP"
                               className={`px-2 py-0.5 rounded text-xs font-medium transition-colors disabled:opacity-40 ${
                                 isTelemetryExpanded
                                   ? 'bg-amber-900/60 text-amber-300 border border-amber-700'
@@ -651,7 +658,7 @@ export default function RepeatersPanel({
                               {isTelemetryLoading ? (
                                 <span className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin inline-block" />
                               ) : (
-                                'Telemetry'
+                                'Sensor (LPP)'
                               )}
                             </button>
                           )}
@@ -781,14 +788,29 @@ export default function RepeatersPanel({
                                 telemetryData.relativeHumidity == null &&
                                 telemetryData.barometricPressure == null &&
                                 !telemetryData.gps && (
-                                  <span className="text-gray-500">No telemetry data available</span>
+                                  <div className="flex flex-col gap-1 text-gray-500">
+                                    <span>No LPP sensor data in this response.</span>
+                                    {node.latitude != null && node.longitude != null ? (
+                                      <span>
+                                        Map position comes from advert/contact data, not this sensor
+                                        request.
+                                      </span>
+                                    ) : null}
+                                  </div>
                                 )}
                             </div>
                           ) : (
-                            <p className="text-xs text-gray-500">
-                              No telemetry response yet (timeout, auth, or repeater has no sensors).
-                              Try Telemetry again.
-                            </p>
+                            <div className="text-xs text-gray-500 space-y-1">
+                              <p>
+                                No telemetry response yet (timeout, auth, or repeater has no LPP
+                                sensors). Try Sensor (LPP) again.
+                              </p>
+                              {node.latitude != null && node.longitude != null ? (
+                                <p>
+                                  Map position comes from advert/contact data, not sensor telemetry.
+                                </p>
+                              ) : null}
+                            </div>
                           )}
                         </td>
                       </tr>
