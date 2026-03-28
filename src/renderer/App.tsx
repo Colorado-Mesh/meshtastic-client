@@ -31,7 +31,8 @@ import {
   RepeatersPanel,
   TelemetryPanel,
 } from './lazyTabPanels';
-import { DEFAULT_ADMIN_SETTINGS_SHARED } from './lib/defaultAdminSettings';
+import { getAppSettingsRaw } from './lib/appSettingsStorage';
+import { DEFAULT_APP_SETTINGS_SHARED } from './lib/defaultAppSettings';
 import {
   fetchLatestMeshCoreRelease,
   fetchLatestMeshtasticRelease,
@@ -185,7 +186,7 @@ export default function App() {
   const [locationFilter, setLocationFilter] = useState<LocationFilter>(() => {
     const s =
       parseStoredJson<Record<string, unknown>>(
-        localStorage.getItem('mesh-client:adminSettings'),
+        getAppSettingsRaw(),
         'App locationFilter initial state',
       ) ?? {};
     return {
@@ -362,15 +363,13 @@ export default function App() {
     setSearchModalOpen(true);
   }, []);
 
-  // ─── Startup node pruning based on persisted admin settings ─────
+  // ─── Startup node pruning based on persisted app settings ─────
   const { refreshNodesFromDb } = device;
   useEffect(() => {
     const raw =
-      parseStoredJson<Record<string, unknown>>(
-        localStorage.getItem('mesh-client:adminSettings'),
-        'App startup node pruning',
-      ) ?? {};
-    const s = { ...DEFAULT_ADMIN_SETTINGS_SHARED, ...raw };
+      parseStoredJson<Record<string, unknown>>(getAppSettingsRaw(), 'App startup node pruning') ??
+      {};
+    const s = { ...DEFAULT_APP_SETTINGS_SHARED, ...raw };
     const ops: Promise<unknown>[] = [
       // One-time migration: rename legacy "RF !xxxxxxxx" stub nodes to "!xxxxxxxx"
       window.electronAPI.db.migrateRfStubNodes().catch((e: unknown) => {

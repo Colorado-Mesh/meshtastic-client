@@ -1,8 +1,8 @@
 /**
- * Canonical defaults for keys stored in localStorage `mesh-client:adminSettings`.
+ * Canonical defaults for keys stored in localStorage `mesh-client:appSettings`.
  * Used by AppPanel and App startup pruning so behavior matches when keys are absent.
  */
-export const DEFAULT_ADMIN_SETTINGS_SHARED = {
+export const DEFAULT_APP_SETTINGS_SHARED = {
   autoPruneEnabled: true,
   autoPruneDays: 30,
   pruneEmptyNamesEnabled: true,

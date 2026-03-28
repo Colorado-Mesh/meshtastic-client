@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 
+import { getAppSettingsRaw, mergeAppSetting } from '../lib/appSettingsStorage';
 import type { CoordinateFormat } from '../lib/coordUtils';
 import { parseStoredJson } from '../lib/parseStoredJson';
 
 function loadCoordinateFormat(): CoordinateFormat {
   const o = parseStoredJson<{ coordinateFormat?: string }>(
-    localStorage.getItem('mesh-client:adminSettings'),
+    getAppSettingsRaw(),
     'coordFormatStore loadCoordinateFormat',
   );
   return o?.coordinateFormat === 'mgrs' ? 'mgrs' : 'decimal';
@@ -19,16 +20,7 @@ interface CoordFormatState {
 export const useCoordFormatStore = create<CoordFormatState>((set) => ({
   coordinateFormat: loadCoordinateFormat(),
   setCoordinateFormat(format) {
-    try {
-      const raw = localStorage.getItem('mesh-client:adminSettings');
-      const o = parseStoredJson<Record<string, unknown>>(raw, 'coordFormatStore set') ?? {};
-      localStorage.setItem(
-        'mesh-client:adminSettings',
-        JSON.stringify({ ...o, coordinateFormat: format }),
-      );
-    } catch {
-      // catch-no-log-ok localStorage unavailable in private/restricted environments
-    }
+    mergeAppSetting('coordinateFormat', format, 'coordFormatStore setCoordinateFormat');
     set({ coordinateFormat: format });
   },
 }));

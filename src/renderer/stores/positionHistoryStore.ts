@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 
+import { getAppSettingsRaw, mergeAppSetting } from '../lib/appSettingsStorage';
 import { haversineDistanceKm } from '../lib/nodeStatus';
 import { parseStoredJson } from '../lib/parseStoredJson';
 import type { PositionPoint } from '../lib/types';
@@ -8,7 +9,7 @@ const MOVEMENT_THRESHOLD_KM = 0.01; // 10 metres — filters GPS jitter
 
 function loadShowPaths(): boolean {
   const o = parseStoredJson<{ showMovementPaths?: boolean }>(
-    localStorage.getItem('mesh-client:adminSettings'),
+    getAppSettingsRaw(),
     'positionHistoryStore loadShowPaths',
   );
   return o?.showMovementPaths !== false; // default true
@@ -16,7 +17,7 @@ function loadShowPaths(): boolean {
 
 function loadHistoryWindowHours(): number {
   const o = parseStoredJson<{ positionHistoryWindowHours?: number }>(
-    localStorage.getItem('mesh-client:adminSettings'),
+    getAppSettingsRaw(),
     'positionHistoryStore loadHistoryWindowHours',
   );
   const v = o?.positionHistoryWindowHours;
@@ -80,33 +81,12 @@ export const usePositionHistoryStore = create<PositionHistoryState>((set, get) =
   },
 
   setShowPaths(enabled) {
-    try {
-      const raw = localStorage.getItem('mesh-client:adminSettings');
-      const o =
-        parseStoredJson<Record<string, unknown>>(raw, 'positionHistoryStore setShowPaths') ?? {};
-      localStorage.setItem(
-        'mesh-client:adminSettings',
-        JSON.stringify({ ...o, showMovementPaths: enabled }),
-      );
-    } catch {
-      // catch-no-log-ok localStorage quota or private mode — non-critical setting
-    }
+    mergeAppSetting('showMovementPaths', enabled, 'positionHistoryStore setShowPaths');
     set({ showPaths: enabled });
   },
 
   setHistoryWindow(hours) {
-    try {
-      const raw = localStorage.getItem('mesh-client:adminSettings');
-      const o =
-        parseStoredJson<Record<string, unknown>>(raw, 'positionHistoryStore setHistoryWindow') ??
-        {};
-      localStorage.setItem(
-        'mesh-client:adminSettings',
-        JSON.stringify({ ...o, positionHistoryWindowHours: hours }),
-      );
-    } catch {
-      // catch-no-log-ok localStorage quota or private mode — non-critical setting
-    }
+    mergeAppSetting('positionHistoryWindowHours', hours, 'positionHistoryStore setHistoryWindow');
     set({ historyWindowHours: hours });
     // Reload history from DB with the new window
     void get().loadHistoryFromDb();

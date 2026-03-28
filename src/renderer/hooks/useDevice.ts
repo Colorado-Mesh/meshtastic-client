@@ -4,6 +4,7 @@ import { Channel as ProtobufChannel, Mesh, Portnums } from '@meshtastic/protobuf
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { meshtasticShortNameAfterClearingDefault } from '../../shared/nodeNameUtils';
+import { getAppSettingsRaw } from '../lib/appSettingsStorage';
 import {
   createBleConnection,
   createConnection,
@@ -39,7 +40,7 @@ function getMessageLoadLimit(): number {
   const s = parseStoredJson<{
     messageLimitEnabled?: boolean;
     messageLimitCount?: number;
-  }>(localStorage.getItem('mesh-client:adminSettings'), 'useDevice getMessageLoadLimit');
+  }>(getAppSettingsRaw(), 'useDevice getMessageLoadLimit');
   if (!s) return 1000;
   if (s.messageLimitEnabled === false) return 10000;
   return Math.max(1, s.messageLimitCount ?? 1000);
