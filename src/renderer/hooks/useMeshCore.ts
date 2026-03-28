@@ -5,6 +5,7 @@ import {
   WebSerialConnection,
 } from '@liamcottle/meshcore.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 
 import { sanitizeLogMessage } from '@/main/sanitize-log-message';
 
@@ -929,13 +930,17 @@ export function useMeshCore() {
   const addMessage = useCallback((msg: ChatMessage) => {
     const incomingKey = meshcoreMessageDedupeKey(msg);
     let inserted = false;
-    setMessages((prev) => {
-      const isDup = prev.some((m) => meshcoreMessageDedupeKey(m) === incomingKey);
-      if (isDup) {
-        return prev;
-      }
-      inserted = true;
-      return [...prev, msg];
+    // flushSync: `inserted` must reflect the updater result before persisting. React 19 can defer
+    // the functional update; without flush, saveMeshcoreMessage never runs while UI still updates.
+    flushSync(() => {
+      setMessages((prev) => {
+        const isDup = prev.some((m) => meshcoreMessageDedupeKey(m) === incomingKey);
+        if (isDup) {
+          return prev;
+        }
+        inserted = true;
+        return [...prev, msg];
+      });
     });
     if (inserted) {
       void window.electronAPI.db.saveMeshcoreMessage(messageToDbRow(msg)).catch((e: unknown) => {

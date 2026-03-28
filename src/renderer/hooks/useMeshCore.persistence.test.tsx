@@ -3,7 +3,7 @@
  * connection). Previously getMeshcoreMessages only ran in initConn, so restarts
  * showed an empty thread until a radio connected.
  */
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useMeshCore } from './useMeshCore';
@@ -134,5 +134,48 @@ describe('useMeshCore mount hydration', () => {
     expect(dm.payload).toBe('Incoming DM from DB');
     expect(dm.to).toBe(dmRow.to_node);
     expect(dm.channel).toBe(-1);
+  });
+
+  /**
+   * Regression: inbound mesh chat must call `saveMeshcoreMessage` (same `addMessage` path as RF).
+   * MQTT subscription exercises this without a radio; `flushSync` keeps persist aligned with state.
+   */
+  it('synthetic mqtt onMeshcoreChat invokes saveMeshcoreMessage (shared path with RF inbound)', async () => {
+    vi.mocked(window.electronAPI.db.getMeshcoreMessages).mockResolvedValue([]);
+    let meshcoreChatHandler: ((raw: unknown) => void) | undefined;
+    vi.mocked(window.electronAPI.mqtt.onMeshcoreChat).mockImplementation((cb) => {
+      meshcoreChatHandler = cb as (raw: unknown) => void;
+      return () => {};
+    });
+
+    renderHook(() => useMeshCore());
+
+    await waitFor(() => {
+      expect(meshcoreChatHandler).toBeDefined();
+    });
+
+    const ts = Date.now();
+    act(() => {
+      meshcoreChatHandler!({
+        text: 'SynthUser: synthetic inbound body',
+        channelIdx: 0,
+        senderName: 'SynthUser',
+        senderNodeId: 0xabcd1234,
+        timestamp: ts,
+      });
+    });
+
+    await waitFor(() => {
+      expect(window.electronAPI.db.saveMeshcoreMessage).toHaveBeenCalled();
+    });
+
+    expect(vi.mocked(window.electronAPI.db.saveMeshcoreMessage).mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        received_via: 'mqtt',
+        channel_idx: 0,
+        payload: 'SynthUser: synthetic inbound body',
+        timestamp: ts,
+      }),
+    );
   });
 });
