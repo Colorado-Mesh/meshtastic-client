@@ -192,11 +192,8 @@ export class TakServerManager extends EventEmitter {
       console.debug(`[TakServer] Client disconnected: ${address} (${id})`);
     });
 
-    socket.on('error', (err) => {
-      console.warn(
-        `[TakServer] Client socket error ${sanitizeLogMessage(id)}:`,
-        sanitizeLogMessage(err.message),
-      );
+    socket.on('error', () => {
+      console.warn(`[TakServer] Client socket error ${sanitizeLogMessage(id)}: socket error`);
     });
   }
 }
