@@ -77,9 +77,9 @@ const TAB_CAPABILITY_REQUIREMENTS: (keyof ProtocolCapabilities | undefined)[] = 
   undefined, // Modules
   undefined, // Telemetry
   'hasSecurityPanel', // Security
+  undefined, // TAK
   undefined, // App
   undefined, // Diagnostics
-  undefined, // TAK
 ];
 
 const STATUS_COLOR: Record<string, string> = {
@@ -100,9 +100,9 @@ const TAB_NAMES = [
   'Modules',
   'Telemetry',
   'Security',
+  'TAK',
   'App',
   'Diagnostics',
-  'TAK',
 ];
 
 export interface LocationFilter {
@@ -1272,6 +1272,20 @@ export default function App() {
                   {activePanelIndex === 8 ? (
                     <ErrorBoundary>
                       <Suspense fallback={<PanelSkeleton />}>
+                        <TakServerPanel />
+                      </Suspense>
+                    </ErrorBoundary>
+                  ) : null}
+                </div>
+                <div
+                  id="panel-9"
+                  role="tabpanel"
+                  aria-labelledby="tab-9"
+                  hidden={activePanelIndex !== 9}
+                >
+                  {activePanelIndex === 9 ? (
+                    <ErrorBoundary>
+                      <Suspense fallback={<PanelSkeleton />}>
                         <AppPanel
                           protocol={protocol}
                           logPanelVisible={logPanelVisible}
@@ -1306,12 +1320,12 @@ export default function App() {
                   ) : null}
                 </div>
                 <div
-                  id="panel-9"
+                  id="panel-10"
                   role="tabpanel"
-                  aria-labelledby="tab-9"
-                  hidden={activePanelIndex !== 9}
+                  aria-labelledby="tab-10"
+                  hidden={activePanelIndex !== 10}
                 >
-                  {activePanelIndex === 9 ? (
+                  {activePanelIndex === 10 ? (
                     <ErrorBoundary>
                       <Suspense fallback={<PanelSkeleton />}>
                         <DiagnosticsPanel
@@ -1327,20 +1341,6 @@ export default function App() {
                           }}
                           capabilities={capabilities}
                         />
-                      </Suspense>
-                    </ErrorBoundary>
-                  ) : null}
-                </div>
-                <div
-                  id="panel-10"
-                  role="tabpanel"
-                  aria-labelledby="tab-10"
-                  hidden={activePanelIndex !== 10}
-                >
-                  {activePanelIndex === 10 ? (
-                    <ErrorBoundary>
-                      <Suspense fallback={<PanelSkeleton />}>
-                        <TakServerPanel />
                       </Suspense>
                     </ErrorBoundary>
                   ) : null}
