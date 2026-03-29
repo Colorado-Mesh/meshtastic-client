@@ -1,3 +1,7 @@
+import type { TAKClientInfo, TAKServerStatus, TAKSettings } from '@/shared/tak-types';
+
+export type { TAKClientInfo, TAKServerStatus, TAKSettings };
+
 export type ConnectionType = 'ble' | 'serial' | 'http';
 
 export type MeshProtocol = 'meshtastic' | 'meshcore';
@@ -556,6 +560,18 @@ declare global {
         encrypt: (plaintext: string) => Promise<string | null>;
         decrypt: (ciphertext: string) => Promise<string | null>;
         isAvailable: () => Promise<boolean>;
+      };
+      tak: {
+        start: (settings: TAKSettings) => Promise<void>;
+        stop: () => Promise<void>;
+        getStatus: () => Promise<TAKServerStatus>;
+        getConnectedClients: () => Promise<TAKClientInfo[]>;
+        generateDataPackage: () => Promise<void>;
+        regenerateCertificates: () => Promise<void>;
+        pushNodeUpdate: (node: Record<string, unknown>) => Promise<void>;
+        onStatus: (cb: (status: TAKServerStatus) => void) => () => void;
+        onClientConnected: (cb: (client: TAKClientInfo) => void) => () => void;
+        onClientDisconnected: (cb: (clientId: string) => void) => () => void;
       };
     };
   }

@@ -32,6 +32,7 @@ import {
   RadioPanel,
   RepeatersPanel,
   SecurityPanel,
+  TakServerPanel,
   TelemetryPanel,
 } from './lazyTabPanels';
 import { getAppSettingsRaw } from './lib/appSettingsStorage';
@@ -78,6 +79,7 @@ const TAB_CAPABILITY_REQUIREMENTS: (keyof ProtocolCapabilities | undefined)[] = 
   'hasSecurityPanel', // Security
   undefined, // App
   undefined, // Diagnostics
+  undefined, // TAK
 ];
 
 const STATUS_COLOR: Record<string, string> = {
@@ -100,6 +102,7 @@ const TAB_NAMES = [
   'Security',
   'App',
   'Diagnostics',
+  'TAK',
 ];
 
 export interface LocationFilter {
@@ -1324,6 +1327,20 @@ export default function App() {
                           }}
                           capabilities={capabilities}
                         />
+                      </Suspense>
+                    </ErrorBoundary>
+                  ) : null}
+                </div>
+                <div
+                  id="panel-10"
+                  role="tabpanel"
+                  aria-labelledby="tab-10"
+                  hidden={activePanelIndex !== 10}
+                >
+                  {activePanelIndex === 10 ? (
+                    <ErrorBoundary>
+                      <Suspense fallback={<PanelSkeleton />}>
+                        <TakServerPanel />
                       </Suspense>
                     </ErrorBoundary>
                   ) : null}

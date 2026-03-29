@@ -1,4 +1,5 @@
 // Single source of truth for the Electron context bridge API surface.
+import type { TAKClientInfo, TAKServerStatus, TAKSettings } from './tak-types';
 //
 // Rules for maintaining this file:
 // - Every method here must have a matching ipcMain.handle/on in src/main/index.ts
@@ -334,6 +335,20 @@ export interface ElectronAPI {
       onDisconnected: (cb: () => void) => () => void;
     };
     openJsonFile: () => Promise<string | null>;
+  };
+
+  // ─── TAK server ──────────────────────────────────────────────────────────────
+  tak: {
+    start: (settings: TAKSettings) => Promise<void>;
+    stop: () => Promise<void>;
+    getStatus: () => Promise<TAKServerStatus>;
+    getConnectedClients: () => Promise<TAKClientInfo[]>;
+    generateDataPackage: () => Promise<void>;
+    regenerateCertificates: () => Promise<void>;
+    pushNodeUpdate: (node: Record<string, unknown>) => Promise<void>;
+    onStatus: (cb: (status: TAKServerStatus) => void) => () => void;
+    onClientConnected: (cb: (client: TAKClientInfo) => void) => () => void;
+    onClientDisconnected: (cb: (clientId: string) => void) => () => void;
   };
 
   // ─── Log panel ───────────────────────────────────────────────────────────────

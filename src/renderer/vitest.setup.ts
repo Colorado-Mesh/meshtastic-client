@@ -189,6 +189,18 @@ const electronAPIMock = {
     onLine: vi.fn().mockReturnValue(() => {}),
     logDeviceConnection: vi.fn().mockResolvedValue(undefined),
   },
+  tak: {
+    start: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn().mockResolvedValue(undefined),
+    getStatus: vi.fn().mockResolvedValue({ running: false, port: 8089, clientCount: 0 }),
+    getConnectedClients: vi.fn().mockResolvedValue([]),
+    generateDataPackage: vi.fn().mockResolvedValue(undefined),
+    regenerateCertificates: vi.fn().mockResolvedValue(undefined),
+    pushNodeUpdate: vi.fn().mockResolvedValue(undefined),
+    onStatus: vi.fn().mockReturnValue(() => {}),
+    onClientConnected: vi.fn().mockReturnValue(() => {}),
+    onClientDisconnected: vi.fn().mockReturnValue(() => {}),
+  },
 } satisfies ElectronAPI;
 
 vi.stubGlobal('electronAPI', electronAPIMock);

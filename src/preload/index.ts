@@ -7,6 +7,7 @@ import type {
   NobleBleSessionId,
   SerialPort,
 } from '../shared/electron-api.types';
+import type { TAKClientInfo, TAKServerStatus, TAKSettings } from '../shared/tak-types';
 
 export type { NobleBleDevice, NobleBleSessionId, SerialPort };
 
@@ -553,6 +554,40 @@ contextBridge.exposeInMainWorld('electronAPI', {
       },
     },
     openJsonFile: (): Promise<string | null> => ipcRenderer.invoke('meshcore:openJsonFile'),
+  },
+
+  // ─── TAK server ──────────────────────────────────────────────────
+  tak: {
+    start: (settings: TAKSettings): Promise<void> => ipcRenderer.invoke('tak:start', settings),
+    stop: (): Promise<void> => ipcRenderer.invoke('tak:stop'),
+    getStatus: (): Promise<TAKServerStatus> => ipcRenderer.invoke('tak:getStatus'),
+    getConnectedClients: (): Promise<TAKClientInfo[]> =>
+      ipcRenderer.invoke('tak:getConnectedClients'),
+    generateDataPackage: (): Promise<void> => ipcRenderer.invoke('tak:generateDataPackage'),
+    regenerateCertificates: (): Promise<void> => ipcRenderer.invoke('tak:regenerateCertificates'),
+    pushNodeUpdate: (node: Record<string, unknown>): Promise<void> =>
+      ipcRenderer.invoke('tak:pushNodeUpdate', node),
+    onStatus: (cb: (status: TAKServerStatus) => void): (() => void) => {
+      const handler = (_: unknown, status: TAKServerStatus) => {
+        cb(status);
+      };
+      ipcRenderer.on('tak:status', handler);
+      return () => ipcRenderer.off('tak:status', handler);
+    },
+    onClientConnected: (cb: (client: TAKClientInfo) => void): (() => void) => {
+      const handler = (_: unknown, client: TAKClientInfo) => {
+        cb(client);
+      };
+      ipcRenderer.on('tak:clientConnected', handler);
+      return () => ipcRenderer.off('tak:clientConnected', handler);
+    },
+    onClientDisconnected: (cb: (clientId: string) => void): (() => void) => {
+      const handler = (_: unknown, clientId: string) => {
+        cb(clientId);
+      };
+      ipcRenderer.on('tak:clientDisconnected', handler);
+      return () => ipcRenderer.off('tak:clientDisconnected', handler);
+    },
   },
 
   // ─── Log panel ───────────────────────────────────────────────────
