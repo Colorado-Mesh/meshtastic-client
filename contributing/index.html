@@ -1,0 +1,2524 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../development-environment/">
+      
+      
+        <link rel="next" href="../accessibility-checklist/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Contributing - Colorado Mesh Client</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#contributing-to-mesh-client" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Colorado Mesh Client" class="md-header__button md-logo" aria-label="Colorado Mesh Client" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Colorado Mesh Client
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Contributing
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/Colorado-Mesh/mesh-client" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../development-environment/" class="md-tabs__link">
+          
+  
+  
+  Engineering
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../meshcore-deferred-epics/" class="md-tabs__link">
+          
+  
+  
+  MeshCore Roadmap
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../diagnostics/" class="md-tabs__link">
+          
+  
+  
+  Support
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../license/" class="md-tabs__link">
+          
+  
+  
+  Project
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Colorado Mesh Client" class="md-nav__button md-logo" aria-label="Colorado Mesh Client" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Colorado Mesh Client
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/Colorado-Mesh/mesh-client" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Engineering
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Engineering
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development-environment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#getting-started" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting Started
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#code-style" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code style
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Code style">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#meshcore-internals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MeshCore internals
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="MeshCore internals">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#usemeshcore-state-and-refs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        useMeshCore — state and refs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#meshcoreconnection-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MeshCoreConnection API
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#push-event-numbering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Push event numbering
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ack-tracking-pattern" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ACK tracking pattern
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#meshcoreutilsts-helpers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        meshcoreUtils.ts helpers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ipctcpconnection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IpcTcpConnection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#protocolcapabilities-guidance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ProtocolCapabilities guidance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#type-declarations-for-meshcorejs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Type declarations for meshcore.js
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#accessibility-requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Accessibility Requirements
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Accessibility Requirements">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#required-ariahtml-for-common-patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required ARIA/HTML for common patterns
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rule-never-add-a-new-input-without-a-label" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rule: never add a new &lt;input&gt; without a label
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#running-the-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running the tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ai-tools-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AI Tools Policy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#human-first-testing-requirement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Human-First Testing Requirement
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#electron-specific-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Electron-Specific Checks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#error-boundaries-and-logging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error boundaries and logging
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Error boundaries and logging">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#convention" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Convention
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#log-injection-codeql-jslog-injection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Log injection (CodeQL js/log-injection)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#network-data-written-to-file-codeql-jshttp-to-file-access" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network data written to file (CodeQL js/http-to-file-access)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#silent-catch-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Silent-catch check
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#consolelog-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        console.log check
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#xss-patterns-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        XSS patterns check
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#log-panel-filter-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Log panel filter contract
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#renderer-csp-and-vite-build-contracts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Renderer CSP and Vite build contracts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ipc-payload-size-limits-dos-guards" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IPC payload size limits (DoS guards)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mqtt-publish-nonce-and-gatewayid" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MQTT publish (nonce and gatewayId)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#commit-style" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Commit Style
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pr-process" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PR Process
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#license" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        License
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../accessibility-checklist/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Accessibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MeshCore Roadmap
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    MeshCore Roadmap
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../meshcore-deferred-epics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deferred Epics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../meshcore-meshtastic-parity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Feature Parity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../letsmesh-mqtt-auth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MQTT Auth
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Support
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Support
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagnostics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagnostics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_3" id="__nav_4_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Community
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Community
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://discord.com/invite/McChKR5NpS" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discord
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://coloradomesh.org/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Website
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../license/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    License
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../credits/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Credits
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#getting-started" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting Started
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#code-style" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code style
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Code style">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#meshcore-internals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MeshCore internals
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="MeshCore internals">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#usemeshcore-state-and-refs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        useMeshCore — state and refs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#meshcoreconnection-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MeshCoreConnection API
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#push-event-numbering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Push event numbering
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ack-tracking-pattern" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ACK tracking pattern
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#meshcoreutilsts-helpers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        meshcoreUtils.ts helpers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ipctcpconnection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IpcTcpConnection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#protocolcapabilities-guidance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ProtocolCapabilities guidance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#type-declarations-for-meshcorejs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Type declarations for meshcore.js
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#accessibility-requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Accessibility Requirements
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Accessibility Requirements">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#required-ariahtml-for-common-patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required ARIA/HTML for common patterns
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rule-never-add-a-new-input-without-a-label" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rule: never add a new &lt;input&gt; without a label
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#running-the-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running the tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ai-tools-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AI Tools Policy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#human-first-testing-requirement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Human-First Testing Requirement
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#electron-specific-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Electron-Specific Checks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#error-boundaries-and-logging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error boundaries and logging
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Error boundaries and logging">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#convention" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Convention
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#log-injection-codeql-jslog-injection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Log injection (CodeQL js/log-injection)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#network-data-written-to-file-codeql-jshttp-to-file-access" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network data written to file (CodeQL js/http-to-file-access)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#silent-catch-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Silent-catch check
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#consolelog-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        console.log check
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#xss-patterns-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        XSS patterns check
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#log-panel-filter-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Log panel filter contract
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#renderer-csp-and-vite-build-contracts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Renderer CSP and Vite build contracts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ipc-payload-size-limits-dos-guards" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IPC payload size limits (DoS guards)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mqtt-publish-nonce-and-gatewayid" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MQTT publish (nonce and gatewayId)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#commit-style" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Commit Style
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pr-process" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PR Process
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#license" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        License
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="contributing-to-mesh-client">Contributing to Mesh Client</h1>
+<p>Thank you for your interest in contributing. This document covers setup, testing requirements, and the PR process.</p>
+<h2 id="getting-started">Getting Started</h2>
+<p>See <a href="../development-environment/">docs/development-environment.md</a> for full setup instructions including shared requirements, platform-specific steps, and troubleshooting.</p>
+<p><strong>Node version:</strong> Use <strong>Node 22</strong> (22.12.0+ recommended). CI (<code>.github/workflows/</code>) runs on Node 22 for build, test, and release; using the same version locally avoids environment drift and Linux-specific failures (e.g. native rebuilds) on older Node.</p>
+<pre><code class="language-bash">npm install
+npm run dev       # Start in development mode
+npm run build     # Production build
+npm run lint      # Run ESLint (type-aware; see Code style below)
+npm run typecheck # TypeScript check (renderer + main/preload)
+npm run format    # Prettier write — ts, tsx, js, jsx, json, css, md
+npm run format:check   # Prettier check only (no writes)
+npm run rebuild   # Rebuild native modules (@stoprocent/noble) for current Electron
+</code></pre>
+<p><strong>Main process bundle:</strong> <code>build:main</code> / <code>build:main:prod</code> use esbuild on <code>src/main/index.ts</code>. Large dependencies (<code>node-forge</code>, <code>jszip</code>, <code>mqtt</code>, <code>@meshtastic/protobufs</code>, <code>@bufbuild/protobuf</code>) are passed as <code>--external</code> so they are <strong>not</strong> concatenated into <code>dist-electron/main/index.js</code>; Node resolves them from <code>node_modules</code> at runtime (they remain packaged in the app asar). Analyze bundle composition with <code>npm run build:main:meta</code> (writes <code>dist-electron/main/metafile.json</code> for <a href="https://esbuild.github.io/analytics/">esbuild’s metafile analyzer</a>; it rebuilds <code>dist-electron/main/index.js</code> without minify — run <code>npm run build:main:prod</code> afterward if you need the minified main for <code>npm start</code> / <code>dist</code>). Compare dev vs minified outfile sizes with <code>npm run build:main:compare-size</code>.</p>
+<p><strong>Running CI locally:</strong> With <a href="https://github.com/nektos/act">act</a> installed, run <code>act --container-architecture linux/amd64</code> so Linux jobs use the correct architecture. The test-results artifact upload step is skipped when running under act (actor <code>nektos/act</code>); all other steps run as on GitHub.</p>
+<p><strong>actionlint:</strong> Install <a href="https://github.com/rhysd/actionlint">actionlint</a> so the pre-commit hook can lint GitHub Actions workflows.</p>
+<p>Recommended (auto-install): <code>npm run setup:actionlint</code> (installs into <code>.githooks/bin</code> so the hook can find it).</p>
+<p>Manual fallback:</p>
+<ul>
+<li>macOS: <code>brew install actionlint</code></li>
+<li>Windows/Linux: see <a href="https://github.com/rhysd/actionlint/releases">releases</a> for prebuilt binaries.</li>
+</ul>
+<p>After <code>npm install</code>, the repo’s git hooks are enabled (<code>core.hooksPath</code> → <code>.githooks</code>). On every commit, the <strong>pre-commit</strong> hook runs in order:</p>
+<ol>
+<li><strong><code>npm run format</code></strong> — Prettier <strong>writes</strong> to matching files (not <code>format:check</code>).</li>
+<li><strong>Re-stage</strong> — Only files that were already staged are re-added, so unstaged WIP is not swept in.</li>
+<li><strong><code>npm run lint</code></strong></li>
+<li><strong><code>npm run typecheck</code></strong> — TypeScript check for renderer and main/preload.</li>
+<li><strong><code>npm run check:log-injection</code></strong> — Ensures main-process <code>console.*</code> calls do not pass raw error variables (<code>err</code>, <code>e</code>, <code>error</code>, <code>reason</code>) without <code>sanitizeLogMessage()</code> at the call site. See <a href="#log-injection-codeql-jslog-injection">Log injection (CodeQL js/log-injection)</a> below.</li>
+<li><strong><code>npm audit</code></strong> — Fails the commit if npm reports vulnerabilities.</li>
+<li><strong><code>actionlint</code></strong> — Lints <code>.github/workflows/*.yml</code>; must be installed (see above).</li>
+<li><strong><code>npm run test:run</code></strong> — Fails the commit if tests fail.</li>
+</ol>
+<p>To skip the hook in an emergency: <code>git commit --no-verify</code>.</p>
+<p>If <code>@stoprocent/noble</code> or other native addons fail after changing Node or Electron versions, run <code>npm run rebuild</code> (same script as <code>postinstall</code>).</p>
+<p><strong>Windows</strong>: If <code>dist:win</code> or <code>rebuild</code> fails with “space in the path” or <code>EPERM</code>, use a path <strong>without spaces</strong>, close Electron/Node processes, and see README troubleshooting. For “Could not find any Python installation to use”, install Python 3 and add it to PATH — see README Windows prerequisites and troubleshooting.</p>
+<p><strong>Linux sandbox / SIGILL</strong>: If <code>npm install</code> fails with <code>electron exited with signal SIGILL</code>, use <code>MESHTASTIC_SKIP_ELECTRON_REBUILD=1 npm install</code>, then run <code>npm run rebuild</code> where the Electron binary runs (see README Linux troubleshooting).</p>
+<p><strong>npm 11 — <code>Unknown env config "devdir"</code>:</strong> npm only recognizes its own config keys. <code>devdir</code> is a legacy node-gyp setting; if it appears in <code>~/.npmrc</code> or as <code>npm_config_devdir</code> / <code>NPM_CONFIG_DEVDIR</code> in the environment (some IDEs or sandboxes inject it), npm 11 prints a warning. Fix:</p>
+<ol>
+<li>Remove from npm user config if saved there: <code>npm config delete devdir</code> and <code>npm config delete devdir --global</code>.</li>
+<li>Optionally unset in your shell profile: <code>unset npm_config_devdir NPM_CONFIG_DEVDIR 2&gt;/dev/null || true</code>.</li>
+</ol>
+<p>The repo’s <strong>pre-commit</strong> hook unsets those variables before running npm so local commits are quiet when the environment sets <code>devdir</code>.</p>
+<h2 id="code-style">Code style</h2>
+<p>Run <code>npm run lint</code> before pushing. ESLint is configured with:</p>
+<ul>
+<li><strong>Import order</strong> — <code>eslint-plugin-simple-import-sort</code> on imports and exports; no duplicate imports; newline after imports.</li>
+<li><strong>Type-only imports</strong> — <code>@typescript-eslint/consistent-type-imports</code> (use <code>import type { … }</code> where appropriate).</li>
+<li><strong>TypeScript (type-aware)</strong> — <code>eslint.config.mjs</code> enables <code>typescript-eslint</code> <code>recommendedTypeChecked</code>, <code>stylisticTypeChecked</code>, and <code>strictTypeChecked</code> using both <code>tsconfig.json</code> and <code>tsconfig.main.json</code>. Renderer TSX adds <code>eslint-plugin-react</code> (jsx-runtime), <code>eslint-plugin-jsx-a11y</code>, and <code>react-hooks</code>. <code>scripts/**</code> uses <code>disableTypeChecked</code> so one-off scripts are not tied to the full program. A few strict rules are intentionally relaxed to keep signal high without churn (see the file): e.g. <code>no-unsafe-*</code> off at the project level, <code>no-unnecessary-condition</code> off for DOM/runtime patterns, <code>no-misused-promises</code> with <code>checksVoidReturn.attributes: false</code> for React event handlers, and <code>prefer-nullish-coalescing</code> with <code>ignorePrimitives</code> / mixed logical expressions.</li>
+<li><strong>Renderer only</strong> — <code>react-hooks/exhaustive-deps</code> is an <strong>error</strong>; fix dependency arrays rather than disabling. <strong>Exception:</strong> If an effect must <em>not</em> re-run when a dependency changes (e.g. intentional one-shot on mount, or avoiding stale closure without widening deps), you may use <code>eslint-disable-next-line react-hooks/exhaustive-deps</code> <strong>only</strong> with an inline comment on the same line or immediately above explaining why (what is intentionally omitted and why). Prefer refs or splitting effects first; disable as a last resort.</li>
+<li><strong>Ignored by lint</strong> — <code>scripts/**</code>, <code>dist-electron/**</code>, and <code>*.config.*</code> files are excluded; change those configs only when needed.</li>
+</ul>
+<p><strong>Path alias:</strong> <code>@/</code> maps to <code>src/</code> (see <code>tsconfig.json</code>, <code>tsconfig.main.json</code>, and <code>vitest.config.ts</code>). Prefer <code>@/renderer/...</code> or <code>@/main/...</code> over long relative paths when adding imports.</p>
+<p><strong>Diagnostics work:</strong> The Network Diagnostics tab is driven by <code>diagnosticRows</code> in <code>diagnosticsStore</code> (routing + RF rows merged in <code>useDevice</code>). Row TTL and pruning live in <code>src/renderer/lib/diagnostics/diagnosticRows.ts</code>; mesh congestion copy is shared via <code>MeshCongestionAttributionBlock.tsx</code>. <strong>Foreign LoRa detection</strong> (cross-protocol) is implemented in <code>src/renderer/lib/foreignLoraDetection.ts</code> and stored in <code>diagnosticsStore.foreignLoraDetections</code>; it classifies raw LoRa payloads (MeshCore 0x3c, Meshtastic header, or unknown) and surfaces detections in the Node Detail modal. If you add a new routing or RF finding, extend the <code>DiagnosticRow</code> union and ensure the panel table renders the new kind — see existing tests in <code>DiagnosticsPanel.test.tsx</code> and <code>diagnosticRows.test.ts</code>. Note: routing anomalies are Meshtastic-only — <code>RoutingDiagnosticEngine</code> accepts an optional <code>capabilities</code> parameter and skips protocol-incompatible detectors (e.g. <code>impossible_hop</code> is skipped for MeshCore because <code>hops_away</code> does not exist in that protocol).</p>
+<p><strong>Dual-protocol architecture:</strong> The app supports two protocols: <code>meshtastic</code> (default) and <code>meshcore</code>. The active protocol is stored in <code>localStorage['mesh-client:protocol']</code> and drives which hook (<code>useDevice</code> vs <code>useMeshCore</code>) powers the app. Both hooks expose the same top-level shape so components stay protocol-agnostic wherever possible. Protocol-specific divergences are handled via the <code>ProtocolCapabilities</code> descriptor from <code>src/renderer/lib/radio/BaseRadioProvider.ts</code> — add capabilities there (not as string comparisons) when gating UI on protocol.</p>
+<ul>
+<li><code>useDevice.ts</code> — Meshtastic-specific; uses <code>@meshtastic/core</code>; connections created via <code>createConnection()</code> in <code>src/renderer/lib/connection.ts</code> (BLE/Serial/HTTP).</li>
+<li><code>useMeshCore.ts</code> — MeshCore-specific; uses <code>@liamcottle/meshcore.js</code>; connections created inside the hook (BLE, Web Serial, or TCP via main-process IPC). No use of <code>connection.ts</code>.</li>
+<li><code>useRadioProvider(protocol)</code> — returns a memoized <code>ProtocolCapabilities</code> object; pass this down into components and engines rather than comparing <code>protocol === 'meshcore'</code> strings everywhere.</li>
+</ul>
+<p><strong>Dual-mode UI:</strong> <code>App.tsx</code> chooses the active hook by protocol and renders the same shell (tabs, Log panel, status). Tab 5 is <strong>Modules</strong> (Meshtastic: <code>ModulePanel</code>) or <strong>Repeaters</strong> (MeshCore: <code>RepeatersPanel</code>). Meshtastic also shows <strong>Security</strong> after <strong>Telemetry</strong> (<code>SecurityPanel</code>, gated by <code>hasSecurityPanel</code>); MeshCore omits that tab. <strong>MeshCore Import Contacts</strong> (JSON nickname bulk import) lives on the <strong>Nodes</strong> tab (<code>NodeListPanel</code>) — do not reattach it to <code>RepeatersPanel</code>. Panels such as <code>RadioPanel</code>, <code>ConnectionPanel</code>, and <code>NodeDetailModal</code> accept optional props (e.g. <code>onApplyLoraParams</code>, <code>onSetOwner</code>) that are set only for the active protocol; when adding protocol-specific UI, gate on <code>capabilities</code> or the presence of these handlers rather than on the protocol string.</p>
+<p><strong>MeshCore IPC channels:</strong> Main-process TCP bridge for MeshCore uses <code>meshcore:tcp-connect</code>, <code>meshcore:tcp-write</code>, <code>meshcore:tcp-disconnect</code>, <code>meshcore:tcp-data</code> (renderer push), and <code>meshcore:tcp-disconnected</code> (renderer push). These are handled in <code>src/main/index.ts</code> and wired into the renderer via <code>window.electronAPI.meshcore.tcp.*</code> in the preload. <code>meshcore:tcp-write</code> returns a <code>Promise</code> that resolves after the socket <code>write</code> callback succeeds and rejects if there is no active socket or the write fails (so callers can surface errors).</p>
+<p><strong>MeshCore MQTT:</strong> Broker fields in the Connection tab (including <strong>LetsMesh</strong> / <strong>Ripple Networks</strong> / <strong>Custom</strong> presets in <code>ConnectionPanel.tsx</code>) must stay consistent with what <code>src/main/mqtt-manager.ts</code> and <code>src/main/meshcore-mqtt-adapter.ts</code> expect: <code>mqttTransportProtocol: 'meshcore'</code>, optional <code>useWebSocket</code> (e.g. LetsMesh on 443), and <code>tlsInsecure</code> when connecting to TLS brokers with non–public CAs (Ripple preset). <strong>LetsMesh</strong> credentials are built in <code>src/renderer/lib/letsMeshJwt.ts</code> using <code>@michaelhart/meshcore-decoder</code> <code>createAuthToken</code> (same contract as <a href="https://github.com/michaelhart/meshcore-mqtt-broker">meshcore-mqtt-broker</a>); JWT <code>aud</code> is the MQTT server hostname for LetsMesh presets (see <a href="../letsmesh-mqtt-auth/">docs/letsmesh-mqtt-auth.md</a>); username is <code>v1_&lt;public key hex&gt;</code>, not a short node id. Adding or changing a preset should be reflected in <a href="README.md">README.md</a> and <a href="../meshcore-meshtastic-parity/">docs/meshcore-meshtastic-parity.md</a>.</p>
+<p><strong>MeshCore database:</strong> MeshCore contacts and messages are stored in <code>meshcore_contacts</code> and <code>meshcore_messages</code> (see <code>src/main/database.ts</code> for current schema version). The <code>saveMeshcoreContact</code> IPC upserts with <code>INSERT … ON CONFLICT(node_id) DO UPDATE</code> and keeps existing <code>favorited</code> / merged <code>nickname</code>; <code>updateMeshcoreContactAdvert</code> does a targeted <code>UPDATE</code> of <code>last_advert</code>, <code>adv_lat</code>, <code>adv_lon</code> only — used by the periodic advert push event (128) to avoid overwriting contact metadata with partial data. <code>updateMeshcoreContactFavorited</code> sets <code>favorited</code> and can <code>INSERT</code> a minimal row when the contact is not yet in the table (requires <code>public_key</code> hex from the renderer). <code>meshcore_messages.received_via</code> stores how a message was observed (<code>rf</code>, <code>mqtt</code>, or <code>both</code>) for chat transport badges and history. The partial unique index on meshcore messages includes <code>payload</code> so distinct lines in the same second (same stub <code>sender_id</code> and channel) are not dropped by <code>INSERT OR IGNORE</code>.</p>
+<p><strong>Stores used by both protocols:</strong> <code>positionHistoryStore</code> holds the 60-minute position trail and path-overlay visibility; <code>diagnosticsStore</code> holds <code>foreignLoraDetections</code> (cross-protocol foreign LoRa detection). MeshCore-only: <code>repeaterSignalStore</code> caches repeater status for the Repeaters panel. See <code>src/renderer/stores/</code>.</p>
+<h3 id="meshcore-internals">MeshCore internals</h3>
+<p>This subsection is a contributor reference for working on MeshCore-specific features. Read it alongside <code>src/renderer/hooks/useMeshCore.ts</code>.</p>
+<p><strong>BLE routing by platform:</strong> MeshCore BLE uses two backends:</p>
+<ul>
+<li><strong>Linux:</strong> Web Bluetooth in the renderer (<code>TransportWebBluetoothIpc</code> + <code>MeshcoreWebBluetoothConnection</code>) with the custom picker flow (<code>select-bluetooth-device</code> bridge).</li>
+<li><strong>macOS/Windows:</strong> Noble IPC via <code>NobleBleManager</code> in the main process.</li>
+</ul>
+<p>On Noble-backed platforms, if you connect the <strong>same</strong> peripheral for one protocol while the other protocol still holds the GATT link, <code>NobleBleManager</code> disconnects the other session first and then connects the requested session.</p>
+<ul>
+<li><strong>MeshCore NUS on Windows:</strong> When <code>fromRadio</code> supports <strong>notify</strong>, the manager uses a notify-first strategy and <strong>does not issue redundant GATT reads</strong> on that characteristic on <code>win32</code> (WinRT can misbehave when mixing reads and notifications on the Nordic UART TX path). Other platforms may still use read pumps where needed.</li>
+<li><strong>Renderer retry policy:</strong> <code>useMeshCore</code> applies bounded retries for both Linux Web Bluetooth and Noble IPC paths. Noble retryability is classified in <code>src/renderer/lib/bleConnectErrors.ts</code> (<code>isMeshcoreRetryableBleErrorMessage</code>). Extend that helper (and tests) when adding new recoverable BLE error text from the stack.</li>
+<li><strong>Disconnect during <code>initConn</code>:</strong> <code>meshcoreSetupGenerationRef</code> increments on <code>disconnect()</code>; long awaits in <code>initConn</code> are wrapped so setup aborts promptly instead of sitting until <code>getChannels</code> / similar timeouts fire. User-visible cancel uses <code>DOMException</code> + <code>AbortError</code> with <code>MESHCORE_SETUP_ABORT_MESSAGE</code> from <code>bleConnectErrors.ts</code>; <code>ConnectionPanel</code> treats that as a silent cancel (no inline error banner).</li>
+</ul>
+<p>The ideal upstream fix remains for <code>@liamcottle/meshcore.js</code> to perform the first BLE write only after <code>gatt.connect()</code> has resolved; contributors can consider opening an issue or PR upstream for that behavior.</p>
+<h4 id="usemeshcore-state-and-refs"><code>useMeshCore</code> — state and refs</h4>
+<p><strong>Exported state</strong> (visible to callers via the hook's return value):</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>nodes</code></td>
+<td><code>Map&lt;number, MeshNode&gt;</code></td>
+<td>Keyed by <code>pubkeyToNodeId()</code></td>
+</tr>
+<tr>
+<td><code>messages</code></td>
+<td><code>ChatMessage[]</code></td>
+<td>Channel + DM history</td>
+</tr>
+<tr>
+<td><code>channels</code></td>
+<td><code>{index, name}[]</code></td>
+<td>Channel list from device</td>
+</tr>
+<tr>
+<td><code>selfInfo</code></td>
+<td><code>MeshCoreSelfInfo \| null</code></td>
+<td>Device identity, radio params, battery</td>
+</tr>
+<tr>
+<td><code>deviceLogs</code></td>
+<td><code>DeviceLogEntry[]</code></td>
+<td>Capped at <code>MAX_DEVICE_LOGS</code> (500)</td>
+</tr>
+<tr>
+<td><code>telemetry</code></td>
+<td><code>TelemetryPoint[]</code></td>
+<td>Battery telemetry; cap 50</td>
+</tr>
+<tr>
+<td><code>signalTelemetry</code></td>
+<td><code>TelemetryPoint[]</code></td>
+<td>SNR/RSSI telemetry; cap 50</td>
+</tr>
+<tr>
+<td><code>meshcoreTraceResults</code></td>
+<td><code>Map&lt;number, …&gt;</code></td>
+<td>Per-hop SNR trace results keyed by nodeId</td>
+</tr>
+<tr>
+<td><code>meshcoreNodeStatus</code></td>
+<td><code>Map&lt;number, …&gt;</code></td>
+<td>On-demand repeater status keyed by nodeId</td>
+</tr>
+<tr>
+<td><code>meshcoreNodeTelemetry</code></td>
+<td><code>Map&lt;number, …&gt;</code></td>
+<td>On-demand sensor data keyed by nodeId</td>
+</tr>
+<tr>
+<td><code>meshcoreNeighbors</code></td>
+<td><code>Map&lt;number, …&gt;</code></td>
+<td>Neighbor list results keyed by nodeId</td>
+</tr>
+<tr>
+<td><code>manualAddContacts</code></td>
+<td><code>boolean</code></td>
+<td><code>true</code> = manual approval; <code>false</code> = auto-add</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Key internal refs</strong> (not returned, used inside the hook only):</p>
+<table>
+<thead>
+<tr>
+<th>Ref</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>connRef</code></td>
+<td>The active <code>MeshCoreConnection</code></td>
+</tr>
+<tr>
+<td><code>pubKeyMapRef</code></td>
+<td><code>Map&lt;number, Uint8Array&gt;</code> — nodeId → full 32-byte public key (used when sending)</td>
+</tr>
+<tr>
+<td><code>pubKeyPrefixMapRef</code></td>
+<td><code>Map&lt;string, number&gt;</code> — 6-byte hex prefix → nodeId (for DM routing from push events)</td>
+</tr>
+<tr>
+<td><code>pendingAcksRef</code></td>
+<td><code>Map&lt;number, {timeoutId}&gt;</code> — in-flight ACK tracking keyed by <code>expectedAckCrc</code></td>
+</tr>
+<tr>
+<td><code>nodesRef</code></td>
+<td>Stable ref to current <code>nodes</code> map (prevents stale closures in event listeners)</td>
+</tr>
+</tbody>
+</table>
+<p>When adding new device state: add a <code>useState</code> / <code>useRef</code> entry, expose it in the return value, and update the matching return-type shape.</p>
+<h4 id="meshcoreconnection-api"><code>MeshCoreConnection</code> API</h4>
+<p>The connection object exposes these methods. Call them via <code>connRef.current</code> inside callbacks:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>getSelfInfo()</code></td>
+<td>Fetch device identity, radio params, battery</td>
+</tr>
+<tr>
+<td><code>getContacts()</code></td>
+<td>Fetch all contacts from device</td>
+</tr>
+<tr>
+<td><code>getChannels()</code></td>
+<td>Fetch channel list</td>
+</tr>
+<tr>
+<td><code>getWaitingMessages()</code></td>
+<td>Drain queued messages on connect</td>
+</tr>
+<tr>
+<td><code>sendFloodAdvert()</code></td>
+<td>Broadcast presence to mesh</td>
+</tr>
+<tr>
+<td><code>sendTextMessage(pubKey, text)</code></td>
+<td>DM; returns <code>{expectedAckCrc, estTimeout}</code></td>
+</tr>
+<tr>
+<td><code>sendChannelTextMessage(idx, text)</code></td>
+<td>Channel broadcast</td>
+</tr>
+<tr>
+<td><code>removeContact(pubKey)</code></td>
+<td>Delete a contact</td>
+</tr>
+<tr>
+<td><code>setAdvertName(name)</code></td>
+<td>Set device display name</td>
+</tr>
+<tr>
+<td><code>setRadioParams(freq, bw, sf, cr)</code></td>
+<td>Apply radio config; <code>freq</code> in kHz (e.g. 910525), <code>bw</code> in Hz (e.g. 62500)</td>
+</tr>
+<tr>
+<td><code>setTxPower(power)</code></td>
+<td>Set TX power</td>
+</tr>
+<tr>
+<td><code>setAdvertLatLong(lat, lon)</code></td>
+<td>Set broadcast position</td>
+</tr>
+<tr>
+<td><code>reboot()</code></td>
+<td>Reboot device</td>
+</tr>
+<tr>
+<td><code>tracePath(pubKeys)</code></td>
+<td>Per-hop SNR trace</td>
+</tr>
+<tr>
+<td><code>getStatus(pubKey)</code></td>
+<td>Repeater status</td>
+</tr>
+<tr>
+<td><code>getTelemetry(pubKey)</code></td>
+<td>CayenneLPP sensor data</td>
+</tr>
+<tr>
+<td><code>getNeighbours(pubKey)</code></td>
+<td>Neighbor list (Repeater-only)</td>
+</tr>
+<tr>
+<td><code>setManualAddContacts()</code></td>
+<td>Switch to manual contact approval</td>
+</tr>
+<tr>
+<td><code>setAutoAddContacts()</code></td>
+<td>Switch to automatic contact approval</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Adding a new device command:</strong> add the method signature to <code>MeshCoreConnection</code> in <code>useMeshCore.ts</code>, implement the call in a callback (using <code>connRef.current</code>), and expose the callback in the hook's return value.</p>
+<h4 id="push-event-numbering">Push event numbering</h4>
+<p>MeshCore devices emit push events as numeric codes. Register listeners with <code>conn.on(EVENT_CODE, handler)</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>0x80</code> (128)</td>
+<td>Periodic advert</td>
+<td>Contact presence update; call <code>updateMeshcoreContactAdvert</code> IPC (partial update — do not overwrite contact metadata)</td>
+</tr>
+<tr>
+<td><code>0x81</code> (129)</td>
+<td>Path update</td>
+<td>Routing path changed</td>
+</tr>
+<tr>
+<td><code>0x82</code> (130)</td>
+<td>Send confirmed</td>
+<td>ACK received; resolve the pending entry in <code>pendingAcksRef</code></td>
+</tr>
+<tr>
+<td><code>0x83</code> (131)</td>
+<td>Message waiting</td>
+<td>Incoming message queued; fetch via <code>getWaitingMessages()</code></td>
+</tr>
+<tr>
+<td><code>0x8A</code> (138)</td>
+<td>New contact</td>
+<td>New contact discovered; call <code>saveMeshcoreContact</code> IPC</td>
+</tr>
+<tr>
+<td><code>7</code></td>
+<td>Incoming DM</td>
+<td>Direct message received</td>
+</tr>
+<tr>
+<td><code>8</code></td>
+<td>Incoming channel message</td>
+<td>Channel message received</td>
+</tr>
+<tr>
+<td><code>0x88</code> (136)</td>
+<td>RF packet event</td>
+<td>Signal telemetry (SNR/RSSI); source of <code>signalTelemetry</code></td>
+</tr>
+</tbody>
+</table>
+<p>When adding a handler for a new push event code, register it in the <code>conn.on(…)</code> block in <code>useMeshCore.ts</code> alongside the existing listeners.</p>
+<h4 id="ack-tracking-pattern">ACK tracking pattern</h4>
+<p><code>sendTextMessage()</code> returns <code>{expectedAckCrc, estTimeout}</code>. The expected flow after sending a DM:</p>
+<ol>
+<li>Update the message status to <code>'pending'</code>.</li>
+<li>Store <code>{timeoutId}</code> in <code>pendingAcksRef</code> keyed by <code>expectedAckCrc</code>.</li>
+<li>When push event <code>0x82</code> fires with matching CRC → mark message <code>'acked'</code> and clear the timeout.</li>
+<li>On timeout expiry → mark message <code>'failed'</code>.</li>
+</ol>
+<p>Do <strong>not</strong> use a sequential packet ID here. MeshCore uses the CRC of the expected ACK, not a sequential ID.</p>
+<h4 id="meshcoreutilsts-helpers"><code>meshcoreUtils.ts</code> helpers</h4>
+<p>Reference file: <code>src/renderer/lib/meshcoreUtils.ts</code></p>
+<ul>
+<li><strong><code>pubkeyToNodeId(key: Uint8Array): number</code></strong> — XOR-folds a 32-byte public key into a stable 32-bit node ID. Use this as the map key in <code>nodes</code>, <code>meshcoreNodeStatus</code>, and similar maps. Never inline the XOR-fold math.</li>
+<li><strong><code>meshcoreContactToMeshNode(contact): MeshNode</code></strong> — Converts a raw MeshCore contact (from device or DB) to the unified <code>MeshNode</code> type consumed by shared components.</li>
+<li><strong><code>CONTACT_TYPE_LABELS</code></strong> — <code>{0: 'None', 1: 'Chat', 2: 'Repeater', 3: 'Room'}</code>. Displayed in the <code>hw_model</code> field in the node list. Use this map instead of inlining the label strings.</li>
+</ul>
+<h4 id="ipctcpconnection"><code>IpcTcpConnection</code></h4>
+<p>TCP transport is implemented as a class inside <code>useMeshCore.ts</code> (not a separate file). It wraps <code>SerialConnection</code> from <code>meshcore.js</code> and routes bytes through the main-process TCP bridge. The default MeshCore TCP port is <strong>5000</strong>.</p>
+<p>Data flow when TCP is selected:</p>
+<ol>
+<li><code>IpcTcpConnection.connect()</code> → <code>meshcore:tcp-connect</code> IPC → <code>net.Socket</code> opened in main process.</li>
+<li>Incoming bytes: <code>meshcore:tcp-data</code> push → <code>instance.onDataReceived()</code>.</li>
+<li>Outgoing bytes: <code>instance.write()</code> → <code>meshcore:tcp-write</code> IPC.</li>
+<li>Disconnect: <code>meshcore:tcp-disconnected</code> push → <code>instance.onDisconnected()</code>.</li>
+</ol>
+<h4 id="protocolcapabilities-guidance"><code>ProtocolCapabilities</code> guidance</h4>
+<p>When a new MeshCore feature requires UI gating:</p>
+<ol>
+<li>Add the capability flag to <code>ProtocolCapabilities</code> in <code>src/renderer/lib/radio/BaseRadioProvider.ts</code>.</li>
+<li>Set it in both <code>MESHTASTIC_CAPABILITIES</code> and <code>MESHCORE_CAPABILITIES</code>.</li>
+<li>Consume it via <code>useRadioProvider(protocol)</code> in components — <strong>never</strong> use <code>protocol === 'meshcore'</code> string comparisons.</li>
+</ol>
+<p>Current MeshCore-specific capabilities that differ from Meshtastic: <code>hasPerHopSnr</code>, <code>hasRepeaterStatus</code>, and <code>hasOnDemandNodeStatus</code> are <code>true</code>; all config-related capabilities (<code>hasChannelConfig</code>, <code>hasModemPresets</code>, <code>hasBluetoothConfig</code>, etc.) are <code>false</code>.</p>
+<h4 id="type-declarations-for-meshcorejs">Type declarations for <code>meshcore.js</code></h4>
+<p><code>src/renderer/types/meshcore.d.ts</code> declares the <code>@liamcottle/meshcore.js</code> module's exported classes (<code>WebBleConnection</code>, <code>WebSerialConnection</code>, <code>SerialConnection</code>, <code>CayenneLpp</code>). When upgrading the library or using a new export, add or update declarations there.</p>
+<p><strong>Dual TypeScript configs:</strong> Renderer code uses <code>tsconfig.json</code> (bundler resolution, JSX). Main and preload use <code>tsconfig.main.json</code> (CommonJS, Node resolution). Do not assume the same module settings in main/preload as in the Vite renderer.</p>
+<h2 id="accessibility-requirements">Accessibility Requirements</h2>
+<p>Every interactive element added or modified must have an accessible label. This applies to all contributors — human and AI.</p>
+<p><strong>Electron (Chromium):</strong> On this platform, <code>aria-label</code> on an element <strong>replaces</strong> the accessible name that would otherwise come from its text contents for assistive tech. <strong>Every visible control should still have an explicit <code>aria-label</code>.</strong> Set that label to the <strong>same string a sighted user reads</strong> (including punctuation, counts, and dynamic values). You can still use <code>&lt;label htmlFor="…"&gt;</code> / <code>aria-labelledby</code> for association and tests; add a matching <code>aria-label</code> on the control when Electron would otherwise hide inner text from the accessible name. Icon-only controls use an <code>aria-label</code> that states the action in plain language (there is no conflicting visible text).</p>
+<h3 id="required-ariahtml-for-common-patterns">Required ARIA/HTML for common patterns</h3>
+<table>
+<thead>
+<tr>
+<th>Element type</th>
+<th>What to add</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>&lt;button&gt;</code> with icon only (no text)</td>
+<td><code>aria-label="Descriptive action"</code></td>
+</tr>
+<tr>
+<td><code>&lt;button&gt;</code> that toggles state</td>
+<td><code>aria-pressed={boolean}</code> + <code>aria-label</code></td>
+</tr>
+<tr>
+<td><code>&lt;input&gt;</code> / <code>&lt;select&gt;</code> / <code>&lt;textarea&gt;</code></td>
+<td><code>&lt;label htmlFor="id"&gt;</code> + matching <code>id</code>, <strong>or</strong> <code>aria-label</code></td>
+</tr>
+<tr>
+<td>Status that changes dynamically</td>
+<td>Wrap in <code>&lt;div role="status" aria-live="polite"&gt;</code></td>
+</tr>
+<tr>
+<td>Error message</td>
+<td><code>role="alert"</code> on the element</td>
+</tr>
+<tr>
+<td>Modal / dialog</td>
+<td><code>role="dialog" aria-modal="true" aria-labelledby="heading-id"</code></td>
+</tr>
+<tr>
+<td>Confirmation dialog</td>
+<td><code>role="alertdialog"</code> instead of <code>role="dialog"</code></td>
+</tr>
+<tr>
+<td>Color-only indicator (status dot, badge)</td>
+<td><code>aria-label="Online"</code> / <code>"Offline"</code> etc.</td>
+</tr>
+<tr>
+<td>Decorative icon inside a labelled button</td>
+<td><code>aria-hidden="true"</code> on the <code>&lt;svg&gt;</code></td>
+</tr>
+<tr>
+<td>Sortable <code>&lt;th&gt;</code></td>
+<td><code>scope="col"</code> + <code>aria-sort="ascending"\|"descending"\|"none"</code></td>
+</tr>
+<tr>
+<td><code>&lt;table&gt;</code></td>
+<td><code>&lt;caption className="sr-only"&gt;Description&lt;/caption&gt;</code></td>
+</tr>
+<tr>
+<td>SVG icon used as an image</td>
+<td><code>role="img" aria-label="..."</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="rule-never-add-a-new-input-without-a-label">Rule: never add a new <code>&lt;input&gt;</code> without a label</h3>
+<p>If the input has a visible label element next to it, use <code>htmlFor</code>/<code>id</code>. If it's standalone (search bars, inline number fields), use <code>aria-label</code>. The axe tests will catch missing labels on every commit — fix them before the commit goes through.</p>
+<h3 id="running-the-tests">Running the tests</h3>
+<p>Vitest runs two projects (see <code>vitest.config.ts</code>): <strong>renderer</strong> (<code>src/renderer/**/*.test.{ts,tsx}</code>, jsdom) and <strong>main</strong> (<code>src/main/**/*.test.ts</code>, node). Add or extend tests in the matching project when you change renderer or main-process behavior.</p>
+<p>If you are fixing a regression, always add or update a test that reproduces the regression and verifies the fix so it does not happen again.</p>
+<p><strong>Accessibility tests:</strong> <code>src/renderer/vitest.setup.ts</code> registers <strong>vitest-axe</strong>. New or heavily changed panels should include a test that renders the component and asserts no axe violations, following existing component tests (e.g. <code>await axe(container)</code> and <code>expect(results).toHaveNoViolations()</code>).</p>
+<pre><code class="language-bash">npm run test:run      # run once (also runs automatically on git commit)
+npm test              # watch mode
+npm run test:verbose  # verbose output with full violation details
+</code></pre>
+<h2 id="ai-tools-policy">AI Tools Policy</h2>
+<p>AI coding assistants (Claude Code, GitHub Copilot, etc.) are welcome for brainstorming, boilerplate, and first drafts. However:</p>
+<ul>
+<li><strong>Electron IPC security is a known weak spot for AI tools.</strong> AI models are confidently wrong about what is and isn't safe to expose via <code>contextBridge</code>. Never accept AI-generated IPC code without understanding it yourself.</li>
+<li><strong>Log injection (CodeQL):</strong> AI often suggests sanitizing only inside the logging function. CodeQL requires sanitization at the <strong>call site</strong> — pass <code>sanitizeLogMessage(...)</code> around any user-controlled value before it is passed into <code>appendLine()</code> or similar. See <a href="#log-injection-codeql-jslog-injection">Log injection (CodeQL js/log-injection)</a> above.</li>
+<li>All AI-generated code must be reviewed and manually tested by a human before merging.</li>
+<li>If you used an AI tool, note it briefly in the PR body — not required, just helpful for reviewers.</li>
+</ul>
+<h2 id="human-first-testing-requirement">Human-First Testing Requirement</h2>
+<p>Every PR must be manually tested before review. No exceptions for "trivial" changes.</p>
+<ol>
+<li>Run the app locally and exercise the changed functionality end-to-end (<code>npm start</code>). On Linux, Bluetooth uses Web Bluetooth which requires no special setup.</li>
+<li>Open Chrome DevTools for <strong>both</strong> the Main process (via the terminal) and the Renderer process (Ctrl/Cmd+Shift+I) — confirm no new errors or warnings.</li>
+<li>If you changed connection logic, test on an actual or emulated device if possible.</li>
+</ol>
+<h2 id="electron-specific-checks">Electron-Specific Checks</h2>
+<p>Before submitting a PR that touches IPC or the preload layer:</p>
+<ul>
+<li><strong>contextBridge exposure</strong>: Only expose the minimum API surface needed. Never expose <code>ipcRenderer</code> directly or pass arbitrary channel names to the renderer.</li>
+<li><strong>Channel naming</strong>: Main-process <strong>invoke</strong> handlers use namespaced channels (e.g. <code>db:*</code>, <code>mqtt:*</code>, <code>meshcore:*</code>, <code>update:*</code>). Preload exposes a single <code>electronAPI</code> object with nested namespaces (<code>db</code>, <code>mqtt</code>, <code>meshcore</code>, …) that wrap <code>ipcRenderer.invoke</code> — see <code>src/preload/index.ts</code>. When adding IPC, add the handler in main <strong>and</strong> the typed method on the matching preload namespace <strong>and</strong> the corresponding entry in the <code>Window.electronAPI</code> type declaration in <code>src/renderer/lib/types.ts</code> so the renderer stays on a minimal, reviewed, typed surface.</li>
+<li><strong>Main→renderer events</strong>: One-way <code>webContents.send</code> / <code>ipcRenderer.on</code> channels sometimes use <strong>kebab-case</strong> without a domain prefix (e.g. <code>bluetooth-devices-discovered</code>, <code>serial-ports-discovered</code>) for historical or Chromium-callback wiring. <strong>Invoke</strong> channels should stay <code>domain:action</code>; when adding new <strong>events</strong>, prefer a consistent prefix (e.g. <code>ble:devices-discovered</code>) if you are touching both main and preload anyway; otherwise document the channel in the preload API.</li>
+<li><strong>Cross-platform UI</strong>: Test or at minimum visually verify your changes on your platform; flag in the PR if you could not test on other OSes.</li>
+<li><strong>Platform-specific error guidance</strong>: Each transport has a <code>humanize*Error()</code> helper in <code>src/renderer/lib/connection.ts</code> (<code>humanizeBleError</code>, <code>humanizeSerialError</code>, <code>humanizeHttpError</code>). When adding new error paths for a transport, extend the relevant helper rather than inlining error strings in components. Use <code>process.platform</code> (injected via main-process IPC or <code>window.electronAPI.session</code>) to gate platform-specific copy: Linux <code>dialout</code> guidance for Serial; WinRT/Device Manager guidance for BLE on Windows; Bonjour/iTunes hint for HTTP <code>.local</code> resolution on Windows.</li>
+<li><strong>Build check</strong>: Confirm <code>npm run build</code> completes without errors.</li>
+</ul>
+<h2 id="error-boundaries-and-logging">Error boundaries and logging</h2>
+<p>Wrap <strong>boundaries</strong> where failure is possible and must not be silent: IPC handlers, <code>JSON.parse</code> on persisted strings (e.g. <code>localStorage</code>), and main-process I/O (<code>fs</code>, <code>dialog</code>, <code>shell.openExternal</code>). Use a consistent pattern so logs are searchable and severity matches recoverability.</p>
+<h3 id="convention">Convention</h3>
+<table>
+<thead>
+<tr>
+<th>Situation</th>
+<th>try block</th>
+<th>catch block</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Entering a risky block (IPC handler, parse persisted state)</td>
+<td><code>console.debug('[context] operation', …)</code> once at <strong>entry</strong> to the try (avoids flooding logs on every success).</td>
+<td></td>
+</tr>
+<tr>
+<td>Recoverable (corrupt storage → default; optional fallback)</td>
+<td>Same as above if you add debug.</td>
+<td><code>console.warn('[context] …', err)</code> — app continues with fallback.</td>
+</tr>
+<tr>
+<td>Re-throw or invariant (DB/IPC failure; caller must handle)</td>
+<td>Debug at entry optional.</td>
+<td><code>console.error('[context] …', err)</code> then rethrow or return a structured error.</td>
+</tr>
+<tr>
+<td>Never</td>
+<td></td>
+<td>Swallow without logging unless documented as intentionally ignorable.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>warn vs error</strong></p>
+<ul>
+<li><strong>warn</strong>: Fallback applied (defaults, ignore corrupt cache, transient errors already handled elsewhere).</li>
+<li><strong>error</strong>: Operation failed and you rethrow, or the main-process path surfaces as an IPC rejection without structured recovery.</li>
+</ul>
+<p>Main-process IPC handlers that rethrow should log with <code>console.error</code> before rethrowing so the main terminal shows context when the renderer sees a rejected promise (aligned with existing <code>db:*</code> handlers in <code>src/main/index.ts</code>).</p>
+<p>For repeated <code>localStorage</code> + <code>JSON.parse</code> in the renderer, prefer <code>parseStoredJson</code> from <code>src/renderer/lib/parseStoredJson.ts</code> so debug/warn behavior stays consistent.</p>
+<h3 id="log-injection-codeql-jslog-injection">Log injection (CodeQL js/log-injection)</h3>
+<p>GitHub Code scanning (CodeQL) reports <strong>log injection</strong> when user-controlled or untrusted data flows into a log sink (e.g. <code>appendLine</code> in <code>src/main/log-service.ts</code>) without being sanitized. CodeQL tracks data flow <strong>to</strong> the sink; it does <strong>not</strong> treat sanitization that happens <strong>inside</strong> the sink as clearing taint from the caller.</p>
+<p><strong>Rule:</strong> Sanitize at the <strong>call site</strong>. Any value that is or may be user-controlled (console arguments, IPC payloads, network data, file paths from user input, etc.) must be passed through <code>sanitizeLogMessage()</code> <strong>before</strong> being passed to <code>appendLine()</code> or any other logger. Do not rely on sanitization only inside the logging function — that is correct for safety but does not satisfy CodeQL and will keep the code-scanning alert open.</p>
+<ul>
+<li><strong>Helper:</strong> <code>sanitizeLogMessage(message: unknown): string</code> in <code>src/main/log-service.ts</code> strips control characters (including newlines) and normalizes whitespace. Use it for every log message and source string that is derived from untrusted input.</li>
+<li><strong>Example:</strong> In <code>patchMainConsole()</code>, console overrides pass <code>sanitizeLogMessage(stringifyArgs(args))</code> into <code>appendLine()</code>, not <code>stringifyArgs(args)</code> alone.</li>
+<li><strong>Before you commit:</strong> If you added or changed any main-process logging (<code>src/main/**/*.ts</code>) that passes error-like values (e.g. <code>err</code>, <code>e</code>, <code>error</code>, <code>reason</code>) into <code>console.log</code> / <code>console.warn</code> / <code>console.error</code>, wrap the value in <code>sanitizeLogMessage(...)</code> at the call site. The pre-commit hook runs <code>npm run check:log-injection</code>, which flags such calls; fix any reported lines before committing.</li>
+<li><strong>Local check:</strong> Run <code>npm run check:log-injection</code> to scan <code>src/main</code> for unsanitized <code>console.*(..., err|e|error|reason)</code> patterns. To suppress a false positive, add <code>// log-injection-ok</code> with a short reason on the same line as the console call.</li>
+<li><strong>Checks:</strong> Code scanning runs on push (GitHub default setup). If you add or change code that feeds into the log pipeline, ensure the <strong>first</strong> use of untrusted data in that path is wrapped in <code>sanitizeLogMessage()</code> at the call site.</li>
+<li><strong>Tests:</strong> When adding or changing code that feeds into the log pipeline (e.g. new call sites of <code>appendLine</code>, <code>console.*</code> in main, or renderer→main log forwarding), add or extend tests so that log injection is caught by the suite. Pre-commit runs <code>npm run test:run</code>, which includes <code>src/renderer/lib/sanitize-log-message.test.ts</code>: that file tests both <code>sanitizeLogMessage</code> and <code>sanitizeForLogSink</code> (used by the console overrides in log-service) and runs the log-injection script so that regressions fail the test run. Add or extend tests there (or equivalent) so regressions are caught. AI and reviewers should ensure such tests exist or are added.</li>
+</ul>
+<h3 id="network-data-written-to-file-codeql-jshttp-to-file-access">Network data written to file (CodeQL js/http-to-file-access)</h3>
+<p>Code scanning may report this query on <code>fs.promises.appendFile</code> / <code>fs.writeFileSync</code> in <code>src/main/log-service.ts</code> when taint from HTTP responses reaches the <strong>data argument</strong> of those calls. The query does not model <code>sanitizeLogPayloadForDisk</code> as a barrier. We still route every log payload through that helper before disk I/O.</p>
+<p><strong>Suppressions:</strong> <code>// codeql[js/http-to-file-access]</code> does <strong>not</strong> clear these alerts on GitHub: path-problem results anchor on a sub-expression (the data argument), while CodeQL’s suppression matcher expects whole-line locations. Do not rely on inline comments for this rule.</p>
+<p><strong>Configuration:</strong> <code>.github/codeql/codeql-config.yml</code> excludes <code>js/http-to-file-access</code> when analysis is run with that config (<strong>advanced</strong> CodeQL + <code>config-file</code> on <code>github/codeql-action/init</code>). <strong>Default setup does not load the file</strong>, so you may still see alerts until you dismiss them in the Security / PR UI (document why) or switch to advanced setup. See <code>.github/codeql/README.md</code>.</p>
+<p><strong>Pre-commit:</strong> <code>src/main/log-service.contract.test.ts</code> locks disk-write wiring (<code>sanitizeLogPayloadForDisk</code>, <code>data</code> / <code>diskLine</code> at the sinks).</p>
+<h3 id="silent-catch-check">Silent-catch check</h3>
+<p><code>scripts/check-silent-catches.mjs</code> scans <code>src/</code> for <code>catch</code> blocks that contain no <code>console.*</code> call, no rethrow, and no suppression comment. It runs automatically on every commit as part of <code>npm run test:run</code>.</p>
+<p><strong>Rule:</strong> Every catch block must either log the error, rethrow it, or carry a suppression comment explaining why silence is intentional.</p>
+<ul>
+<li><strong>Suppression format:</strong> Add <code>// catch-no-log-ok &lt;reason&gt;</code> on the first line inside the catch block (or on the same line as a one-liner catch). Keep the reason brief — it exists so reviewers can judge whether silence is truly safe.</li>
+<li><strong>When silence is acceptable:</strong> localStorage fallbacks where a missing/corrupt key is expected and harmless, teardown paths (<code>dialog.showErrorBox</code>, cleanup in <code>will-quit</code>) where a secondary failure must not mask the primary one, and AES key-iteration loops where a single key failing to import is normal protocol behaviour.</li>
+<li><strong>When silence is not acceptable:</strong> Any path where the error represents unexpected state, a failed IPC call, or a condition that would cause silent data loss or a broken UI.</li>
+</ul>
+<h3 id="consolelog-check">console.log check</h3>
+<p><code>scripts/check-console-log.mjs</code> bans bare <code>console.log()</code> calls in <code>src/</code>. All diagnostic trace output must use <code>console.debug</code> so users can filter it separately in the App Log panel (<code>debug</code> is hidden by default). <code>console.warn</code> and <code>console.error</code> are allowed. The check runs as part of <code>npm run test:run</code>.</p>
+<ul>
+<li><strong>Suppression:</strong> Add <code>// log-level-ok &lt;reason&gt;</code> on the same line to allow a specific <code>console.log</code> where promotion to <code>warn</code>/<code>error</code> would be misleading and <code>debug</code> would be too noisy to filter.</li>
+</ul>
+<h3 id="xss-patterns-check">XSS patterns check</h3>
+<p><code>scripts/check-xss-patterns.mjs</code> bans React's raw HTML injection prop, direct DOM <code>innerHTML</code> assignment, and dynamic code execution from all source files. There are zero current violations. The check has no suppression mechanism — if you believe an exception is warranted, discuss it with a maintainer before adding the pattern. The check runs as part of <code>npm run test:run</code>.</p>
+<h3 id="log-panel-filter-contract">Log panel filter contract</h3>
+<p><code>scripts/check-log-panel-filter.mjs</code> scans <code>noble-ble-manager.ts</code>, <code>mqtt-manager.ts</code>, and <code>meshcore-mqtt-adapter.ts</code> for <code>[TAG]</code> prefixes in <code>console.*</code> calls and asserts each tag is handled by <code>isDeviceEntry()</code> in <code>LogPanel.tsx</code> (so device logs stay on the Device tab per protocol). It is invoked from <code>LogPanel.filtering.test.ts</code> as part of <code>npm run test:run</code>. When you add a new tagged log line in those files, extend the matching Meshtastic or MeshCore branch in <code>isDeviceEntry</code>.</p>
+<h3 id="renderer-csp-and-vite-build-contracts">Renderer CSP and Vite build contracts</h3>
+<p><code>src/renderer/index.html.test.ts</code> locks the Content-Security-Policy in <code>src/renderer/index.html</code> (for example, <code>connect-src</code> must not use a blanket <code>http://*</code>). <code>src/main/vite-config.contract.test.ts</code> asserts the production Vite build keeps <code>sourcemap: false</code>. If you relax or tighten CSP or change the build’s sourcemap setting, update those tests.</p>
+<h3 id="ipc-payload-size-limits-dos-guards">IPC payload size limits (DoS guards)</h3>
+<p><code>src/main/index.contract.test.ts</code> asserts BLE-to-radio and MeshCore TCP write byte caps remain defined in <code>src/main/index.ts</code> and used in the corresponding handlers. If you rename limits or handlers, update the contract test.</p>
+<h3 id="mqtt-publish-nonce-and-gatewayid">MQTT publish (nonce and gatewayId)</h3>
+<ul>
+<li>When modifying <code>MQTTManager.publish</code> or <code>publishEncryptedData</code> in <code>src/main/mqtt-manager.ts</code>, always normalize <code>from</code>, <code>to</code>, and <code>channel</code> to numbers (for example, <code>const fromId = Number(from) &gt;&gt;&gt; 0;</code>) before using them in AES-CTR nonce construction or MeshPacket fields.</li>
+<li>The AES-CTR nonce and <code>gatewayId</code>/MQTT topic must be derived from the <strong>true sender node ID</strong> so other nodes can decrypt MQTT-originated packets. Do not reintroduce positional arguments or string IDs into the MQTT publish path; use the structured <code>MqttPublishOptions</code> and keep IDs numeric end-to-end.</li>
+</ul>
+<h2 id="commit-style">Commit Style</h2>
+<p>Use <a href="https://www.conventionalcommits.org/">Conventional Commits</a>:</p>
+<table>
+<thead>
+<tr>
+<th>Prefix</th>
+<th>When to use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>feat:</code></td>
+<td>New feature</td>
+</tr>
+<tr>
+<td><code>fix:</code></td>
+<td>Bug fix</td>
+</tr>
+<tr>
+<td><code>docs:</code></td>
+<td>Documentation only</td>
+</tr>
+<tr>
+<td><code>chore:</code></td>
+<td>Maintenance, deps, config</td>
+</tr>
+<tr>
+<td><code>refactor:</code></td>
+<td>Code change that is neither a fix nor a feature</td>
+</tr>
+<tr>
+<td><code>test:</code></td>
+<td>Adding or updating tests</td>
+</tr>
+</tbody>
+</table>
+<p>For <code>feat:</code> and <code>fix:</code> commits, include a footer referencing the issue if applicable:</p>
+<pre><code>feat: add GPS auto-refresh
+
+Fixes #35
+</code></pre>
+<h2 id="pr-process">PR Process</h2>
+<ol>
+<li><strong>Describe your changes</strong> — What did you change and why? What did you test?</li>
+<li><strong>Update docs</strong> — If you added or changed a feature, update README.md or relevant <code>/docs</code> files. If you touch docs content, create/activate a local Python virtualenv first (recommended on macOS/Homebrew Python; avoids <code>externally-managed-environment</code>), then install MkDocs deps (<code>npm run docs:install</code>) and run <code>npm run docs:build</code> before opening the PR.</li>
+<li><strong>Follow existing code style</strong> — Run <code>npm run lint</code> (and let pre-commit run <code>format</code> or run <code>npm run format</code> yourself). Fix import-sort, type-imports, and hook dependency issues before pushing.</li>
+<li><strong>Keep scope tight</strong> — Avoid refactoring unrelated code in the same PR. One concern per PR makes review faster.</li>
+<li><strong>Await review</strong> — A maintainer will review and may request changes before merging.</li>
+</ol>
+<h2 id="license">License</h2>
+<p>By contributing, you agree that your contributions will be licensed under the <a href="LICENSE">MIT License</a>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "search.suggest", "search.highlight"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
