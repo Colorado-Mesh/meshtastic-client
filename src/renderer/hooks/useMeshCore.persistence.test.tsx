@@ -136,6 +136,115 @@ describe('useMeshCore mount hydration', () => {
     expect(dm.channel).toBe(-1);
   });
 
+  it('hydrates payloads containing colons as-is when sender_name is set (not wire re-parse)', async () => {
+    vi.mocked(window.electronAPI.db.getMeshcoreMessages).mockResolvedValue([
+      {
+        ...sampleMeshcoreDbRow(),
+        id: 60,
+        payload: 'Re: see below — 12:30 meet',
+      },
+    ]);
+
+    const { result } = renderHook(() => useMeshCore());
+
+    await waitFor(() => {
+      expect(result.current.messages.length).toBe(1);
+    });
+
+    expect(result.current.messages[0].payload).toBe('Re: see below — 12:30 meet');
+    expect(result.current.messages[0].sender_name).toBe('Alice');
+  });
+
+  it('hydrates reaction rows with emoji, reply_id, and numeric coercion from DB', async () => {
+    const parentTs = 1_700_000_000_100;
+    const likeCode = 0x1f44d;
+    vi.mocked(window.electronAPI.db.getMeshcoreMessages).mockResolvedValue([
+      {
+        ...sampleMeshcoreDbRow(),
+        id: 61,
+        payload: 'parent text',
+        timestamp: parentTs,
+        packet_id: 77 as number | null,
+      },
+      {
+        ...sampleMeshcoreDbRow(),
+        id: 62,
+        sender_id: SENDER_ID + 1,
+        sender_name: 'Bob',
+        payload: String.fromCodePoint(likeCode),
+        timestamp: parentTs + 1000,
+        emoji: likeCode,
+        reply_id: 77 as number | null,
+      },
+    ]);
+
+    const { result } = renderHook(() => useMeshCore());
+
+    await waitFor(() => {
+      expect(result.current.messages.length).toBe(2);
+    });
+
+    const reaction = result.current.messages.find((m) => m.emoji != null);
+    expect(reaction).toBeDefined();
+    expect(reaction!.emoji).toBe(likeCode);
+    expect(reaction!.replyId).toBe(77);
+    expect(reaction!.payload).toBe(String.fromCodePoint(likeCode));
+  });
+
+  it('coerces string emoji and reply_id from DB drivers into numbers', async () => {
+    const parentTs = 1_700_000_000_200;
+    vi.mocked(window.electronAPI.db.getMeshcoreMessages).mockResolvedValue([
+      {
+        ...sampleMeshcoreDbRow(),
+        id: 70,
+        payload: 'x',
+        timestamp: parentTs,
+        packet_id: 99 as number | null,
+      },
+      {
+        ...sampleMeshcoreDbRow(),
+        id: 71,
+        sender_name: 'Bob',
+        payload: '👍',
+        timestamp: parentTs + 500,
+        emoji: '128077' as unknown as number | null,
+        reply_id: '99' as unknown as number | null,
+      },
+    ]);
+
+    const { result } = renderHook(() => useMeshCore());
+
+    await waitFor(() => {
+      expect(result.current.messages.length).toBe(2);
+    });
+
+    const reaction = result.current.messages.find((m) => m.emoji === 128077);
+    expect(reaction?.replyId).toBe(99);
+  });
+
+  it('legacy DB: Unknown sender + long wire-style line still normalizes once', async () => {
+    vi.mocked(window.electronAPI.db.getMeshcoreMessages).mockResolvedValue([
+      {
+        ...sampleMeshcoreDbRow(),
+        id: 80,
+        sender_id: null,
+        sender_name: 'Unknown',
+        payload: 'NVON 01: legacy full line body',
+        timestamp: 1_700_000_000_300,
+      },
+    ]);
+
+    const { result } = renderHook(() => useMeshCore());
+
+    await waitFor(() => {
+      expect(result.current.messages.length).toBe(1);
+    });
+
+    const m = result.current.messages[0];
+    expect(m.payload).toBe('legacy full line body');
+    expect(m.sender_name).toBe('NVON 01');
+  });
+
   /**
    * Regression: inbound mesh chat must call `saveMeshcoreMessage` (same `addMessage` path as RF).
    * MQTT subscription exercises this without a radio; `flushSync` keeps persist aligned with state.

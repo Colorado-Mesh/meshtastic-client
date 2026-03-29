@@ -687,16 +687,45 @@ interface MeshcoreMessageDbRow {
   received_via?: string | null;
 }
 
-/** Map persisted MeshCore message rows to chat messages (normalize payload / stub sender id). */
+/**
+ * Legacy DB rows may store the full RF line `DisplayName: body` with no usable sender_name.
+ * Only then run wire-style normalize; otherwise persisted payload is already display text
+ * (re-applying normalize breaks any body containing `:` e.g. `Re: …`, `12:30 …`).
+ */
+function shouldLegacyNormalizeMeshcoreDbPayload(
+  senderName: string | null | undefined,
+  payload: string,
+): boolean {
+  if (senderName && senderName !== 'Unknown') return false;
+  const t = payload.trim();
+  const ci = t.indexOf(':');
+  if (ci <= 0 || ci >= t.length - 1) return false;
+  const left = t.slice(0, ci).trim();
+  const right = t.slice(ci + 1).trim();
+  if (left.length < 6 || right.length < 1) return false;
+  if (left.includes('\n')) return false;
+  return true;
+}
+
+function coerceOptionalDbInt(v: number | string | null | undefined): number | undefined {
+  if (v == null) return undefined;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/** Map persisted MeshCore message rows to chat messages (stub sender id; trust stored payload). */
 function mapMeshcoreDbRowsToChatMessages(rows: MeshcoreMessageDbRow[]): ChatMessage[] {
   const mapped: ChatMessage[] = [];
   for (const r of rows) {
     if (isMeshcoreTransportStatusChatLine(r.payload)) continue;
-    const normalized = normalizeMeshcoreIncomingText(r.payload);
-    const displayName =
-      r.sender_name && r.sender_name !== 'Unknown'
-        ? r.sender_name
-        : (normalized.senderName ?? 'Unknown');
+    let displayPayload = r.payload;
+    let displayName = r.sender_name && r.sender_name !== 'Unknown' ? r.sender_name : 'Unknown';
+    if (shouldLegacyNormalizeMeshcoreDbPayload(r.sender_name, r.payload)) {
+      const normalized = normalizeMeshcoreIncomingText(r.payload);
+      displayPayload = normalized.payload;
+      displayName = normalized.senderName ?? displayName;
+    }
     let senderId = r.sender_id ?? 0;
     if (senderId === 0) {
       senderId = meshcoreChatStubNodeIdFromDisplayName(displayName);
@@ -705,13 +734,13 @@ function mapMeshcoreDbRowsToChatMessages(rows: MeshcoreMessageDbRow[]): ChatMess
       id: r.id,
       sender_id: senderId,
       sender_name: displayName,
-      payload: normalized.payload,
+      payload: displayPayload,
       channel: r.channel_idx,
       timestamp: r.timestamp,
       status: (r.status as ChatMessage['status']) ?? 'acked',
       packetId: r.packet_id ?? undefined,
-      emoji: r.emoji ?? undefined,
-      replyId: r.reply_id ?? undefined,
+      emoji: coerceOptionalDbInt(r.emoji),
+      replyId: coerceOptionalDbInt(r.reply_id),
       to: r.to_node ?? undefined,
       receivedVia: meshcoreReceivedViaFromDb(r.received_via),
       isHistory: true,
