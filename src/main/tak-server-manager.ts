@@ -60,7 +60,7 @@ export class TakServerManager extends EventEmitter {
       key: this.certBundle.serverKey,
       ca: this.certBundle.caCert,
       requestCert: settings.requireClientCert,
-      rejectUnauthorized: false,
+      rejectUnauthorized: settings.requireClientCert,
     };
 
     this.server = tls.createServer(serverOptions, (socket) => {
