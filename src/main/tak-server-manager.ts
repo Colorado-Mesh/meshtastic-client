@@ -193,7 +193,10 @@ export class TakServerManager extends EventEmitter {
     });
 
     socket.on('error', (err) => {
-      console.warn(`[TakServer] Client socket error ${id}:`, sanitizeLogMessage(err.message));
+      console.warn(
+        `[TakServer] Client socket error ${sanitizeLogMessage(id)}:`,
+        sanitizeLogMessage(err.message),
+      );
     });
   }
 }
