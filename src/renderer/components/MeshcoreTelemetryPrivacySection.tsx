@@ -128,7 +128,7 @@ export default function MeshcoreTelemetryPrivacySection({
     meshcoreTriStateToTelemetryMode(env) !== selfInfo.telemetryModeEnv;
 
   return (
-    <details open className="rounded-xl border border-gray-600 bg-secondary-dark/40 p-4">
+    <details className="rounded-xl border border-gray-600 bg-secondary-dark/40 p-4">
       <summary className="cursor-pointer text-base font-medium text-gray-100">
         Telemetry privacy
       </summary>
