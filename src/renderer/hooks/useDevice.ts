@@ -3,7 +3,10 @@ import type { MeshDevice } from '@meshtastic/core';
 import { Admin, Channel as ProtobufChannel, Mesh, Portnums } from '@meshtastic/protobufs';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { meshtasticShortNameAfterClearingDefault } from '../../shared/nodeNameUtils';
+import {
+  meshtasticShortNameAfterClearingDefault,
+  preferNonEmptyTrimmedString,
+} from '../../shared/nodeNameUtils';
 import { getAppSettingsRaw } from '../lib/appSettingsStorage';
 import {
   createBleConnection,
@@ -986,10 +989,10 @@ export function useDevice() {
         updateNodes((prev) => {
           const updated = new Map(prev);
           const existing = updated.get(packet.from) ?? emptyNode(packet.from);
-          const long_name = user.longName ?? existing.long_name;
+          const long_name = preferNonEmptyTrimmedString(user.longName, existing.long_name);
           const short_name = meshtasticShortNameAfterClearingDefault(
             long_name,
-            user.shortName ?? existing.short_name,
+            preferNonEmptyTrimmedString(user.shortName, existing.short_name),
             packet.from,
           );
           const node: MeshNode = {
@@ -1010,8 +1013,8 @@ export function useDevice() {
         });
         if (packet.from === myNodeNumRef.current) {
           setDeviceOwner({
-            longName: user.longName ?? '',
-            shortName: user.shortName ?? '',
+            longName: preferNonEmptyTrimmedString(user.longName, ''),
+            shortName: preferNonEmptyTrimmedString(user.shortName, ''),
             isLicensed: (user as { isLicensed?: boolean }).isLicensed ?? false,
           });
         }
@@ -1079,10 +1082,10 @@ export function useDevice() {
           const staleHopMs = 2 * 3_600_000; // align with nodeStatus STALE_MS
           const lastHeardStale = lastHeardMs > 0 && Date.now() - lastHeardMs > staleHopMs;
 
-          const long_name = info.user?.longName ?? existing.long_name;
+          const long_name = preferNonEmptyTrimmedString(info.user?.longName, existing.long_name);
           const short_name = meshtasticShortNameAfterClearingDefault(
             long_name,
-            info.user?.shortName ?? existing.short_name,
+            preferNonEmptyTrimmedString(info.user?.shortName, existing.short_name),
             nodeNum,
           );
           const node: MeshNode = {
@@ -1150,7 +1153,7 @@ export function useDevice() {
         }
         if (type === 'ble' && nodeNum === myNodeNumRef.current) {
           const btDevice = (device.transport as any)?.__bluetoothDevice;
-          const shortName = info.user?.shortName ?? null;
+          const shortName = preferNonEmptyTrimmedString(info.user?.shortName, '') || null;
           if (btDevice?.id && shortName) {
             try {
               const key = 'mesh-client:bleDeviceNames';
@@ -1168,7 +1171,11 @@ export function useDevice() {
         }
         if (type === 'serial' && nodeNum === myNodeNumRef.current) {
           const portId = localStorage.getItem(LAST_SERIAL_PORT_KEY);
-          const shortName = info.user?.shortName ?? info.user?.longName ?? null;
+          const shortName =
+            preferNonEmptyTrimmedString(
+              info.user?.shortName,
+              preferNonEmptyTrimmedString(info.user?.longName, ''),
+            ) || null;
           if (portId && shortName) {
             try {
               const key = 'mesh-client:serialPortNodeNames';
@@ -1190,6 +1197,9 @@ export function useDevice() {
       // ─── Position packets ──────────────────────────────────────
       const unsub6 = device.events.onPositionPacket.subscribe((packet) => {
         touchLastData();
+        if (packet.from !== 0) {
+          rfHeardNodeIds.current.add(packet.from);
+        }
         const pos = packet.data as {
           latitudeI?: number;
           longitudeI?: number;

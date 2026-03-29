@@ -3185,14 +3185,29 @@ ipcMain.handle('db:getContactGroupMembers', (_event, groupId: number) => {
 
 ipcMain.handle(
   'db:updateMeshcoreContactAdvert',
-  (_e, nodeId: number, lastAdvert: number | null, advLat: number | null, advLon: number | null) => {
+  (
+    _e,
+    nodeId: number,
+    lastAdvert: number | null,
+    advLat: number | null,
+    advLon: number | null,
+    advName?: string | null,
+  ) => {
     try {
       const safeNodeId = safeNonNegativeInt(nodeId);
-      getDatabase()
-        .prepareOnce(
+      if (advName != null && (typeof advName !== 'string' || advName.length > MAX_NODE_STRING)) {
+        throw new Error('db:updateMeshcoreContactAdvert: invalid adv_name');
+      }
+      const db = getDatabase();
+      if (advName !== undefined) {
+        db.prepareOnce(
+          'UPDATE meshcore_contacts SET last_advert = ?, adv_lat = ?, adv_lon = ?, adv_name = ? WHERE node_id = ?',
+        ).run(lastAdvert, advLat, advLon, advName ?? null, safeNodeId);
+      } else {
+        db.prepareOnce(
           'UPDATE meshcore_contacts SET last_advert = ?, adv_lat = ?, adv_lon = ? WHERE node_id = ?',
-        )
-        .run(lastAdvert, advLat, advLon, safeNodeId);
+        ).run(lastAdvert, advLat, advLon, safeNodeId);
+      }
     } catch (err) {
       console.error(
         '[IPC] db:updateMeshcoreContactAdvert error:',

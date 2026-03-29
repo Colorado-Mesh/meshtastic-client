@@ -4,7 +4,23 @@ import {
   isDefaultShortName,
   isPlaceholderLongName,
   meshtasticShortNameAfterClearingDefault,
+  preferNonEmptyTrimmedString,
 } from '../shared/nodeNameUtils';
+
+describe('preferNonEmptyTrimmedString', () => {
+  it('uses fallback when preferred is undefined', () => {
+    expect(preferNonEmptyTrimmedString(undefined, 'keep')).toBe('keep');
+  });
+
+  it('uses fallback when preferred is empty or whitespace', () => {
+    expect(preferNonEmptyTrimmedString('', 'keep')).toBe('keep');
+    expect(preferNonEmptyTrimmedString('   ', 'keep')).toBe('keep');
+  });
+
+  it('uses trimmed preferred when non-empty', () => {
+    expect(preferNonEmptyTrimmedString('  Alice  ', 'keep')).toBe('Alice');
+  });
+});
 
 describe('isPlaceholderLongName', () => {
   it('is true for client !xxxxxxxx placeholder', () => {

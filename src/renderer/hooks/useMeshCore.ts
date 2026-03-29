@@ -1241,6 +1241,8 @@ export function useMeshCore() {
           persistLon: null as number | null,
           insertContactType: 0,
           insertAdvName: null as string | null,
+          /** Set on existing-contact updates when RF advert includes a new `advName` (optional 5th IPC arg). */
+          persistAdvName: undefined as string | undefined,
         };
         setNodes((prev) => {
           const existing = prev.get(nodeId);
@@ -1290,12 +1292,22 @@ export function useMeshCore() {
           persistOut.persistLon = hasLon
             ? d.advLon! / MESHCORE_COORD_SCALE
             : (existing.longitude ?? null);
+          const advNameTrim =
+            typeof d.advName === 'string' && d.advName.trim() ? d.advName.trim() : '';
+          const applyAdvertName = !nick && Boolean(advNameTrim);
+          if (applyAdvertName) {
+            persistOut.persistAdvName = advNameTrim;
+          }
           next.set(nodeId, {
             ...existing,
             last_heard: lastHeard,
             latitude: hasLat ? d.advLat! / MESHCORE_COORD_SCALE : existing.latitude,
             longitude: hasLon ? d.advLon! / MESHCORE_COORD_SCALE : existing.longitude,
-            ...(nick ? { long_name: nick, short_name: '' } : {}),
+            ...(nick
+              ? { long_name: nick, short_name: '' }
+              : applyAdvertName
+                ? { long_name: advNameTrim, short_name: '' }
+                : {}),
           });
           return next;
         });
@@ -1339,6 +1351,7 @@ export function useMeshCore() {
               persistOut.persistLastAdvert,
               persistOut.persistLat,
               persistOut.persistLon,
+              persistOut.persistAdvName,
             )
             .catch((e: unknown) => {
               console.warn('[useMeshCore] updateMeshcoreContactAdvert error', e);

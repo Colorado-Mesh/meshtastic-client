@@ -4,6 +4,18 @@
  * clear that default so the UI prefers long_name.
  */
 
+/**
+ * When merging protobuf User / NodeInfo fields, `""` is not nullish and would
+ * otherwise overwrite stored names. Prefer trimmed non-empty input; else fallback.
+ */
+export function preferNonEmptyTrimmedString(
+  preferred: string | undefined | null,
+  fallback: string,
+): string {
+  const t = preferred?.trim();
+  return t ? t : fallback;
+}
+
 export function isPlaceholderLongName(longName: string, nodeId: number): boolean {
   const expected = `!${(nodeId >>> 0).toString(16).padStart(8, '0')}`;
   return longName.trim().toLowerCase() === expected.toLowerCase();

@@ -359,6 +359,7 @@ declare global {
           lastAdvert: number | null,
           advLat: number | null,
           advLon: number | null,
+          advName?: string | null,
         ) => Promise<unknown>;
         updateMeshcoreContactLastRf: (
           nodeId: number,
