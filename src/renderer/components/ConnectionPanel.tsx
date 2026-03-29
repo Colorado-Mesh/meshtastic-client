@@ -26,6 +26,7 @@ import type {
   NobleBleDevice,
   SerialPortInfo,
 } from '../lib/types';
+import ConnectionBatteryGauge from './ConnectionBatteryGauge';
 import FirmwareStatusIndicator from './FirmwareStatusIndicator';
 import { HelpTooltip } from './HelpTooltip';
 // ─── Last Connection (localStorage) ───────────────────────────────
@@ -2337,6 +2338,15 @@ export default function ConnectionPanel({
                 <span className="text-gray-200 font-mono">
                   {myNodeLabel ?? `!${state.myNodeNum.toString(16)}`}
                 </span>
+              </div>
+            )}
+            {state.myNodeNum > 0 && state.batteryPercent !== undefined && (
+              <div className="flex justify-between text-sm items-center">
+                <span className="text-muted">Battery</span>
+                <ConnectionBatteryGauge
+                  percent={state.batteryPercent}
+                  charging={state.batteryCharging === true}
+                />
               </div>
             )}
             {state.firmwareVersion && (

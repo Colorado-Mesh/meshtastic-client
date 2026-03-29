@@ -300,6 +300,13 @@ export function useDevice() {
     });
   }, []);
 
+  /** Meshtastic `DeviceMetrics.batteryLevel`: 0–100; values above 100 mean USB powered (protobuf). */
+  const applyOwnNodeBatteryFromDeviceMetrics = useCallback((batteryLevel: number) => {
+    const charging = batteryLevel > 100;
+    const pct = Math.min(100, batteryLevel);
+    setState((s) => ({ ...s, batteryPercent: pct, batteryCharging: charging }));
+  }, []);
+
   // ─── Helper: start polling for node updates ─────────────────────
   const startPolling = useCallback((connectionType?: ConnectionType | null) => {
     if (pollRef.current) return; // Already polling
@@ -753,6 +760,8 @@ export function useDevice() {
                 status: 'disconnected',
                 myNodeNum: 0,
                 connectionType: null,
+                batteryPercent: undefined,
+                batteryCharging: undefined,
               });
               clearConfigureTimeout();
             }, 30000);
@@ -792,6 +801,8 @@ export function useDevice() {
             status: 'disconnected',
             connectionType: null,
             firmwareVersion: undefined,
+            batteryPercent: undefined,
+            batteryCharging: undefined,
           }));
         }
       });
@@ -811,7 +822,12 @@ export function useDevice() {
         if (getStoredMeshProtocol() === 'meshtastic') {
           useDiagnosticsStore.getState().migrateForeignLoraFromZero(info.myNodeNum);
         }
-        setState((s) => ({ ...s, myNodeNum: info.myNodeNum }));
+        setState((s) => ({
+          ...s,
+          myNodeNum: info.myNodeNum,
+          batteryPercent: undefined,
+          batteryCharging: undefined,
+        }));
         updateNodes((prev) => {
           const updated = new Map(prev);
           if (virtualNodeId !== info.myNodeNum) updated.delete(virtualNodeId);
@@ -1102,6 +1118,9 @@ export function useDevice() {
           void window.electronAPI.db.saveNode(node);
           return updated;
         });
+        if (nodeNum === myNodeNumRef.current && info.deviceMetrics?.batteryLevel !== undefined) {
+          applyOwnNodeBatteryFromDeviceMetrics(info.deviceMetrics.batteryLevel);
+        }
         if (
           nodeNum === myNodeNumRef.current &&
           nodesRef.current.get(nodeNum)?.role === ROLE_CLIENT_MUTE &&
@@ -1333,7 +1352,7 @@ export function useDevice() {
         setTelemetry((prev) => [...prev, point].slice(-MAX_TELEMETRY_POINTS));
 
         // Update node battery if from a known node
-        if (metrics.batteryLevel && packet.from) {
+        if (metrics.batteryLevel != null && packet.from) {
           updateNodes((prev) => {
             const updated = new Map(prev);
             const existing = updated.get(packet.from);
@@ -1346,6 +1365,9 @@ export function useDevice() {
             }
             return updated;
           });
+          if (packet.from === myNodeNumRef.current) {
+            applyOwnNodeBatteryFromDeviceMetrics(metrics.batteryLevel);
+          }
         }
       });
       unsubscribesRef.current.push(unsub7);
@@ -1653,6 +1675,7 @@ export function useDevice() {
     },
     [
       touchLastData,
+      applyOwnNodeBatteryFromDeviceMetrics,
       getNodeName,
       updateNodes,
       startPolling,
@@ -1699,14 +1722,26 @@ export function useDevice() {
     const params = connectionParamsRef.current;
     if (!params) {
       isReconnectingRef.current = false;
-      setState((s) => ({ ...s, status: 'disconnected', connectionType: null }));
+      setState((s) => ({
+        ...s,
+        status: 'disconnected',
+        connectionType: null,
+        batteryPercent: undefined,
+        batteryCharging: undefined,
+      }));
       return;
     }
 
     if (reconnectAttemptRef.current >= MAX_RECONNECT_ATTEMPTS) {
       isReconnectingRef.current = false;
       reconnectAttemptRef.current = 0;
-      setState((s) => ({ ...s, status: 'disconnected', connectionType: null }));
+      setState((s) => ({
+        ...s,
+        status: 'disconnected',
+        connectionType: null,
+        batteryPercent: undefined,
+        batteryCharging: undefined,
+      }));
       return;
     }
 
@@ -1777,7 +1812,13 @@ export function useDevice() {
       isReconnectingRef.current = false;
       reconnectGenerationRef.current++;
 
-      setState((s) => ({ ...s, status: 'connecting', connectionType: type }));
+      setState((s) => ({
+        ...s,
+        status: 'connecting',
+        connectionType: type,
+        batteryPercent: undefined,
+        batteryCharging: undefined,
+      }));
 
       try {
         console.debug('[useDevice] connect', type, httpAddress ?? blePeripheralId);
@@ -1806,6 +1847,8 @@ export function useDevice() {
           status: 'disconnected',
           myNodeNum: 0,
           connectionType: null,
+          batteryPercent: undefined,
+          batteryCharging: undefined,
         });
         throw err;
       }
@@ -1842,7 +1885,13 @@ export function useDevice() {
       isReconnectingRef.current = false;
       reconnectGenerationRef.current++;
 
-      setState((s) => ({ ...s, status: 'connecting', connectionType: type }));
+      setState((s) => ({
+        ...s,
+        status: 'connecting',
+        connectionType: type,
+        batteryPercent: undefined,
+        batteryCharging: undefined,
+      }));
 
       try {
         console.debug('[useDevice] connectAutomatic', type, httpAddress ?? blePeripheralId);
@@ -1865,7 +1914,13 @@ export function useDevice() {
         stopPolling();
         stopWatchdog();
         deviceRef.current = null;
-        setState({ status: 'disconnected', myNodeNum: 0, connectionType: null });
+        setState({
+          status: 'disconnected',
+          myNodeNum: 0,
+          connectionType: null,
+          batteryPercent: undefined,
+          batteryCharging: undefined,
+        });
         throw err;
       }
     },
@@ -1889,7 +1944,13 @@ export function useDevice() {
     if (device) {
       await safeDisconnect(device);
     }
-    setState({ status: 'disconnected', myNodeNum: 0, connectionType: null });
+    setState({
+      status: 'disconnected',
+      myNodeNum: 0,
+      connectionType: null,
+      batteryPercent: undefined,
+      batteryCharging: undefined,
+    });
   }, [cleanupSubscriptions, stopPolling, stopWatchdog, stopGpsInterval, clearConfigureTimeout]);
 
   // ─── TransportManager status handler ─────────────────────────────────────

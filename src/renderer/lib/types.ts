@@ -241,6 +241,9 @@ export interface DeviceState {
   reconnectAttempt?: number;
   lastDataReceived?: number;
   firmwareVersion?: string;
+  /** 0–100 from device metrics; omit until first reading */
+  batteryPercent?: number;
+  batteryCharging?: boolean;
 }
 
 export interface NobleBleDevice {

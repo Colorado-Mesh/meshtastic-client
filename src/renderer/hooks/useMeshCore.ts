@@ -971,6 +971,20 @@ export function useMeshCore() {
     });
   }, [state.myNodeNum, selfInfo?.batteryMilliVolts]);
 
+  // Connection panel: mirror finite self voltage into DeviceState (omit until measured)
+  useEffect(() => {
+    const mV = selfInfo?.batteryMilliVolts;
+    if (mV == null || !Number.isFinite(mV)) {
+      setState((prev) => {
+        if (prev.batteryPercent === undefined) return prev;
+        return { ...prev, batteryPercent: undefined };
+      });
+      return;
+    }
+    const pct = meshcoreMilliVoltsToApproximateBatteryPercent(mV);
+    setState((prev) => (prev.batteryPercent === pct ? prev : { ...prev, batteryPercent: pct }));
+  }, [selfInfo?.batteryMilliVolts]);
+
   const addMessage = useCallback((msg: ChatMessage) => {
     const incomingKey = meshcoreMessageDedupeKey(msg);
     let inserted = false;
