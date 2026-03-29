@@ -399,8 +399,9 @@ export default function NodeListPanel({
 
   return (
     <div className="flex flex-col min-h-0 h-full gap-3">
-      <div className="flex flex-col min-[480px]:flex-row flex-wrap items-stretch min-[480px]:items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold text-bright-green">
+      {/* 1fr | auto | 1fr keeps the search visually centered on wide screens (matches MeshCore’s title | search | import row). */}
+      <div className="grid grid-cols-1 min-[480px]:grid-cols-[1fr_auto_1fr] gap-3 items-center">
+        <h2 className="text-lg font-semibold text-bright-green min-[480px]:justify-self-start">
           {mode === 'meshcore' ? 'Contacts' : 'Node Database'} ({headerCountLabel})
         </h2>
         <input
@@ -411,20 +412,24 @@ export default function NodeListPanel({
           }}
           placeholder={mode === 'meshcore' ? 'Search contacts…' : 'Search nodes…'}
           aria-label={mode === 'meshcore' ? 'Search contacts' : 'Search nodes'}
-          className="flex-1 min-w-[8rem] max-w-[20rem] px-3 py-1.5 bg-secondary-dark/80 rounded-lg text-gray-200 text-sm border border-gray-600/50 focus:border-brand-green/50 focus:outline-none"
+          className="w-full min-w-[8rem] max-w-[20rem] min-[480px]:justify-self-center px-3 py-1.5 bg-secondary-dark/80 rounded-lg text-gray-200 text-sm border border-gray-600/50 focus:border-brand-green/50 focus:outline-none"
         />
-        {mode === 'meshcore' && onImportContacts && (
-          <button
-            onClick={handleImport}
-            disabled={importLoading}
-            className="flex items-center gap-2 px-3 py-1.5 rounded bg-brand-green/20 text-brand-green border border-brand-green/30 hover:bg-brand-green/30 transition-colors text-sm font-medium disabled:opacity-50"
-          >
-            {importLoading ? (
-              <span className="w-3 h-3 border border-brand-green border-t-transparent rounded-full animate-spin inline-block" />
-            ) : null}
-            Import Contacts
-          </button>
-        )}
+        <div className="flex justify-stretch min-[480px]:justify-end">
+          {mode === 'meshcore' && onImportContacts ? (
+            <button
+              onClick={handleImport}
+              disabled={importLoading}
+              className="flex w-full min-[480px]:w-auto items-center justify-center gap-2 px-3 py-1.5 rounded bg-brand-green/20 text-brand-green border border-brand-green/30 hover:bg-brand-green/30 transition-colors text-sm font-medium disabled:opacity-50"
+            >
+              {importLoading ? (
+                <span className="w-3 h-3 border border-brand-green border-t-transparent rounded-full animate-spin inline-block" />
+              ) : null}
+              Import Contacts
+            </button>
+          ) : (
+            <div className="hidden min-[480px]:block min-w-0" aria-hidden />
+          )}
+        </div>
       </div>
       {mode === 'meshcore' && (
         <p className="text-xs text-gray-500 max-w-2xl">
