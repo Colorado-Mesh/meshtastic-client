@@ -20,6 +20,21 @@ describe('NobleBleManager.startScanning (regression)', () => {
   });
 });
 
+describe('NobleBleManager.doStartScanning — IPC hang guard (regression)', () => {
+  it('dedupes concurrent starts with scanStartInFlight and clears it in finally', () => {
+    expect(SOURCE).toContain('scanStartInFlight');
+    expect(SOURCE).toMatch(/this\.scanStartInFlight = null/);
+    expect(SOURCE).toContain('if (this.scanStartInFlight) return this.scanStartInFlight');
+  });
+
+  it('bounds native start with BLE_START_SCAN_TIMEOUT_MS and synchronous abandon on timeout', () => {
+    expect(SOURCE).toContain('BLE_START_SCAN_TIMEOUT_MS');
+    expect(SOURCE).toContain('runDoStartScanningWithTimeout');
+    expect(SOURCE).toContain('noble.startScanning timed out after');
+    expect(SOURCE).toContain('abandoned = true');
+  });
+});
+
 /**
  * MeshCore BLE uses the Nordic UART Service (NUS), not Meshtastic's custom GATT UUIDs.
  * Regression guard: connect() must select UUIDs based on sessionId so MeshCore devices
@@ -163,7 +178,7 @@ describe('NobleBleManager — Linux/BlueZ adapter init race (regression)', () =>
   it('doStartScanning is idempotent — returns early when a scan is already active', () => {
     // Prevents double noble.startScanning() when stateChange handler and startScanning resume concurrently
     expect(SOURCE).toMatch(
-      /doStartScanning[\s\S]{0,200}if \(this\.scanningActive\) return Promise\.resolve\(\)/,
+      /private doStartScanning\(\)[\s\S]*?if \(this\.scanningActive\) return Promise\.resolve\(\)/,
     );
   });
 });

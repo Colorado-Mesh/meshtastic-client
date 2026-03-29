@@ -36,6 +36,8 @@ const BLE_CONNECT_TIMEOUT_MS = IS_DARWIN ? 15_000 : 30_000;
 const BLE_DISCOVERY_TIMEOUT_MS = IS_DARWIN ? 15_000 : 30_000;
 /** Timeout for characteristic subscribeAsync(). */
 const BLE_SUBSCRIBE_TIMEOUT_MS = IS_DARWIN ? 10_000 : 20_000;
+/** Timeout for noble.startScanning() callback (IPC must always settle; native cb can hang). */
+const BLE_START_SCAN_TIMEOUT_MS = IS_DARWIN ? 15_000 : 30_000;
 
 function normalizeUuid(uuid: string): string {
   return uuid.toLowerCase().replace(/-/g, '');
@@ -149,6 +151,8 @@ export class NobleBleManager extends EventEmitter {
   private adapterReady = false;
   /** True only while noble.startScanning() has actually been called and confirmed active. */
   private scanningActive = false;
+  /** Deduplicates concurrent doStartScanning calls until the native start callback completes or times out. */
+  private scanStartInFlight: Promise<void> | null = null;
   private lastAdapterState = String(noble?.state ?? 'unknown');
   private releaseHandlesCallCount = 0;
 
@@ -468,12 +472,67 @@ export class NobleBleManager extends EventEmitter {
   }
 
   private doStartScanning(): Promise<void> {
+    if (!noble) return Promise.resolve();
     // Idempotent: if a scan is already active (e.g. kicked by stateChange handler concurrently),
     // skip the duplicate noble.startScanning() call.
     if (this.scanningActive) return Promise.resolve();
+    if (this.scanStartInFlight) return this.scanStartInFlight;
+
+    this.scanStartInFlight = this.runDoStartScanningWithTimeout().finally(() => {
+      this.scanStartInFlight = null;
+    });
+    return this.scanStartInFlight;
+  }
+
+  /**
+   * noble.startScanning's callback is not guaranteed to fire (same class of issue as stopScanning).
+   * Bound the wait so IPC handlers always get a reply; single-flight is enforced by scanStartInFlight.
+   *
+   * Uses an inline timer (not Promise.race) so `abandoned` is set synchronously before reject,
+   * avoiding a race where a late native callback could set scanningActive after we time out.
+   */
+  private runDoStartScanningWithTimeout(): Promise<void> {
+    if (!noble) return Promise.resolve();
     const filter = this.computeScanFilter();
-    return new Promise((resolve, reject) => {
-      noble.startScanning(filter, false, (err: Error | null) => {
+    let abandoned = false;
+
+    return new Promise<void>((resolve, reject) => {
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      const clearTimer = () => {
+        if (timeoutId !== undefined) {
+          clearTimeout(timeoutId);
+          timeoutId = undefined;
+        }
+      };
+
+      timeoutId = setTimeout(() => {
+        abandoned = true;
+        clearTimer();
+        if (!this.scanningActive) {
+          try {
+            noble!.stopScanning();
+          } catch (stopErr) {
+            console.debug('[NobleBleManager] stopScanning after start timeout (ignored):', stopErr); // log-injection-ok noble internal error
+          }
+        }
+        reject(new Error(`noble.startScanning timed out after ${BLE_START_SCAN_TIMEOUT_MS}ms`));
+      }, BLE_START_SCAN_TIMEOUT_MS);
+
+      noble!.startScanning(filter, false, (err: Error | null) => {
+        if (abandoned) {
+          if (!err) {
+            try {
+              noble!.stopScanning();
+            } catch (stopErr) {
+              console.debug(
+                '[NobleBleManager] stopScanning after abandoned start callback (ignored):',
+                stopErr,
+              ); // log-injection-ok noble internal error
+            }
+          }
+          return;
+        }
+        clearTimer();
         if (err) {
           console.error('[NobleBleManager] startScanning error:', err); // log-injection-ok noble internal error
           reject(err);
