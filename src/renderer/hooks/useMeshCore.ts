@@ -35,6 +35,7 @@ import {
   meshcoreContactToMeshNode,
   meshcoreIsChatStubNodeId,
   meshcoreIsSyntheticPlaceholderPubKeyHex,
+  meshcoreMilliVoltsToApproximateBatteryPercent,
   meshcoreMinimalNodeFromAdvertEvent,
   meshcoreSyntheticPlaceholderPubKeyHex,
   minimalMeshcoreChatNode,
@@ -953,6 +954,23 @@ export function useMeshCore() {
     setTelemetry((prev) => [...prev, point].slice(-MAX_TELEMETRY_POINTS));
   }, [selfInfo?.batteryMilliVolts]);
 
+  // Mirror self radio battery into the home MeshNode (node list + node detail); refreshContacts rebuilds from selfInfo
+  useEffect(() => {
+    const myId = state.myNodeNum;
+    const mV = selfInfo?.batteryMilliVolts;
+    if (myId <= 0 || mV == null || !Number.isFinite(mV)) return;
+    const voltage = mV / 1000;
+    const battery = meshcoreMilliVoltsToApproximateBatteryPercent(mV);
+    setNodes((prev) => {
+      const existing = prev.get(myId);
+      if (!existing) return prev;
+      if (existing.voltage === voltage && existing.battery === battery) return prev;
+      const next = new Map(prev);
+      next.set(myId, { ...existing, voltage, battery });
+      return next;
+    });
+  }, [state.myNodeNum, selfInfo?.batteryMilliVolts]);
+
   const addMessage = useCallback((msg: ChatMessage) => {
     const incomingKey = meshcoreMessageDedupeKey(msg);
     let inserted = false;
@@ -1134,11 +1152,20 @@ export function useMeshCore() {
         const selfNameTrimmed = typeof self.name === 'string' ? self.name.trim() : '';
         const displayLongName = selfNameTrimmed || selfNode?.long_name || hexFallback;
         const displayShortName = '';
+        const selfMv = self.batteryMilliVolts;
+        const fromSelfBattery =
+          selfMv != null && Number.isFinite(selfMv)
+            ? {
+                voltage: selfMv / 1000,
+                battery: meshcoreMilliVoltsToApproximateBatteryPercent(selfMv),
+              }
+            : null;
         if (selfNode) {
           nextNodes.set(myNodeId, {
             ...selfNode,
             long_name: displayLongName,
             short_name: displayShortName,
+            ...(fromSelfBattery ?? {}),
           });
         } else {
           nextNodes.set(myNodeId, {
@@ -1146,12 +1173,13 @@ export function useMeshCore() {
             long_name: displayLongName,
             short_name: displayShortName,
             hw_model: CONTACT_TYPE_LABELS[self.type] ?? 'Unknown',
-            battery: 0,
+            battery: fromSelfBattery?.battery ?? 0,
             snr: 0,
             rssi: 0,
             last_heard: Math.floor(Date.now() / 1000),
             latitude: null,
             longitude: null,
+            ...(fromSelfBattery?.voltage != null ? { voltage: fromSelfBattery.voltage } : {}),
           });
         }
       }
@@ -3490,6 +3518,18 @@ export function useMeshCore() {
   // No-op stubs to satisfy the same interface shape used in App.tsx
   const noopAsync = useCallback(async () => {}, []);
   const noopVoid = useCallback(() => {}, []);
+
+  const requestRefresh = useCallback(async () => {
+    const conn = connRef.current;
+    if (!conn) return;
+    try {
+      const { batteryMilliVolts } = await conn.getBatteryVoltage();
+      setSelfInfo((prev) => (prev ? { ...prev, batteryMilliVolts } : prev));
+    } catch (e: unknown) {
+      console.warn('[useMeshCore] requestRefresh getBatteryVoltage error', e);
+    }
+  }, []);
+
   const refreshOurPositionNoop = useCallback(async () => {
     const myNode = nodesRef.current.get(myNodeNumRef.current);
     let staticLat: number | undefined;
@@ -3594,7 +3634,7 @@ export function useMeshCore() {
     deleteWaypoint: noopAsync,
     setModuleConfig: noopAsync,
     setCannedMessages: noopAsync,
-    requestRefresh: noopAsync,
+    requestRefresh,
     refreshOurPosition: refreshOurPositionNoop,
     sendPositionToDevice: sendPositionToDeviceMeshCore,
     updateGpsInterval: noopVoid,

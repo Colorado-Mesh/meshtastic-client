@@ -117,6 +117,19 @@ export const CONTACT_TYPE_LABELS: Record<number, string> = {
   4: 'Sensor',
 };
 
+/**
+ * Map measured cell voltage to an approximate 0–100% for UI (e.g. node list bar).
+ * Uses a simple 1S LiPo-style linear range (3.5 V empty → 4.2 V full); not accurate for all chemistries or loads.
+ */
+export function meshcoreMilliVoltsToApproximateBatteryPercent(milliVolts: number): number {
+  if (!Number.isFinite(milliVolts) || milliVolts <= 0) return 0;
+  const v = milliVolts / 1000;
+  const emptyV = 3.5;
+  const fullV = 4.2;
+  const pct = ((v - emptyV) / (fullV - emptyV)) * 100;
+  return Math.round(Math.min(100, Math.max(0, pct)));
+}
+
 /** MeshCore roles excluded from user contact-group membership (infrastructure / rooms). */
 export const MESHCORE_HW_MODELS_EXCLUDED_FROM_CONTACT_GROUPS: ReadonlySet<string> = new Set([
   CONTACT_TYPE_LABELS[2],

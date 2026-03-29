@@ -10,6 +10,7 @@ import {
   meshcoreDeriveChannelKeyHexFromName,
   meshcoreGetRepeaterSessionPassword,
   meshcoreIsRepeaterRemoteAuthTouched,
+  meshcoreMilliVoltsToApproximateBatteryPercent,
   meshcoreMinimalNodeFromAdvertEvent,
   meshcoreSelfInfoBwToDisplayKhz,
   meshcoreSelfInfoFreqToDisplayHz,
@@ -105,6 +106,28 @@ describe('meshcoreSelfInfoBwToDisplayKhz', () => {
 
   it('passes through kHz when firmware already uses kHz', () => {
     expect(meshcoreSelfInfoBwToDisplayKhz(250)).toBe(250);
+  });
+});
+
+describe('meshcoreMilliVoltsToApproximateBatteryPercent', () => {
+  it('maps 3.5V and 4.2V to 0 and 100', () => {
+    expect(meshcoreMilliVoltsToApproximateBatteryPercent(3500)).toBe(0);
+    expect(meshcoreMilliVoltsToApproximateBatteryPercent(4200)).toBe(100);
+  });
+
+  it('maps midpoint to ~50%', () => {
+    expect(meshcoreMilliVoltsToApproximateBatteryPercent(3850)).toBe(50);
+  });
+
+  it('clamps below empty and above full', () => {
+    expect(meshcoreMilliVoltsToApproximateBatteryPercent(3000)).toBe(0);
+    expect(meshcoreMilliVoltsToApproximateBatteryPercent(4300)).toBe(100);
+  });
+
+  it('returns 0 for non-finite or non-positive input', () => {
+    expect(meshcoreMilliVoltsToApproximateBatteryPercent(NaN)).toBe(0);
+    expect(meshcoreMilliVoltsToApproximateBatteryPercent(0)).toBe(0);
+    expect(meshcoreMilliVoltsToApproximateBatteryPercent(-100)).toBe(0);
   });
 });
 
