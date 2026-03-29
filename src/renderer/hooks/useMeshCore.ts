@@ -25,6 +25,14 @@ import {
   findMeshcoreDmReplyParent,
   normalizeMeshcoreIncomingText,
 } from '../lib/meshcoreChannelText';
+import {
+  buildGetAutoaddConfigFrame,
+  buildSetAutoaddConfigFrame,
+  mergeAutoaddConfigByte,
+  type MeshcoreAutoaddWireState,
+  meshcoreCoerceRadioRxFrame,
+  parseAutoaddConfigResponse,
+} from '../lib/meshcoreContactAutoAdd';
 import { readMeshcoreMqttSettingsFromStorage } from '../lib/meshcoreMqttSettingsStorage';
 import { meshcoreRepeaterTryLogin } from '../lib/meshcoreRepeaterSession';
 import {
@@ -834,6 +842,7 @@ export function useMeshCore() {
   const [meshcoreContactsForTelemetry, setMeshcoreContactsForTelemetry] = useState<
     MeshCoreContactRaw[]
   >([]);
+  const [meshcoreAutoadd, setMeshcoreAutoadd] = useState<MeshcoreAutoaddWireState | null>(null);
   const [ourPosition, setOurPosition] = useState<OurPosition | null>(null);
   const [deviceLogs, setDeviceLogs] = useState<DeviceLogEntry[]>([]);
   const [telemetry, setTelemetry] = useState<TelemetryPoint[]>([]);
@@ -1936,6 +1945,12 @@ export function useMeshCore() {
             void staleConn.close().catch(() => {});
           }, 0);
       });
+
+      conn.on('rx', (data: unknown) => {
+        const frame = meshcoreCoerceRadioRxFrame(data);
+        const parsed = frame && parseAutoaddConfigResponse(frame);
+        if (parsed) setMeshcoreAutoadd(parsed);
+      });
     },
     [addMessage, updateNode, setDeviceLogs, addCliHistoryEntry],
   );
@@ -1973,6 +1988,32 @@ export function useMeshCore() {
     },
     [],
   );
+
+  const refreshMeshcoreAutoaddFromDevice = useCallback(async () => {
+    const conn = connRef.current;
+    if (!conn) return;
+    await new Promise<void>((resolve, reject) => {
+      const t = window.setTimeout(() => {
+        conn.off('rx', onRx);
+        reject(new Error('Timed out waiting for auto-add config'));
+      }, 5000);
+      const onRx = (data: unknown) => {
+        const frame = meshcoreCoerceRadioRxFrame(data);
+        const parsed = frame && parseAutoaddConfigResponse(frame);
+        if (!parsed) return;
+        window.clearTimeout(t);
+        conn.off('rx', onRx);
+        setMeshcoreAutoadd(parsed);
+        resolve();
+      };
+      conn.on('rx', onRx);
+      void conn.sendToRadioFrame(buildGetAutoaddConfigFrame()).catch((e: unknown) => {
+        window.clearTimeout(t);
+        conn.off('rx', onRx);
+        reject(e instanceof Error ? e : new Error(String(e)));
+      });
+    });
+  }, []);
 
   /** Shared post-connection handshake: wire events, fetch self info, contacts, channels. */
   const initConn = useCallback(
@@ -2077,8 +2118,20 @@ export function useMeshCore() {
             console.warn('[useMeshCore] getBatteryVoltage error', e);
           }),
       );
+
+      await awaitUnlessMeshcoreSetupCancelled(
+        setupGen,
+        refreshMeshcoreAutoaddFromDevice().catch((e: unknown) => {
+          console.warn('[useMeshCore] refreshMeshcoreAutoaddFromDevice (init) error', e);
+        }),
+      );
     },
-    [awaitUnlessMeshcoreSetupCancelled, buildNodesFromContacts, setupEventListeners],
+    [
+      awaitUnlessMeshcoreSetupCancelled,
+      buildNodesFromContacts,
+      refreshMeshcoreAutoaddFromDevice,
+      setupEventListeners,
+    ],
   );
 
   const connect = useCallback(
@@ -2580,6 +2633,7 @@ export function useMeshCore() {
     setChannels([]);
     setSelfInfo(null);
     setMeshcoreContactsForTelemetry([]);
+    setMeshcoreAutoadd(null);
     setDeviceLogs([]);
     setTelemetry([]);
     setSignalTelemetry([]);
@@ -2886,6 +2940,49 @@ export function useMeshCore() {
     await window.electronAPI.db.clearMeshcoreRepeaters().catch((e: unknown) => {
       console.warn('[useMeshCore] clearMeshcoreRepeaters error', e);
     });
+  }, []);
+
+  const clearAllMeshcoreContacts = useCallback(async () => {
+    const conn = connRef.current;
+    const myId = myNodeNumRef.current;
+    if (conn && myId !== 0) {
+      try {
+        const raw = await conn.getContacts();
+        for (const c of raw) {
+          const id = pubkeyToNodeId(c.publicKey);
+          if (id === myId) continue;
+          await conn.removeContact(c.publicKey).catch((e: unknown) => {
+            console.warn('[useMeshCore] clearAllMeshcoreContacts removeContact error', e);
+          });
+        }
+      } catch (e: unknown) {
+        console.warn('[useMeshCore] clearAllMeshcoreContacts getContacts error', e);
+      }
+    }
+    try {
+      await window.electronAPI.db.clearMeshcoreContacts();
+    } catch (e: unknown) {
+      console.warn('[useMeshCore] clearMeshcoreContacts DB error', e);
+      throw e instanceof Error ? e : new Error(String(e));
+    }
+    setMeshcoreContactsForTelemetry([]);
+    setNodes((prev) => {
+      const self = prev.get(myId);
+      if (myId === 0) return new Map();
+      const next = new Map<number, MeshNode>();
+      if (self) next.set(myId, self);
+      return next;
+    });
+    const pk = pubKeyMapRef.current.get(myId);
+    pubKeyMapRef.current.clear();
+    pubKeyPrefixMapRef.current.clear();
+    if (pk && myId !== 0) {
+      pubKeyMapRef.current.set(myId, pk);
+      const prefix = Array.from(pk.slice(0, 6))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+      pubKeyPrefixMapRef.current.set(prefix, myId);
+    }
   }, []);
 
   const setOwner = useCallback(
@@ -3527,6 +3624,65 @@ export function useMeshCore() {
     [],
   );
 
+  const applyMeshcoreContactAutoAdd = useCallback(
+    async (params: {
+      autoAddAll: boolean;
+      overwriteOldest: boolean;
+      chat: boolean;
+      repeater: boolean;
+      roomServer: boolean;
+      sensor: boolean;
+      maxHopsWire: number;
+    }) => {
+      const conn = connRef.current;
+      if (!conn) throw new Error('Not connected');
+      if (params.autoAddAll) {
+        await conn.setAutoAddContacts();
+        setManualAddContacts(false);
+      } else {
+        await conn.setManualAddContacts();
+        setManualAddContacts(true);
+      }
+      try {
+        localStorage.setItem(MANUAL_CONTACTS_KEY, String(!params.autoAddAll));
+      } catch {
+        // catch-no-log-ok localStorage quota or private mode — non-critical setting
+      }
+      setSelfInfo((prev) => (prev ? { ...prev, manualAddContacts: !params.autoAddAll } : prev));
+
+      const configByte = mergeAutoaddConfigByte({
+        overwriteOldest: params.overwriteOldest,
+        chat: params.chat,
+        repeater: params.repeater,
+        roomServer: params.roomServer,
+        sensor: params.sensor,
+      });
+      const hops = Math.max(0, Math.min(params.maxHopsWire, 64));
+      const frame = buildSetAutoaddConfigFrame(configByte, hops);
+      await new Promise<void>((resolve, reject) => {
+        const onOk = () => {
+          conn.off(0, onOk);
+          conn.off(1, onErr);
+          resolve();
+        };
+        const onErr = () => {
+          conn.off(0, onOk);
+          conn.off(1, onErr);
+          reject(new Error('MeshCore rejected contact auto-add settings'));
+        };
+        conn.once(0, onOk);
+        conn.once(1, onErr);
+        void conn.sendToRadioFrame(frame).catch((e: unknown) => {
+          conn.off(0, onOk);
+          conn.off(1, onErr);
+          reject(e instanceof Error ? e : new Error(String(e)));
+        });
+      });
+      setMeshcoreAutoadd({ autoaddConfig: configByte, autoaddMaxHops: hops });
+    },
+    [],
+  );
+
   const toggleManualAddContacts = useCallback(async (manual: boolean) => {
     if (!connRef.current) return;
     try {
@@ -3924,6 +4080,7 @@ export function useMeshCore() {
     reboot,
     deleteNode,
     clearAllRepeaters,
+    clearAllMeshcoreContacts,
     setOwner,
     traceRoute,
     requestRepeaterStatus,
@@ -4048,6 +4205,9 @@ export function useMeshCore() {
     telemetryDeviceUpdateInterval: undefined as number | undefined,
     setRadioParams,
     meshcoreContactsForTelemetry,
+    meshcoreAutoadd,
+    applyMeshcoreContactAutoAdd,
+    refreshMeshcoreAutoaddFromDevice,
     applyMeshcoreTelemetryPrivacyPolicy,
   };
 }

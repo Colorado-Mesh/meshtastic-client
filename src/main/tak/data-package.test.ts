@@ -50,7 +50,6 @@ const { mockZipInstance, fileCallArgs } = vi.hoisted(() => {
 });
 
 vi.mock('jszip', () => ({
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   default: vi.fn().mockImplementation(function (this: any) {
     return mockZipInstance;
   }),

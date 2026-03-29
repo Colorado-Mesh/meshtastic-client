@@ -56,6 +56,7 @@ import {
   letsMeshMqttUsernameFromIdentity,
   readMeshcoreIdentity,
 } from './lib/letsMeshJwt';
+import { pubkeyToNodeId } from './lib/meshcoreUtils';
 import { MESHTASTIC_OFFICIAL_PRESET_DEFAULTS } from './lib/meshtasticMqttTlsMigration';
 import { parseStoredJson } from './lib/parseStoredJson';
 import type { ProtocolCapabilities } from './lib/radio/BaseRadioProvider';
@@ -265,6 +266,43 @@ export default function App() {
     });
   }, []);
 
+  const MESHCORE_CONTACTS_SHOW_KEYS_KEY = 'mesh-client:meshcoreContactsShowPublicKeys';
+  const MESHCORE_CONTACTS_SHOW_REFRESH_KEY = 'mesh-client:meshcoreContactsShowRefreshControl';
+  const [meshcoreContactsShowPublicKeys, setMeshcoreContactsShowPublicKeysState] = useState(() => {
+    try {
+      return localStorage.getItem(MESHCORE_CONTACTS_SHOW_KEYS_KEY) === 'true';
+    } catch {
+      // catch-no-log-ok localStorage read unavailable
+      return false;
+    }
+  });
+  const [meshcoreContactsShowRefreshControl, setMeshcoreContactsShowRefreshControlState] = useState(
+    () => {
+      try {
+        return localStorage.getItem(MESHCORE_CONTACTS_SHOW_REFRESH_KEY) === 'true';
+      } catch {
+        // catch-no-log-ok localStorage read unavailable
+        return false;
+      }
+    },
+  );
+  const onMeshcoreContactsShowPublicKeysChange = useCallback((value: boolean) => {
+    setMeshcoreContactsShowPublicKeysState(value);
+    try {
+      localStorage.setItem(MESHCORE_CONTACTS_SHOW_KEYS_KEY, String(value));
+    } catch {
+      // catch-no-log-ok localStorage
+    }
+  }, []);
+  const onMeshcoreContactsShowRefreshControlChange = useCallback((value: boolean) => {
+    setMeshcoreContactsShowRefreshControlState(value);
+    try {
+      localStorage.setItem(MESHCORE_CONTACTS_SHOW_REFRESH_KEY, String(value));
+    } catch {
+      // catch-no-log-ok localStorage
+    }
+  }, []);
+
   // ─── Theme colors (localStorage overrides for @theme tokens) ─────
   useLayoutEffect(() => {
     applyThemeColors(loadThemeColors());
@@ -301,6 +339,29 @@ export default function App() {
   meshcoreSelfIdRef.current = meshcoreDevice.selfNodeId;
   const nodesForUi = protocol === 'meshcore' ? meshcoreDevice.nodes : meshtasticDevice.nodes;
   const nodeCountLabel = protocol === 'meshcore' ? 'contacts' : 'nodes';
+
+  const meshcorePublicKeyHexByNodeId = useMemo(() => {
+    const m = new Map<number, string>();
+    if (protocol !== 'meshcore') return m;
+    const self = meshcoreDevice.selfInfo;
+    if (self?.publicKey?.length === 32) {
+      m.set(
+        pubkeyToNodeId(self.publicKey),
+        Array.from(self.publicKey)
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join(''),
+      );
+    }
+    for (const c of meshcoreDevice.meshcoreContactsForTelemetry) {
+      m.set(
+        pubkeyToNodeId(c.publicKey),
+        Array.from(c.publicKey)
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join(''),
+      );
+    }
+    return m;
+  }, [protocol, meshcoreDevice.selfInfo, meshcoreDevice.meshcoreContactsForTelemetry]);
 
   const capabilities = useRadioProvider(protocol);
 
@@ -1014,8 +1075,6 @@ export default function App() {
                         onProtocolChange={handleProtocolChange}
                         onRefreshContacts={meshcoreDevice.refreshContacts}
                         onSendAdvert={meshcoreDevice.sendAdvert}
-                        manualAddContacts={meshcoreDevice.manualAddContacts}
-                        onToggleManualContacts={meshcoreDevice.toggleManualAddContacts}
                         firmwareCheckState={
                           protocol === 'meshcore' ? firmwareCheckState : undefined
                         }
@@ -1094,6 +1153,18 @@ export default function App() {
                         contactGroupsEnabled={capabilities.hasUserManagedContactGroups}
                         onImportContacts={
                           protocol === 'meshcore' ? meshcoreDevice.importContacts : undefined
+                        }
+                        meshcoreShowRefreshControl={
+                          protocol === 'meshcore' ? meshcoreContactsShowRefreshControl : false
+                        }
+                        onRefreshContacts={
+                          protocol === 'meshcore' ? meshcoreDevice.refreshContacts : undefined
+                        }
+                        meshcoreShowPublicKeys={
+                          protocol === 'meshcore' ? meshcoreContactsShowPublicKeys : false
+                        }
+                        meshcorePublicKeyHexByNodeId={
+                          protocol === 'meshcore' ? meshcorePublicKeyHexByNodeId : undefined
                         }
                       />
                     </Suspense>
@@ -1202,6 +1273,40 @@ export default function App() {
                           onApplyMeshcoreTelemetryPrivacy={
                             protocol === 'meshcore'
                               ? meshcoreDevice.applyMeshcoreTelemetryPrivacyPolicy
+                              : undefined
+                          }
+                          meshcoreAutoadd={
+                            protocol === 'meshcore' ? meshcoreDevice.meshcoreAutoadd : undefined
+                          }
+                          onApplyMeshcoreContactAutoAdd={
+                            protocol === 'meshcore'
+                              ? meshcoreDevice.applyMeshcoreContactAutoAdd
+                              : undefined
+                          }
+                          onRefreshMeshcoreAutoaddFromDevice={
+                            protocol === 'meshcore'
+                              ? meshcoreDevice.refreshMeshcoreAutoaddFromDevice
+                              : undefined
+                          }
+                          meshcoreContactsShowPublicKeys={
+                            protocol === 'meshcore' ? meshcoreContactsShowPublicKeys : undefined
+                          }
+                          onMeshcoreContactsShowPublicKeysChange={
+                            protocol === 'meshcore'
+                              ? onMeshcoreContactsShowPublicKeysChange
+                              : undefined
+                          }
+                          meshcoreContactsShowRefreshControl={
+                            protocol === 'meshcore' ? meshcoreContactsShowRefreshControl : undefined
+                          }
+                          onMeshcoreContactsShowRefreshControlChange={
+                            protocol === 'meshcore'
+                              ? onMeshcoreContactsShowRefreshControlChange
+                              : undefined
+                          }
+                          onClearAllMeshcoreContacts={
+                            protocol === 'meshcore'
+                              ? meshcoreDevice.clearAllMeshcoreContacts
                               : undefined
                           }
                         />

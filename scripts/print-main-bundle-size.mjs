@@ -12,7 +12,7 @@ const outfile = path.join(__dirname, '..', 'dist-electron', 'main', 'index.js');
 
 try {
   const st = fs.statSync(outfile);
-  // eslint-disable-next-line no-console -- CLI size report
+   
   console.log(`dist-electron/main/index.js: ${st.size} bytes (${(st.size / 1024).toFixed(1)} KiB)`);
 } catch {
   console.error('Run build:main or build:main:prod first; missing', outfile);

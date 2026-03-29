@@ -92,6 +92,7 @@ interface Props {
   onMeshcoreContactsShowPublicKeysChange?: (value: boolean) => void;
   meshcoreContactsShowRefreshControl?: boolean;
   onMeshcoreContactsShowRefreshControlChange?: (value: boolean) => void;
+  onClearAllMeshcoreContacts?: () => Promise<void>;
 }
 
 const REGIONS = [
@@ -506,6 +507,7 @@ export default function RadioPanel({
   onMeshcoreContactsShowPublicKeysChange,
   meshcoreContactsShowRefreshControl = false,
   onMeshcoreContactsShowRefreshControlChange,
+  onClearAllMeshcoreContacts,
 }: Props) {
   // ─── User / Identity settings ─────────────────────────────────
   const [longName, setLongName] = useState('');
@@ -910,6 +912,7 @@ export default function RadioPanel({
                 setApplyingMeshcoreContactMgmt(false);
               }
             }}
+            onClearAllContacts={onClearAllMeshcoreContacts}
           />
         )}
 

@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
 
@@ -191,5 +192,47 @@ describe('NodeListPanel import contacts', () => {
       />,
     );
     expect(screen.queryByRole('button', { name: 'Import Contacts' })).not.toBeInTheDocument();
+  });
+
+  it('shows Refresh when meshcoreShowRefreshControl and onRefreshContacts are set', async () => {
+    const user = userEvent.setup();
+    const onRefreshContacts = vi.fn().mockResolvedValue(undefined);
+    render(
+      <NodeListPanel
+        nodes={new Map()}
+        myNodeNum={0}
+        onNodeClick={vi.fn()}
+        locationFilter={defaultFilter}
+        onToggleFavorite={vi.fn()}
+        mode="meshcore"
+        meshcoreShowRefreshControl
+        onRefreshContacts={onRefreshContacts}
+      />,
+    );
+    const btn = screen.getByRole('button', { name: 'Refresh contacts from radio' });
+    await user.click(btn);
+    expect(onRefreshContacts).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders full public key under name when meshcoreShowPublicKeys and map entry exist', () => {
+    const nodeId = 0xdeadbeef;
+    const hex = 'aa'.repeat(32);
+    const nodes = new Map<number, MeshNode>([
+      [nodeId, makeNode({ node_id: nodeId, long_name: 'Peer' })],
+    ]);
+    const pubkeyMap = new Map<number, string>([[nodeId, hex]]);
+    render(
+      <NodeListPanel
+        nodes={nodes}
+        myNodeNum={0}
+        onNodeClick={vi.fn()}
+        locationFilter={defaultFilter}
+        onToggleFavorite={vi.fn()}
+        mode="meshcore"
+        meshcoreShowPublicKeys
+        meshcorePublicKeyHexByNodeId={pubkeyMap}
+      />,
+    );
+    expect(screen.getByText(hex)).toBeInTheDocument();
   });
 });

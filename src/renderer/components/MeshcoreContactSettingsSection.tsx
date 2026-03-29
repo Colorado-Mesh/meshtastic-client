@@ -6,6 +6,7 @@ import {
   type MeshcoreAutoaddWireState,
   splitAutoaddConfigByte,
 } from '../lib/meshcoreContactAutoAdd';
+import { useToast } from './Toast';
 
 function parseMaxHopsInput(raw: string): { wire: number; error: string | null } {
   const t = raw.trim();
@@ -27,6 +28,7 @@ export default function MeshcoreContactSettingsSection({
   meshcoreContactsShowRefreshControl,
   onMeshcoreContactsShowRefreshControlChange,
   onApply,
+  onClearAllContacts,
 }: {
   selfInfo: MeshCoreSelfInfo;
   autoadd: MeshcoreAutoaddWireState | null;
@@ -45,8 +47,11 @@ export default function MeshcoreContactSettingsSection({
     sensor: boolean;
     maxHopsWire: number;
   }) => Promise<void>;
+  onClearAllContacts?: () => Promise<void>;
 }) {
+  const { addToast } = useToast();
   const modeGroupId = useId();
+  const [clearingAll, setClearingAll] = useState(false);
   const [autoAddAll, setAutoAddAll] = useState(!selfInfo.manualAddContacts);
   const [overwriteOldest, setOverwriteOldest] = useState(false);
   const [chat, setChat] = useState(false);
@@ -310,6 +315,44 @@ export default function MeshcoreContactSettingsSection({
         >
           {applying ? 'Applying…' : 'Apply contact management'}
         </button>
+
+        {onClearAllContacts ? (
+          <div className="border-t border-red-900/50 pt-4">
+            <p className="text-xs text-muted mb-2">
+              Remove every contact from the radio and clear the app&apos;s contact database. This
+              cannot be undone.
+            </p>
+            <button
+              type="button"
+              disabled={disabled || applying || clearingAll}
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    'Remove all contacts from the radio and clear local contact data?',
+                  )
+                ) {
+                  return;
+                }
+                setClearingAll(true);
+                void onClearAllContacts()
+                  .then(() => {
+                    addToast('All contacts cleared.', 'success');
+                  })
+                  .catch((e: unknown) => {
+                    console.warn('[MeshcoreContactSettingsSection] clear all failed', e);
+                    addToast(e instanceof Error ? e.message : 'Failed to clear contacts.', 'error');
+                  })
+                  .finally(() => {
+                    setClearingAll(false);
+                  });
+              }}
+              className="rounded-lg border border-red-700 bg-red-950/40 px-4 py-2 text-sm font-medium text-red-200 hover:bg-red-900/50 disabled:opacity-50"
+              aria-label="Clear all MeshCore contacts"
+            >
+              {clearingAll ? 'Clearing…' : 'Clear all contacts'}
+            </button>
+          </div>
+        ) : null}
       </div>
     </details>
   );
