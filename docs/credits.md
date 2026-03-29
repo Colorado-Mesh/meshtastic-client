@@ -2,9 +2,9 @@
 
 ## Authors
 
-**[Joey (NV0N)](https://github.com/rinchen)** created the original [Meshtastic Mac Client](https://github.com/Colorado-Mesh/meshtastic_mac_client) — a Python/PyQt6 desktop app for macOS. Joey built it out of frustration with the lack of native BLE-capable Meshtastic clients for Mac and shared it with the Colorado Meshtastic community.
+**[Joey (NV0N)](https://github.com/rinchen)** created the original [Meshtastic Mac Client](https://github.com/Colorado-Mesh/meshtastic_mac_client) — a Python/PyQt6 desktop app for macOS. Driven by the lack of native, BLE-capable options for macOS, Joey initially shared the tool with the Colorado Meshtastic community. As interest grew, he matured the app by integrating Meshcore support to meet expanding user needs.
 
-**[dude.eth](https://github.com/defidude)** ported the concept to Electron, enabling cross-platform support across Mac, Linux, and Windows. Both Joey and dude.eth are now actively co-developing this Electron version together.
+**[dude.eth](https://github.com/defidude)** ported the concept to Electron, enabling cross-platform support across Mac, Linux, and Windows.
 
 ### Contributors
 
@@ -12,11 +12,11 @@ megabear - KD5IHC created the icon
 
 ## Colorado Mesh
 
-Thanks to the [Colorado Mesh](https://coloradomesh.org) community for fostering open-source Meshtastic development in Colorado.
+Thanks to the [Colorado Mesh](https://coloradomesh.org) community for fostering open-source Meshtastic and MeshCore development in Colorado.
 
 ## Acknowledgements
 
-After creating the initial application, we were inspired by features from these projects:
+We were inspired by features from these projects:
 
 - [Meshtastic](https://github.com/meshtastic) — Open-source, off-grid mesh communication ecosystem
 - [MeshCore](https://github.com/meshcore-dev) — Lightweight hybrid routing mesh protocol for packet radios
