@@ -2877,11 +2877,20 @@ ipcMain.handle('db:saveMeshcoreContact', (_event, contact) => {
     const db = getDatabase();
     return db
       .prepareOnce(
-        'INSERT OR REPLACE INTO meshcore_contacts ' +
+        'INSERT INTO meshcore_contacts ' +
           '(node_id, public_key, adv_name, contact_type, last_advert, adv_lat, adv_lon, last_snr, last_rssi, favorited, nickname) ' +
-          'VALUES (@node_id, @public_key, @adv_name, @contact_type, @last_advert, @adv_lat, @adv_lon, @last_snr, @last_rssi, ' +
-          'COALESCE((SELECT favorited FROM meshcore_contacts WHERE node_id = @node_id), 0), ' +
-          'COALESCE(@nickname, (SELECT nickname FROM meshcore_contacts WHERE node_id = @node_id)))',
+          'VALUES (@node_id, @public_key, @adv_name, @contact_type, @last_advert, @adv_lat, @adv_lon, @last_snr, @last_rssi, 0, @nickname) ' +
+          'ON CONFLICT(node_id) DO UPDATE SET ' +
+          'public_key = excluded.public_key, ' +
+          'adv_name = excluded.adv_name, ' +
+          'contact_type = excluded.contact_type, ' +
+          'last_advert = excluded.last_advert, ' +
+          'adv_lat = excluded.adv_lat, ' +
+          'adv_lon = excluded.adv_lon, ' +
+          'last_snr = excluded.last_snr, ' +
+          'last_rssi = excluded.last_rssi, ' +
+          'favorited = meshcore_contacts.favorited, ' +
+          'nickname = COALESCE(excluded.nickname, meshcore_contacts.nickname)',
       )
       .run({
         node_id: Number(c.node_id),

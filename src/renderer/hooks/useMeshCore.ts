@@ -1128,7 +1128,8 @@ export function useMeshCore() {
   const updateNode = useCallback((node: MeshNode) => {
     setNodes((prev) => {
       const next = new Map(prev);
-      next.set(node.node_id, node);
+      const existing = prev.get(node.node_id);
+      next.set(node.node_id, existing ? { ...existing, ...node } : node);
       return next;
     });
   }, []);
@@ -1200,6 +1201,12 @@ export function useMeshCore() {
               longitude: row.adv_lon ?? null,
               favorited: row.favorited === 1,
             });
+          }
+        }
+        for (const row of dbContacts) {
+          const existing = nextNodes.get(row.node_id);
+          if (existing) {
+            nextNodes.set(row.node_id, { ...existing, favorited: row.favorited === 1 });
           }
         }
         for (const row of dbContacts) {

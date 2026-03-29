@@ -51,6 +51,13 @@ describe('MeshCore DB IPC (source contract)', () => {
     expect(INDEX_SOURCE).toContain("'db:updateMeshcoreContactLastRf'");
     expect(INDEX_SOURCE).toContain('UPDATE meshcore_contacts SET last_snr = ?, last_rssi = ?');
   });
+
+  it('saveMeshcoreContact uses UPSERT that preserves favorited on conflict', () => {
+    expect(INDEX_SOURCE).toContain("'db:saveMeshcoreContact'");
+    expect(INDEX_SOURCE).toContain('ON CONFLICT(node_id) DO UPDATE SET');
+    expect(INDEX_SOURCE).toContain('favorited = meshcore_contacts.favorited');
+    expect(INDEX_SOURCE).not.toContain('INSERT OR REPLACE INTO meshcore_contacts');
+  });
 });
 
 describe('External link routing (source contract)', () => {
