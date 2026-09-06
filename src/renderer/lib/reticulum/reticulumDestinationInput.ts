@@ -4,8 +4,17 @@ import {
 } from '@/shared/rncpRequestEnable';
 
 import { registerReticulumDestinationHash, reticulumHashToNodeId } from './destHash';
+import { resolveReticulumChatLxmfDestination } from './resolveReticulumChatLxmfDest';
 
 const RETICULUM_HASH_RE = /^[a-f0-9]{32}$/;
+
+/** Thrown when Chat cannot resolve an LXMF delivery destination for the peer. */
+export class ReticulumChatMissingLxmfError extends Error {
+  constructor() {
+    super('RETICULUM_CHAT_MISSING_LXMF');
+    this.name = 'ReticulumChatMissingLxmfError';
+  }
+}
 
 /** Strip optional angle brackets or quotes around pasted addresses. */
 function stripWrappers(raw: string): string {
@@ -77,13 +86,23 @@ export function parseReticulumLxmfLinkUrl(url: string): string | null {
   return parseReticulumDestinationInput(url);
 }
 
-/** Register hash in the runtime registry and return the uint32 node id for chat stores. */
+/**
+ * Register the peer's LXMF delivery hash and return its uint32 node id for chat stores.
+ * Remaps `lxst.telephony` (and other non-lxmf aspects) to that identity's `lxmf.delivery`.
+ */
 export function openReticulumDmFromHash(hash: string): number {
   const normalized = parseReticulumDestinationInput(hash);
   if (!normalized) {
     throw new Error('Invalid Reticulum destination hash');
   }
-  const nodeId = reticulumHashToNodeId(normalized);
-  registerReticulumDestinationHash(nodeId, normalized);
+  const resolved = resolveReticulumChatLxmfDestination(normalized);
+  if (resolved.status === 'missing_lxmf') {
+    throw new ReticulumChatMissingLxmfError();
+  }
+  if (resolved.status !== 'ok') {
+    throw new Error('Invalid Reticulum destination hash');
+  }
+  const nodeId = reticulumHashToNodeId(resolved.hash);
+  registerReticulumDestinationHash(nodeId, resolved.hash);
   return nodeId;
 }

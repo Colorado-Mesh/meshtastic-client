@@ -749,7 +749,12 @@
     "heardByRepeaterNodeFallback": "Nodo {{nodeId}}",
     "heardByRepeatersAdditional_one": "{{count}} reenviador no identificado adicional (hashes: {{hashes}})",
     "heardByRepeatersAdditional_other": "{{count}} reenviadores no identificados adicionales (hashes: {{hashes}})",
-    "reticulumSendAwaitingPeerReceipt": "Enviado (pendiente de recibo del compañero)"
+    "reticulumSendAwaitingPeerReceipt": "Enviado (pendiente de recibo del compañero)",
+    "reticulumChatNeedsLxmfDelivery": "Este compañero aún no tiene una dirección de entrega LXMF (el chat no puede usar un destino de solo voz). Espere un anuncio de LXMF o pegue su hash LXMF de 32 caracteres.",
+    "lxmfHashLabel": "LXMF {{hash}}",
+    "copyLxmfHashAria": "Copiar hash de destino LXMF {{hash}}",
+    "lxmfHashCopied": "Se ha copiado el hash de destino LXMF.",
+    "lxmfHashCopyFailed": "No se ha podido copiar el hash de destino LXMF."
   },
   "chatPayload": {
     "mention": "Mencionar {{label}}",
@@ -3502,7 +3507,10 @@
     "tabHistory": "Historial",
     "emptyHistory": "Aún no hay historial de mensajes: envíe o reciba un mensaje LXMF para ver a los peers aquí.",
     "emptyContacts": "Aún no hay contactos guardados: abra un peer y elija Guardar como contacto.",
-    "pathMediumTitle": "Medio de ruta activa: {{medium}}"
+    "pathMediumTitle": "Medio de ruta activa: {{medium}}",
+    "chatNeedsLxmfDelivery": "Aún no hay una dirección de entrega LXMF para este compañero. Espere un anuncio de LXMF o abra el chat con su hash LXMF de 32 caracteres: los destinos de voz (lxst.telephony) no pueden recibir chat.",
+    "voiceAspectBadge": "Voz",
+    "voiceAspectTitle": "Esta fila de la tabla de rutas es un destino de telefonía LXST. El chat se reasigna al hash de entrega LXMF del compañero cuando se conoce."
   },
   "radioPanel": {
     "offloadedContacts": "Se han descargado {{count}} contactos a la base de datos.",

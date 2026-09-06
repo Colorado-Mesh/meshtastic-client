@@ -749,7 +749,12 @@
     "heardByRepeaterNodeFallback": "Node {{nodeId}}",
     "heardByRepeatersAdditional_one": "{{count}} forwarder tak dikenal tambahan (hash: {{hashes}})",
     "heardByRepeatersAdditional_other": "{{count}} forwarder tak dikenal tambahan (hash: {{hashes}})",
-    "reticulumSendAwaitingPeerReceipt": "Terkirim (menunggu tanda terima sejawat)"
+    "reticulumSendAwaitingPeerReceipt": "Terkirim (menunggu tanda terima sejawat)",
+    "reticulumChatNeedsLxmfDelivery": "Rekan ini belum memiliki alamat pengiriman LXMF (Obrolan tidak dapat menggunakan tujuan khusus Suara). Tunggu pengumuman LXMF, atau tempelkan hash LXMF 32 karakternya.",
+    "lxmfHashLabel": "LXMF {{hash}}",
+    "copyLxmfHashAria": "Salin hash tujuan LXMF {{hash}}",
+    "lxmfHashCopied": "Hash tujuan LXMF disalin.",
+    "lxmfHashCopyFailed": "Tidak dapat menyalin hash tujuan LXMF."
   },
   "chatPayload": {
     "mention": "Sebutkan {{label}}",
@@ -3502,7 +3507,10 @@
     "tabHistory": "Riwayat",
     "emptyHistory": "Belum ada riwayat pesan — kirim atau terima pesan LXMF untuk melihat peer di sini.",
     "emptyContacts": "Belum ada kontak tersimpan — buka peer dan pilih Simpan sebagai kontak.",
-    "pathMediumTitle": "Media jalur aktif: {{medium}}"
+    "pathMediumTitle": "Media jalur aktif: {{medium}}",
+    "chatNeedsLxmfDelivery": "Belum ada alamat pengiriman LXMF untuk rekan ini. Tunggu pengumuman LXMF, atau buka Obrolan dengan hash LXMF 32 karakter mereka — Destinasi Voice (lxst.telephony) tidak dapat menerima Obrolan.",
+    "voiceAspectBadge": "Suara",
+    "voiceAspectTitle": "Baris tabel jalur ini adalah tujuan telepon LXST. Memetakan ulang obrolan ke hash pengiriman LXMF rekan saat diketahui."
   },
   "radioPanel": {
     "offloadedContacts": "Membongkar {{count}} kontak ke database.",

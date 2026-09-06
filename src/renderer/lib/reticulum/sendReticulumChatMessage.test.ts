@@ -9,6 +9,7 @@ import {
 import {
   buildReticulumReplyFields,
   resolveReticulumChatDestHash,
+  resolveReticulumChatDestHashDetailed,
   sendReticulumChatMessage,
 } from '@/renderer/lib/reticulum/sendReticulumChatMessage';
 import {
@@ -16,6 +17,7 @@ import {
   type ReticulumSessionApi,
 } from '@/renderer/lib/sessions/reticulumSession';
 import { addMessage, useMessageStore } from '@/renderer/stores/messageStore';
+import { useReticulumIdentityActivityStore } from '@/renderer/stores/reticulumIdentityActivityStore';
 import { useReticulumPeerStore } from '@/renderer/stores/reticulumPeerStore';
 
 const ID = 'id-rt-send-helpers';
@@ -41,12 +43,68 @@ describe('sendReticulumChatMessage helpers', () => {
   beforeEach(() => {
     useMessageStore.setState({ messages: {} });
     clearReticulumHashRegistry();
+    useReticulumIdentityActivityStore.setState({ byDestination: new Map() });
   });
 
   it('resolveReticulumChatDestHash uses destination registry', () => {
     registerReticulumDestinationHash(0x1234, 'ab'.repeat(16));
     expect(resolveReticulumChatDestHash(0x1234)).toBe('ab'.repeat(16));
     expect(resolveReticulumChatDestHash(undefined)).toBeNull();
+  });
+
+  it('resolveReticulumChatDestHash remaps telephony registry entries to lxmf.delivery', () => {
+    const identity = '0f79468863d76b3ba574baa92606ffcb';
+    const lxmf = 'e3359f1314aff4fb6261400a8202149b';
+    const telephony = 'ab1d53d6923d6983dfb4451e3869b878';
+    useReticulumIdentityActivityStore.setState({
+      byDestination: new Map([
+        [
+          telephony,
+          [
+            {
+              destination_hash: telephony,
+              aspect: 'lxst.telephony',
+              identity_hash: identity,
+              last_seen: 2,
+            },
+          ],
+        ],
+        [
+          lxmf,
+          [
+            {
+              destination_hash: lxmf,
+              aspect: 'lxmf.delivery',
+              identity_hash: identity,
+              last_seen: 1,
+            },
+          ],
+        ],
+      ]),
+    });
+    registerReticulumDestinationHash(0x1234, telephony);
+    expect(resolveReticulumChatDestHash(0x1234)).toBe(lxmf);
+  });
+
+  it('resolveReticulumChatDestHashDetailed reports missing_lxmf for telephony-only peers', () => {
+    const telephony = 'ab1d53d6923d6983dfb4451e3869b878';
+    useReticulumIdentityActivityStore.setState({
+      byDestination: new Map([
+        [
+          telephony,
+          [
+            {
+              destination_hash: telephony,
+              aspect: 'lxst.telephony',
+              identity_hash: '0f79468863d76b3ba574baa92606ffcb',
+              last_seen: 1,
+            },
+          ],
+        ],
+      ]),
+    });
+    registerReticulumDestinationHash(0x99, telephony);
+    expect(resolveReticulumChatDestHashDetailed(0x99)).toEqual({ status: 'missing_lxmf' });
   });
 
   it('buildReticulumReplyFields returns empty when replyTo absent', () => {

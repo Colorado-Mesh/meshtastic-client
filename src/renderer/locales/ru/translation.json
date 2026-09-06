@@ -787,7 +787,12 @@
     "heardByRepeatersDetail_many": "Услышали {{count}}: {{names}}",
     "searchResults_few": "{{count}} результата",
     "searchResults_many": "{{count}} результатов",
-    "reticulumSendAwaitingPeerReceipt": "Отправлено (ожидает получения коллегой)"
+    "reticulumSendAwaitingPeerReceipt": "Отправлено (ожидает получения коллегой)",
+    "reticulumChatNeedsLxmfDelivery": "Этот узел еще не имеет адреса доставки LXMF (чат не может использовать пункт назначения только для голоса). Дождитесь объявления LXMF или вставьте их 32-символьный хэш LXMF.",
+    "lxmfHashLabel": "LXMF {{hash}}",
+    "copyLxmfHashAria": "Скопируйте хэш назначения LXMF {{hash}}",
+    "lxmfHashCopied": "Хеш назначения LXMF скопирован.",
+    "lxmfHashCopyFailed": "Не удалось скопировать хэш назначения LXMF."
   },
   "chatPayload": {
     "mention": "Упоминание {{label}}",
@@ -3582,7 +3587,10 @@
     "tabHistory": "История",
     "emptyHistory": "Еще нет истории сообщений — отправьте или получите сообщение LXMF, чтобы увидеть одноранговые узлы здесь.",
     "emptyContacts": "Пока нет сохраненных контактов — откройте одноранговый узел и выберите Сохранить как контакт.",
-    "pathMediumTitle": "Активная среда пути: {{medium}}"
+    "pathMediumTitle": "Активная среда пути: {{medium}}",
+    "chatNeedsLxmfDelivery": "Для этого узла еще нет адреса доставки LXMF. Дождитесь объявления LXMF или откройте чат с 32-символьным хешем LXMF — адресаты Voice (lxst.telephony) не могут получать чат.",
+    "voiceAspectBadge": "Голос",
+    "voiceAspectTitle": "Эта строка таблицы путей является пунктом назначения LXST-телефонии. Переадресация чата на хэш доставки LXMF однорангового узла, когда он известен."
   },
   "radioPanel": {
     "offloadedContacts": "Контакты {{count}} выгружены в базу данных.",

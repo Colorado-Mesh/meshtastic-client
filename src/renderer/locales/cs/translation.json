@@ -769,7 +769,12 @@
     "heardByRepeatersAdditional_few": "{{count}} další neidentifikovaní přeposílatelé (hash: {{hashes}})",
     "heardByRepeatersDetail_few": "Slyšeno {{count}}: {{names}}",
     "searchResults_few": "{{count}} výsledky",
-    "reticulumSendAwaitingPeerReceipt": "Odesláno (čeká se na potvrzení od kolegy)"
+    "reticulumSendAwaitingPeerReceipt": "Odesláno (čeká se na potvrzení od kolegy)",
+    "reticulumChatNeedsLxmfDelivery": "Tento protějšek zatím nemá doručovací adresu LXMF (Chat nemůže používat cíl pouze pro hlas). Počkejte na oznámení LXMF nebo vložte jeho 32místný hash LXMF.",
+    "lxmfHashLabel": "LXMF {{hash}}",
+    "copyLxmfHashAria": "Kopírovat cílový hash LXMF {{hash}}",
+    "lxmfHashCopied": "Cílový hash LXMF zkopírován.",
+    "lxmfHashCopyFailed": "Nelze zkopírovat cílový hash LXMF."
   },
   "chatPayload": {
     "mention": "Zmínit {{label}}",
@@ -3543,7 +3548,10 @@
     "tabHistory": "Historie",
     "emptyHistory": "Zatím žádná historie zpráv — odešlete nebo přijměte zprávu LXMF, abyste zde viděli peery.",
     "emptyContacts": "Zatím žádné uložené kontakty — otevřete peer a zvolte Uložit jako kontakt.",
-    "pathMediumTitle": "Aktivní médium cesty: {{medium}}"
+    "pathMediumTitle": "Aktivní médium cesty: {{medium}}",
+    "chatNeedsLxmfDelivery": "Pro tohoto partnera zatím neexistuje doručovací adresa LXMF. Počkejte na oznámení LXMF nebo otevřete Chat s jejich 32místným hashem LXMF — Hlasové (lxst.telephony) cíle nemohou přijímat Chat.",
+    "voiceAspectBadge": "Hlas",
+    "voiceAspectTitle": "Tento řádek tabulky cesty je cílem telefonie LXST. Chat se přemapuje na hash doručení LXMF kolegy, pokud je znám."
   },
   "radioPanel": {
     "offloadedContacts": "{{count}} kontaktů bylo přesunuto do databáze.",

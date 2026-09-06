@@ -749,7 +749,12 @@
     "heardByRepeaterNodeFallback": "Düğüm {{nodeId}}",
     "heardByRepeatersAdditional_one": "{{count}} EK tanımlanamayan nakliyeci (hash'ler: {{hashes}})",
     "heardByRepeatersAdditional_other": "{{count}} kimliği belirsiz ek göndericiler (hash'ler: {{hashes}})",
-    "reticulumSendAwaitingPeerReceipt": "Gönderildi (akran makbuzu bekleniyor)"
+    "reticulumSendAwaitingPeerReceipt": "Gönderildi (akran makbuzu bekleniyor)",
+    "reticulumChatNeedsLxmfDelivery": "Bu akranın henüz LXMF teslimat adresi yok (Sohbet yalnızca Sesli bir hedef kullanamaz). Bir LXMF duyurusu bekleyin veya 32 karakterlik LXMF karmasını yapıştırın.",
+    "lxmfHashLabel": "LXMF {{hash}}",
+    "copyLxmfHashAria": "LXMF hedef karmasını kopyala {{hash}}",
+    "lxmfHashCopied": "LXMF hedef karması kopyalandı.",
+    "lxmfHashCopyFailed": "LXMF hedef karması kopyalanamadı."
   },
   "chatPayload": {
     "mention": "{{label}}'dan bahsedin",
@@ -3502,7 +3507,10 @@
     "tabHistory": "Geçmiş",
     "emptyHistory": "Henüz mesaj geçmişi yok — eşleri burada görmek için bir LXMF mesajı gönderin veya alın.",
     "emptyContacts": "Henüz kayıtlı kişi yok — bir eş açın ve Kişi olarak kaydet'i seçin.",
-    "pathMediumTitle": "Aktif yol ortamı: {{medium}}"
+    "pathMediumTitle": "Aktif yol ortamı: {{medium}}",
+    "chatNeedsLxmfDelivery": "Bu iş ortağı için henüz LXMF teslimat adresi yok. Bir LXMF duyurusu bekleyin veya 32 karakterlik LXMF karma — Ses (lxst.telephony) hedefleriyle Sohbet'i açın, Sohbet'i alamaz.",
+    "voiceAspectBadge": "Ses",
+    "voiceAspectTitle": "Bu yol tablosu satırı bir LXST telefon hedefidir. Bilindiğinde, sohbet eşinin LXMF dağıtım karması ile yeniden eşlenir."
   },
   "radioPanel": {
     "offloadedContacts": "{{count}} kişi veritabanına aktarıldı.",

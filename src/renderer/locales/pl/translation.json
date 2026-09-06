@@ -787,7 +787,12 @@
     "heardByRepeatersDetail_many": "Odebrano przez {{count}}: {{names}}",
     "searchResults_few": "{{count}} wyniki",
     "searchResults_many": "{{count}} wyników",
-    "reticulumSendAwaitingPeerReceipt": "Wysłano (oczekiwanie na pokwitowanie)"
+    "reticulumSendAwaitingPeerReceipt": "Wysłano (oczekiwanie na pokwitowanie)",
+    "reticulumChatNeedsLxmfDelivery": "Ten partner nie ma jeszcze adresu dostawy LXMF (czat nie może używać miejsca docelowego tylko dla połączeń głosowych). Poczekaj na ogłoszenie LXMF lub wklej 32-znakowy skrót LXMF.",
+    "lxmfHashLabel": "LXMF {{hash}}",
+    "copyLxmfHashAria": "Skopiuj skrót miejsca docelowego LXMF {{hash}}",
+    "lxmfHashCopied": "Skopiowano hasz docelowy LXMF.",
+    "lxmfHashCopyFailed": "Nie można skopiować hasza docelowego LXMF."
   },
   "chatPayload": {
     "mention": "Wspomnij o {{label}}",
@@ -3582,7 +3587,10 @@
     "tabHistory": "Historia rozmów",
     "emptyHistory": "Brak historii wiadomości — wyślij lub otrzymaj wiadomość LXMF, aby zobaczyć peerów tutaj.",
     "emptyContacts": "Brak zapisanych kontaktów — otwórz peera i wybierz Zapisz jako kontakt.",
-    "pathMediumTitle": "Czynnik aktywnej ścieżki: {{medium}}"
+    "pathMediumTitle": "Czynnik aktywnej ścieżki: {{medium}}",
+    "chatNeedsLxmfDelivery": "Brak adresu dostawy LXMF dla tego partnera. Poczekaj na ogłoszenie LXMF lub otwórz czat z 32-znakowym hashem LXMF — miejsca docelowe głosowe (lxst.telefonia) nie mogą odbierać czatu.",
+    "voiceAspectBadge": "Głos",
+    "voiceAspectTitle": "Ten wiersz tabeli ścieżek jest miejscem docelowym telefonii LXST. Czat ponownie mapuje do hasza dostawy LXMF rówieśnika, gdy jest znany."
   },
   "radioPanel": {
     "offloadedContacts": "Przeniesiono kontakty {{count}} do bazy danych.",

@@ -749,7 +749,12 @@
     "heardByRepeaterNodeFallback": "节点{{nodeId}}",
     "heardByRepeatersAdditional_one": "{{count}}其他身份不明的货运代理（哈希值： {{hashes}} ）",
     "heardByRepeatersAdditional_other": "{{count}}其他身份不明的转发商（哈希： {{hashes}} ）",
-    "reticulumSendAwaitingPeerReceipt": "已发送（等待同行回执）"
+    "reticulumSendAwaitingPeerReceipt": "已发送（等待同行回执）",
+    "reticulumChatNeedsLxmfDelivery": "此对等方还没有LXMF交付地址（聊天不能使用仅语音目的地）。等待LXMF公告，或粘贴其32个字符的LXMF哈希。",
+    "lxmfHashLabel": "LXMF {{hash}}",
+    "copyLxmfHashAria": "复制LXMF目标哈希{{hash}}",
+    "lxmfHashCopied": "已复制LXMF目标哈希。",
+    "lxmfHashCopyFailed": "无法复制LXMF目标哈希。"
   },
   "chatPayload": {
     "mention": "提及{{label}}",
@@ -3502,7 +3507,10 @@
     "tabHistory": "历史",
     "emptyHistory": "尚无消息历史记录—发送或接收 LXMF 消息以在此处查看对等节点。",
     "emptyContacts": "还没有保存的联系人—打开对等点并选择“另存为联系人”。",
-    "pathMediumTitle": "活动路径介质： {{medium}}"
+    "pathMediumTitle": "活动路径介质： {{medium}}",
+    "chatNeedsLxmfDelivery": "此同行尚无LXMF交货地址。等待LXMF公告，或使用32个字符的LXMF哈希打开聊天—语音（ lxst.telephony ）目的地无法接收聊天。",
+    "voiceAspectBadge": "语音",
+    "voiceAspectTitle": "此路径表行是LXST电话目标。在已知的情况下，聊天会重新映射到对方的LXMF交付哈希。"
   },
   "radioPanel": {
     "offloadedContacts": "已将{{count}}个联系人卸载到数据库。",

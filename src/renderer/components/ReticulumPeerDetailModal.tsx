@@ -13,6 +13,7 @@ import {
   registerReticulumDestinationHash,
   reticulumHashToNodeId,
 } from '@/renderer/lib/reticulum/destHash';
+import { resolveReticulumChatLxmfDestination } from '@/renderer/lib/reticulum/resolveReticulumChatLxmfDest';
 import {
   isDefaultReticulumProfileIcon,
   resolveReticulumProfileIconName,
@@ -377,8 +378,17 @@ export default function ReticulumPeerDetailModal({
         : '—';
 
   const openChat = () => {
-    const nodeId = reticulumHashToNodeId(peerHash);
-    registerReticulumDestinationHash(nodeId, peerHash);
+    const resolved = resolveReticulumChatLxmfDestination(peerHash);
+    if (resolved.status === 'missing_lxmf') {
+      addToast(t('peerListPanel.chatNeedsLxmfDelivery'), 'error');
+      return;
+    }
+    if (resolved.status !== 'ok') {
+      addToast(t('peerListPanel.lookupInvalid'), 'error');
+      return;
+    }
+    const nodeId = reticulumHashToNodeId(resolved.hash);
+    registerReticulumDestinationHash(nodeId, resolved.hash);
     onSendMessage(nodeId);
     onClose();
   };

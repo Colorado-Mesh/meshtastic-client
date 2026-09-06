@@ -2,6 +2,7 @@ import {
   registerReticulumDestinationHash,
   resolveReticulumDestinationHash,
 } from '@/renderer/lib/reticulum/destHash';
+import { resolveReticulumChatLxmfDestination } from '@/renderer/lib/reticulum/resolveReticulumChatLxmfDest';
 import {
   reticulumHashForNodeId,
   useReticulumPeerStore,
@@ -26,9 +27,15 @@ export function resetReticulumDmFaceHashNegativeCacheForTests(): void {
   unresolvedFaceNodeNums.clear();
 }
 
+function toChatLxmfHash(candidate: string): string | null {
+  const resolved = resolveReticulumChatLxmfDestination(candidate);
+  return resolved.status === 'ok' ? resolved.hash : null;
+}
+
 /**
  * Resolve a 32-hex LXMF destination for Chat DM faces / peer-detail links.
  * Prefers the node record hash, then the peer-store / registry fold.
+ * Non-lxmf aspects (e.g. lxst.telephony) remap to that identity's lxmf.delivery when known.
  */
 export function resolveReticulumDmFaceHash(
   nodeNum: number,
@@ -36,11 +43,11 @@ export function resolveReticulumDmFaceHash(
 ): string | null {
   const fromNode = nodeDestinationHash?.trim();
   if (fromNode) {
-    const canonical = canonicalizeReticulumDestinationHash(fromNode);
-    if (canonical) {
-      registerReticulumDestinationHash(nodeNum, canonical);
+    const lxmf = toChatLxmfHash(fromNode);
+    if (lxmf) {
+      registerReticulumDestinationHash(nodeNum, lxmf);
       unresolvedFaceNodeNums.delete(nodeNum);
-      return canonical;
+      return lxmf;
     }
   }
 
@@ -60,6 +67,12 @@ export function resolveReticulumDmFaceHash(
     }
     return null;
   }
+  const lxmf = toChatLxmfHash(fromStore);
+  if (!lxmf) {
+    unresolvedFaceNodeNums.add(nodeNum);
+    return null;
+  }
   unresolvedFaceNodeNums.delete(nodeNum);
-  return canonicalizeReticulumDestinationHash(fromStore) ?? null;
+  registerReticulumDestinationHash(nodeNum, lxmf);
+  return canonicalizeReticulumDestinationHash(lxmf) ?? null;
 }

@@ -60,6 +60,7 @@ import { resolveReticulumDmFaceHash } from '@/renderer/lib/reticulum/reticulumCh
 import {
   openReticulumDmFromHash,
   parseReticulumDestinationInput,
+  ReticulumChatMissingLxmfError,
 } from '@/renderer/lib/reticulum/reticulumDestinationInput';
 import { cancelReticulumVoiceMemo } from '@/renderer/lib/reticulum/reticulumVoiceMemo';
 import {
@@ -1832,9 +1833,19 @@ function ChatPanel({
       return;
     }
     setDmAddressError(null);
-    const nodeId = openReticulumDmFromHash(parsed);
-    setDmAddressInput('');
-    openDmTo(nodeId);
+    try {
+      const nodeId = openReticulumDmFromHash(parsed);
+      setDmAddressInput('');
+      openDmTo(nodeId);
+    } catch (e) {
+      if (e instanceof ReticulumChatMissingLxmfError) {
+        // catch-no-log-ok expected missing-lxmf; surface via field error
+        setDmAddressError(t('chatPanel.reticulumChatNeedsLxmfDelivery'));
+        return;
+      }
+      console.warn('[ChatPanel] open DM by address failed ' + errLikeToLogString(e));
+      setDmAddressError(t('chatPanel.dmAddressInvalid'));
+    }
   }, [dmAddressInput, openDmTo, t]);
 
   // Close a DM tab
@@ -2649,6 +2660,34 @@ function ChatPanel({
                 <span className="min-w-0 truncate">{t('chatPanel.openPeerDetails')}</span>
               </button>
             ) : null;
+          const lxmfHashControl =
+            protocol === 'reticulum' && reticulumDmDestinationHash != null ? (
+              <button
+                type="button"
+                className={`${RETICULUM_DM_HEADER_ACTION_CLASS} font-mono text-[11px]`}
+                title={reticulumDmDestinationHash}
+                aria-label={t('chatPanel.copyLxmfHashAria', {
+                  hash: reticulumDmDestinationHash,
+                })}
+                onClick={() => {
+                  void writeClipboardText(reticulumDmDestinationHash)
+                    .then(() => {
+                      addToast(t('chatPanel.lxmfHashCopied'), 'success');
+                    })
+                    .catch((err: unknown) => {
+                      console.warn('[ChatPanel] copy LXMF hash ' + errLikeToLogString(err));
+                      addToast(t('chatPanel.lxmfHashCopyFailed'), 'error');
+                    });
+                }}
+              >
+                <Copy className="h-3 w-3 shrink-0" aria-hidden />
+                <span className="min-w-0 truncate">
+                  {t('chatPanel.lxmfHashLabel', {
+                    hash: `${reticulumDmDestinationHash.slice(0, 8)}…`,
+                  })}
+                </span>
+              </button>
+            ) : null;
           if (
             !pathBadge &&
             !dmNode &&
@@ -2656,15 +2695,17 @@ function ChatPanel({
             !voiceCallControl &&
             !gamesChallengeControl &&
             !paperShareControl &&
-            !peerDetailsControl
+            !peerDetailsControl &&
+            !lxmfHashControl
           ) {
             return null;
           }
-          // Order: path status → last heard → peer details → Probe/Path → Call → Challenge → Paper → Send file.
+          // Order: path status → last heard → LXMF hash → peer details → Probe/Path → Call → Challenge → Paper → Send file.
           return (
             <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
               {pathBadge}
               {dmNode ? <DmPeerInfoBar dmNode={dmNode} nowMs={nowMs} t={t} /> : null}
+              {lxmfHashControl}
               {peerDetailsControl}
               {pathActions}
               {voiceCallControl}

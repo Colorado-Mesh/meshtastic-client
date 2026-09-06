@@ -749,7 +749,12 @@
     "heardByRepeaterNodeFallback": "Nœud {{nodeId}}",
     "heardByRepeatersAdditional_one": "{{count}} expéditeur supplémentaire non identifié (hachages : {{hashes}})",
     "heardByRepeatersAdditional_other": "{{count}} expéditeurs supplémentaires non identifiés (hachages : {{hashes}})",
-    "reticulumSendAwaitingPeerReceipt": "Envoyé (en attente de réception par les pairs)"
+    "reticulumSendAwaitingPeerReceipt": "Envoyé (en attente de réception par les pairs)",
+    "reticulumChatNeedsLxmfDelivery": "Ce pair n'a pas encore d'adresse de livraison LXMF (le chat ne peut pas utiliser une destination vocale uniquement). Attendez une annonce LXMF ou collez leur hachage LXMF de 32 caractères.",
+    "lxmfHashLabel": "LXMF {{hash}}",
+    "copyLxmfHashAria": "Copier le hachage de destination LXMF {{hash}}",
+    "lxmfHashCopied": "Hachage de destination LXMF copié.",
+    "lxmfHashCopyFailed": "Impossible de copier le hachage de destination LXMF."
   },
   "chatPayload": {
     "mention": "Mention {{label}}",
@@ -3502,7 +3507,10 @@
     "tabHistory": "Historique",
     "emptyHistory": "Pas encore d'historique des messages — envoyez ou recevez un message LXMF pour voir les pairs ici.",
     "emptyContacts": "Aucun contact enregistré pour le moment — ouvrez un pair et choisissez Enregistrer en tant que contact.",
-    "pathMediumTitle": "Milieu du chemin actif : {{medium}}"
+    "pathMediumTitle": "Milieu du chemin actif : {{medium}}",
+    "chatNeedsLxmfDelivery": "Aucune adresse de livraison LXMF pour ce pair pour le moment. Attendez une annonce LXMF ou ouvrez Chat avec leur hachage LXMF à 32 caractères - Les destinations vocales (lxst.telephony) ne peuvent pas recevoir de chat.",
+    "voiceAspectBadge": "Vocal",
+    "voiceAspectTitle": "Cette ligne de table de chemin est une destination de téléphonie LXST. Le chat remappe le hachage de livraison LXMF de l'homologue lorsqu'il est connu."
   },
   "radioPanel": {
     "offloadedContacts": "Déchargement des contacts {{count}} dans la base de données.",
