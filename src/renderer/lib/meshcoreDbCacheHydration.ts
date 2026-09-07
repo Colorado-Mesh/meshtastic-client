@@ -5,9 +5,9 @@ import {
 
 import {
   findMeshcoreDmRfDuplicate,
+  findMeshcoreRoomPostDuplicate,
   isMeshcoreRoomChatMessage,
   meshcoreReconcileRoomSenderIds,
-  meshcoreRoomPostMatch,
 } from '../hooks/meshcore/meshcoreHookPreamble';
 import { loadPersistedMeshcoreSelfNodeId } from './meshcoreLastSelfNodeId';
 import {
@@ -164,19 +164,17 @@ export function repairMeshcoreHydratedRoomPostDuplicates(messages: ChatMessage[]
       kept.push(msg);
       continue;
     }
-    let dupIndex = -1;
-    for (let i = kept.length - 1; i >= 0; i--) {
-      if (meshcoreRoomPostMatch(kept[i], msg)) {
-        dupIndex = i;
-        break;
-      }
+    const dup = findMeshcoreRoomPostDuplicate(kept, msg);
+    if (!dup) {
+      kept.push(msg);
+      continue;
     }
+    const dupIndex = kept.indexOf(dup);
     if (dupIndex < 0) {
       kept.push(msg);
       continue;
     }
-    const existing = kept[dupIndex];
-    const existingAmbiguous = existing.sender_id === 0 || existing.sender_name.trim() === 'Unknown';
+    const existingAmbiguous = dup.sender_id === 0 || dup.sender_name.trim() === 'Unknown';
     const incomingAmbiguous = msg.sender_id === 0 || msg.sender_name.trim() === 'Unknown';
     if (existingAmbiguous && !incomingAmbiguous) {
       kept[dupIndex] = msg;

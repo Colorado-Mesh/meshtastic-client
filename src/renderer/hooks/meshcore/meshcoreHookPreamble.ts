@@ -384,17 +384,6 @@ function meshcoreSenderMatchesForDedup(a: ChatMessage, b: ChatMessage): boolean 
   return aName.length > 0 && aName === bName;
 }
 
-/**
- * Room BBS dual-ingress often stores an unresolved Unknown/0 row beside a named twin.
- * Treat ambiguous authors as matching a resolved peer so dedup can collapse them.
- */
-function meshcoreRoomSenderMatchesForDedup(a: ChatMessage, b: ChatMessage): boolean {
-  if (meshcoreSenderMatchesForDedup(a, b)) return true;
-  const aAmbiguous = isAmbiguousMeshcoreSender(a);
-  const bAmbiguous = isAmbiguousMeshcoreSender(b);
-  return aAmbiguous !== bAmbiguous;
-}
-
 function meshcoreTransportsAreCross(existing: ChatMessage, incoming: ChatMessage): boolean {
   const existingVia = existing.receivedVia;
   const incomingVia = incoming.receivedVia;
@@ -565,13 +554,11 @@ function meshcoreRoomServerIdForDedup(msg: ChatMessage): number | undefined {
 }
 
 /**
- * Same room, author, and body within a clock-skew window (RF echo / dual ingress).
- * Separate from chat tapback echo and cross-transport dedup; when tuning skew windows,
- * keep `MESHCORE_ROOM_POST_DEDUP_WINDOW_MS` aligned with chat tapback/optimistic constants
- * where behavior should match (see `timeConstants.ts`).
- * Ambiguous Unknown/sender_id 0 may match a resolved twin (optimistic send + RF echo).
+ * Same room and body within a clock-skew window (no sender check).
+ * Used to gather candidates before deciding whether an Unknown row may safely
+ * attach to a uniquely resolved twin.
  */
-export function meshcoreRoomPostMatch(
+function meshcoreRoomPostContentMatch(
   existing: ChatMessage,
   incoming: ChatMessage,
   windowMs: number = MESHCORE_ROOM_POST_DEDUP_WINDOW_MS,
@@ -580,7 +567,6 @@ export function meshcoreRoomPostMatch(
   const incomingRoom = meshcoreRoomServerIdForDedup(incoming);
   if (existingRoom == null || incomingRoom == null) return false;
   if (existingRoom !== incomingRoom) return false;
-  if (!meshcoreRoomSenderMatchesForDedup(existing, incoming)) return false;
   const existingBody = existing.meshcoreDedupeKey ?? existing.payload;
   const incomingBody = incoming.meshcoreDedupeKey ?? incoming.payload;
   if (existingBody !== incomingBody && existing.payload !== incoming.payload) return false;
@@ -588,17 +574,69 @@ export function meshcoreRoomPostMatch(
   return true;
 }
 
+/**
+ * Same room, author, and body within a clock-skew window (RF echo / dual ingress).
+ * Separate from chat tapback echo and cross-transport dedup; when tuning skew windows,
+ * keep `MESHCORE_ROOM_POST_DEDUP_WINDOW_MS` aligned with chat tapback/optimistic constants
+ * where behavior should match (see `timeConstants.ts`).
+ * Strict sender match only — Unknown↔named bridging is handled by
+ * {@link findMeshcoreRoomPostDuplicate} when exactly one resolved candidate exists.
+ */
+export function meshcoreRoomPostMatch(
+  existing: ChatMessage,
+  incoming: ChatMessage,
+  windowMs: number = MESHCORE_ROOM_POST_DEDUP_WINDOW_MS,
+): boolean {
+  if (!meshcoreRoomPostContentMatch(existing, incoming, windowMs)) return false;
+  return meshcoreSenderMatchesForDedup(existing, incoming);
+}
+
+/**
+ * Find a room post duplicate to merge with `incoming`.
+ * Ambiguous Unknown/`sender_id` 0 may attach to a resolved twin only when content
+ * matches and there is exactly one unique resolved sender among candidates —
+ * never pick an arbitrary latest row when multiple speakers share room/body/time.
+ */
 export function findMeshcoreRoomPostDuplicate(
   messages: readonly ChatMessage[],
   incoming: ChatMessage,
   windowMs: number = MESHCORE_ROOM_POST_DEDUP_WINDOW_MS,
 ): ChatMessage | undefined {
   const start = Math.max(0, messages.length - MESHCORE_CROSS_TRANSPORT_SCAN_LIMIT);
-  for (let i = messages.length - 1; i >= start; i--) {
+  const contentMatches: ChatMessage[] = [];
+  for (let i = start; i < messages.length; i++) {
     const existing = messages[i];
-    if (meshcoreRoomPostMatch(existing, incoming, windowMs)) {
-      return existing;
+    if (existing && meshcoreRoomPostContentMatch(existing, incoming, windowMs)) {
+      contentMatches.push(existing);
     }
+  }
+  if (contentMatches.length === 0) return undefined;
+
+  for (let i = contentMatches.length - 1; i >= 0; i--) {
+    const existing = contentMatches[i];
+    if (meshcoreSenderMatchesForDedup(existing, incoming)) return existing;
+  }
+
+  const incomingAmbiguous = isAmbiguousMeshcoreSender(incoming);
+  const resolvedById = new Map<number, ChatMessage>();
+  for (const m of contentMatches) {
+    if (isAmbiguousMeshcoreSender(m) || m.sender_id <= 0) continue;
+    if (!resolvedById.has(m.sender_id)) resolvedById.set(m.sender_id, m);
+  }
+
+  if (incomingAmbiguous) {
+    if (resolvedById.size !== 1) return undefined;
+    for (const candidate of resolvedById.values()) return candidate;
+    return undefined;
+  }
+
+  if (incoming.sender_id <= 0) return undefined;
+  for (const id of resolvedById.keys()) {
+    if (id !== incoming.sender_id) return undefined;
+  }
+  for (let i = contentMatches.length - 1; i >= 0; i--) {
+    const existing = contentMatches[i];
+    if (isAmbiguousMeshcoreSender(existing)) return existing;
   }
   return undefined;
 }
@@ -1072,14 +1110,21 @@ export function meshcoreReconcileChannelSenderIds(messages: ChatMessage[]): Chat
 /**
  * Relink room BBS Unknown/sender_id 0 rows to a named twin in the same room with the same
  * body and timestamp (optimistic send + unresolved RF/history echo).
+ * Skips when multiple distinct resolved senders share that key (ambiguous attribution).
  */
 export function meshcoreReconcileRoomSenderIds(messages: ChatMessage[]): ChatMessage[] {
-  const canonicalByKey = new Map<string, { senderId: number; senderName: string }>();
+  const canonicalByKey = new Map<string, { senderId: number; senderName: string } | null>();
   for (const m of messages) {
     if (!isMeshcoreRoomChatMessage(m) || isAmbiguousMeshcoreSender(m)) continue;
     const roomId = m.roomServerId ?? m.to;
-    if (roomId == null || roomId === 0) continue;
+    if (roomId == null || roomId === 0 || m.sender_id <= 0) continue;
     const key = `${roomId}\0${m.payload}\0${m.timestamp}`;
+    const prev = canonicalByKey.get(key);
+    if (prev === null) continue;
+    if (prev != null && prev.senderId !== m.sender_id) {
+      canonicalByKey.set(key, null);
+      continue;
+    }
     canonicalByKey.set(key, { senderId: m.sender_id, senderName: m.sender_name });
   }
   if (canonicalByKey.size === 0) return messages;
@@ -1088,7 +1133,7 @@ export function meshcoreReconcileRoomSenderIds(messages: ChatMessage[]): ChatMes
     const roomId = m.roomServerId ?? m.to;
     if (roomId == null || roomId === 0) return m;
     const canon = canonicalByKey.get(`${roomId}\0${m.payload}\0${m.timestamp}`);
-    if (!canon) return m;
+    if (canon == null) return m;
     return { ...m, sender_id: canon.senderId, sender_name: canon.senderName };
   });
 }

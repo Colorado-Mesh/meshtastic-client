@@ -125,6 +125,50 @@ describe('meshcoreReconcileRoomSenderIds', () => {
     expect(out[0]?.sender_id).toBe(0);
     expect(out[0]?.sender_name).toBe('Unknown');
   });
+
+  it('does not reconcile Unknown when two different resolved senders share room/body/timestamp', () => {
+    const roomId = 0x6c08b3d9;
+    const ts = 1_786_900_000_000;
+    const out = meshcoreReconcileRoomSenderIds([
+      {
+        id: 1,
+        sender_id: 0,
+        sender_name: 'Unknown',
+        payload: 'hello room',
+        channel: -2,
+        timestamp: ts,
+        status: 'acked',
+        roomServerId: roomId,
+        to: roomId,
+      },
+      {
+        id: 2,
+        sender_id: 0x11111111,
+        sender_name: 'Alice',
+        payload: 'hello room',
+        channel: -2,
+        timestamp: ts,
+        status: 'acked',
+        roomServerId: roomId,
+        to: roomId,
+      },
+      {
+        id: 3,
+        sender_id: 0x22222222,
+        sender_name: 'Bob',
+        payload: 'hello room',
+        channel: -2,
+        timestamp: ts,
+        status: 'acked',
+        roomServerId: roomId,
+        to: roomId,
+      },
+    ]);
+    expect(out[0]?.sender_id).toBe(0);
+    expect(out[0]?.sender_name).toBe('Unknown');
+    expect(out[1]?.sender_name).toBe('Alice');
+    expect(out[2]?.sender_name).toBe('Bob');
+  });
 });
 
 describe('mapMeshcoreDbRowsToChatMessages', () => {
