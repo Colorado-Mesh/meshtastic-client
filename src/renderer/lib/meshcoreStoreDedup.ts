@@ -260,6 +260,20 @@ function mergeRoomPostDuplicate(existing: ChatMessage, incoming: ChatMessage): C
     existing.status === 'sending'
       ? (incoming.status ?? 'acked')
       : (existing.status ?? incoming.status ?? 'acked');
+  const resolvedSenderId =
+    incoming.sender_id > 0
+      ? incoming.sender_id
+      : existing.sender_id > 0
+        ? existing.sender_id
+        : incoming.sender_id || existing.sender_id;
+  const incomingName = incoming.sender_name.trim();
+  const existingName = existing.sender_name.trim();
+  const resolvedSenderName =
+    incomingName && incomingName !== 'Unknown'
+      ? incoming.sender_name
+      : existingName && existingName !== 'Unknown'
+        ? existing.sender_name
+        : incoming.sender_name || existing.sender_name;
   return {
     ...existing,
     ...incoming,
@@ -267,7 +281,8 @@ function mergeRoomPostDuplicate(existing: ChatMessage, incoming: ChatMessage): C
     status,
     payload: incoming.payload,
     meshcoreDedupeKey: incoming.meshcoreDedupeKey ?? existing.meshcoreDedupeKey,
-    sender_name: incoming.sender_name || existing.sender_name,
+    sender_id: resolvedSenderId,
+    sender_name: resolvedSenderName,
     receivedVia: mergeMeshcoreReceivedVia(existing.receivedVia, incoming.receivedVia),
     rxHops: existing.rxHops ?? incoming.rxHops,
     packetId: incoming.packetId ?? existing.packetId,

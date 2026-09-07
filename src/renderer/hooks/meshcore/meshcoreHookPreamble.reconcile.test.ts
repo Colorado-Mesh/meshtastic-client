@@ -7,6 +7,7 @@ import {
   mergeMeshcoreDbHydrationWithLive,
   type MeshcoreMessageDbRow,
   meshcoreReconcileChannelSenderIds,
+  meshcoreReconcileRoomSenderIds,
   persistMeshcoreMessageSenderRepairs,
 } from './meshcoreHookPreamble';
 
@@ -59,6 +60,70 @@ describe('meshcoreReconcileChannelSenderIds', () => {
     const out = meshcoreReconcileChannelSenderIds(messages);
     expect(out[0]?.sender_id).toBe(namedId);
     expect(out[0]?.sender_name).toBe('10th mountain division');
+  });
+});
+
+describe('meshcoreReconcileRoomSenderIds', () => {
+  it('relinks Unknown room rows to a named twin with same room+payload+timestamp', () => {
+    const roomId = 0x6c08b3d9;
+    const namedId = 1429514792;
+    const ts = 1_786_817_958_000;
+    const out = meshcoreReconcileRoomSenderIds([
+      {
+        id: 1,
+        sender_id: 0,
+        sender_name: 'Unknown',
+        payload: 'Test 12:19',
+        channel: -2,
+        timestamp: ts,
+        status: 'acked',
+        roomServerId: roomId,
+        to: roomId,
+      },
+      {
+        id: 2,
+        sender_id: namedId,
+        sender_name: '🛜 NV0N 01',
+        payload: 'Test 12:19',
+        channel: -2,
+        timestamp: ts,
+        status: 'acked',
+        roomServerId: roomId,
+        to: roomId,
+      },
+    ]);
+    expect(out[0]?.sender_id).toBe(namedId);
+    expect(out[0]?.sender_name).toBe('🛜 NV0N 01');
+  });
+
+  it('does not reconcile room Unknown without a same-timestamp named twin', () => {
+    const roomId = 0x6c08b3d9;
+    const out = meshcoreReconcileRoomSenderIds([
+      {
+        id: 1,
+        sender_id: 0,
+        sender_name: 'Unknown',
+        payload: 'Greetings from Loveland!',
+        channel: -2,
+        timestamp: 1000,
+        status: 'acked',
+        roomServerId: roomId,
+        to: roomId,
+      },
+      {
+        id: 2,
+        sender_id: 1429514792,
+        sender_name: '🛜 NV0N 01',
+        payload: 'Greetings from Loveland!',
+        channel: -2,
+        timestamp: 2000,
+        status: 'acked',
+        roomServerId: roomId,
+        to: roomId,
+      },
+    ]);
+    expect(out[0]?.sender_id).toBe(0);
+    expect(out[0]?.sender_name).toBe('Unknown');
   });
 });
 
@@ -120,6 +185,37 @@ describe('persistMeshcoreMessageSenderRepairs', () => {
     await persistMeshcoreMessageSenderRepairs(rows, mapped);
     expect(updateMeshcoreMessageSender).toHaveBeenCalledTimes(1);
     expect(updateMeshcoreMessageSender).toHaveBeenCalledWith(1, namedId, '10th mountain division');
+  });
+
+  it('persists room Unknown sender repairs after twin reconcile', async () => {
+    const roomId = 0x6c08b3d9;
+    const namedId = 1429514792;
+    const ts = 1_786_817_958_000;
+    const rows: MeshcoreMessageDbRow[] = [
+      row({
+        id: 10,
+        sender_id: null,
+        sender_name: 'Unknown',
+        payload: 'Test 12:19',
+        channel_idx: -2,
+        timestamp: ts,
+        room_server_id: roomId,
+        to_node: roomId,
+      }),
+      row({
+        id: 11,
+        sender_id: namedId,
+        sender_name: '🛜 NV0N 01',
+        payload: 'Test 12:19',
+        channel_idx: -2,
+        timestamp: ts,
+        room_server_id: roomId,
+        to_node: roomId,
+      }),
+    ];
+    const mapped = mapMeshcoreDbRowsToChatMessages(rows);
+    await persistMeshcoreMessageSenderRepairs(rows, mapped);
+    expect(updateMeshcoreMessageSender).toHaveBeenCalledWith(10, namedId, '🛜 NV0N 01');
   });
 
   it('does not call IPC when mapped senders match DB rows', async () => {

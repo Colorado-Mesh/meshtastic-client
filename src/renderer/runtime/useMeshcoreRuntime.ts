@@ -310,7 +310,7 @@ import {
 import { resolveMeshcoreActiveConnection } from '../lib/meshcoreResolveActiveConnection';
 import {
   clearMeshcoreRoomAutoLoginFailure,
-  getMeshcoreRoomAutoLoginFailure,
+  shouldSkipMeshcoreRoomAutoLogin,
 } from '../lib/meshcoreRoomAutoLoginFailure';
 import {
   isMeshcoreRoomAutoLoginGenerationCurrent,
@@ -6721,7 +6721,7 @@ export function useMeshcoreRuntime() {
         hasPubKey: Boolean(pubKeyMapRef.current.get(nodeId)),
         loggedIn: meshcoreIsRoomLoggedIn(nodeId),
         queued: meshcoreIsRoomLoginQueued(nodeId),
-        autoLoginFailed: Boolean(getMeshcoreRoomAutoLoginFailure(nodeId)),
+        autoLoginFailed: shouldSkipMeshcoreRoomAutoLogin(nodeId),
       }));
       await Promise.allSettled(
         targets.map(async (nodeId) => {

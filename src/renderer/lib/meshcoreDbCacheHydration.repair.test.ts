@@ -132,6 +132,34 @@ describe('repairMeshcoreRoomUnknownSenderNames', () => {
     expect(fixed[1]?.payload).toBe('@[🛜 NV0N 01] 👋');
   });
 
+  it('collapses Unknown + named room twins with the same timestamp on hydrate', () => {
+    const roomId = 0x6c08b3d9;
+    const selfId = 1429514792;
+    const ts = 1_786_817_958_000;
+    const unknown: ChatMessage = {
+      sender_id: 0,
+      sender_name: 'Unknown',
+      payload: 'Test 12:19',
+      channel: MESHCORE_ROOM_MESSAGE_CHANNEL,
+      timestamp: ts,
+      roomServerId: roomId,
+      to: roomId,
+    };
+    const named: ChatMessage = {
+      sender_id: selfId,
+      sender_name: '🛜 NV0N 01',
+      payload: 'Test 12:19',
+      channel: MESHCORE_ROOM_MESSAGE_CHANNEL,
+      timestamp: ts,
+      roomServerId: roomId,
+      to: roomId,
+    };
+    const fixed = repairMeshcoreHydratedMessages([unknown, named], new Set([roomId]));
+    expect(fixed).toHaveLength(1);
+    expect(fixed[0]?.sender_id).toBe(selfId);
+    expect(fixed[0]?.sender_name).toBe('🛜 NV0N 01');
+  });
+
   it('replaces whitespace-padded Unknown sender names from the node map', () => {
     const roomId = 0xac200e59;
     const senderId = 1429514792;
