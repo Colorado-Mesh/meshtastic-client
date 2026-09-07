@@ -749,7 +749,12 @@
     "heardByRepeaterNodeFallback": "노드 {{nodeId}}",
     "heardByRepeatersAdditional_one": "{{count}} 추가 미확인 전달자 (해시: {{hashes}})",
     "heardByRepeatersAdditional_other": "{{count}} 추가 미확인 전달자 (해시: {{hashes}})",
-    "reticulumSendAwaitingPeerReceipt": "전송 완료 (동료 영수증 대기 중)"
+    "reticulumSendAwaitingPeerReceipt": "전송 완료 (동료 영수증 대기 중)",
+    "reticulumChatNeedsLxmfDelivery": "이 동료는 아직 LXMF 배달 주소가 없습니다 (채팅은 음성 전용 목적지를 사용할 수 없습니다). LXMF가 발표될 때까지 기다리거나 32자 LXMF 해시를 붙여넣습니다.",
+    "lxmfHashLabel": "LXMF {{hash}}",
+    "copyLxmfHashAria": "LXMF 대상 해시 {{hash}} 복사",
+    "lxmfHashCopied": "LXMF 대상 해시가 복사되었습니다.",
+    "lxmfHashCopyFailed": "LXMF 대상 해시를 복사할 수 없습니다."
   },
   "chatPayload": {
     "mention": "{{label}}을(를) 언급하세요",
@@ -3502,7 +3507,10 @@
     "tabHistory": "기록",
     "emptyHistory": "아직 메시지 기록이 없습니다. 여기에서 피어를 보려면 LXMF 메시지를 보내거나 받으세요.",
     "emptyContacts": "아직 저장된 연락처가 없습니다. 피어를 열고 연락처로 저장을 선택합니다.",
-    "pathMediumTitle": "활성 경로 매체: {{medium}}"
+    "pathMediumTitle": "활성 경로 매체: {{medium}}",
+    "chatNeedsLxmfDelivery": "이 피어에 대한 LXMF 배달 주소가 아직 없습니다. LXMF 발표를 기다리거나 32자 LXMF 해시로 채팅을 엽니다. 음성 (lxst.telephony) 대상은 채팅을 수신할 수 없습니다.",
+    "voiceAspectBadge": "목소리",
+    "voiceAspectTitle": "이 경로 테이블 행은 LXST 전화 통신 목적지입니다. 채팅은 알면 동료의 LXMF 배달 해시에 다시 매핑됩니다."
   },
   "radioPanel": {
     "offloadedContacts": "{{count}} 연락처를 데이터베이스로 오프로드했습니다.",

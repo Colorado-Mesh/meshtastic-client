@@ -749,7 +749,12 @@
     "heardByRepeaterNodeFallback": "ノード{{nodeId}}",
     "heardByRepeatersAdditional_one": "{{count}}追加の未確認フォワーダー（ハッシュ： {{hashes}} ）",
     "heardByRepeatersAdditional_other": "{{count}}追加の未確認フォワーダー（ハッシュ： {{hashes}} ）",
-    "reticulumSendAwaitingPeerReceipt": "送信済み（ピアレシート待ち）"
+    "reticulumSendAwaitingPeerReceipt": "送信済み（ピアレシート待ち）",
+    "reticulumChatNeedsLxmfDelivery": "このピアにはまだLXMF配信アドレスがありません（チャットは音声のみの宛先を使用できません）。LXMFの発表を待つか、32文字のLXMFハッシュを貼り付けます。",
+    "lxmfHashLabel": "LXMF {{hash}}",
+    "copyLxmfHashAria": "LXMF宛先ハッシュ{{hash}}をコピー",
+    "lxmfHashCopied": "LXMF宛先ハッシュがコピーされました。",
+    "lxmfHashCopyFailed": "LXMF宛先ハッシュをコピーできませんでした。"
   },
   "chatPayload": {
     "mention": "{{label}} について言及してください",
@@ -3502,7 +3507,10 @@
     "tabHistory": "履歴",
     "emptyHistory": "メッセージ履歴はまだありません—ここでピアを見るためにLXMFメッセージを送受信します。",
     "emptyContacts": "保存された連絡先はまだありません。ピアを開き、[連絡先として保存]を選択します。",
-    "pathMediumTitle": "アクティブパスメディア： {{medium}}"
+    "pathMediumTitle": "アクティブパスメディア： {{medium}}",
+    "chatNeedsLxmfDelivery": "このピアのLXMF配信アドレスはまだありません。LXMFの発表を待つか、32文字のLXMFハッシュを持つチャットを開きます—音声（ lxst.telephony ）の宛先はチャットを受信できません。",
+    "voiceAspectBadge": "音声",
+    "voiceAspectTitle": "このパステーブル行は、LXSTテレフォニーの宛先です。知られている場合、チャットはピアのLXMF配信ハッシュにリマップします。"
   },
   "radioPanel": {
     "offloadedContacts": "{{count}} 連絡先をデータベースにオフロードしました。",

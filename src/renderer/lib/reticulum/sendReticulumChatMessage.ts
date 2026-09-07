@@ -6,9 +6,11 @@ import {
 } from '@/renderer/lib/ingest/reticulumIngest';
 import { truncateReplyPreviewText } from '@/renderer/lib/replyPreview';
 import {
+  registerReticulumDestinationHash,
   resolveReticulumDestinationHash,
   reticulumHashToNodeId,
 } from '@/renderer/lib/reticulum/destHash';
+import { resolveReticulumChatLxmfDestination } from '@/renderer/lib/reticulum/resolveReticulumChatLxmfDest';
 import { setReticulumPredictedRoute } from '@/renderer/lib/reticulum/reticulumRouteCoverage';
 import {
   getReticulumSendMessage,
@@ -27,9 +29,33 @@ import {
   useReticulumPeerStore,
 } from '@/renderer/stores/reticulumPeerStore';
 
+export type ResolveReticulumChatDestHashResult =
+  { status: 'ok'; hash: string } | { status: 'missing' } | { status: 'missing_lxmf' };
+
+/**
+ * Resolve Chat DM destination to an LXMF delivery hash (never telephony/other aspects).
+ */
+export function resolveReticulumChatDestHashDetailed(
+  destination: number | undefined,
+): ResolveReticulumChatDestHashResult {
+  const raw =
+    reticulumHashForNodeId(destination ?? 0) ?? resolveReticulumDestinationHash(destination);
+  if (!raw) return { status: 'missing' };
+  const resolved = resolveReticulumChatLxmfDestination(raw);
+  if (resolved.status === 'ok') {
+    const nodeId = (destination ?? reticulumHashToNodeId(resolved.hash)) >>> 0;
+    // Bind the active DM node id to the LXMF hash so face/probe/send stay aligned after remap.
+    registerReticulumDestinationHash(nodeId, resolved.hash);
+    registerReticulumDestinationHash(reticulumHashToNodeId(resolved.hash), resolved.hash);
+    return { status: 'ok', hash: resolved.hash };
+  }
+  if (resolved.status === 'missing_lxmf') return { status: 'missing_lxmf' };
+  return { status: 'missing' };
+}
+
 export function resolveReticulumChatDestHash(destination: number | undefined): string | null {
-  if (typeof destination === 'string') return destination;
-  return reticulumHashForNodeId(destination ?? 0) ?? resolveReticulumDestinationHash(destination);
+  const result = resolveReticulumChatDestHashDetailed(destination);
+  return result.status === 'ok' ? result.hash : null;
 }
 
 export function buildReticulumReplyFields(
@@ -55,6 +81,7 @@ export interface SendReticulumChatMessageOpts {
   replyTo?: string;
   retryOfStoreId?: string;
   onNoPropagationNode: () => void;
+  onMissingLxmfDelivery?: () => void;
 }
 
 /**
@@ -71,6 +98,7 @@ export function sendReticulumChatMessage(opts: SendReticulumChatMessageOpts): st
     replyTo,
     retryOfStoreId,
     onNoPropagationNode,
+    onMissingLxmfDelivery,
   } = opts;
   const session = tryGetReticulumSession();
   const send = getReticulumSendMessage(session);
@@ -78,7 +106,16 @@ export function sendReticulumChatMessage(opts: SendReticulumChatMessageOpts): st
     console.warn('[sendReticulumChatMessage] Reticulum runtime not mounted');
     return null;
   }
-  const destHash = resolveReticulumChatDestHash(destination);
+  const destResolved = resolveReticulumChatDestHashDetailed(destination);
+  if (destResolved.status === 'missing_lxmf') {
+    console.warn(
+      '[sendReticulumChatMessage] destination is not lxmf.delivery (e.g. lxst.telephony)',
+      destination,
+    );
+    onMissingLxmfDelivery?.();
+    return null;
+  }
+  const destHash = destResolved.status === 'ok' ? destResolved.hash : null;
   if (!destHash) {
     console.warn('[sendReticulumChatMessage] no Reticulum destination hash for', destination);
     return null;
@@ -89,7 +126,8 @@ export function sendReticulumChatMessage(opts: SendReticulumChatMessageOpts): st
     return null;
   }
   const receivedVia = resolveReticulumOutboundVia(destHash);
-  const toNodeId = (destination ?? reticulumHashToNodeId(destHash)) >>> 0;
+  // Prefer LXMF fold so remapped telephony tabs still attribute the outbound to the Chat peer.
+  const toNodeId = reticulumHashToNodeId(destHash) >>> 0;
   const senderName = session.getFullNodeLabel(selfNodeId);
   const senderHash = resolveReticulumOutboundSenderHash(selfNodeId);
   const existing =

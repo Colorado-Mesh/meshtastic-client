@@ -1507,6 +1507,13 @@ impl LxmfOutboundDriver {
                     } else {
                         "delivered"
                     };
+                    if method.is_none() && !was_local {
+                        tracing::info!(
+                            target: "lxmf-outbound",
+                            message_hash = %hex::encode(hash),
+                            "outbound Direct Completes"
+                        );
+                    }
                     emit_outbound_status_by_hash(event_tx, &hash, status, method);
                 }
             }
@@ -1521,6 +1528,7 @@ impl LxmfOutboundDriver {
                         .or_else(|| self.pending_pn_targets.get(&h).copied())
                 });
                 tracing::warn!(
+                    target: "lxmf-outbound",
                     dest = %hex::encode(message.destination_hash),
                     method = %delivery_method_label(message.method),
                     reason = %reason,
@@ -1547,6 +1555,7 @@ impl LxmfOutboundDriver {
                     self.pending_pn_deposits.remove(&hash);
                 }
                 tracing::warn!(
+                    target: "lxmf-outbound",
                     dest = %hex::encode(message.destination_hash),
                     link_dest = %hex::encode(dest_hash),
                     method = %delivery_method_label(message.method),

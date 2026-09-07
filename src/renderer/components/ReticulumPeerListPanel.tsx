@@ -23,6 +23,10 @@ import {
   registerReticulumDestinationHash,
   reticulumHashToNodeId,
 } from '@/renderer/lib/reticulum/destHash';
+import {
+  isReticulumTelephonyOnlyDestination,
+  resolveReticulumChatLxmfDestination,
+} from '@/renderer/lib/reticulum/resolveReticulumChatLxmfDest';
 import { parseReticulumDestinationInput } from '@/renderer/lib/reticulum/reticulumDestinationInput';
 import {
   refreshReticulumPeerRouteFromPaths,
@@ -53,6 +57,7 @@ import type { ReticulumPeer } from '@/shared/reticulum-types';
 import type { ContactGroup } from '../../shared/electron-api.types';
 import type { MeshNode } from '../lib/types';
 import { useNomadNetworkStore } from '../stores/nomadNetworkStore';
+import { useReticulumIdentityActivityStore } from '../stores/reticulumIdentityActivityStore';
 import {
   refreshReticulumPeersFromSidecar,
   resolveReticulumPeerLabel,
@@ -288,6 +293,8 @@ export default function ReticulumPeerListPanel({
 }: ReticulumPeerListPanelProps) {
   const { t } = useTranslation();
   const { addToast } = useToast();
+  // Re-render when identity activity updates so Chat can enable after LXMF announce.
+  useReticulumIdentityActivityStore((s) => s.byDestination);
   const peersRevision = useReticulumPeerStore((s) => s.peersRevision);
   const peersSize = useReticulumPeerStore((s) => s.peers.size);
   const contacts = useReticulumPeerStore((s) => s.contacts);
@@ -611,72 +618,98 @@ export default function ReticulumPeerListPanel({
 
   const tableColSpan = activeTab === 'peers' ? 6 : 5;
 
-  const renderActionButtons = (peer: ReticulumPeer, busy: boolean) => (
-    <>
-      <button
-        type="button"
-        className="text-amber-400 hover:underline disabled:opacity-40"
-        disabled={busy}
-        onClick={(e) => {
-          e.stopPropagation();
-          onSendMessage(peerHashToNodeNum(peer.destination_hash));
-        }}
-        aria-label={t('peerListPanel.openChat')}
-      >
-        <MessageCircle className="inline h-3.5 w-3.5" aria-hidden />
-      </button>
-      {hasLxstVoice ? (
-        <ReticulumVoiceCallButton
-          lxmfPeerHash={peer.destination_hash}
-          identityHash={peer.identity_hash}
-          disabled={busy || !isConnected}
-        />
-      ) : null}
-      {hasLrgpGames ? (
-        <ReticulumGameChallengeButton
-          lxmfPeerHash={peer.destination_hash}
-          disabled={busy || !isConnected}
-        />
-      ) : null}
-      <button
-        type="button"
-        className="ml-2 text-amber-400 hover:underline disabled:opacity-40"
-        disabled={busy}
-        onClick={(e) => {
-          e.stopPropagation();
-          void requestPath(peer.destination_hash);
-        }}
-      >
-        {t('connectionPanel.reticulumPeers.path')}
-      </button>
-      <button
-        type="button"
-        className="ml-2 text-amber-400 hover:underline disabled:opacity-40"
-        disabled={busy}
-        onClick={(e) => {
-          e.stopPropagation();
-          void probePeer(peer.destination_hash);
-        }}
-      >
-        {t('connectionPanel.reticulumPeers.probe')}
-      </button>
-      <button
-        type="button"
-        className="ml-2 text-amber-400 hover:underline disabled:opacity-40"
-        disabled={busy}
-        aria-label={t('peerListPanel.pathsAria', { hash: peer.destination_hash })}
-        aria-expanded={pathsDetailHash === peer.destination_hash}
-        onClick={(e) => {
-          e.stopPropagation();
-          setPathsDetailHash((cur) =>
-            cur === peer.destination_hash ? null : peer.destination_hash,
-          );
-        }}
-      >
-        {t('peerListPanel.paths')}
-      </button>
-    </>
-  );
+  const renderActionButtons = (peer: ReticulumPeer, busy: boolean) => {
+    const telephonyOnly = isReticulumTelephonyOnlyDestination(peer.destination_hash);
+    const chatResolved = resolveReticulumChatLxmfDestination(peer.destination_hash);
+    const chatBlocked = telephonyOnly && chatResolved.status !== 'ok';
+    const gamesLxmfHash = chatResolved.status === 'ok' ? chatResolved.hash : peer.destination_hash;
+    return (
+      <>
+        <button
+          type="button"
+          className="text-amber-400 hover:underline disabled:opacity-40"
+          disabled={busy || chatBlocked}
+          title={chatBlocked ? t('peerListPanel.chatNeedsLxmfDelivery') : undefined}
+          onClick={(e) => {
+            e.stopPropagation();
+            const resolved = resolveReticulumChatLxmfDestination(peer.destination_hash);
+            if (resolved.status === 'missing_lxmf') {
+              addToast(t('peerListPanel.chatNeedsLxmfDelivery'), 'error');
+              return;
+            }
+            if (resolved.status !== 'ok') {
+              addToast(t('peerListPanel.lookupInvalid'), 'error');
+              return;
+            }
+            const nodeId = peerHashToNodeNum(resolved.hash);
+            registerReticulumDestinationHash(nodeId, resolved.hash);
+            onSendMessage(nodeId);
+          }}
+          aria-label={t('peerListPanel.openChat')}
+        >
+          <MessageCircle className="inline h-3.5 w-3.5" aria-hidden />
+        </button>
+        {telephonyOnly ? (
+          <span
+            className="ml-1 text-[10px] font-semibold tracking-wide text-cyan-400/90 uppercase"
+            title={t('peerListPanel.voiceAspectTitle')}
+          >
+            {t('peerListPanel.voiceAspectBadge')}
+          </span>
+        ) : null}
+        {hasLxstVoice ? (
+          <ReticulumVoiceCallButton
+            lxmfPeerHash={peer.destination_hash}
+            identityHash={peer.identity_hash}
+            disabled={busy || !isConnected}
+          />
+        ) : null}
+        {hasLrgpGames ? (
+          <ReticulumGameChallengeButton
+            lxmfPeerHash={gamesLxmfHash}
+            disabled={busy || !isConnected}
+          />
+        ) : null}
+        <button
+          type="button"
+          className="ml-2 text-amber-400 hover:underline disabled:opacity-40"
+          disabled={busy}
+          onClick={(e) => {
+            e.stopPropagation();
+            void requestPath(peer.destination_hash);
+          }}
+        >
+          {t('connectionPanel.reticulumPeers.path')}
+        </button>
+        <button
+          type="button"
+          className="ml-2 text-amber-400 hover:underline disabled:opacity-40"
+          disabled={busy}
+          onClick={(e) => {
+            e.stopPropagation();
+            void probePeer(peer.destination_hash);
+          }}
+        >
+          {t('connectionPanel.reticulumPeers.probe')}
+        </button>
+        <button
+          type="button"
+          className="ml-2 text-amber-400 hover:underline disabled:opacity-40"
+          disabled={busy}
+          aria-label={t('peerListPanel.pathsAria', { hash: peer.destination_hash })}
+          aria-expanded={pathsDetailHash === peer.destination_hash}
+          onClick={(e) => {
+            e.stopPropagation();
+            setPathsDetailHash((cur) =>
+              cur === peer.destination_hash ? null : peer.destination_hash,
+            );
+          }}
+        >
+          {t('peerListPanel.paths')}
+        </button>
+      </>
+    );
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">

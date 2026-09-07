@@ -252,7 +252,10 @@ import type { ReticulumRawPacketEntry } from './lib/rawPacketLogConstants';
 import { repairMeshtasticReplyPreviews } from './lib/replyPreview';
 import { buildResendArgs } from './lib/reticulum/buildResendArgs';
 import { reticulumHashToNodeId } from './lib/reticulum/destHash';
-import { openReticulumDmFromHash } from './lib/reticulum/reticulumDestinationInput';
+import {
+  openReticulumDmFromHash,
+  ReticulumChatMissingLxmfError,
+} from './lib/reticulum/reticulumDestinationInput';
 import {
   setReticulumGamesTabFocused,
   totalGamesUnread,
@@ -2759,10 +2762,20 @@ function AppContent() {
 
   const handleOpenReticulumDmByHash = useCallback(
     (hash: string) => {
-      const nodeId = openReticulumDmFromHash(hash);
-      handleMessageNode(nodeId);
+      try {
+        const nodeId = openReticulumDmFromHash(hash);
+        handleMessageNode(nodeId);
+      } catch (e) {
+        if (e instanceof ReticulumChatMissingLxmfError) {
+          // catch-no-log-ok expected missing-lxmf; surface via toast
+          addToast(t('chatPanel.reticulumChatNeedsLxmfDelivery'), 'error');
+          return;
+        }
+        console.warn('[App] open Reticulum DM by hash failed ' + errLikeToLogString(e));
+        addToast(t('chatPanel.dmAddressInvalid'), 'error');
+      }
     },
-    [handleMessageNode],
+    [addToast, handleMessageNode, t],
   );
 
   const handleOpenRoom = useCallback(
@@ -3398,6 +3411,12 @@ function AppContent() {
                                           addToast(
                                             t('chatPanel.voiceMemo.tooLargeForPropagation'),
                                             'info',
+                                          );
+                                        },
+                                        onMissingLxmfDelivery: () => {
+                                          addToast(
+                                            t('chatPanel.reticulumChatNeedsLxmfDelivery'),
+                                            'error',
                                           );
                                         },
                                       });

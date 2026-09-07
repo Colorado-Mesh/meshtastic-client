@@ -134,6 +134,9 @@ export function useSendMessage(
             onNoPropagationNode: () => {
               addToast(t('chatPanel.reticulumNoPropagationNode'), 'error');
             },
+            onMissingLxmfDelivery: () => {
+              addToast(t('chatPanel.reticulumChatNeedsLxmfDelivery'), 'error');
+            },
           }) ?? undefined
         );
       }

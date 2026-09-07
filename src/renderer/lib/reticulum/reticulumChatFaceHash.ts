@@ -2,6 +2,7 @@ import {
   registerReticulumDestinationHash,
   resolveReticulumDestinationHash,
 } from '@/renderer/lib/reticulum/destHash';
+import { resolveReticulumChatLxmfDestination } from '@/renderer/lib/reticulum/resolveReticulumChatLxmfDest';
 import {
   reticulumHashForNodeId,
   useReticulumPeerStore,
@@ -26,9 +27,35 @@ export function resetReticulumDmFaceHashNegativeCacheForTests(): void {
   unresolvedFaceNodeNums.clear();
 }
 
+function toChatLxmfHash(candidate: string): string | null {
+  const resolved = resolveReticulumChatLxmfDestination(candidate);
+  return resolved.status === 'ok' ? resolved.hash : null;
+}
+
+/**
+ * Bound destination hash for a Chat DM node (node record or registry), without LXMF remapping.
+ * Used for telephony-only voice dial when face/LXMF hash is unavailable.
+ */
+export function resolveReticulumDmBoundDestinationHash(
+  nodeNum: number,
+  nodeDestinationHash?: string | null,
+): string | null {
+  const fromNode = nodeDestinationHash?.trim();
+  if (fromNode) {
+    const canonical = canonicalizeReticulumDestinationHash(fromNode);
+    if (canonical) return canonical;
+  }
+  const fromStore =
+    reticulumHashForNodeId(nodeNum) ?? resolveReticulumDestinationHash(nodeNum) ?? null;
+  return fromStore ? (canonicalizeReticulumDestinationHash(fromStore) ?? null) : null;
+}
+
 /**
  * Resolve a 32-hex LXMF destination for Chat DM faces / peer-detail links.
  * Prefers the node record hash, then the peer-store / registry fold.
+ * Non-lxmf aspects (e.g. lxst.telephony) remap to that identity's lxmf.delivery when known.
+ * Returns null for telephony-only peers (no lxmf.delivery) — use
+ * {@link resolveReticulumDmBoundDestinationHash} for voice dial in that case.
  */
 export function resolveReticulumDmFaceHash(
   nodeNum: number,
@@ -36,11 +63,11 @@ export function resolveReticulumDmFaceHash(
 ): string | null {
   const fromNode = nodeDestinationHash?.trim();
   if (fromNode) {
-    const canonical = canonicalizeReticulumDestinationHash(fromNode);
-    if (canonical) {
-      registerReticulumDestinationHash(nodeNum, canonical);
+    const lxmf = toChatLxmfHash(fromNode);
+    if (lxmf) {
+      registerReticulumDestinationHash(nodeNum, lxmf);
       unresolvedFaceNodeNums.delete(nodeNum);
-      return canonical;
+      return lxmf;
     }
   }
 
@@ -60,6 +87,12 @@ export function resolveReticulumDmFaceHash(
     }
     return null;
   }
+  const lxmf = toChatLxmfHash(fromStore);
+  if (!lxmf) {
+    // Do not negative-cache missing_lxmf — identity activity may land without peersRevision bump.
+    return null;
+  }
   unresolvedFaceNodeNums.delete(nodeNum);
-  return canonicalizeReticulumDestinationHash(fromStore) ?? null;
+  registerReticulumDestinationHash(nodeNum, lxmf);
+  return canonicalizeReticulumDestinationHash(lxmf) ?? null;
 }

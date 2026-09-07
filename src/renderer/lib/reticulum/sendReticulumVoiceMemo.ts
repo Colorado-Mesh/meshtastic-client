@@ -6,14 +6,12 @@ import {
   resolveReticulumOutboundSenderHash,
 } from '@/renderer/lib/ingest/reticulumIngest';
 import { flushPendingReticulumOutboundDeliveryStatus } from '@/renderer/lib/reticulum/applyReticulumOutboundDeliveryStatus';
-import {
-  resolveReticulumDestinationHash,
-  reticulumHashToNodeId,
-} from '@/renderer/lib/reticulum/destHash';
+import { reticulumHashToNodeId } from '@/renderer/lib/reticulum/destHash';
 import { extractLxmfPayloadFromSendResponse } from '@/renderer/lib/reticulum/lxmfSendResponse';
 import { cacheReticulumVoiceMemoOgg } from '@/renderer/lib/reticulum/reticulumAudioAttachmentCache';
 import { shouldDeletePriorReticulumOutboundHash } from '@/renderer/lib/reticulum/reticulumOutboundRetry';
 import { stopReticulumVoiceMemoRecorder } from '@/renderer/lib/reticulum/reticulumVoiceMemo';
+import { resolveReticulumChatDestHashDetailed } from '@/renderer/lib/reticulum/sendReticulumChatMessage';
 import {
   resolveReticulumOutboundVia,
   tryGetReticulumSession,
@@ -26,7 +24,6 @@ import {
   updateMessageStatus,
   useMessageStore,
 } from '@/renderer/stores/messageStore';
-import { reticulumHashForNodeId } from '@/renderer/stores/reticulumPeerStore';
 import { useReticulumVoiceMemoStore } from '@/renderer/stores/reticulumVoiceMemoStore';
 import {
   LXMF_AUDIO_MODE_OPUS_OGG,
@@ -34,17 +31,13 @@ import {
   VOICE_MEMO_MAX_OGG_BYTES,
 } from '@/shared/reticulum-voice-memo-types';
 
-function resolveDestHash(destination: number | undefined): string | null {
-  if (destination == null) return null;
-  return reticulumHashForNodeId(destination) ?? resolveReticulumDestinationHash(destination);
-}
-
 export interface SendReticulumVoiceMemoOpts {
   identityId: IdentityId;
   destination?: number;
   onOversize: () => void;
   onNoPropagationNode: () => void;
   onTooLargeForPropagation?: () => void;
+  onMissingLxmfDelivery?: () => void;
 }
 
 /**
@@ -52,8 +45,14 @@ export interface SendReticulumVoiceMemoOpts {
  * with native FIELD_AUDIO. Optimistic pending row uses `[voice:<ms>]`.
  */
 export function sendReticulumVoiceMemo(opts: SendReticulumVoiceMemoOpts): boolean {
-  const { identityId, destination, onOversize, onNoPropagationNode, onTooLargeForPropagation } =
-    opts;
+  const {
+    identityId,
+    destination,
+    onOversize,
+    onNoPropagationNode,
+    onTooLargeForPropagation,
+    onMissingLxmfDelivery,
+  } = opts;
 
   const session = tryGetReticulumSession();
   if (!session) {
@@ -62,7 +61,17 @@ export function sendReticulumVoiceMemo(opts: SendReticulumVoiceMemoOpts): boolea
     return false;
   }
 
-  const destHash = resolveDestHash(destination);
+  const destResolved = resolveReticulumChatDestHashDetailed(destination);
+  if (destResolved.status === 'missing_lxmf') {
+    console.warn(
+      '[sendReticulumVoiceMemo] destination is not lxmf.delivery (e.g. lxst.telephony)',
+      destination,
+    );
+    onMissingLxmfDelivery?.();
+    useReticulumVoiceMemoStore.getState().reset();
+    return false;
+  }
+  const destHash = destResolved.status === 'ok' ? destResolved.hash : null;
   if (!destHash) {
     console.warn('[sendReticulumVoiceMemo] no destination hash');
     useReticulumVoiceMemoStore.getState().reset();
@@ -137,7 +146,7 @@ export function sendReticulumVoiceMemo(opts: SendReticulumVoiceMemoOpts): boolea
     const receivedVia = resolveReticulumOutboundVia(destHash);
     const senderName = session.getFullNodeLabel(selfNodeId);
     const senderHash = resolveReticulumOutboundSenderHash(selfNodeId);
-    const toNodeId = (destination ?? reticulumHashToNodeId(destHash)) >>> 0;
+    const toNodeId = reticulumHashToNodeId(destHash) >>> 0;
     const pendingId = statusId;
     const record: MessageRecord = {
       id: pendingId,

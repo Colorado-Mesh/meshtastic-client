@@ -749,7 +749,12 @@
     "heardByRepeaterNodeFallback": "Knooppunt {{nodeId}}",
     "heardByRepeatersAdditional_one": "{{count}} extra niet-geïdentificeerde expediteur (hashes: {{hashes}})",
     "heardByRepeatersAdditional_other": "{{count}} extra niet-geïdentificeerde expediteurs (hashes: {{hashes}})",
-    "reticulumSendAwaitingPeerReceipt": "Verzonden (in afwachting van ontvangst door collega's)"
+    "reticulumSendAwaitingPeerReceipt": "Verzonden (in afwachting van ontvangst door collega's)",
+    "reticulumChatNeedsLxmfDelivery": "Deze peer heeft nog geen LXMF-bezorgadres (chat kan geen bestemming met alleen spraak gebruiken). Wacht op een LXMF-aankondiging of plak hun LXMF-hash van 32 tekens.",
+    "lxmfHashLabel": "LXMF {{hash}}",
+    "copyLxmfHashAria": "Kopieer LXMF-bestemmingshash {{hash}}",
+    "lxmfHashCopied": "LXMF-bestemmingshash gekopieerd.",
+    "lxmfHashCopyFailed": "Kan LXMF-bestemmingshash niet kopiëren."
   },
   "chatPayload": {
     "mention": "Vermeld {{label}}",
@@ -3502,7 +3507,10 @@
     "tabHistory": "Historie",
     "emptyHistory": "Nog geen berichtgeschiedenis — verzend of ontvang een LXMF-bericht om peers hier te zien.",
     "emptyContacts": "Nog geen opgeslagen contacten — open een peer en kies Opslaan als contactpersoon.",
-    "pathMediumTitle": "Actief padmedium: {{medium}}"
+    "pathMediumTitle": "Actief padmedium: {{medium}}",
+    "chatNeedsLxmfDelivery": "Nog geen LXMF-bezorgadres voor deze peer. Wacht op een LXMF-aankondiging of open Chat met hun 32-karakter LXMF-hash - Voice (lxst.telephony) -bestemmingen kunnen geen Chat ontvangen.",
+    "voiceAspectBadge": "Stem",
+    "voiceAspectTitle": "Deze rij met padtabellen is een LXST-telefoniebestemming. Chat opnieuw naar de LXMF-bezorgingshash van de peer wanneer deze bekend is."
   },
   "radioPanel": {
     "offloadedContacts": "{{count}} contacten naar de database overgebracht.",

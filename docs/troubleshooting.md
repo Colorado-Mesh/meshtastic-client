@@ -1507,6 +1507,20 @@ Bond-stale **TX queue full** hints (`txQueueDropsHintBleBondStale`) point at the
 
 **Fix**: Choose **I am in Colorado** to keep the preset (Auto-connect resumes if enabled), or **Switch to LetsMesh**. The choice is stored in `mesh-client:coloradoMqttRegionAck-v1` and is not shown again. Selecting Colorado Mesh later shows a confirm that the preset is for Colorado-area users and publishes under `meshcore/DEN`.
 
+### Reticulum: announces / Nomad / RRC work but Chat fails both ways
+
+**Symptoms**: Both mesh-client instances hear announces, Nomad pages and RRC work, probes look reachable, but Chat DMs never arrive either way. Developer bundles show outbound `to_hash` values that are **not** the peer’s Network **LXMF** hash. Diagnostics may list **Direct LXMF link … timed out** against a hash that identity activity marks as `lxst.telephony`. When **MeshChatX** (or another RNS app) runs on one side, the other may briefly show **Delivered** via RF — that Complete is for MeshChatX’s LXMF identity, not mesh-client Chat.
+
+**Cause**: The RNS path table lists **every** destination aspect. Opening **Peers → Message** (or a stale DM) on an `lxst.telephony` row sends LXMF Chat to a Voice destination. mesh-client remaps Message to the peer’s `lxmf.delivery` hash when identity activity knows it; without an LXMF announce it refuses send.
+
+**Fix / retest checklist**:
+
+1. **Fully quit** MeshChatX / other Reticulum apps on both machines during a mesh-client ↔ mesh-client test.
+2. On **Network**, confirm each side’s **LXMF** hash (not only the identity hash). Example pair: upstairs `ac978c…` ↔ downstairs `e3359f…`.
+3. Open Chat from Peers **Message** (or paste the peer’s 32-character **LXMF** hash). The DM header shows a copyable **LXMF** prefix — it must match Network, not a Voice-only row.
+4. If Direct still fails, set Propagation to **Auto** or **Manual** with a usable PN (Propagation **Off** has no cascade after Direct timeout).
+5. Export **both** Developer bundles; check `reticulum_messages.to_hash` against `reticulum_identity_activity` (`lxmf.delivery` vs `lxst.telephony`) and `reticulum/lxmf-outbound.log` for Direct Completes / Failed lines.
+
 ### Reticulum DM stuck on Sending (MeshChatX / shared instance)
 
 **Symptoms**: Outbound Reticulum DMs stay **Sending**; Device log shows `link delivery timed out` with `link establishment timeout`, and many `failed to queue path request for LXMF delivery` lines. **Diagnostics** may list per-peer **Direct LXMF link … timed out** rows (warning). Connection may show **sidecar interface issues** only for stack health (TX queue drops, transport saturated, TCP hub failures) — not single-peer link timeouts. Sniffer may show a **Link Request** that never completes.

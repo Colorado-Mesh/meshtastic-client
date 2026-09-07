@@ -92,6 +92,7 @@ vi.mock('../stores/reticulumPeerStore', async (importOriginal) => {
 import { hydrateAxeThemeColors } from '../lib/a11yTestHelpers';
 import { reticulumHashToNodeId } from '../lib/reticulum/destHash';
 import { useNomadNetworkStore } from '../stores/nomadNetworkStore';
+import { useReticulumIdentityActivityStore } from '../stores/reticulumIdentityActivityStore';
 import { useReticulumPeerStore } from '../stores/reticulumPeerStore';
 import ReticulumPeerListPanel from './ReticulumPeerListPanel';
 import { ToastProvider } from './Toast';
@@ -126,6 +127,7 @@ describe('ReticulumPeerListPanel', () => {
     reticulumSidecarMocks.refreshReticulumPeerRouteFromPaths.mockReset();
     reticulumSidecarMocks.refreshReticulumPeerRouteFromPaths.mockResolvedValue(false);
     useNomadNetworkStore.setState({ nodes: new Map() });
+    useReticulumIdentityActivityStore.setState({ byDestination: new Map() });
     useReticulumPeerStore.setState({
       peers: new Map([
         [
@@ -657,6 +659,85 @@ describe('ReticulumPeerListPanel', () => {
       expect(onRefresh).toHaveBeenCalledTimes(1);
     });
     expect(onSoftRefresh).not.toHaveBeenCalled();
+  });
+
+  it('enables Chat after lxmf.delivery activity lands for a telephony-only peer', async () => {
+    const identity = '0f79468863d76b3ba574baa92606ffcb';
+    const lxmf = 'e3359f1314aff4fb6261400a8202149b';
+    const telephony = 'ab1d53d6923d6983dfb4451e3869b878';
+    useReticulumPeerStore.setState({
+      peers: new Map([
+        [
+          telephony,
+          {
+            destination_hash: telephony,
+            display_name: 'Voice Only',
+            identity_hash: identity,
+            hops: 1,
+            last_seen: Date.now() / 1000,
+          },
+        ],
+      ]),
+      contacts: new Map(),
+      history: new Map(),
+      lastRefreshAt: null,
+      peersRevision: 1,
+    });
+    useReticulumIdentityActivityStore.setState({
+      byDestination: new Map([
+        [
+          telephony,
+          [
+            {
+              destination_hash: telephony,
+              aspect: 'lxst.telephony',
+              identity_hash: identity,
+              last_seen: 1,
+            },
+          ],
+        ],
+      ]),
+    });
+
+    render(
+      <ToastProvider>
+        <ReticulumPeerListPanel isConnected onPeerClick={vi.fn()} onSendMessage={vi.fn()} />
+      </ToastProvider>,
+    );
+
+    const chatBtn = await screen.findByRole('button', { name: 'peerListPanel.openChat' });
+    expect(chatBtn).toBeDisabled();
+
+    useReticulumIdentityActivityStore.setState({
+      byDestination: new Map([
+        [
+          telephony,
+          [
+            {
+              destination_hash: telephony,
+              aspect: 'lxst.telephony',
+              identity_hash: identity,
+              last_seen: 1,
+            },
+          ],
+        ],
+        [
+          lxmf,
+          [
+            {
+              destination_hash: lxmf,
+              aspect: 'lxmf.delivery',
+              identity_hash: identity,
+              last_seen: 2,
+            },
+          ],
+        ],
+      ]),
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'peerListPanel.openChat' })).not.toBeDisabled();
+    });
   });
 
   it('has no serious axe violations', async () => {

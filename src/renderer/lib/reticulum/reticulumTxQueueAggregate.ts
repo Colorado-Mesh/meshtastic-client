@@ -43,6 +43,9 @@ function isHostTxQueueBuffering(used: number, max: number): boolean {
 /**
  * Worst host TX fill among enabled+online local RF interfaces (rnode / rnode_multi / kiss).
  * Excludes TCP/I2P/Auto hubs. Tie-break: higher used, then lexicographic name.
+ *
+ * Always returns a status when any scoped RF iface has valid queue stats (header Q badge
+ * parity with MeshCore/Meshtastic). `buffering` is separate — amber spinner / RRC gate only.
  */
 export function aggregateReticulumLocalRfTxQueue(
   interfaces: readonly ReticulumTxQueueIfaceInput[] | null | undefined,
@@ -96,10 +99,6 @@ export function aggregateReticulumLocalRfTxQueue(
   }
 
   if (!best) {
-    return null;
-  }
-
-  if (!anyBuffering) {
     return null;
   }
 

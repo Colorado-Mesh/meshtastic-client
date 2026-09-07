@@ -29,13 +29,11 @@ function ReticulumQueueHeaderCluster({
       {buffering ? (
         <ReticulumTxBufferingHeaderIndicator buffering interfaceName={interfaceName} />
       ) : null}
-      {buffering ? (
-        <HelpTooltip text={`Host TX queue for local RNode "${interfaceName}"`}>
-          <div aria-label={`Q: ${used}/${maxlen}`} className={color}>
-            {`Q: ${used}/${maxlen}`}
-          </div>
-        </HelpTooltip>
-      ) : null}
+      <HelpTooltip text={`Host TX queue for local RNode "${interfaceName}"`}>
+        <div aria-label={`Q: ${used}/${maxlen}`} className={color}>
+          {`Q: ${used}/${maxlen}`}
+        </div>
+      </HelpTooltip>
     </div>
   );
 }
@@ -45,7 +43,7 @@ describe('Reticulum queue header cluster', () => {
     vi.clearAllMocks();
   });
 
-  it('shows nothing when idle baseline fill is not buffering', async () => {
+  it('shows Q badge without spinner when idle baseline fill is not buffering', async () => {
     const { container } = render(
       <ReticulumQueueHeaderCluster
         free={245}
@@ -54,7 +52,7 @@ describe('Reticulum queue header cluster', () => {
         buffering={false}
       />,
     );
-    expect(screen.queryByText('Q: 11/256')).not.toBeInTheDocument();
+    expect(screen.getByText('Q: 11/256')).toBeInTheDocument();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     hydrateAxeThemeColors(container);
     expect(await axe(container)).toHaveNoViolations();
