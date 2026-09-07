@@ -1109,32 +1109,21 @@ export function meshcoreReconcileChannelSenderIds(messages: ChatMessage[]): Chat
 
 /**
  * Relink room BBS Unknown/sender_id 0 rows to a named twin in the same room with the same
- * body and timestamp (optimistic send + unresolved RF/history echo).
- * Skips when multiple distinct resolved senders share that key (ambiguous attribution).
+ * body within {@link MESHCORE_ROOM_POST_DEDUP_WINDOW_MS} (optimistic send + unresolved RF echo).
+ * Uses {@link findMeshcoreRoomPostDuplicate} so attribution requires exactly one resolved sender.
  */
 export function meshcoreReconcileRoomSenderIds(messages: ChatMessage[]): ChatMessage[] {
-  const canonicalByKey = new Map<string, { senderId: number; senderName: string } | null>();
-  for (const m of messages) {
-    if (!isMeshcoreRoomChatMessage(m) || isAmbiguousMeshcoreSender(m)) continue;
-    const roomId = m.roomServerId ?? m.to;
-    if (roomId == null || roomId === 0 || m.sender_id <= 0) continue;
-    const key = `${roomId}\0${m.payload}\0${m.timestamp}`;
-    const prev = canonicalByKey.get(key);
-    if (prev === null) continue;
-    if (prev != null && prev.senderId !== m.sender_id) {
-      canonicalByKey.set(key, null);
-      continue;
-    }
-    canonicalByKey.set(key, { senderId: m.sender_id, senderName: m.sender_name });
-  }
-  if (canonicalByKey.size === 0) return messages;
-  return messages.map((m) => {
+  return messages.map((m, index) => {
     if (!isMeshcoreRoomChatMessage(m) || !isAmbiguousMeshcoreSender(m)) return m;
-    const roomId = m.roomServerId ?? m.to;
-    if (roomId == null || roomId === 0) return m;
-    const canon = canonicalByKey.get(`${roomId}\0${m.payload}\0${m.timestamp}`);
-    if (canon == null) return m;
-    return { ...m, sender_id: canon.senderId, sender_name: canon.senderName };
+    const others: ChatMessage[] = [];
+    for (let i = 0; i < messages.length; i++) {
+      if (i === index) continue;
+      const other = messages[i];
+      if (other) others.push(other);
+    }
+    const twin = findMeshcoreRoomPostDuplicate(others, m);
+    if (!twin || isAmbiguousMeshcoreSender(twin) || twin.sender_id <= 0) return m;
+    return { ...m, sender_id: twin.sender_id, sender_name: twin.sender_name };
   });
 }
 

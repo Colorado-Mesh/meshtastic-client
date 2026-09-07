@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MESHCORE_UNKNOWN_SENDER_STUB_ID } from '../../lib/meshcoreUtils';
+import { MESHCORE_ROOM_POST_DEDUP_WINDOW_MS } from '../../lib/timeConstants';
 import type { ChatMessage } from '../../lib/types';
 import {
   mapMeshcoreDbRowsToChatMessages,
@@ -64,7 +65,7 @@ describe('meshcoreReconcileChannelSenderIds', () => {
 });
 
 describe('meshcoreReconcileRoomSenderIds', () => {
-  it('relinks Unknown room rows to a named twin with same room+payload+timestamp', () => {
+  it('relinks Unknown room rows to a named twin within the room post dedup window', () => {
     const roomId = 0x6c08b3d9;
     const namedId = 1429514792;
     const ts = 1_786_817_958_000;
@@ -86,7 +87,7 @@ describe('meshcoreReconcileRoomSenderIds', () => {
         sender_name: '🛜 NV0N 01',
         payload: 'Test 12:19',
         channel: -2,
-        timestamp: ts,
+        timestamp: ts + 5_000,
         status: 'acked',
         roomServerId: roomId,
         to: roomId,
@@ -96,8 +97,9 @@ describe('meshcoreReconcileRoomSenderIds', () => {
     expect(out[0]?.sender_name).toBe('🛜 NV0N 01');
   });
 
-  it('does not reconcile room Unknown without a same-timestamp named twin', () => {
+  it('does not reconcile room Unknown outside the room post dedup window', () => {
     const roomId = 0x6c08b3d9;
+    const ts = 1_786_817_958_000;
     const out = meshcoreReconcileRoomSenderIds([
       {
         id: 1,
@@ -105,7 +107,7 @@ describe('meshcoreReconcileRoomSenderIds', () => {
         sender_name: 'Unknown',
         payload: 'Greetings from Loveland!',
         channel: -2,
-        timestamp: 1000,
+        timestamp: ts,
         status: 'acked',
         roomServerId: roomId,
         to: roomId,
@@ -116,7 +118,7 @@ describe('meshcoreReconcileRoomSenderIds', () => {
         sender_name: '🛜 NV0N 01',
         payload: 'Greetings from Loveland!',
         channel: -2,
-        timestamp: 2000,
+        timestamp: ts + MESHCORE_ROOM_POST_DEDUP_WINDOW_MS + 1,
         status: 'acked',
         roomServerId: roomId,
         to: roomId,
