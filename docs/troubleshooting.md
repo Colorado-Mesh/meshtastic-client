@@ -403,7 +403,7 @@ codesign --verify --deep --strict --verbose=4 /path/to/Mesh-client.app
 
 Nested Electron / Squirrel frameworks or Helper apps may report the same error.
 
-**Cause:** Almost always a **locally damaged copy**, not a post-sign rewrite on GitHub Releases. Official DMGs are signed, notarized, and stapled; release CI runs `codesign --verify --deep --strict` plus `stapler validate` on the finished app inside each DMG/ZIP when the build is Developer ID signed. Flattened framework symlinks (bad ZIP extract) or a broken Finder copy can invalidate the seal while Apple’s notarization ticket still satisfies Gatekeeper.
+**Cause:** Almost always a **locally damaged copy**, not a post-sign rewrite on GitHub Releases. Official DMGs are signed, notarized, and stapled; release CI runs `codesign --verify --deep --strict` plus `xcrun stapler validate` on the finished app inside each DMG/ZIP when the build is Developer ID signed. Flattened framework symlinks (bad ZIP extract) or a broken Finder copy can invalidate the seal while Apple’s notarization ticket still satisfies Gatekeeper.
 
 **Check the pristine artifact first** (prefer the DMG mount, not a hand-copied tree):
 
@@ -411,7 +411,7 @@ Nested Electron / Squirrel frameworks or Helper apps may report the same error.
 hdiutil attach -readonly -nobrowse -mountpoint /tmp/mesh-dmg Mesh-client-*-arm64.dmg
 codesign --verify --deep --strict --verbose=4 /tmp/mesh-dmg/Mesh-client.app
 spctl --assess --type execute --verbose=4 /tmp/mesh-dmg/Mesh-client.app
-stapler validate /tmp/mesh-dmg/Mesh-client.app
+xcrun stapler validate /tmp/mesh-dmg/Mesh-client.app
 hdiutil detach /tmp/mesh-dmg
 ```
 
