@@ -53,8 +53,18 @@ import {
   formatReticulumViaBadgeLabel,
   parseReticulumViaAtoms,
 } from '@/renderer/lib/reticulum/classifyReticulumVia';
-import { normalizeReticulumNodeId } from '@/renderer/lib/reticulum/destHash';
+import {
+  normalizeReticulumNodeId,
+  resolveReticulumDestinationHash,
+} from '@/renderer/lib/reticulum/destHash';
 import { parseReticulumAttachmentPayload } from '@/renderer/lib/reticulum/parseReticulumAttachmentPayload';
+import {
+  remapDmMutedViews,
+  remapDmStarredViewKeys,
+  remapDmViewKeyedRecord,
+  remapReticulumChatDmTabIds,
+} from '@/renderer/lib/reticulum/remapReticulumChatDmTabs';
+import { resolveReticulumChatLxmfDestination } from '@/renderer/lib/reticulum/resolveReticulumChatLxmfDest';
 import { reticulumMessageMatchesDmPeer } from '@/renderer/lib/reticulum/reticulumChatDmFilter';
 import { resolveReticulumDmFaceHash } from '@/renderer/lib/reticulum/reticulumChatFaceHash';
 import {
@@ -87,9 +97,11 @@ import { chatDmPeerMessageCounts } from '../lib/chatDmPeerIndex';
 import { playMessageNotification } from '../lib/chatNotifications';
 import {
   dismissedDmTabsStorageKey,
+  draftsStorageKey,
   lastReadStorageKey,
   loadActiveChannelInitial,
   loadActiveDmInitial,
+  loadDraftsInitial,
   loadMutedViews,
   loadOpenDmTabsInitial,
   loadPersistedLastReadInitial,
@@ -154,7 +166,8 @@ import {
 } from '../lib/storeRecordAdapters';
 import type { ChatMessage, IdentityId, MeshNode, MeshProtocol } from '../lib/types';
 import type { RequestStoreForwardHistoryResult } from '../runtime/useMeshtasticRuntime';
-import { useReticulumPeerStore } from '../stores/reticulumPeerStore';
+import { useReticulumIdentityActivityStore } from '../stores/reticulumIdentityActivityStore';
+import { reticulumHashForNodeId, useReticulumPeerStore } from '../stores/reticulumPeerStore';
 import { useTimeFormatStore } from '../stores/timeFormatStore';
 import { ChatComposer, type ChatComposerSendOpts } from './ChatComposer';
 import { ChatDmPaperShareControl, ChatPaperScanControl } from './ChatDmPaperControls';
@@ -974,6 +987,8 @@ function ChatPanel({
   const [activeDmNode, setActiveDmNode] = useState<number | null>(() =>
     loadActiveDmInitial(protocol),
   );
+  const activeDmNodeRef = useRef(activeDmNode);
+  activeDmNodeRef.current = activeDmNode;
   const [dmAddressInput, setDmAddressInput] = useState('');
   const [dmAddressError, setDmAddressError] = useState<string | null>(null);
   const [dismissedDmTabs, setDismissedDmTabs] = useState<Record<number, number>>(() => {
@@ -992,6 +1007,13 @@ function ChatPanel({
     }
     return out;
   });
+  const dismissedDmTabsRef = useRef(dismissedDmTabs);
+  dismissedDmTabsRef.current = dismissedDmTabs;
+
+  const reticulumIdentityActivityByDestination = useReticulumIdentityActivityStore(
+    (s) => s.byDestination,
+  );
+  const reticulumPeersRevision = useReticulumPeerStore((s) => s.peersRevision);
 
   // Persist openDmTabs to localStorage whenever it changes
   useEffect(() => {
@@ -1006,6 +1028,51 @@ function ChatPanel({
   useEffect(() => {
     saveActiveDm(protocol, activeDmNode);
   }, [activeDmNode, protocol]);
+
+  // Fold telephony (and other remappable) DM tabs onto lxmf.delivery when activity knows it.
+  useEffect(() => {
+    if (protocol !== 'reticulum') return;
+    const remapped = remapReticulumChatDmTabIds(
+      openDmTabsRef.current,
+      activeDmNodeRef.current,
+      dismissedDmTabsRef.current,
+    );
+    if (!remapped.changed) return;
+    setOpenDmTabs(remapped.openDmTabs);
+    setActiveDmNode(remapped.activeDmNode);
+    setDismissedDmTabs(remapped.dismissedDmTabs);
+    if (remapped.replacements.length === 0) return;
+
+    setPersistedLastRead((prev) => {
+      const { next, changed } = remapDmViewKeyedRecord(prev, remapped.replacements, (a, b) =>
+        Math.max(a, b),
+      );
+      return changed ? next : prev;
+    });
+    setMutedViews((prev) => {
+      const { next, changed } = remapDmMutedViews(prev, remapped.replacements);
+      if (!changed) return prev;
+      saveMutedViews(protocol, next);
+      return next;
+    });
+    setStarred((prev) => {
+      const { next, changed } = remapDmStarredViewKeys(prev, remapped.replacements);
+      if (!changed) return prev;
+      saveStarred(protocol, next);
+      return next;
+    });
+    try {
+      const drafts = loadDraftsInitial(protocol);
+      const { next, changed } = remapDmViewKeyedRecord(drafts, remapped.replacements, (a, b) =>
+        b.length >= a.length ? b : a,
+      );
+      if (changed) {
+        localStorage.setItem(draftsStorageKey(protocol), JSON.stringify(next));
+      }
+    } catch (e) {
+      console.warn('[ChatPanel] remap drafts failed ' + errLikeToLogString(e));
+    }
+  }, [protocol, reticulumIdentityActivityByDestination, reticulumPeersRevision]);
 
   // Drop in-progress memo capture when switching DMs so the mic does not stay open.
   useEffect(() => {
@@ -2050,6 +2117,19 @@ function ChatPanel({
       nodes.get(activeDmNode)?.reticulum_destination_hash,
     );
   }, [activeDmNode, nodes, protocol]);
+
+  const reticulumDmMissingLxmf = useMemo(() => {
+    if (protocol !== 'reticulum' || activeDmNode == null) return false;
+    // Touch Map size so LXMF activity updates re-evaluate telephony-only banners.
+    if (reticulumIdentityActivityByDestination.size < 0) return false;
+    const raw =
+      reticulumHashForNodeId(activeDmNode) ??
+      resolveReticulumDestinationHash(activeDmNode) ??
+      nodes.get(activeDmNode)?.reticulum_destination_hash ??
+      null;
+    if (!raw) return false;
+    return resolveReticulumChatLxmfDestination(raw).status === 'missing_lxmf';
+  }, [activeDmNode, nodes, protocol, reticulumIdentityActivityByDestination]);
 
   const peerAppearanceByHash = useReticulumPeerStore((s) => s.peerAppearanceByHash);
 
@@ -3546,6 +3626,14 @@ function ChatPanel({
         reticulumDmDestinationHash != null && (
           <ChatDmRncpOfferBanner lxmfPeerHash={reticulumDmDestinationHash} />
         )}
+      {protocol === 'reticulum' && isDmMode && reticulumDmMissingLxmf ? (
+        <div
+          role="status"
+          className="mt-1 rounded border border-amber-700/50 bg-amber-950/40 px-2 py-1.5 text-xs text-amber-200"
+        >
+          {t('chatPanel.reticulumChatNeedsLxmfDelivery')}
+        </div>
+      ) : null}
       {protocol === 'reticulum' && hasLxmfPaper ? (
         <ChatPaperScanControl sidecarRunning={reticulumStackLive} />
       ) : null}
@@ -3557,7 +3645,7 @@ function ChatPanel({
         connectionType={connectionType}
         isMqttOnly={isMqttOnly}
         isDmMode={isDmMode}
-        disabled={dmOnlyChat && activeDmNode == null}
+        disabled={(dmOnlyChat && activeDmNode == null) || reticulumDmMissingLxmf}
         composerContext={viewMode === 'dm' ? 'dm' : 'channel'}
         senderDisplayName={composerSelfDisplayName}
         placeholder={composePlaceholder}
@@ -3588,7 +3676,11 @@ function ChatPanel({
         }}
         textareaRef={composerInputRef}
         onVoiceMemo={
-          protocol === 'reticulum' && hasReticulumVoiceMemo && isDmMode && onVoiceMemo != null
+          protocol === 'reticulum' &&
+          hasReticulumVoiceMemo &&
+          isDmMode &&
+          onVoiceMemo != null &&
+          !reticulumDmMissingLxmf
             ? () => {
                 if (activeDmNode == null) return;
                 onVoiceMemo(activeDmNode);

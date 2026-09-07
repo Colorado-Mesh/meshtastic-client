@@ -69,7 +69,7 @@ export function resolveReticulumDmFaceHash(
   }
   const lxmf = toChatLxmfHash(fromStore);
   if (!lxmf) {
-    unresolvedFaceNodeNums.add(nodeNum);
+    // Do not negative-cache missing_lxmf — identity activity may land without peersRevision bump.
     return null;
   }
   unresolvedFaceNodeNums.delete(nodeNum);

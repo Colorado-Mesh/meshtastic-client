@@ -4,12 +4,20 @@
  * as LXMF yields Direct link timeouts while announces/Nomad/RRC still look healthy.
  */
 
+import {
+  normalizeReticulumNodeId,
+  resolveReticulumDestinationHash,
+  reticulumHashToNodeId,
+} from '@/renderer/lib/reticulum/destHash';
 import { LXST_TELEPHONY_ASPECT } from '@/renderer/lib/reticulumVoiceCapability';
 import {
   type ReticulumIdentityActivityRow,
   useReticulumIdentityActivityStore,
 } from '@/renderer/stores/reticulumIdentityActivityStore';
-import { useReticulumPeerStore } from '@/renderer/stores/reticulumPeerStore';
+import {
+  reticulumHashForNodeId,
+  useReticulumPeerStore,
+} from '@/renderer/stores/reticulumPeerStore';
 import { canonicalizeReticulumDestinationHash } from '@/shared/reticulumDestinationHash';
 
 export const LXMF_DELIVERY_ASPECT = 'lxmf.delivery';
@@ -130,4 +138,41 @@ export function isReticulumTelephonyOnlyDestination(candidateHash: string): bool
   const rows = useReticulumIdentityActivityStore.getState().getActivity(canonical);
   if (!activityHasAspect(rows, LXST_TELEPHONY_ASPECT)) return false;
   return !activityHasAspect(rows, LXMF_DELIVERY_ASPECT);
+}
+
+/**
+ * Canonical Chat DM peer node id for filters/unread: LXMF delivery fold when a registry
+ * hash resolves, otherwise the original normalized id.
+ */
+export function canonicalizeReticulumChatDmNodeId(nodeId: number): number {
+  const normalized = normalizeReticulumNodeId(nodeId);
+  const raw =
+    reticulumHashForNodeId(normalized) ?? resolveReticulumDestinationHash(normalized) ?? null;
+  if (!raw) return normalized;
+  const resolved = resolveReticulumChatLxmfDestination(raw);
+  if (resolved.status !== 'ok') return normalized;
+  return normalizeReticulumNodeId(reticulumHashToNodeId(resolved.hash));
+}
+
+/**
+ * Tab-id rewrite for open/active DM migration: only when the bound hash remaps across
+ * aspects (e.g. telephony → lxmf.delivery). Sticky non-fold node ids for already-LXMF
+ * hashes are preserved so persisted tabs stay stable.
+ */
+export function remapReticulumChatDmTabNodeId(nodeId: number): number {
+  const normalized = normalizeReticulumNodeId(nodeId);
+  const raw =
+    reticulumHashForNodeId(normalized) ?? resolveReticulumDestinationHash(normalized) ?? null;
+  if (!raw) return normalized;
+  const resolved = resolveReticulumChatLxmfDestination(raw);
+  if (resolved.status !== 'ok' || !resolved.remapped) return normalized;
+  return normalizeReticulumNodeId(reticulumHashToNodeId(resolved.hash));
+}
+
+/** True when both ids are the same Chat peer after LXMF canonicalization. */
+export function reticulumChatDmNodeIdsEquivalent(a: number, b: number): boolean {
+  const left = normalizeReticulumNodeId(a);
+  const right = normalizeReticulumNodeId(b);
+  if (left === right) return true;
+  return canonicalizeReticulumChatDmNodeId(left) === canonicalizeReticulumChatDmNodeId(right);
 }

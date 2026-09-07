@@ -1,6 +1,7 @@
 import type { ChatMessage } from '@/renderer/lib/types';
 
 import { normalizeReticulumNodeId, reticulumHashToNodeId } from './destHash';
+import { reticulumChatDmNodeIdsEquivalent } from './resolveReticulumChatLxmfDest';
 
 /** Reticulum DB/hydration uses `to: 0` when `to_hash` is absent — treat as unset. */
 export function reticulumUnsetDmTo(to: number | undefined | null): boolean {
@@ -25,12 +26,25 @@ export function reticulumMessageMatchesDmPeer(
   const sender = normalizeReticulumNodeId(msg.sender_id);
   const to = reticulumUnsetDmTo(msg.to) ? null : normalizeReticulumNodeId(msg.to!);
 
-  if (isReticulumOwnNode(sender, ownNodeIds) && to === peer) return true;
-  if (sender === peer && !isReticulumOwnNode(sender, ownNodeIds)) return true;
+  if (
+    isReticulumOwnNode(sender, ownNodeIds) &&
+    to != null &&
+    reticulumChatDmNodeIdsEquivalent(to, peer)
+  ) {
+    return true;
+  }
+  if (reticulumChatDmNodeIdsEquivalent(sender, peer) && !isReticulumOwnNode(sender, ownNodeIds)) {
+    return true;
+  }
 
   if (msg.reticulum_sender_hash) {
     const fromHash = normalizeReticulumNodeId(reticulumHashToNodeId(msg.reticulum_sender_hash));
-    if (fromHash === peer && !isReticulumOwnNode(sender, ownNodeIds)) return true;
+    if (
+      reticulumChatDmNodeIdsEquivalent(fromHash, peer) &&
+      !isReticulumOwnNode(sender, ownNodeIds)
+    ) {
+      return true;
+    }
   }
 
   return false;

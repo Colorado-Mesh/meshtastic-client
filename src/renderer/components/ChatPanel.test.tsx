@@ -4310,6 +4310,54 @@ describe('ChatPanel reticulum dm-only chat', () => {
     });
   });
 
+  it('copies the resolved LXMF hash and surfaces success/failure toasts', async () => {
+    const user = userEvent.setup();
+    const peerId = 0xabc456;
+    const lxmfHash = 'e3359f1314aff4fb6261400a8202149b';
+    const writeText = vi.mocked(window.electronAPI.clipboard.writeText);
+    writeText.mockResolvedValue(undefined);
+    const nodes = new Map<number, MeshNode>([
+      [
+        peerId,
+        {
+          node_id: peerId,
+          reticulum_destination_hash: lxmfHash,
+          long_name: 'LXMF Peer',
+          short_name: 'LX',
+          hw_model: 'Reticulum',
+          snr: 0,
+          battery: 0,
+          last_heard: Date.now(),
+          latitude: null,
+          longitude: null,
+          favorited: false,
+          source: 'rf',
+        },
+      ],
+    ]);
+    const { container } = render(
+      <ToastProvider>
+        <ChatPanel {...reticulumProps} nodes={nodes} initialDmTarget={peerId} />
+      </ToastProvider>,
+    );
+
+    const copyBtn = await screen.findByRole('button', {
+      name: `Copy LXMF destination hash ${lxmfHash}`,
+    });
+    expect(copyBtn).toBeInTheDocument();
+    await user.click(copyBtn);
+    expect(writeText).toHaveBeenCalledWith(lxmfHash);
+    expect(await screen.findByText('LXMF destination hash copied.')).toBeInTheDocument();
+
+    writeText.mockRejectedValueOnce(new Error('denied'));
+    await user.click(copyBtn);
+    expect(await screen.findByText('Could not copy LXMF destination hash.')).toBeInTheDocument();
+
+    hydrateAxeThemeColors(container);
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
   it('restores last-focused DM instead of the peer with the most history', async () => {
     const lastFocusedId = 0x201;
     const busierPeerId = 0x202;

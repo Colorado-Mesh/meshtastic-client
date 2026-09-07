@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { useReticulumIdentityActivityStore } from '@/renderer/stores/reticulumIdentityActivityStore';
+
 import {
   buildProtocolSwitcherUnreadByProtocol,
   chatViewKeyForMessage,
@@ -12,6 +14,13 @@ import {
   resolveChatNotificationType,
   totalUnreadCount,
 } from './chatUnreadCounts';
+import {
+  clearReticulumHashRegistry,
+  registerReticulumDestinationHash,
+  reticulumHashToNodeId,
+} from './reticulum/destHash';
+import { LXMF_DELIVERY_ASPECT } from './reticulum/resolveReticulumChatLxmfDest';
+import { LXST_TELEPHONY_ASPECT } from './reticulumVoiceCapability';
 import type { ChatMessage } from './types';
 
 const ownNodes = new Set([1]);
@@ -365,6 +374,61 @@ describe('chatUnreadCounts', () => {
       'reticulum',
     );
     expect(peer).toBe(peerId);
+  });
+
+  it('Reticulum resolveChatDmPeer collapses telephony-attributed peers onto LXMF fold', () => {
+    const identity = '0f79468863d76b3ba574baa92606ffcb';
+    const lxmf = 'e3359f1314aff4fb6261400a8202149b';
+    const telephony = 'ab1d53d6923d6983dfb4451e3869b878';
+    const telephonyId = reticulumHashToNodeId(telephony) >>> 0;
+    const lxmfId = reticulumHashToNodeId(lxmf) >>> 0;
+    clearReticulumHashRegistry();
+    registerReticulumDestinationHash(telephonyId, telephony);
+    registerReticulumDestinationHash(lxmfId, lxmf);
+    useReticulumIdentityActivityStore.setState({
+      byDestination: new Map([
+        [
+          telephony,
+          [
+            {
+              destination_hash: telephony,
+              aspect: LXST_TELEPHONY_ASPECT,
+              identity_hash: identity,
+              last_seen: 200,
+            },
+          ],
+        ],
+        [
+          lxmf,
+          [
+            {
+              destination_hash: lxmf,
+              aspect: LXMF_DELIVERY_ASPECT,
+              identity_hash: identity,
+              last_seen: 150,
+            },
+          ],
+        ],
+      ]),
+    });
+    const own = new Set([1]);
+    expect(
+      resolveChatDmPeer(msg({ channel: 0, sender_id: 1, to: telephonyId }), own, 'reticulum'),
+    ).toBe(lxmfId);
+    expect(
+      chatViewKeyForMessage(msg({ channel: 0, sender_id: telephonyId, to: 0 }), 'reticulum', own),
+    ).toBe(`dm:${String(lxmfId)}`);
+    const dmCounts = computeDmUnreadCounts(
+      [
+        msg({ channel: 0, sender_id: telephonyId, to: 0, timestamp: 2000 }),
+        msg({ channel: 0, sender_id: lxmfId, to: 0, timestamp: 2100 }),
+      ],
+      {},
+      own,
+      'reticulum',
+    );
+    expect(dmCounts.get(lxmfId)).toBe(2);
+    expect(dmCounts.get(telephonyId)).toBeUndefined();
   });
 
   it('Reticulum inbound with to_hash infers peer when own identity is unknown', () => {

@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
 import {
   clearReticulumHashRegistry,
   registerReticulumDestinationHash,
   reticulumHashToNodeId,
 } from '@/renderer/lib/reticulum/destHash';
+import { LXMF_DELIVERY_ASPECT } from '@/renderer/lib/reticulum/resolveReticulumChatLxmfDest';
+import { LXST_TELEPHONY_ASPECT } from '@/renderer/lib/reticulumVoiceCapability';
+import { useReticulumIdentityActivityStore } from '@/renderer/stores/reticulumIdentityActivityStore';
 import { useReticulumPeerStore } from '@/renderer/stores/reticulumPeerStore';
 
 import {
@@ -32,6 +33,7 @@ describe('resolveReticulumDmFaceHash', () => {
     clearReticulumHashRegistry();
     resetReticulumDmFaceHashNegativeCacheForTests();
     useReticulumPeerStore.setState({ peersRevision: 1 });
+    useReticulumIdentityActivityStore.setState({ byDestination: new Map() });
     reticulumHashForNodeIdMock.mockReset();
     reticulumHashForNodeIdMock.mockReturnValue(null as string | null);
   });
@@ -62,5 +64,60 @@ describe('resolveReticulumDmFaceHash', () => {
     useReticulumPeerStore.setState({ peersRevision: 2 });
     expect(resolveReticulumDmFaceHash(42_001, null)).toBeNull();
     expect(reticulumHashForNodeIdMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('resolves after lxmf.delivery activity lands without peersRevision change', () => {
+    const identity = '0f79468863d76b3ba574baa92606ffcb';
+    const lxmf = 'e3359f1314aff4fb6261400a8202149b';
+    const telephony = 'ab1d53d6923d6983dfb4451e3869b878';
+    const telephonyNum = reticulumHashToNodeId(telephony);
+    reticulumHashForNodeIdMock.mockImplementation((id: number) =>
+      id === telephonyNum ? telephony : null,
+    );
+    useReticulumIdentityActivityStore.setState({
+      byDestination: new Map([
+        [
+          telephony,
+          [
+            {
+              destination_hash: telephony,
+              aspect: LXST_TELEPHONY_ASPECT,
+              identity_hash: identity,
+              last_seen: 1,
+            },
+          ],
+        ],
+      ]),
+    });
+    expect(resolveReticulumDmFaceHash(telephonyNum, null)).toBeNull();
+
+    useReticulumIdentityActivityStore.setState({
+      byDestination: new Map([
+        [
+          telephony,
+          [
+            {
+              destination_hash: telephony,
+              aspect: LXST_TELEPHONY_ASPECT,
+              identity_hash: identity,
+              last_seen: 1,
+            },
+          ],
+        ],
+        [
+          lxmf,
+          [
+            {
+              destination_hash: lxmf,
+              aspect: LXMF_DELIVERY_ASPECT,
+              identity_hash: identity,
+              last_seen: 2,
+            },
+          ],
+        ],
+      ]),
+    });
+    expect(useReticulumPeerStore.getState().peersRevision).toBe(1);
+    expect(resolveReticulumDmFaceHash(telephonyNum, null)).toBe(lxmf);
   });
 });

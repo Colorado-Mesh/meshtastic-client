@@ -8,7 +8,9 @@
 import { MS_PER_MINUTE } from '@/shared/timeConstants';
 
 import type { IdentityId } from '../types';
+import { reticulumHashToNodeId } from './destHash';
 import { findFailedReticulumOutboundForDest } from './reticulumOutboundFailureBridge';
+import { resolveReticulumChatDestHashDetailed } from './sendReticulumChatMessage';
 
 /** Minimum spacing between auto-resend attempts for the same destination. */
 export const RETICULUM_AUTO_RESEND_COOLDOWN_MS = 5 * MS_PER_MINUTE;
@@ -84,10 +86,18 @@ export function resendFailedReticulumForDestination({
     console.debug(
       `[reticulumAutoResend] resending ${String(batch.length)} of ${String(failed.length)} failed messages`,
     );
+    let sent = 0;
     for (const msg of batch) {
-      send(msg.payload, msg.to, msg.id);
+      const destResolved = resolveReticulumChatDestHashDetailed(msg.to);
+      if (destResolved.status !== 'ok') {
+        console.debug(`[reticulumAutoResend] skip ${msg.id}: destination is not lxmf.delivery`);
+        continue;
+      }
+      const destNodeId = reticulumHashToNodeId(destResolved.hash) >>> 0;
+      send(msg.payload, destNodeId, msg.id);
+      sent += 1;
     }
-    return batch.length;
+    return sent;
   } finally {
     inFlight.delete(key);
   }

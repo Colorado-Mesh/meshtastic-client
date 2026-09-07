@@ -3413,6 +3413,12 @@ function AppContent() {
                                             'info',
                                           );
                                         },
+                                        onMissingLxmfDelivery: () => {
+                                          addToast(
+                                            t('chatPanel.reticulumChatNeedsLxmfDelivery'),
+                                            'error',
+                                          );
+                                        },
                                       });
                                       return;
                                     }

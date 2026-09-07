@@ -57,6 +57,7 @@ import type { ReticulumPeer } from '@/shared/reticulum-types';
 import type { ContactGroup } from '../../shared/electron-api.types';
 import type { MeshNode } from '../lib/types';
 import { useNomadNetworkStore } from '../stores/nomadNetworkStore';
+import { useReticulumIdentityActivityStore } from '../stores/reticulumIdentityActivityStore';
 import {
   refreshReticulumPeersFromSidecar,
   resolveReticulumPeerLabel,
@@ -292,6 +293,8 @@ export default function ReticulumPeerListPanel({
 }: ReticulumPeerListPanelProps) {
   const { t } = useTranslation();
   const { addToast } = useToast();
+  // Re-render when identity activity updates so Chat can enable after LXMF announce.
+  useReticulumIdentityActivityStore((s) => s.byDestination);
   const peersRevision = useReticulumPeerStore((s) => s.peersRevision);
   const peersSize = useReticulumPeerStore((s) => s.peers.size);
   const contacts = useReticulumPeerStore((s) => s.contacts);
@@ -617,8 +620,9 @@ export default function ReticulumPeerListPanel({
 
   const renderActionButtons = (peer: ReticulumPeer, busy: boolean) => {
     const telephonyOnly = isReticulumTelephonyOnlyDestination(peer.destination_hash);
-    const chatBlocked =
-      telephonyOnly && resolveReticulumChatLxmfDestination(peer.destination_hash).status !== 'ok';
+    const chatResolved = resolveReticulumChatLxmfDestination(peer.destination_hash);
+    const chatBlocked = telephonyOnly && chatResolved.status !== 'ok';
+    const gamesLxmfHash = chatResolved.status === 'ok' ? chatResolved.hash : peer.destination_hash;
     return (
       <>
         <button
@@ -662,7 +666,7 @@ export default function ReticulumPeerListPanel({
         ) : null}
         {hasLrgpGames ? (
           <ReticulumGameChallengeButton
-            lxmfPeerHash={peer.destination_hash}
+            lxmfPeerHash={gamesLxmfHash}
             disabled={busy || !isConnected}
           />
         ) : null}

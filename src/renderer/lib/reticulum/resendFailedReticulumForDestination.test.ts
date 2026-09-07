@@ -21,6 +21,7 @@ import {
   RETICULUM_AUTO_RESEND_MAX_PER_ANNOUNCE,
 } from '@/renderer/lib/reticulum/resendFailedReticulumForDestination';
 import { useMessageStore } from '@/renderer/stores/messageStore';
+import { useReticulumIdentityActivityStore } from '@/renderer/stores/reticulumIdentityActivityStore';
 import { createElectronAPIMock } from '@/renderer/vitest.electronApiMock';
 
 const DEST = '5526a65d0b4d23448206fd3485b76f5b';
@@ -55,6 +56,7 @@ describe('resendFailedReticulumForDestination', () => {
 
   beforeEach(() => {
     useMessageStore.setState({ messages: {} });
+    useReticulumIdentityActivityStore.setState({ byDestination: new Map() });
     window.electronAPI = createElectronAPIMock();
     resetReticulumAutoResendState();
     send = vi.fn<SendFn>();
@@ -216,12 +218,66 @@ describe('resendFailedReticulumForDestination', () => {
     ).toBe(1);
   });
 
-  it('resetReticulumAutoResendState clears the cooldown', () => {
-    seedFailed(1);
-    resendFailedReticulumForDestination(base());
+  it('remaps telephony-bound failed rows to the LXMF fold before send', () => {
+    const identity = '0f79468863d76b3ba574baa92606ffcb';
+    const lxmf = 'e3359f1314aff4fb6261400a8202149b';
+    const telephony = 'ab1d53d6923d6983dfb4451e3869b878';
+    const telephonyId = reticulumHashToNodeId(telephony) >>> 0;
+    const lxmfId = reticulumHashToNodeId(lxmf) >>> 0;
+    registerReticulumDestinationHash(telephonyId, telephony);
+    registerReticulumDestinationHash(lxmfId, lxmf);
+    useReticulumIdentityActivityStore.setState({
+      byDestination: new Map([
+        [
+          telephony,
+          [
+            {
+              destination_hash: telephony,
+              aspect: 'lxst.telephony',
+              identity_hash: identity,
+              last_seen: 200,
+            },
+          ],
+        ],
+        [
+          lxmf,
+          [
+            {
+              destination_hash: lxmf,
+              aspect: 'lxmf.delivery',
+              identity_hash: identity,
+              last_seen: 150,
+            },
+          ],
+        ],
+      ]),
+    });
+    useMessageStore.setState({
+      messages: {
+        [identityId]: {
+          m0: {
+            id: 'm0',
+            from: 1,
+            senderName: 'self',
+            payload: 'retry-me',
+            channelIndex: 0,
+            timestamp: 1000,
+            status: 'failed',
+            to: telephonyId,
+          },
+        },
+      },
+    });
 
-    resetReticulumAutoResendState();
+    const count = resendFailedReticulumForDestination({
+      identityId,
+      destinationHash: telephony,
+      enabled: true,
+      send,
+      now: 10_000,
+    });
 
-    expect(resendFailedReticulumForDestination(base())).toBe(1);
+    expect(count).toBe(1);
+    expect(send).toHaveBeenCalledWith('retry-me', lxmfId, 'm0');
   });
 });

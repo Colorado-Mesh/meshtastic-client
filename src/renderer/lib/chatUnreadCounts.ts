@@ -10,6 +10,7 @@ import {
   findParentMessageForReply,
 } from '@/renderer/lib/replyPreview';
 import { normalizeReticulumNodeId, reticulumHashToNodeId } from '@/renderer/lib/reticulum/destHash';
+import { canonicalizeReticulumChatDmNodeId } from '@/renderer/lib/reticulum/resolveReticulumChatLxmfDest';
 import { reticulumUnsetDmTo } from '@/renderer/lib/reticulum/reticulumChatDmFilter';
 import { reactionParentKeyFromChatMessage } from '@/renderer/lib/storeRecordAdapters';
 import type { ChatMessage, MeshProtocol } from '@/renderer/lib/types';
@@ -72,7 +73,9 @@ export function resolveChatDmPeer(
     );
     const senderId = (Number.isFinite(senderFromHash) ? senderFromHash : 0) >>> 0;
     if (senderId > 0 && !isOwn(senderId) && !isOwn(msg.sender_id)) {
-      return senderId;
+      const peerU32 = canonicalizeReticulumChatDmNodeId(senderId);
+      if (options?.excludeDmPeer?.(peerU32)) return undefined;
+      return peerU32;
     }
   }
   const effectiveTo = protocol === 'reticulum' && msg.to === 0 ? undefined : msg.to;
@@ -88,7 +91,7 @@ export function resolveChatDmPeer(
   };
   if (effectiveTo == null) {
     if (protocol === 'reticulum' && msg.to === 0 && msg.sender_id > 0 && !isOwn(msg.sender_id)) {
-      const peerU32 = msg.sender_id >>> 0;
+      const peerU32 = canonicalizeReticulumChatDmNodeId(msg.sender_id >>> 0);
       if (options?.excludeDmPeer?.(peerU32)) return undefined;
       return peerU32;
     }
@@ -136,7 +139,10 @@ export function resolveChatDmPeer(
   }
   if (peer === undefined) return undefined;
   if (protocol === 'meshtastic' && isMeshtasticBroadcastNodeNum(peer)) return undefined;
-  const peerU32 = peer >>> 0;
+  let peerU32 = peer >>> 0;
+  if (protocol === 'reticulum') {
+    peerU32 = canonicalizeReticulumChatDmNodeId(peerU32);
+  }
   if (options?.excludeDmPeer?.(peerU32)) return undefined;
   return peerU32;
 }
