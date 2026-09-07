@@ -296,21 +296,35 @@ exit 1
 `,
         { mode: 0o755 },
       );
+      // After --skip-dep-update, release.sh still runs sync-flatpak-electron via real
+      // `node` (network / archives). Stub node so the subprocess exits immediately
+      // instead of hanging past Vitest's default 5s timeout under CI load.
+      fs.writeFileSync(
+        path.join(bin, 'node'),
+        `#!/usr/bin/env bash
+printf '%s\\n' "$*" >> ${JSON.stringify(pnpmLog)}
+exit 1
+`,
+        { mode: 0o755 },
+      );
 
       const r = spawnSync('bash', [RELEASE_SH, '--yes', '--skip-dep-update', 'patch'], {
         cwd: ROOT,
         encoding: 'utf8',
+        timeout: 15_000,
         env: {
           ...process.env,
           PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}`,
           MESH_CLIENT_RELEASE_YES: '1',
         },
       });
+      expect(r.error).toBeUndefined();
       expect(r.status).not.toBe(0);
       const log = fs.existsSync(pnpmLog) ? fs.readFileSync(pnpmLog, 'utf8') : '';
       expect(log).not.toMatch(/(^|\n)update(\s|$)/);
       expect(log).not.toMatch(/(^|\n)dedupe(\s|$)/);
       expect(`${r.stdout}${r.stderr}`).toMatch(/Skipping pnpm update\/dedupe/);
+      expect(log).toMatch(/sync-flatpak-electron/);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
