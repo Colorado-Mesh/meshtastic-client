@@ -1,3 +1,5 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
 import {
   clearReticulumHashRegistry,
   registerReticulumDestinationHash,
@@ -10,6 +12,7 @@ import { useReticulumPeerStore } from '@/renderer/stores/reticulumPeerStore';
 
 import {
   resetReticulumDmFaceHashNegativeCacheForTests,
+  resolveReticulumDmBoundDestinationHash,
   resolveReticulumDmFaceHash,
 } from './reticulumChatFaceHash';
 
@@ -119,5 +122,32 @@ describe('resolveReticulumDmFaceHash', () => {
     });
     expect(useReticulumPeerStore.getState().peersRevision).toBe(1);
     expect(resolveReticulumDmFaceHash(telephonyNum, null)).toBe(lxmf);
+  });
+
+  it('returns null for telephony-only without caching; bound hash still available', () => {
+    const identity = '0f79468863d76b3ba574baa92606ffcb';
+    const telephony = 'ab1d53d6923d6983dfb4451e3869b878';
+    const telephonyNum = reticulumHashToNodeId(telephony);
+    reticulumHashForNodeIdMock.mockImplementation((id: number) =>
+      id === telephonyNum ? telephony : null,
+    );
+    useReticulumIdentityActivityStore.setState({
+      byDestination: new Map([
+        [
+          telephony,
+          [
+            {
+              destination_hash: telephony,
+              aspect: LXST_TELEPHONY_ASPECT,
+              identity_hash: identity,
+              last_seen: 1,
+            },
+          ],
+        ],
+      ]),
+    });
+    expect(resolveReticulumDmFaceHash(telephonyNum, null)).toBeNull();
+    expect(resolveReticulumDmBoundDestinationHash(telephonyNum, null)).toBe(telephony);
+    expect(resolveReticulumDmBoundDestinationHash(telephonyNum, telephony)).toBe(telephony);
   });
 });

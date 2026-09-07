@@ -33,9 +33,29 @@ function toChatLxmfHash(candidate: string): string | null {
 }
 
 /**
+ * Bound destination hash for a Chat DM node (node record or registry), without LXMF remapping.
+ * Used for telephony-only voice dial when face/LXMF hash is unavailable.
+ */
+export function resolveReticulumDmBoundDestinationHash(
+  nodeNum: number,
+  nodeDestinationHash?: string | null,
+): string | null {
+  const fromNode = nodeDestinationHash?.trim();
+  if (fromNode) {
+    const canonical = canonicalizeReticulumDestinationHash(fromNode);
+    if (canonical) return canonical;
+  }
+  const fromStore =
+    reticulumHashForNodeId(nodeNum) ?? resolveReticulumDestinationHash(nodeNum) ?? null;
+  return fromStore ? (canonicalizeReticulumDestinationHash(fromStore) ?? null) : null;
+}
+
+/**
  * Resolve a 32-hex LXMF destination for Chat DM faces / peer-detail links.
  * Prefers the node record hash, then the peer-store / registry fold.
  * Non-lxmf aspects (e.g. lxst.telephony) remap to that identity's lxmf.delivery when known.
+ * Returns null for telephony-only peers (no lxmf.delivery) — use
+ * {@link resolveReticulumDmBoundDestinationHash} for voice dial in that case.
  */
 export function resolveReticulumDmFaceHash(
   nodeNum: number,

@@ -32,6 +32,18 @@ describe('remapReticulumChatDmTabIds', () => {
     expect(result.openDmTabs).toEqual([10, 20]);
     expect(result.activeDmNode).toBe(10);
   });
+
+  it('rewrites sticky telephony tab ids when LXMF becomes known (initialDmTarget path)', () => {
+    const telephony = 111;
+    const lxmf = 222;
+    // Simulate open/active after initialDmTarget lands a telephony node id.
+    const afterOpen = remapReticulumChatDmTabIds([telephony], telephony, {}, (id) =>
+      id === telephony ? lxmf : id,
+    );
+    expect(afterOpen.openDmTabs).toEqual([lxmf]);
+    expect(afterOpen.activeDmNode).toBe(lxmf);
+    expect(afterOpen.replacements).toEqual([{ from: telephony, to: lxmf }]);
+  });
 });
 
 describe('remapDmViewKeyedRecord', () => {

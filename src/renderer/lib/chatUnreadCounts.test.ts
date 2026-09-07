@@ -429,6 +429,8 @@ describe('chatUnreadCounts', () => {
     );
     expect(dmCounts.get(lxmfId)).toBe(2);
     expect(dmCounts.get(telephonyId)).toBeUndefined();
+    clearReticulumHashRegistry();
+    useReticulumIdentityActivityStore.setState({ byDestination: new Map() });
   });
 
   it('Reticulum inbound with to_hash infers peer when own identity is unknown', () => {
