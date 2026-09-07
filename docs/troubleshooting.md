@@ -392,6 +392,31 @@ Expect `Squirrel` and `Versions/Current` to be **symlinks**; `Versions/A/Squirre
 
 Official releases also ship `00-READ-ME-BEFORE-EXTRACTING-macOS-ZIP.txt` on the release page, and the DMG includes **IMPORTANT-Read-Me.txt** with the same guidance.
 
+### macOS: `codesign --verify --deep --strict` fails after install
+
+**Symptom:** Gatekeeper / `spctl --assess` accepts the app as **Notarized Developer ID**, but:
+
+```bash
+codesign --verify --deep --strict --verbose=4 /path/to/Mesh-client.app
+# Mesh-client.app: invalid signature (code or signature have been modified)
+```
+
+Nested Electron / Squirrel frameworks or Helper apps may report the same error.
+
+**Cause:** Almost always a **locally damaged copy**, not a post-sign rewrite on GitHub Releases. Official DMGs are signed, notarized, and stapled; release CI runs `codesign --verify --deep --strict` plus `stapler validate` on the finished app inside each DMG/ZIP when the build is Developer ID signed. Flattened framework symlinks (bad ZIP extract) or a broken Finder copy can invalidate the seal while Apple’s notarization ticket still satisfies Gatekeeper.
+
+**Check the pristine artifact first** (prefer the DMG mount, not a hand-copied tree):
+
+```bash
+hdiutil attach -readonly -nobrowse -mountpoint /tmp/mesh-dmg Mesh-client-*-arm64.dmg
+codesign --verify --deep --strict --verbose=4 /tmp/mesh-dmg/Mesh-client.app
+spctl --assess --type execute --verbose=4 /tmp/mesh-dmg/Mesh-client.app
+stapler validate /tmp/mesh-dmg/Mesh-client.app
+hdiutil detach /tmp/mesh-dmg
+```
+
+Or extract the ZIP with `ditto -xk` (not 7-Zip) and verify that tree. If the mounted DMG / `ditto` extract passes but `/Applications/Mesh-client.app` fails, reinstall from the DMG and delete the broken copy. See [Library not loaded: Squirrel.framework](#macos-library-not-loaded-squirrelframework-after-zip-extract) above.
+
 ### Flatpak: `vmwgfx: driver missing` (VMware on macOS)
 
 **Symptom**: `flatpak run org.coloradomesh.MeshClient` fails or exits after Mesa logs `vmwgfx: driver missing` (use `flatpak -v run ...` to see it). Common on **Linux guests in VMware Fusion or Workstation with a macOS host**, including **aarch64** Ubuntu/ARM VMs.

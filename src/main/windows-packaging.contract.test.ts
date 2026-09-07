@@ -267,6 +267,10 @@ describe('Windows packaging (contract)', () => {
     expect(macVerify).toContain("lipo', ['-archs'");
     expect(macVerify).toContain('stageMacosInstallNoticeReleaseAsset');
     expect(macVerify).toContain('Squirrel.framework');
+    expect(macVerify).toContain('assertMacCodeSignatureIfDeveloperId');
+    expect(macVerify).toContain('isDeveloperIdApplicationAuthority');
+    expect(macVerify).toContain("codesign', ['--verify', '--deep', '--strict'");
+    expect(macVerify).toContain("stapler', 'validate'");
     expect(macVerify).toContain('/Applications');
     expect(macVerify).toMatch(
       /function mountDmgAndValidate\([\s\S]*?assertApplicationsSymlink\(mountDir\)/,

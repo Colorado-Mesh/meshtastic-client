@@ -7,6 +7,9 @@
  *
  * CI smoke path (artifact download): validates .app from shipped ZIP (ditto) and DMG (hdiutil).
  * Local dist:mac path: validates on-disk .app plus every ZIP extract and DMG mount.
+ *
+ * Developer ID–signed builds also run codesign --verify --deep --strict, stapler validate,
+ * and sidecar codesign --verify --strict. Unsigned local builds skip that gate.
  */
 import { spawnSync } from 'node:child_process';
 import {
@@ -23,7 +26,10 @@ import {
 import { tmpdir } from 'os';
 import { fileURLToPath } from 'url';
 import path from 'path';
-import { assertBundledReticulumSidecarInBundle } from './assert-bundled-reticulum-sidecar.mjs';
+import {
+  assertBundledReticulumSidecarInBundle,
+  resolveBundledSidecarPath,
+} from './assert-bundled-reticulum-sidecar.mjs';
 import {
   MACOS_DMG_NOTICE_NAME,
   stageMacosInstallNoticeReleaseAsset,
@@ -415,6 +421,107 @@ function assertMacMinimumSystemVersion(bundleRoot, label) {
   }
 }
 
+/**
+ * True when `codesign -dv` output shows a Developer ID Application authority.
+ * Unsigned / ad-hoc local builds must not trip the release signature gate.
+ * @param {string} codesignDvText combined stdout+stderr from `codesign -dv`
+ */
+function isDeveloperIdApplicationAuthority(codesignDvText) {
+  return /Authority=Developer ID Application:/m.test(String(codesignDvText ?? ''));
+}
+
+/**
+ * @param {string} command
+ * @param {string[]} args
+ * @returns {{ status: number | null, text: string, error: Error | undefined }}
+ */
+function captureCommand(command, args) {
+  const result = spawnSync(command, args, { encoding: 'utf8' });
+  const text = `${result.stdout ?? ''}${result.stderr ?? ''}`;
+  return { status: result.status, text, error: result.error };
+}
+
+/**
+ * @typedef {{
+ *   readDisplay?: (targetPath: string) => { status: number | null, text: string, error?: Error },
+ *   verifyDeepStrict?: (targetPath: string) => { status: number | null, text: string, error?: Error },
+ *   staplerValidate?: (targetPath: string) => { status: number | null, text: string, error?: Error },
+ *   verifyStrict?: (targetPath: string) => { status: number | null, text: string, error?: Error },
+ *   resolveSidecarPath?: (bundleRoot: string) => string | null,
+ * }} MacCodeSignatureDeps
+ */
+
+/**
+ * When the bundle is Developer ID signed (release / signed CI), require
+ * `codesign --verify --deep --strict` + stapled notarization ticket + sidecar strict verify.
+ * Unsigned local `dist:mac` builds skip this gate.
+ * @param {string} bundleRoot
+ * @param {string} label
+ * @param {MacCodeSignatureDeps} [deps]
+ */
+function assertMacCodeSignatureIfDeveloperId(bundleRoot, label, deps = {}) {
+  const readDisplay =
+    deps.readDisplay ??
+    ((targetPath) => captureCommand('codesign', ['-dv', '--verbose=2', targetPath]));
+  const verifyDeepStrict =
+    deps.verifyDeepStrict ??
+    ((targetPath) =>
+      captureCommand('codesign', ['--verify', '--deep', '--strict', '--verbose=2', targetPath]));
+  const staplerValidate =
+    deps.staplerValidate ??
+    ((targetPath) => captureCommand('xcrun', ['stapler', 'validate', targetPath]));
+  const verifyStrict =
+    deps.verifyStrict ??
+    ((targetPath) =>
+      captureCommand('codesign', ['--verify', '--strict', '--verbose=2', targetPath]));
+  const resolveSidecar =
+    deps.resolveSidecarPath ?? ((root) => resolveBundledSidecarPath('darwin', root));
+
+  const display = readDisplay(bundleRoot);
+  if (display.error) {
+    fail(`${label} codesign -dv failed to start: ${display.error.message}`);
+  }
+  if (!isDeveloperIdApplicationAuthority(display.text)) {
+    return;
+  }
+
+  const deep = verifyDeepStrict(bundleRoot);
+  if (deep.error || deep.status !== 0) {
+    fail(
+      `${label} codesign --verify --deep --strict failed` +
+        (deep.error ? `: ${deep.error.message}` : deep.text ? `:\n${deep.text.trim()}` : ''),
+    );
+  }
+
+  const staple = staplerValidate(bundleRoot);
+  if (staple.error || staple.status !== 0) {
+    fail(
+      `${label} stapler validate failed (expected stapled notarization ticket)` +
+        (staple.error
+          ? `: ${staple.error.message}`
+          : staple.text
+            ? `:\n${staple.text.trim()}`
+            : ''),
+    );
+  }
+
+  const sidecarPath = resolveSidecar(bundleRoot);
+  if (!sidecarPath || !existsSync(sidecarPath)) {
+    fail(`${label} missing Reticulum sidecar for codesign check: ${sidecarPath ?? '(null)'}`);
+  }
+  const sidecar = verifyStrict(sidecarPath);
+  if (sidecar.error || sidecar.status !== 0) {
+    fail(
+      `${label} sidecar codesign --verify --strict failed (${sidecarPath})` +
+        (sidecar.error
+          ? `: ${sidecar.error.message}`
+          : sidecar.text
+            ? `:\n${sidecar.text.trim()}`
+            : ''),
+    );
+  }
+}
+
 /** @param {string} bundleRoot @param {string} sourceLabel @param {ExpectedMacArch} expectedArch */
 function validateAppBundle(bundleRoot, sourceLabel, expectedArch) {
   const bundleName = path.basename(bundleRoot);
@@ -440,6 +547,7 @@ function validateAppBundle(bundleRoot, sourceLabel, expectedArch) {
     bundleRoot,
     fail,
   });
+  assertMacCodeSignatureIfDeveloperId(bundleRoot, label);
 }
 
 /** @param {string} bundleRoot @returns {boolean} */
@@ -655,6 +763,7 @@ export {
   assertDualArchMacArchives,
   assertFrameworkSymlinks,
   assertLipoArchsMatch,
+  assertMacCodeSignatureIfDeveloperId,
   assertMacMinimumSystemVersion,
   assertSiblingFrameworkSymlinks,
   classifyMacArchiveArch,
@@ -664,6 +773,7 @@ export {
   expectedLipoArchsForMacArch,
   fail,
   isCompleteAppBundle,
+  isDeveloperIdApplicationAuthority,
   pickPrimaryArchive,
   resolveExpectedMacArch,
   SIBLING_FRAMEWORKS,
