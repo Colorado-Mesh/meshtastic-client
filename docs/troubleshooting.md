@@ -403,16 +403,17 @@ codesign --verify --deep --strict --verbose=4 /path/to/Mesh-client.app
 
 Nested Electron / Squirrel frameworks or Helper apps may report the same error.
 
-**Cause:** Almost always a **locally damaged copy**, not a post-sign rewrite on GitHub Releases. Official DMGs are signed, notarized, and stapled; release CI runs `codesign --verify --deep --strict` plus `xcrun stapler validate` on the finished app inside each DMG/ZIP when the build is Developer ID signed. Flattened framework symlinks (bad ZIP extract) or a broken Finder copy can invalidate the seal while Apple’s notarization ticket still satisfies Gatekeeper.
+**Cause:** Almost always a **locally damaged copy**, not a post-sign rewrite on GitHub Releases. Official DMGs are signed, notarized, and stapled; release CI runs `codesign --verify --deep --strict` plus `xcrun stapler validate` on the finished app inside each DMG/ZIP when the build is Developer ID signed. Flattened framework symlinks (bad ZIP extract) or a broken Finder copy can invalidate the seal. A stapled notarization ticket may still be present after that damage, but the damaged bundle can still fail code-signature validation or Gatekeeper assessment.
 
 **Check the pristine artifact first** (prefer the DMG mount, not a hand-copied tree):
 
 ```bash
+mkdir -p /tmp/mesh-dmg
+trap 'hdiutil detach /tmp/mesh-dmg 2>/dev/null || true' EXIT
 hdiutil attach -readonly -nobrowse -mountpoint /tmp/mesh-dmg Mesh-client-*-arm64.dmg
 codesign --verify --deep --strict --verbose=4 /tmp/mesh-dmg/Mesh-client.app
 spctl --assess --type execute --verbose=4 /tmp/mesh-dmg/Mesh-client.app
 xcrun stapler validate /tmp/mesh-dmg/Mesh-client.app
-hdiutil detach /tmp/mesh-dmg
 ```
 
 Or extract the ZIP with `ditto -xk` (not 7-Zip) and verify that tree. If the mounted DMG / `ditto` extract passes but `/Applications/Mesh-client.app` fails, reinstall from the DMG and delete the broken copy. See [Library not loaded: Squirrel.framework](#macos-library-not-loaded-squirrelframework-after-zip-extract) above.
