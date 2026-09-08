@@ -2055,7 +2055,14 @@
     "recommendationsHeading": "Recomendações",
     "lastMessagePrefix": "Durar:",
     "appliesToCategories": "Aplica-se a: {{labels}}",
-    "severityInfo": "Informações"
+    "severityInfo": "Informações",
+    "historyNote": "Os resultados descrevem eventos neste registro, não necessariamente problemas que ainda estão ativos.",
+    "copyReport": "Copiar relatório de solução de problemas",
+    "copyHint": "Inclui mensagens de registro de exemplo. Revise o relatório para obter detalhes privados antes de compartilhar.",
+    "copySuccess": "Relatório copiado",
+    "copyFailure": "Não foi possível copiar o relatório. Tente novamente ou exporte o log.",
+    "evidence": "Ver evidências para {{category}}",
+    "evidenceShown": "Mostrando {{shown}} de {{total}} entradas correspondentes, as mais recentes primeiro."
   },
   "logAnalyzer": {
     "categories": {
@@ -2140,11 +2147,44 @@
         "recommendation": "O histórico de bate-papo de armazenamento e encaminhamento não pôde ser solicitado a um roteador (geralmente uma breve corrida com outro tráfego de rádio). Se o backlog do chat permanecer vazio, reconecte-se ou aguarde o próximo batimento cardíaco do roteador."
       },
       "serial-reconnect": {
-        "label": "Reconexão serial USB"
+        "label": "Reconexão serial USB",
+        "recommendation": "A porta serial USB não pôde ser reaberta ou sua transmissão anterior ainda está bloqueada. Feche outros aplicativos usando o rádio, reconecte o cabo e reconecte no aplicativo. Se ele se repetir, inclua as linhas de registro serial em um relatório de bug."
       },
       "reticulum-nomad-hosting": {
         "label": "Problemas de hospedagem de página Nomad",
         "recommendation": "A hospedagem do Nomad My Pages falhou ou a pasta de conteúdo não está disponível. Abra Nomad Network → My Pages, escolha novamente a pasta pages se ela for movida e, em seguida, comece a servir. Os detalhes aparecem como [nomad-serving] / [NomadHosting] no registro."
+      },
+      "renderer-unresponsive": {
+        "label": "A aplicação parou de responder",
+        "recommendation": "O aplicativo parou de enviar batimentos cardíacos da interface do usuário. Se ele se recuperou, observe o que você estava fazendo perto do horário listado. Se ele permanecer congelado, reinicie o aplicativo e inclua este relatório ao relatar uma pendência recorrente."
+      },
+      "database-persistence": {
+        "label": "As alterações não foram salvas",
+        "recommendation": "As gravações do banco de dados esgotaram suas tentativas ou foram descartadas. As alterações visíveis nesta sessão podem não sobreviver a uma reinicialização. Exporte dados importantes antes de sair e verifique o espaço livre em disco e o acesso à pasta de dados do aplicativo. Não exclua o banco de dados."
+      },
+      "meshtastic-tcp": {
+        "label": "Falha na conexão Meshtastic TCP",
+        "recommendation": "A conexão TCP com o rádio Meshtastic falhou. Verifique o endereço de rádio e a porta, a acessibilidade da rede local e se outro cliente está usando a conexão antes de se reconectar."
+      },
+      "reticulum-sidecar": {
+        "label": "Serviço Reticulum interrompido",
+        "recommendation": "O serviço local do Reticulum falhou ao iniciar, responder ou manter sua conexão de evento. Verifique seu status em Conexão e as linhas de registro abaixo. Se não tiver recuperado, reinicie a conexão do Reticulum. Um sidecar empacotado ausente pode exigir a reinstalação do aplicativo."
+      },
+      "reticulum-delivery": {
+        "label": "Falha na entrega ou sincronização do Reticulum",
+        "recommendation": "Uma entrega de mensagem ou tentativa de sincronização de propagação falhou. Verifique o status atual da mensagem antes de tentar novamente, sondar o destino e verificar as interfaces ativadas. Para propagação, verifique o nó selecionado e o status de sincronização em Rede; uma mensagem armazenada não é prova de entrega do destinatário."
+      },
+      "reticulum-backpressure": {
+        "label": "Eventos ou pacotes do Reticulum descartados",
+        "recommendation": "O serviço Reticulum local descartou eventos ou pacotes porque uma fila foi preenchida, um assinante ficou para trás ou uma carga útil excedeu um limite. Reduza as transferências simultâneas em massa e verifique o status da mensagem antes de tentar novamente. Quedas repetidas enquanto ocioso valem a pena relatar com essas amostras de log."
+      },
+      "firmware-flash": {
+        "label": "Transferência de firmware paralisada",
+        "recommendation": "A transferência de firmware parou de progredir e sua porta serial foi fechada. Confirme o firmware e o dispositivo corretos, verifique o cabo USB e siga as instruções de recuperação do dispositivo ou do carregador de inicialização antes de tentar novamente."
+      },
+      "unclassified": {
+        "label": "Outros avisos e erros",
+        "recommendation": "Essas linhas de registro não correspondem a um diagnóstico conhecido e podem incluir mensagens de recuperação esperadas. Revise os carimbos de data e hora e o contexto ao redor. Se um problema persistir, exporte o registro completo com este relatório."
       }
     },
     "recommendationGroups": {

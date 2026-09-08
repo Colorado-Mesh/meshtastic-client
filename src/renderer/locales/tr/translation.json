@@ -2055,7 +2055,14 @@
     "recommendationsHeading": "Öneriler",
     "lastMessagePrefix": "Son:",
     "appliesToCategories": "Şunlar için geçerlidir: {{labels}}",
-    "severityInfo": "Bilgi"
+    "severityInfo": "Bilgi",
+    "historyNote": "Bulgular, hala aktif olan sorunları değil, bu günlükteki olayları tanımlar.",
+    "copyReport": "Sorun giderme raporunu kopyala",
+    "copyHint": "Örnek günlük mesajları içerir. Paylaşmadan önce özel bilgiler için raporu inceleyin.",
+    "copySuccess": "Rapor kopyalandı!",
+    "copyFailure": "Rapor kopyalanamadı. Tekrar deneyin veya günlüğü dışa aktarın.",
+    "evidence": "{{category}} için kanıtları görüntüleyin",
+    "evidenceShown": "Eşleşen {{shown}}/{{total}} giriş gösteriliyor, önce en yeni."
   },
   "logAnalyzer": {
     "categories": {
@@ -2140,11 +2147,44 @@
         "recommendation": "Sohbet geçmişini sakla ve ilet bir yönlendiriciden talep edilemez (genellikle diğer radyo trafiğiyle kısa bir yarış). Sohbet iş yığını boş kalırsa, yeniden bağlanın veya bir sonraki yönlendiricinin kalp atışını bekleyin."
       },
       "serial-reconnect": {
-        "label": "USB Seri Yeniden Bağlantı"
+        "label": "USB Seri Yeniden Bağlantı",
+        "recommendation": "USB seri bağlantı noktası yeniden açılamadı veya önceki akışı hala kilitli. Radyoyu kullanarak diğer uygulamaları kapatın, kabloyu yeniden bağlayın ve uygulamada yeniden bağlanın. Tekrarlanırsa, seri günlük satırlarını bir hata raporuna ekleyin."
       },
       "reticulum-nomad-hosting": {
         "label": "Nomad Sayfası Barındırma Sorunları",
         "recommendation": "Nomad Sayfalarım barındırma başarısız oldu veya içerik klasörü kullanılamıyor. Nomad Network → Sayfalarım bölümünü açın, taşınmışsa pages klasörünü yeniden seçin ve ardından hizmeti başlatın. Ayrıntılar günlükte [nomad-serving] / [NomadHosting] olarak görünür."
+      },
+      "renderer-unresponsive": {
+        "label": "Uygulama yanıt vermeyi durdurdu",
+        "recommendation": "Uygulama, kullanıcı arayüzü kalp atışı göndermeyi durdurdu. İyileştiyse, listelenen saatin yakınında ne yaptığınızı not edin. Donuk kalırsa uygulamayı yeniden başlatın ve tekrarlanan bir takılmayı bildirirken bu raporu ekleyin."
+      },
+      "database-persistence": {
+        "label": "Değişiklikler kaydedilemedi.",
+        "recommendation": "Veritabanı yazıları yeniden denemelerini tüketti veya düşürüldü. Bu oturumda görünen değişiklikler yeniden başlatılamayabilir. Çıkmadan önce önemli verileri dışa aktarın, ardından boş disk alanını kontrol edin ve uygulama veri klasörüne erişin. Veritabanını silmeyin."
+      },
+      "meshtastic-tcp": {
+        "label": "Meshtastic TCP bağlantısı başarısız oldu",
+        "recommendation": "Meshtastic telsizine TCP bağlantısı başarısız oldu. Yeniden bağlanmadan önce radyo adresini ve bağlantı noktasını, yerel ağ erişilebilirliğini ve başka bir istemcinin bağlantıyı kullanıp kullanmadığını kontrol edin."
+      },
+      "reticulum-sidecar": {
+        "label": "Reticulum hizmeti kesildi",
+        "recommendation": "Yerel Reticulum hizmeti olay bağlantısını başlatamadı, yanıt veremedi veya koruyamadı. Bağlantıdaki durumunu ve aşağıdaki günlük satırlarını kontrol edin. Düzelmediyse, Reticulum bağlantısını yeniden başlatın. Eksik bir paketlenmiş sepet, uygulamanın yeniden yüklenmesini gerektirebilir."
+      },
+      "reticulum-delivery": {
+        "label": "Reticulum iletimi veya senkronizasyonu başarısız oldu",
+        "recommendation": "Bir mesaj iletme veya yayılma eşitleme girişimi başarısız oldu. Yeniden denemeden önce mevcut mesaj durumunu kontrol edin, hedefi tarayın ve etkin arayüzleri kontrol edin. Yayılma için, Ağ altında seçilen düğümü ve senkronizasyon durumunu kontrol edin; depolanan bir mesaj, alıcı teslimatının kanıtı değildir."
+      },
+      "reticulum-backpressure": {
+        "label": "Reticulum olayları veya paketleri düşürüldü",
+        "recommendation": "Yerel Reticulum hizmeti, bir sıranın dolması, bir abonenin geride kalması veya bir veri yükünün bir sınırı aşması nedeniyle olayları veya paketleri bıraktı. Eşzamanlı toplu aktarımları azaltın, ardından yeniden denemeden önce mesaj durumunu kontrol edin. Atıl durumdayken tekrarlanan düşüşler, bu günlük örnekleriyle rapor edilmeye değerdir."
+      },
+      "firmware-flash": {
+        "label": "Aygıt yazılımı aktarımı durdu",
+        "recommendation": "Ürün yazılımı aktarımı ilerleme kaydetmeyi durdurdu ve seri bağlantı noktası kapatıldı. Yeniden denemeden önce doğru ürün yazılımını ve cihazı onaylayın, USB kablosunu kontrol edin ve cihaz kurtarma veya önyükleyici talimatlarını izleyin."
+      },
+      "unclassified": {
+        "label": "Diğer uyarılar ve hatalar",
+        "recommendation": "Bu günlük satırları bilinen bir tanıyla eşleşmez ve beklenen kurtarma mesajlarını içerebilir. Zaman damgalarını ve çevresindeki bağlamı gözden geçirin. Bir sorun devam ederse, günlüğün tamamını bu raporla dışa aktarın."
       }
     },
     "recommendationGroups": {

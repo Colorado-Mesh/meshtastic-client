@@ -2197,7 +2197,14 @@
     "recommendationsHeading": "Recommendations",
     "lastMessagePrefix": "Last:",
     "appliesToCategories": "Applies to: {{labels}}",
-    "severityInfo": "Info"
+    "severityInfo": "Info",
+    "historyNote": "Findings describe events in this log, not necessarily problems that are still active.",
+    "copyReport": "Copy troubleshooting report",
+    "copyHint": "Includes sample log messages. Review the report for private details before sharing.",
+    "copySuccess": "Report copied",
+    "copyFailure": "Could not copy the report. Try again or export the log.",
+    "evidence": "View evidence for {{category}}",
+    "evidenceShown": "Showing {{shown}} of {{total}} matching entries, newest first."
   },
   "logAnalyzer": {
     "categories": {
@@ -2274,7 +2281,8 @@
         "recommendation": "Store & Forward chat history could not be requested from a router (often a brief race with other radio traffic). If chat backlog stays empty, reconnect or wait for the next router heartbeat."
       },
       "serial-reconnect": {
-        "label": "USB Serial Reconnect"
+        "label": "USB Serial Reconnect",
+        "recommendation": "The USB serial port could not be reopened or its previous stream is still locked. Close other apps using the radio, reconnect the cable, and reconnect in the app. If it repeats, include the serial log lines in a bug report."
       },
       "sdk-meshtastic": {
         "label": "Meshtastic SDK Warnings/Errors",
@@ -2287,6 +2295,38 @@
       "reticulum-nomad-hosting": {
         "label": "Nomad Page Hosting Issues",
         "recommendation": "Nomad My Pages hosting failed or the content folder is unavailable. Open Nomad Network → My Pages, re-choose the pages folder if it moved, then Start serving. Details appear as [nomad-serving] / [NomadHosting] in the log."
+      },
+      "renderer-unresponsive": {
+        "label": "App stopped responding",
+        "recommendation": "The app stopped sending UI heartbeats. If it has recovered, note what you were doing near the listed time. If it remains frozen, restart the app and include this report when reporting a recurring hang."
+      },
+      "database-persistence": {
+        "label": "Changes could not be saved",
+        "recommendation": "Database writes exhausted their retries or were dropped. Changes visible in this session may not survive a restart. Export important data before quitting, then check free disk space and access to the app data folder. Do not delete the database."
+      },
+      "meshtastic-tcp": {
+        "label": "Meshtastic TCP connection failed",
+        "recommendation": "The TCP connection to the Meshtastic radio failed. Check the radio address and port, local network reachability, and whether another client is using the connection before reconnecting."
+      },
+      "reticulum-sidecar": {
+        "label": "Reticulum service interrupted",
+        "recommendation": "The local Reticulum service failed to start, respond, or maintain its event connection. Check its status in Connection and the log lines below. If it has not recovered, restart the Reticulum connection. A missing packaged sidecar may require reinstalling the app."
+      },
+      "reticulum-delivery": {
+        "label": "Reticulum delivery or sync failed",
+        "recommendation": "A message delivery or propagation sync attempt failed. Check the current message status before retrying, probe the destination, and check enabled interfaces. For propagation, check the selected node and sync status under Network; a stored message is not proof of recipient delivery."
+      },
+      "reticulum-backpressure": {
+        "label": "Reticulum events or packets dropped",
+        "recommendation": "The local Reticulum service dropped events or packets because a queue filled, a subscriber fell behind, or a payload exceeded a limit. Reduce concurrent bulk transfers, then check message status before retrying. Repeated drops while idle are worth reporting with these log samples."
+      },
+      "firmware-flash": {
+        "label": "Firmware transfer stalled",
+        "recommendation": "The firmware transfer stopped making progress and its serial port was closed. Confirm the correct firmware and device, check the USB cable, and follow the device recovery or bootloader instructions before retrying."
+      },
+      "unclassified": {
+        "label": "Other warnings and errors",
+        "recommendation": "These log lines do not match a known diagnosis and may include expected recovery messages. Review their timestamps and surrounding context. If a problem persists, export the full log with this report."
       }
     },
     "recommendationGroups": {

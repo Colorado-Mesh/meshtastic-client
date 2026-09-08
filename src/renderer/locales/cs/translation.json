@@ -2082,7 +2082,14 @@
     "recommendationsHeading": "Doporučení",
     "lastMessagePrefix": "Poslední:",
     "appliesToCategories": "Platí pro: {{labels}}",
-    "severityInfo": "Info"
+    "severityInfo": "Info",
+    "historyNote": "Nálezy popisují události v tomto protokolu, ne nutně problémy, které jsou stále aktivní.",
+    "copyReport": "Kopírovat zprávu o řešení problémů",
+    "copyHint": "Zahrnuje vzorové zprávy protokolu. Před sdílením si zkontroluj zprávu, kde najdeš soukromé údaje.",
+    "copySuccess": "Zpráva zkopírována!",
+    "copyFailure": "Nelze zkopírovat zprávu. Zkuste to znovu nebo exportujte protokol.",
+    "evidence": "Zobrazit důkazy pro {{category}}",
+    "evidenceShown": "Zobrazeno {{shown}} z {{total}} odpovídajících záznamů, nejnovější jako první."
   },
   "logAnalyzer": {
     "categories": {
@@ -2167,11 +2174,44 @@
         "recommendation": "Z routeru nebylo možné vyžádat historii chatu Store & Forward (často se jedná o krátký závod s jiným rádiovým provozem). Pokud nevyřízený chat zůstane prázdný, znovu se připojte nebo počkejte na další srdeční tep směrovače."
       },
       "serial-reconnect": {
-        "label": "Sériové připojení USB"
+        "label": "Sériové připojení USB",
+        "recommendation": "Sériový port USB nelze znovu otevřít nebo je jeho předchozí proud stále uzamčen. Zavřete ostatní aplikace pomocí rádia, znovu připojte kabel a znovu se připojte v aplikaci. Pokud se opakuje, zahrňte sériové řádky protokolu do hlášení o chybě."
       },
       "reticulum-nomad-hosting": {
         "label": "Problémy s hostitelstvím na stránce Nomad",
         "recommendation": "Hostování služby Nomad My Pages se nezdařilo nebo složka s obsahem není k dispozici. Otevřete Nomad Network → My Pages, znovu vyberte složku stránek, pokud se přesunula, a poté Spustit zobrazování. Podrobnosti se v protokolu zobrazí jako [nomad-serving] / [NomadHosting]."
+      },
+      "renderer-unresponsive": {
+        "label": "Aplikace přestala reagovat",
+        "recommendation": "Aplikace přestala odesílat srdeční tep uživatelského rozhraní. Pokud se zotavil, všimněte si, co jste dělali v blízkosti uvedeného času. Pokud zůstanou zamrzlé, restartujte aplikaci a při hlášení opakovaného zablokování zahrňte tuto zprávu."
+      },
+      "database-persistence": {
+        "label": "Vaše změny se nepodařilo uložit.",
+        "recommendation": "Zápisy do databáze vyčerpaly své opakování nebo byly zrušeny. Změny viditelné v této relaci nemusí přežít restart. Před ukončením exportujte důležitá data a zkontrolujte volné místo na disku a přístup ke složce dat aplikace. Neodstraňujte databázi."
+      },
+      "meshtastic-tcp": {
+        "label": "Meshtastic TCP spojení selhalo",
+        "recommendation": "Připojení TCP k rádiu Meshtastic se nezdařilo. Před opětovným připojením zkontrolujte rádiovou adresu a port, dosažitelnost místní sítě a zda připojení používá jiný klient."
+      },
+      "reticulum-sidecar": {
+        "label": "Služba Reticulum byla přerušena",
+        "recommendation": "Místní služba Reticulum se nepodařilo spustit, odpovědět nebo zachovat připojení k události. Zkontrolujte jeho stav v Připojení a níže uvedených řádcích protokolu. Pokud se neobnovil, restartujte připojení Reticulum. Chybějící zabalený postranní vozík může vyžadovat přeinstalování aplikace."
+      },
+      "reticulum-delivery": {
+        "label": "Doručení nebo synchronizace Reticulum se nezdařila",
+        "recommendation": "Pokus o synchronizaci doručení nebo propagace zprávy se nezdařil. Před opakováním zkontrolujte aktuální stav zprávy, prozkoumejte cíl a zkontrolujte povolená rozhraní. Pro propagaci zkontrolujte vybraný uzel a stav synchronizace v části Síť; uložená zpráva není dokladem o doručení příjemcem."
+      },
+      "reticulum-backpressure": {
+        "label": "Zahozené události nebo pakety Reticulum",
+        "recommendation": "Místní služba Reticulum upustila od událostí nebo paketů, protože fronta byla naplněna, účastník zaostal nebo užitečné zatížení překročilo limit. Snižte souběžné hromadné přenosy a před opakováním zkontrolujte stav zprávy. Opakované kapky při nečinnosti stojí za to hlásit s těmito vzorky protokolů."
+      },
+      "firmware-flash": {
+        "label": "Přenos firmwaru se zastavil",
+        "recommendation": "Přenos firmwaru přestal probíhat a jeho sériový port byl uzavřen. Potvrďte správný firmware a zařízení, zkontrolujte kabel USB a před opakovaným pokusem postupujte podle pokynů pro obnovení zařízení nebo zavaděče."
+      },
+      "unclassified": {
+        "label": "Další varování a chyby",
+        "recommendation": "Tyto řádky protokolu neodpovídají známé diagnóze a mohou obsahovat očekávané zprávy o obnovení. Zkontrolujte jejich časová razítka a okolní kontext. Pokud problém přetrvává, exportujte celý protokol s touto zprávou."
       }
     },
     "recommendationGroups": {

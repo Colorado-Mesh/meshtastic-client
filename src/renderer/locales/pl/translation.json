@@ -2107,7 +2107,14 @@
     "recommendationsHeading": "Zalecenia",
     "lastMessagePrefix": "Ostatni:",
     "appliesToCategories": "Dotyczy: {{labels}}",
-    "severityInfo": "Informacje"
+    "severityInfo": "Informacje",
+    "historyNote": "Wyniki opisują zdarzenia w tym dzienniku, niekoniecznie problemy, które są nadal aktywne.",
+    "copyReport": "Skopiuj raport z rozwiązywania problemów",
+    "copyHint": "Zawiera przykładowe komunikaty dziennika. Przed udostępnieniem zapoznaj się z raportem w celu uzyskania prywatnych informacji.",
+    "copySuccess": "Skopiowano raport",
+    "copyFailure": "Nie można skopiować raportu. Spróbuj ponownie lub wyeksportuj dziennik.",
+    "evidence": "Zobacz dowody dla {{category}}",
+    "evidenceShown": "Pokazuje {{shown}} z {{total}} pasujących wpisów, najpierw najnowsze."
   },
   "logAnalyzer": {
     "categories": {
@@ -2192,11 +2199,44 @@
         "recommendation": "Nie można zażądać historii czatu Store & Forward od routera (często krótki wyścig z innym ruchem radiowym). Jeśli backlog czatu pozostaje pusty, podłącz ponownie lub poczekaj na kolejne tętno routera."
       },
       "serial-reconnect": {
-        "label": "Ponowne połączenie szeregowe USB"
+        "label": "Ponowne połączenie szeregowe USB",
+        "recommendation": "Port szeregowy USB nie mógł zostać ponownie otwarty lub jego poprzedni strumień jest nadal zablokowany. Zamknij inne aplikacje za pomocą radia, ponownie podłącz kabel i ponownie połącz się w aplikacji. Jeśli się powtórzy, dołącz wiersze dziennika seryjnego do raportu o błędzie."
       },
       "reticulum-nomad-hosting": {
         "label": "Problemy z hostingiem strony Nomad",
         "recommendation": "Hosting Nomad My Pages nie powiódł się lub folder treści jest niedostępny. Otwórz Nomad Network → My Pages, ponownie wybierz folder stron, jeśli został przeniesiony, a następnie rozpocznij serwowanie. Szczegóły pojawiają się jako [nomad-serving] / [NomadHosting] w dzienniku."
+      },
+      "renderer-unresponsive": {
+        "label": "Aplikacja przestała odpowiadać",
+        "recommendation": "Aplikacja przestała wysyłać bicie serca interfejsu użytkownika. Jeśli problem wyzdrowiał, zanotuj, co robiłeś w pobliżu podanego czasu. Jeśli pozostanie zablokowany, uruchom ponownie aplikację i dołącz ten raport podczas zgłaszania cyklicznego zawieszenia."
+      },
+      "database-persistence": {
+        "label": "„Nie można zapisać zmian”",
+        "recommendation": "Zapisy w bazach danych wyczerpały swoje ponawiane próby lub zostały porzucone. Zmiany widoczne w tej sesji mogą nie przetrwać ponownego uruchomienia. Eksportuj ważne dane przed zamknięciem, a następnie sprawdź wolne miejsce na dysku i dostęp do folderu danych aplikacji. Nie usuwaj bazy danych."
+      },
+      "meshtastic-tcp": {
+        "label": "Połączenie TCP Meshtastic nie powiodło się",
+        "recommendation": "Połączenie TCP z radiem Meshtastic nie powiodło się. Przed ponownym połączeniem sprawdź adres i port radiowy, dostępność sieci lokalnej oraz to, czy inny klient korzysta z połączenia."
+      },
+      "reticulum-sidecar": {
+        "label": "Usługa Reticulum przerwana",
+        "recommendation": "Lokalna usługa Reticulum nie uruchomiła się, nie zareagowała lub nie utrzymała połączenia ze zdarzeniem. Sprawdź jego status w Połączeniu i poniższe wiersze dziennika. Jeśli nie odzyskał sprawności, uruchom ponownie połączenie Reticulum. Brakujący spakowany wózek boczny może wymagać ponownej instalacji aplikacji."
+      },
+      "reticulum-delivery": {
+        "label": "Dostarczenie lub synchronizacja Reticulum nie powiodły się",
+        "recommendation": "Próba dostarczenia wiadomości lub synchronizacji propagacji nie powiodła się. Sprawdź bieżący status wiadomości przed ponowną próbą, sprawdź miejsce docelowe i sprawdź włączone interfejsy. W celu propagacji sprawdź wybrany węzeł i stan synchronizacji w sekcji Sieć; zapisany komunikat nie jest dowodem dostawy odbiorcy."
+      },
+      "reticulum-backpressure": {
+        "label": "Odrzucone zdarzenia lub pakiety Reticulum",
+        "recommendation": "Lokalna usługa Reticulum odrzuciła zdarzenia lub pakiety, ponieważ kolejka została wypełniona, subskrybent został w tyle lub ładunek przekroczył limit. Zmniejsz liczbę jednoczesnych transferów masowych, a następnie sprawdź status wiadomości przed ponowną próbą. Powtarzające się spadki podczas bezczynności są warte raportowania za pomocą tych próbek dziennika."
+      },
+      "firmware-flash": {
+        "label": "Transfer oprogramowania zablokowany",
+        "recommendation": "Transfer oprogramowania sprzętowego zatrzymał się, a jego port szeregowy został zamknięty. Potwierdź prawidłowe oprogramowanie sprzętowe i urządzenie, sprawdź kabel USB i postępuj zgodnie z instrukcjami odzyskiwania urządzenia lub ładowania rozruchowego przed ponowną próbą."
+      },
+      "unclassified": {
+        "label": "Inne ostrzeżenia i błędy",
+        "recommendation": "Te wiersze dziennika nie pasują do znanej diagnozy i mogą zawierać oczekiwane komunikaty odzyskiwania. Przejrzyj ich znaczniki czasu i otaczający je kontekst. Jeśli problem będzie się powtarzał, wyeksportuj pełny dziennik z tym raportem."
       }
     },
     "recommendationGroups": {

@@ -2055,7 +2055,14 @@
     "recommendationsHeading": "Aanbevelingen",
     "lastMessagePrefix": "Laatst:",
     "appliesToCategories": "Geldt voor: {{labels}}",
-    "severityInfo": "Informatie"
+    "severityInfo": "Informatie",
+    "historyNote": "Bevindingen beschrijven gebeurtenissen in dit logboek, niet noodzakelijkerwijs problemen die nog steeds actief zijn.",
+    "copyReport": "Probleemoplossingsrapport kopiëren",
+    "copyHint": "Inclusief monsterlogboekberichten. Controleer het rapport op privégegevens voordat je het deelt.",
+    "copySuccess": "Rapport gekopieerd",
+    "copyFailure": "Kon het rapport niet kopiëren. Probeer het opnieuw of exporteer het logboek.",
+    "evidence": "Bekijk bewijsmateriaal voor {{category}}",
+    "evidenceShown": "Toont {{shown}} van {{total}} overeenkomende inzendingen, nieuwste eerst."
   },
   "logAnalyzer": {
     "categories": {
@@ -2140,11 +2147,44 @@
         "recommendation": "Chatgeschiedenis opslaan en doorsturen kon niet worden aangevraagd bij een router (vaak een korte race met ander radioverkeer). Als de chatachterstand leeg blijft, maak dan opnieuw verbinding of wacht op de volgende hartslag van de router."
       },
       "serial-reconnect": {
-        "label": "USB-serieel opnieuw verbinden"
+        "label": "USB-serieel opnieuw verbinden",
+        "recommendation": "De USB seriële poort kon niet opnieuw worden geopend of de vorige stream is nog steeds vergrendeld. Sluit andere apps met de radio, sluit de kabel opnieuw aan en maak opnieuw verbinding in de app. Als het zich herhaalt, neem dan de seriële logregels op in een bugrapport."
       },
       "reticulum-nomad-hosting": {
         "label": "Problemen met Nomad-pagina's",
         "recommendation": "Het hosten van Nomad My Pages is mislukt of de inhoudsmap is niet beschikbaar. Open Nomad Network → My Pages, kies de paginamap opnieuw als deze is verplaatst en start vervolgens met serveren. Details verschijnen als [nomad-serving] / [NomadHosting] in het logboek."
+      },
+      "renderer-unresponsive": {
+        "label": "App reageert niet meer",
+        "recommendation": "De app verzendt geen UI-hartslagen meer. Als het hersteld is, noteer dan wat je aan het doen was in de buurt van de vermelde tijd. Als het bevroren blijft, start u de app opnieuw op en voegt u dit rapport toe bij het melden van een terugkerende hang."
+      },
+      "database-persistence": {
+        "label": "Je wijzigingen konden niet worden opgeslagen.",
+        "recommendation": "Database schrijft uitgeput hun nieuwe pogingen of werden gedropt. Wijzigingen die zichtbaar zijn in deze sessie overleven een herstart mogelijk niet. Exporteer belangrijke gegevens voordat u afsluit en controleer vervolgens de vrije schijfruimte en toegang tot de app-gegevensmap. Verwijder de database niet."
+      },
+      "meshtastic-tcp": {
+        "label": "Meshtastic TCP-verbinding mislukt",
+        "recommendation": "De TCP-verbinding met de Meshtastic-radio is mislukt. Controleer het radioadres en de poort, de bereikbaarheid van het lokale netwerk en of een andere client de verbinding gebruikt voordat u opnieuw verbinding maakt."
+      },
+      "reticulum-sidecar": {
+        "label": "Reticulum-service onderbroken",
+        "recommendation": "De lokale Reticulum-service kon de gebeurtenisverbinding niet starten, beantwoorden of onderhouden. Controleer de status in Verbinding en de onderstaande logregels. Als het niet is hersteld, start u de Reticulum-verbinding opnieuw op. Als er een verpakt zijspan ontbreekt, moet de app mogelijk opnieuw worden geïnstalleerd."
+      },
+      "reticulum-delivery": {
+        "label": "Reticulum-bezorging of synchronisatie mislukt",
+        "recommendation": "Een poging tot berichtlevering of propagatiesynchronisatie is mislukt. Controleer de huidige berichtstatus voordat u het opnieuw probeert, controleer de bestemming en controleer ingeschakelde interfaces. Controleer voor verspreiding het geselecteerde knooppunt en de synchronisatiestatus onder Netwerk; een opgeslagen bericht is geen bewijs van aflevering aan de ontvanger."
+      },
+      "reticulum-backpressure": {
+        "label": "Reticulum-gebeurtenissen of pakketten verloren",
+        "recommendation": "De lokale Reticulum-service liet evenementen of pakketten vallen omdat een wachtrij vol was, een abonnee achterbleef of een payload een limiet overschreed. Verminder gelijktijdige bulkoverdrachten en controleer vervolgens de berichtstatus voordat u het opnieuw probeert. Herhaalde druppels tijdens inactiviteit zijn de moeite waard om te melden met deze logmonsters."
+      },
+      "firmware-flash": {
+        "label": "Firmware-overdracht vastgelopen",
+        "recommendation": "De overdracht van de firmware is gestopt en de seriële poort is gesloten. Bevestig de juiste firmware en het juiste apparaat, controleer de USB-kabel en volg de instructies voor apparaatherstel of opstartlader voordat u het opnieuw probeert."
+      },
+      "unclassified": {
+        "label": "Andere waarschuwingen en fouten",
+        "recommendation": "Deze logregels komen niet overeen met een bekende diagnose en kunnen verwachte herstelberichten bevatten. Bekijk hun tijdstempels en omringende context. Als een probleem zich blijft voordoen, exporteer dan het volledige logboek met dit rapport."
       }
     },
     "recommendationGroups": {
