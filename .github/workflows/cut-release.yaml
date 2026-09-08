@@ -80,6 +80,9 @@ jobs:
           node-version: '22'
           cache: 'pnpm'
 
+      - name: Verify pnpm
+        run: node scripts/ci-verify-pnpm.mjs
+
       - name: Install dependencies
         # dry_run only needs the detect script + package.json; still install so
         # node_modules layout matches (detect has no deps beyond node builtins).
