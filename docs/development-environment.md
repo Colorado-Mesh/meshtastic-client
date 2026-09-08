@@ -316,8 +316,16 @@ STORE_VERSION="$(
   node --input-type=module << 'EOF'
 import fs from 'node:fs';
 import { storeVersionFromPackageManager } from './scripts/flatpakPnpmStoreVersion.mjs';
+// Failure point: missing/invalid packageManager → null (generator would get a bad --pnpm-store-version).
+// Fallback: exit non-zero under set -e so flatpak-node-generator never runs.
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-console.log(storeVersionFromPackageManager(pkg.packageManager));
+const storeVersion = storeVersionFromPackageManager(pkg.packageManager);
+if (storeVersion == null) {
+  throw new Error(
+    `storeVersionFromPackageManager returned null for packageManager=${JSON.stringify(pkg.packageManager)}`,
+  );
+}
+console.log(storeVersion);
 EOF
 )"
 node --input-type=module << 'EOF'

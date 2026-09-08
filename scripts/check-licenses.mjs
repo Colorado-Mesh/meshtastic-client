@@ -249,7 +249,7 @@ export function licenseIdFromLicenseFileText(text) {
  * @returns {string | null}
  */
 export function parseSeeLicenseInFilename(declaration) {
-  const match = String(declaration).match(/^SEE LICENSE IN\s+(\S.+)$/i);
+  const match = String(declaration).match(/^SEE LICENSE IN\s+(.+)$/i);
   if (!match) return null;
   const name = match[1].trim();
   if (!name || /[/\\]/.test(name) || name.includes('..')) return null;

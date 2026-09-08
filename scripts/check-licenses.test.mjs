@@ -129,6 +129,7 @@ describe('parseSeeLicenseInFilename', () => {
   it('accepts basename-only declarations', () => {
     expect(parseSeeLicenseInFilename('SEE LICENSE IN COPYING')).toBe('COPYING');
     expect(parseSeeLicenseInFilename('SEE LICENSE IN LICENSE')).toBe('LICENSE');
+    expect(parseSeeLicenseInFilename('SEE LICENSE IN X')).toBe('X');
   });
 
   it('rejects path separators and parent traversal', () => {
