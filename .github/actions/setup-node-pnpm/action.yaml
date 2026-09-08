@@ -14,18 +14,18 @@ runs:
       # pnpm/action-setup v6.1.0 (pnpm 12 native bootstrap; older pins break Windows store path)
       uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
 
+    # pnpm 12 native bootstrap: PowerShell prefers broken .bin/pnpm.ps1 (silent exit 0).
+    - name: Prefer native pnpm.exe on Windows PATH
+      if: runner.os == 'Windows'
+      shell: bash
+      run: node scripts/ci-prefer-windows-pnpm-exe.mjs
+
     - name: Setup Node
       # actions/setup-node v6.5.0
       uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
       with:
         node-version: ${{ inputs.node-version }}
         cache: pnpm
-
-    # pnpm 12 native bootstrap: PowerShell prefers broken .bin/pnpm.ps1 (silent exit 0).
-    - name: Prefer native pnpm.exe on Windows PATH
-      if: runner.os == 'Windows'
-      shell: bash
-      run: node scripts/ci-prefer-windows-pnpm-exe.mjs
 
     - name: Verify pnpm
       shell: bash

@@ -163,9 +163,24 @@ describe('Windows packaging (contract)', () => {
     expect(buildWorkflow).toContain(
       'node scripts/test-win-nsis-install.mjs --arch arm64 --probe-7z',
     );
-    expect(buildWorkflow).toContain('ci-prefer-windows-pnpm-exe.mjs');
-    expect(buildWorkflow).toContain('ci-verify-pnpm.mjs');
-    expect(buildWorkflow).toContain('assert-win-setup-installers.mjs');
+    const buildPreferIdx = buildWorkflow.indexOf('ci-prefer-windows-pnpm-exe.mjs');
+    const buildSetupNodeIdx = buildWorkflow.indexOf('actions/setup-node@');
+    const buildVerifyIdx = buildWorkflow.indexOf('ci-verify-pnpm.mjs');
+    const buildInstallIdx = buildWorkflow.indexOf('pnpm install --frozen-lockfile');
+    const buildAssertIdx = buildWorkflow.indexOf('assert-win-setup-installers.mjs');
+    const buildUploadWinIdx = buildWorkflow.indexOf('Upload Windows Artifact');
+    expect(buildPreferIdx).toBeGreaterThan(-1);
+    expect(buildSetupNodeIdx).toBeGreaterThan(-1);
+    expect(buildVerifyIdx).toBeGreaterThan(-1);
+    expect(buildInstallIdx).toBeGreaterThan(-1);
+    expect(buildAssertIdx).toBeGreaterThan(-1);
+    expect(buildUploadWinIdx).toBeGreaterThan(-1);
+    expect(buildPreferIdx).toBeLessThan(buildSetupNodeIdx);
+    expect(buildVerifyIdx).toBeLessThan(buildInstallIdx);
+    expect(buildAssertIdx).toBeLessThan(buildUploadWinIdx);
+    expect(buildWorkflow).toMatch(
+      /Prefer native pnpm\.exe on Windows PATH[\s\S]*?if: runner\.os == 'Windows'[\s\S]*?ci-prefer-windows-pnpm-exe\.mjs/,
+    );
     expect(buildWorkflow).toContain('needs: build');
     expect(buildWorkflow).not.toContain('win-arm64-install:');
     // READ-ME-FIRST must live under release/ in uploads so artifact LCA stays release/
@@ -217,9 +232,24 @@ describe('Windows packaging (contract)', () => {
     expect(releaseWorkflow).toContain(
       "contains(matrix.build_script, 'dist:win') && matrix.os != 'windows-latest'",
     );
-    expect(releaseWorkflow).toContain('ci-prefer-windows-pnpm-exe.mjs');
-    expect(releaseWorkflow).toContain('ci-verify-pnpm.mjs');
-    expect(releaseWorkflow).toContain('assert-win-setup-installers.mjs');
+    const releasePreferIdx = releaseWorkflow.indexOf('ci-prefer-windows-pnpm-exe.mjs');
+    const releaseSetupNodeIdx = releaseWorkflow.indexOf('actions/setup-node@');
+    const releaseVerifyIdx = releaseWorkflow.indexOf('ci-verify-pnpm.mjs');
+    const releaseInstallIdx = releaseWorkflow.indexOf('pnpm install --frozen-lockfile');
+    const releaseAssertIdx = releaseWorkflow.indexOf('assert-win-setup-installers.mjs');
+    const releaseUploadWinIdx = releaseWorkflow.indexOf('Upload Windows Artifact');
+    expect(releasePreferIdx).toBeGreaterThan(-1);
+    expect(releaseSetupNodeIdx).toBeGreaterThan(-1);
+    expect(releaseVerifyIdx).toBeGreaterThan(-1);
+    expect(releaseInstallIdx).toBeGreaterThan(-1);
+    expect(releaseAssertIdx).toBeGreaterThan(-1);
+    expect(releaseUploadWinIdx).toBeGreaterThan(-1);
+    expect(releasePreferIdx).toBeLessThan(releaseSetupNodeIdx);
+    expect(releaseVerifyIdx).toBeLessThan(releaseInstallIdx);
+    expect(releaseAssertIdx).toBeLessThan(releaseUploadWinIdx);
+    expect(releaseWorkflow).toMatch(
+      /Prefer native pnpm\.exe on Windows PATH[\s\S]*?if: runner\.os == 'Windows'[\s\S]*?ci-prefer-windows-pnpm-exe\.mjs/,
+    );
     expect(releaseWorkflow).toContain('packaging-smoke:');
     expect(releaseWorkflow).toContain('label: x64 NSIS install');
     expect(releaseWorkflow).toContain('node scripts/test-win-nsis-install.mjs --arch x64');

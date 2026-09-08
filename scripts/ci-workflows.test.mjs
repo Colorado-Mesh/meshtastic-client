@@ -15,6 +15,18 @@ function read(relativePath) {
   return fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
 }
 
+/**
+ * @param {string} haystack
+ * @param {string} needle
+ * @param {string} label
+ * @returns {number}
+ */
+function requireIndex(haystack, needle, label) {
+  const idx = haystack.indexOf(needle);
+  expect(idx, label).toBeGreaterThan(-1);
+  return idx;
+}
+
 describe('CI workflow contracts', () => {
   const ciWorkflow = read('.github/workflows/ci.yaml');
   const testsWorkflow = read('.github/workflows/tests.yaml');
@@ -111,8 +123,32 @@ describe('CI workflow contracts', () => {
     expect(setupAction).toContain("default: '22.23.2'");
     expect(setupAction).toContain('pnpm install --frozen-lockfile');
     // pnpm 12 native bootstrap: Windows PowerShell hits silent .ps1 shims without this.
-    expect(setupAction).toContain('ci-prefer-windows-pnpm-exe.mjs');
-    expect(setupAction).toContain('ci-verify-pnpm.mjs');
+    const preferIdx = requireIndex(
+      setupAction,
+      'ci-prefer-windows-pnpm-exe.mjs',
+      'setup-node-pnpm prefer helper',
+    );
+    const verifyIdx = requireIndex(
+      setupAction,
+      'ci-verify-pnpm.mjs',
+      'setup-node-pnpm verify helper',
+    );
+    const installIdx = requireIndex(
+      setupAction,
+      'pnpm install --frozen-lockfile',
+      'setup-node-pnpm install',
+    );
+    const setupNodeIdx = requireIndex(
+      setupAction,
+      `actions/setup-node@${SETUP_NODE_SHA}`,
+      'setup-node-pnpm setup-node',
+    );
+    expect(preferIdx).toBeLessThan(setupNodeIdx);
+    expect(preferIdx).toBeLessThan(installIdx);
+    expect(verifyIdx).toBeLessThan(installIdx);
+    expect(setupAction).toMatch(
+      /Prefer native pnpm\.exe on Windows PATH[\s\S]*?if: runner\.os == 'Windows'/,
+    );
   });
 
   it('fixes Windows pnpm PATH and verifies pnpm before packaging installs', () => {
@@ -122,8 +158,23 @@ describe('CI workflow contracts', () => {
       '.github/workflows/e2e.yaml',
     ]) {
       const yaml = read(relativePath);
-      expect(yaml, relativePath).toContain('ci-prefer-windows-pnpm-exe.mjs');
-      expect(yaml, relativePath).toContain('ci-verify-pnpm.mjs');
+      const preferIdx = requireIndex(
+        yaml,
+        'ci-prefer-windows-pnpm-exe.mjs',
+        `${relativePath} prefer`,
+      );
+      const setupNodeIdx = requireIndex(yaml, 'actions/setup-node@', `${relativePath} setup-node`);
+      const verifyIdx = requireIndex(yaml, 'ci-verify-pnpm.mjs', `${relativePath} verify`);
+      const installIdx = requireIndex(
+        yaml,
+        'pnpm install --frozen-lockfile',
+        `${relativePath} install`,
+      );
+      expect(preferIdx, relativePath).toBeLessThan(setupNodeIdx);
+      expect(verifyIdx, relativePath).toBeLessThan(installIdx);
+      expect(yaml, relativePath).toMatch(
+        /Prefer native pnpm\.exe on Windows PATH[\s\S]*?if: runner\.os == 'Windows'[\s\S]*?ci-prefer-windows-pnpm-exe\.mjs/,
+      );
     }
     expect(read('.github/workflows/build.yaml')).toContain('assert-win-setup-installers.mjs');
     expect(read('.github/workflows/release.yaml')).toContain('assert-win-setup-installers.mjs');
