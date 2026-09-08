@@ -24,9 +24,10 @@ Mesh-Client uses GitHub Actions for continuous integration and deployment.
 
 ## CI Build (`ci.yaml`)
 
-Runs on every push, pull request, and merge-queue `merge_group` for `main` (and `workflow_dispatch`). After one change-detection job, independent lanes run concurrently:
+Runs on every push, pull request, and merge-queue `merge_group` for `main` (and `workflow_dispatch`). Independent lanes start concurrently; only Flatpak waits for change detection:
 
-- **Code quality:** format, markdownlint, ESLint, license allowlist, actionlint, dependency audit, and yamllint
+- **Code quality:** format, markdownlint, license allowlist, actionlint, dependency audit, and yamllint
+- **ESLint:** full repository lint with two workers, in parallel with formatting; all type-aware rules and the zero-warning gate remain enabled
 - **Typecheck:** `pnpm run typecheck`
 - **Application build:** `pnpm run build`
 - **Flatpak checks:** only when Flatpak inputs change; runs `check:flatpak`, `check:flatpak-offline-pnpm`, `desktop-file-validate`, and `appstreamcli validate`
@@ -59,9 +60,10 @@ Runs on every push, pull request, and merge-queue `merge_group` for `main`:
 2. **Pull requests:** run `vitest related` without coverage for the affected project lanes. Docs-only changes skip Vitest. Shared contracts select all projects.
 3. **Safe fallback:** test infrastructure, dependency manifests, deleted/renamed paths, oversized output, or detector failures run the full matrix.
 4. **Protected events:** `merge_group`, pushes to `main`, and manual runs always run full coverage across `renderer-ui`, `renderer-logic`, and `main`.
-5. **Merge job:** combine scoped blob reports for PR feedback, or run `pnpm run test:coverage:merge` on protected events to enforce global thresholds.
-6. **`reticulum-sidecar-coverage`:** when sidecar paths change, clone the `.rsstack/` workspace, run `cargo llvm-cov --fail-under-lines 45`, and upload `lcov.info`.
-7. Upload merged test results (retained 7 days).
+5. **Sharding:** `renderer-ui` runs in three shards; `renderer-logic` and `main` each run once. This applies to both related tests and full coverage. Each shard uploads a uniquely named blob report. The existing `Coverage (...)` required checks verify that detection and every shard succeeded.
+6. **Merge job:** combine scoped blob reports for PR feedback, or run `pnpm run test:coverage:merge` on protected events to enforce global thresholds.
+7. **`reticulum-sidecar-coverage`:** when sidecar paths change, clone the `.rsstack/` workspace, run `cargo llvm-cov --fail-under-lines 45`, and upload `lcov.info`.
+8. Upload merged test results (retained 7 days).
 
 The three `Coverage (...)` job names and `Merge coverage` remain stable for the repository ruleset, including when a project or the whole test matrix has no relevant PR work. Superseded runs for the same pull request or ref are cancelled.
 

@@ -33,8 +33,8 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
-          # paths-filter also handles push-like merge_group events from this checkout.
-          fetch-depth: 0
+          # PR filtering uses the API; push-like events still need history.
+          fetch-depth: ${{ github.event_name == 'pull_request' && 1 || 0 }}
       # dorny/paths-filter v4.0.0
       - uses: dorny/paths-filter@9d7afb8d214ad99e78fbd4247752c4caed2b6e4c
         id: filter
@@ -71,9 +71,6 @@ jobs:
       - name: Markdown lint
         run: pnpm run lint:md
 
-      - name: Lint
-        run: pnpm run lint
-
       - name: Audit Open Source Licenses
         run: pnpm run check:licenses
 
@@ -93,6 +90,18 @@ jobs:
 
       - name: YAML Lint
         run: yamllint -f github -s .
+
+  lint:
+    name: ESLint
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout v6.1.0
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      # Bound worker count because each type-aware worker loads TypeScript programs.
+      - run: pnpm run lint --concurrency 2
 
   typecheck:
     name: Typecheck
@@ -155,12 +164,13 @@ jobs:
 
   build:
     name: Build & Test
-    needs: [changes, quality, typecheck, app-build, flatpak]
+    needs: [changes, quality, lint, typecheck, app-build, flatpak]
     if: always() && !cancelled()
     runs-on: ubuntu-latest
     env:
       CHANGES_RESULT: ${{ needs.changes.result }}
       QUALITY_RESULT: ${{ needs.quality.result }}
+      LINT_RESULT: ${{ needs.lint.result }}
       TYPECHECK_RESULT: ${{ needs.typecheck.result }}
       BUILD_RESULT: ${{ needs.app-build.result }}
       FLATPAK_RESULT: ${{ needs.flatpak.result }}
@@ -169,7 +179,7 @@ jobs:
         shell: bash
         run: |
           required_ok=true
-          for result in "$CHANGES_RESULT" "$QUALITY_RESULT" "$TYPECHECK_RESULT" "$BUILD_RESULT"; do
+          for result in "$CHANGES_RESULT" "$QUALITY_RESULT" "$LINT_RESULT" "$TYPECHECK_RESULT" "$BUILD_RESULT"; do
             [[ "$result" == 'success' ]] || required_ok=false
           done
           flatpak_ok=false
@@ -180,6 +190,7 @@ jobs:
             echo
             echo "- Changes: $CHANGES_RESULT"
             echo "- Code quality: $QUALITY_RESULT"
+            echo "- ESLint: $LINT_RESULT"
             echo "- Typecheck: $TYPECHECK_RESULT"
             echo "- Application build: $BUILD_RESULT"
             echo "- Flatpak checks: $FLATPAK_RESULT"

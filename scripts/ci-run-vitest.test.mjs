@@ -22,6 +22,43 @@ describe('ci-run-vitest', () => {
     ]);
   });
 
+  it.each(['full', 'related'])('shards %s runs without colliding blob reports', (mode) => {
+    const outputs = [1, 2, 3].map((index) => {
+      const args = buildCiVitestArgs({
+        mode,
+        project: 'renderer-ui',
+        shard: `${index}/3`,
+        relatedPaths: ['src/renderer/App.tsx'],
+      });
+      expect(args).toContain(`--shard=${index}/3`);
+      expect(args.includes('--coverage')).toBe(mode === 'full');
+      if (mode === 'related') expect(args).toContain('src/renderer/App.tsx');
+      return args.find((arg) => arg.startsWith('--outputFile.blob='));
+    });
+    expect(new Set(outputs).size).toBe(3);
+    expect(outputs[0]).toBe('--outputFile.blob=.vitest-reports/blob-renderer-ui-1-3.json');
+  });
+
+  it.each(['0/3', '4/3', '1/0', '-1/3', '1.5/3', '1/3/4', 'invalid', '1/9007199254740992'])(
+    'rejects invalid shard %s before invoking Vitest',
+    (shard) => {
+      const runVitestArgvFn = vi.fn();
+      expect(() =>
+        runCiVitest({ mode: 'full', project: 'main', shard }, { runVitestArgvFn }),
+      ).toThrow('Invalid Vitest shard');
+      expect(runVitestArgvFn).not.toHaveBeenCalled();
+    },
+  );
+
+  it('propagates a failing shard exit code', () => {
+    expect(
+      runCiVitest(
+        { mode: 'full', project: 'renderer-ui', shard: '2/3' },
+        { runVitestArgvFn: () => 1 },
+      ),
+    ).toBe(1);
+  });
+
   it('passes related paths as literal argv entries', () => {
     const relatedPath = 'src/main/a file & more.ts';
     const runVitestArgvFn = vi.fn(() => 0);
