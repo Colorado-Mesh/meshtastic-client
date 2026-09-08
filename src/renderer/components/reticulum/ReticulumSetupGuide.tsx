@@ -17,6 +17,7 @@ import {
 } from '@/renderer/lib/reticulum/reticulumSetup';
 import { writeClipboardText } from '@/renderer/lib/writeClipboardText';
 import type { ReticulumIdentityStatus } from '@/renderer/stores/reticulumIdentityStore';
+import { useReticulumSetupGuideStore } from '@/renderer/stores/reticulumSetupGuideStore';
 import { MS_PER_SECOND } from '@/shared/timeConstants';
 
 export type ReticulumSetupDestination = 'Nodes' | 'RRC' | 'Radio';
@@ -86,13 +87,16 @@ export function ReticulumSetupGuide({
   const { t } = useTranslation();
   const id = useId();
   const headingRef = useRef<HTMLHeadingElement>(null);
-  const [open, setOpen] = useState(false);
+  const open = useReticulumSetupGuideStore((s) => s.open);
+  const setOpen = useReticulumSetupGuideStore((s) => s.setOpen);
+  const dismissed = useReticulumSetupGuideStore((s) => s.dismissed);
+  const dismiss = useReticulumSetupGuideStore((s) => s.dismiss);
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [name, setName] = useState('');
+  const [name, setName] = useState(identity?.display_name ?? '');
   const [mnemonic, setMnemonic] = useState<string | null>(null);
   const [savedWords, setSavedWords] = useState(false);
   const [route, setRoute] = useState<'internet' | 'radio' | 'existing'>('internet');
@@ -106,6 +110,13 @@ export function ReticulumSetupGuide({
   useEffect(() => {
     if (open) headingRef.current?.focus();
   }, [open, step]);
+
+  useEffect(() => {
+    if (open && identity?.display_name) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Prefill identities loaded after the Network link opens the guide.
+      setName((current) => current || identity.display_name || '');
+    }
+  }, [open, identity?.display_name]);
 
   // Poll only while the guide is checking a connection. Cleanup prevents stale successes after close.
   useEffect(() => {
@@ -191,6 +202,8 @@ export function ReticulumSetupGuide({
     else setError(t('reticulumSetup.tabUnavailable'));
   };
 
+  if (dismissed && !open) return null;
+
   return (
     <section
       aria-labelledby={`${id}-title`}
@@ -208,20 +221,33 @@ export function ReticulumSetupGuide({
             <p className="mt-1 max-w-lg text-sm text-gray-300">{t('reticulumSetup.intro')}</p>
           )}
         </div>
-        <button
-          type="button"
-          className={SECONDARY}
-          disabled={busy}
-          aria-expanded={open}
-          aria-controls={`${id}-body`}
-          aria-label={t(open ? 'reticulumSetup.hide' : 'reticulumSetup.open')}
-          onClick={() => {
-            if (!open) setName(identity?.display_name ?? name);
-            setOpen(!open);
-          }}
-        >
-          {t(open ? 'reticulumSetup.hide' : 'reticulumSetup.open')}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          {!open && (
+            <button
+              type="button"
+              className={SECONDARY}
+              disabled={busy}
+              aria-expanded={open}
+              aria-controls={`${id}-body`}
+              aria-label={t('reticulumSetup.open')}
+              onClick={() => {
+                if (!open) setName(identity?.display_name ?? name);
+                setOpen(true);
+              }}
+            >
+              {t('reticulumSetup.open')}
+            </button>
+          )}
+          <button
+            type="button"
+            className={SECONDARY}
+            disabled={busy}
+            aria-label={t('reticulumSetup.hide')}
+            onClick={dismiss}
+          >
+            {t('reticulumSetup.hide')}
+          </button>
+        </div>
       </div>
       {open && (
         <div id={`${id}-body`} className="space-y-5 p-5">

@@ -6,6 +6,7 @@ import { axe } from 'vitest-axe';
 import { hydrateAxeThemeColors } from '@/renderer/lib/a11yTestHelpers';
 import { RETICULUM_DEFAULT_HUB_PRESETS } from '@/renderer/lib/reticulum/reticulumDefaultHubPresets';
 import { withMockedConsoleWarn } from '@/renderer/lib/vitestConsoleMock';
+import { useReticulumSetupGuideStore } from '@/renderer/stores/reticulumSetupGuideStore';
 
 import { ReticulumSetupGuide } from './ReticulumSetupGuide';
 
@@ -45,6 +46,7 @@ function props() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useReticulumSetupGuideStore.setState({ dismissed: false, open: false });
   interfaces = [onlineHub];
   live = true;
   vi.mocked(window.electronAPI.reticulum.proxyGet).mockImplementation((path) => {
@@ -68,6 +70,23 @@ async function openConnectionStep() {
 }
 
 describe('Reticulum first connection guide', () => {
+  it('removes the entire banner when dismissed and stays hidden after remounting', async () => {
+    const view = render(<ReticulumSetupGuide {...props()} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Hide guide' }));
+    expect(
+      screen.queryByRole('heading', { name: 'Your first connection' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open setup guide' })).not.toBeInTheDocument();
+    view.unmount();
+    render(<ReticulumSetupGuide {...props()} />);
+    expect(screen.queryByRole('button', { name: 'Open setup guide' })).not.toBeInTheDocument();
+    act(() => {
+      useReticulumSetupGuideStore.getState().setOpen(true);
+    });
+    expect(screen.getByRole('heading', { name: 'Start here' })).toBeInTheDocument();
+    expect(window.electronAPI.reticulum.proxyPost).not.toHaveBeenCalled();
+  });
+
   it('does not start services or change configuration just by displaying the guide', async () => {
     const actions = props();
     render(<ReticulumSetupGuide {...actions} />);
@@ -279,7 +298,9 @@ describe('Reticulum first connection guide', () => {
       await Promise.resolve();
     });
     expect(screen.queryByText('Your connection is available')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Open setup guide' }));
+    act(() => {
+      useReticulumSetupGuideStore.getState().setOpen(true);
+    });
     expect(screen.queryByText('Your connection is available')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
     await act(async () => {

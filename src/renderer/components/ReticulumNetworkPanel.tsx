@@ -112,6 +112,7 @@ export interface ReticulumNetworkPanelProps {
   propagationSectionOpenKey?: number;
   /** Open Connection → Interfaces (PN establish dual-TCP recovery). */
   onOpenInterfaces?: () => void;
+  onOpenSetupGuide?: () => boolean;
 }
 
 function reticulumExportPinError(
@@ -137,6 +138,7 @@ export function ReticulumNetworkPanel({
   onOpenAppGpsSettings,
   propagationSectionOpenKey = 0,
   onOpenInterfaces,
+  onOpenSetupGuide,
 }: ReticulumNetworkPanelProps) {
   const { t } = useTranslation();
   const { addToast } = useToast();
@@ -656,6 +658,18 @@ export function ReticulumNetworkPanel({
 
   return (
     <div className="space-y-4">
+      {onOpenSetupGuide && (
+        <button
+          type="button"
+          className="text-sm text-amber-300 underline underline-offset-4 hover:text-amber-200"
+          aria-label={t('reticulumSetup.open')}
+          onClick={() => {
+            if (!onOpenSetupGuide()) addToast(t('reticulumSetup.tabUnavailable'), 'error');
+          }}
+        >
+          {t('reticulumSetup.open')}
+        </button>
+      )}
       {!sidecarUiRunning && !connecting ? (
         <p className="rounded-lg border border-amber-600/40 bg-amber-950/20 p-3 text-sm text-amber-200">
           {t('connectionPanel.reticulumIdentity.startStackFirst')}

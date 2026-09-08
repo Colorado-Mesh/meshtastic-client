@@ -304,6 +304,7 @@ import { usePositionHistoryStore } from './stores/positionHistoryStore';
 import { useReticulumGamesStore } from './stores/reticulumGamesStore';
 import { useReticulumIdentityStore } from './stores/reticulumIdentityStore';
 import { useReticulumPeerStore } from './stores/reticulumPeerStore';
+import { useReticulumSetupGuideStore } from './stores/reticulumSetupGuideStore';
 import { useReticulumVoiceMemoStore } from './stores/reticulumVoiceMemoStore';
 import { useRncpTransferStore } from './stores/rncpTransferStore';
 import { useRrcSessionStore } from './stores/rrcSessionStore';
@@ -3830,6 +3831,16 @@ function AppContent() {
                                 onStartStack={startReticulumStackManual}
                                 propagationSectionOpenKey={reticulumPropagationNavKey}
                                 onOpenInterfaces={handleNavigateToReticulumConnection}
+                                onOpenSetupGuide={() => {
+                                  const target = findFilteredTabIndexForPanel(
+                                    selectByProtocol(tabsByProtocol, 'reticulum'),
+                                    0,
+                                  );
+                                  if (target < 0) return false;
+                                  useReticulumSetupGuideStore.getState().setOpen(true);
+                                  setActiveTab(target);
+                                  return true;
+                                }}
                                 onOpenAppGpsSettings={() => {
                                   const appTabIdx = tabSlotIds.indexOf('App');
                                   if (appTabIdx >= 0) {
