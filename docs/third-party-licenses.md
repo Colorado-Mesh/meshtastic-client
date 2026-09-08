@@ -17,9 +17,9 @@ Bundled binaries, fonts, and vendored sources are attributed in [Credits](credit
 | @stoprocent/noble          | MIT                           | ^2.8.0          | 2.8.0             | git+https://github.com/stoprocent/noble.git                                    |
 | @xterm/addon-fit           | MIT                           | ^0.11.0         | 0.11.0            | git+https://github.com/xtermjs/xterm.js.git#master                             |
 | @xterm/xterm               | MIT                           | ^6.0.0          | 6.0.0             | git+https://github.com/xtermjs/xterm.js.git                                    |
-| @zip.js/zip.js             | BSD-3-Clause                  | ^2.10.0         | 2.10.0            | git+https://github.com/gildas-lormeau/zip.js.git                               |
+| @zip.js/zip.js             | BSD-3-Clause                  | ^2.11.0         | 2.11.2            | git+https://github.com/gildas-lormeau/zip.js.git                               |
 | builder-util-runtime       | MIT                           | ^9.7.0          | 9.7.0             | git+https://github.com/electron-userland/electron-builder.git                  |
-| dompurify                  | (MPL-2.0 OR Apache-2.0)       | ^3.4.14         | 3.4.14            | git://github.com/cure53/DOMPurify.git                                          |
+| dompurify                  | (MPL-2.0 OR Apache-2.0)       | ^3.4.15         | 3.4.15            | git://github.com/cure53/DOMPurify.git                                          |
 | electron-updater           | MIT                           | ^6.8.9          | 6.8.9             | git+https://github.com/electron-userland/electron-builder.git                  |
 | emoji-picker-element       | Apache-2.0                    | ^1.29.1         | 1.29.1            | git+https://github.com/nolanlawson/emoji-picker-element.git                    |
 | esptool-js                 | Apache-2.0                    | ^0.6.1          | 0.6.1             | git+https://github.com/espressif/esptool-js.git                                |
@@ -39,7 +39,7 @@ Bundled binaries, fonts, and vendored sources are attributed in [Credits](credit
 | readable-stream            | MIT                           | ^4.7.0          | 4.7.0             | git://github.com/nodejs/readable-stream.git                                    |
 | semver                     | ISC                           | ^7.8.5          | 7.8.5             | git+https://github.com/npm/node-semver.git                                     |
 | systeminformation          | MIT                           | ^5.33.8         | 5.33.8            | git+https://github.com/sebhildebrandt/systeminformation.git                    |
-| undici                     | MIT                           | ^8.10.1         | 8.10.1            | git+https://github.com/nodejs/undici.git                                       |
+| undici                     | MIT                           | ^8.10.2         | 8.10.2            | git+https://github.com/nodejs/undici.git                                       |
 
 ## Development dependencies
 
@@ -52,7 +52,7 @@ Bundled binaries, fonts, and vendored sources are attributed in [Credits](credit
 | @jsr/meshtastic__transport-http       | n/a             | ^0.2.1          | 0.2.1             | n/a                                                                                  |
 | @jsr/meshtastic__transport-web-serial | n/a             | ^0.2.5          | 0.2.5             | n/a                                                                                  |
 | @michaelhart/meshcore-decoder         | MIT             | ^0.3.0          | 0.3.0             | git+https://github.com/michaelhart/meshcore-decoder.git                              |
-| @playwright/test                      | Apache-2.0      | ^1.62.1         | 1.62.1            | git+https://github.com/microsoft/playwright.git                                      |
+| @playwright/test                      | Apache-2.0      | ^1.63.0         | 1.63.0            | git+https://github.com/microsoft/playwright.git                                      |
 | @tailwindcss/vite                     | MIT             | ^4.3.3          | 4.3.3             | https://github.com/tailwindlabs/tailwindcss.git                                      |
 | @tanstack/react-virtual               | MIT             | ^3.14.10        | 3.14.10           | git+https://github.com/TanStack/virtual.git                                          |
 | @testing-library/jest-dom             | MIT             | ^7.0.1          | 7.0.1             | git+https://github.com/testing-library/jest-dom.git                                  |
@@ -70,10 +70,10 @@ Bundled binaries, fonts, and vendored sources are attributed in [Credits](credit
 | @vitejs/plugin-react                  | MIT             | ^6.1.1          | 6.1.1             | git+https://github.com/vitejs/vite-plugin-react.git                                  |
 | @vitest/coverage-v8                   | MIT             | ^4.1.11         | 4.1.11            | git+https://github.com/vitest-dev/vitest.git                                         |
 | concurrently                          | MIT             | ^9.2.4          | 9.2.4             | git+https://github.com/open-cli-tools/concurrently.git                               |
-| electron                              | MIT             | ^44.1.1         | 44.1.1            | git+https://github.com/electron/electron.git                                         |
+| electron                              | MIT             | ^44.1.1         | 44.2.0            | git+https://github.com/electron/electron.git                                         |
 | electron-builder                      | MIT             | ^26.16.0        | 26.16.0           | git+https://github.com/electron-userland/electron-builder.git                        |
 | esbuild                               | MIT             | ^0.28.2         | 0.28.2            | git+https://github.com/evanw/esbuild.git                                             |
-| eslint                                | MIT             | ^10.9.1         | 10.9.1            | git+https://github.com/eslint/eslint.git                                             |
+| eslint                                | MIT             | ^10.10.0        | 10.10.0           | git+https://github.com/eslint/eslint.git                                             |
 | eslint-config-prettier                | MIT             | ^10.1.8         | 10.1.8            | git+https://github.com/prettier/eslint-config-prettier.git                           |
 | eslint-plugin-electron                | ISC             | ^7.0.0          | 7.0.0             | https://registry.npmjs.org/eslint-plugin-electron/-/eslint-plugin-electron-7.0.0.tgz |
 | eslint-plugin-import                  | MIT             | ^2.32.0         | 2.32.0            | git+https://github.com/import-js/eslint-plugin-import.git                            |
