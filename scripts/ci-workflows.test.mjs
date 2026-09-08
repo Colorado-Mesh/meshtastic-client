@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,14 +30,66 @@ describe('CI workflow contracts', () => {
   });
 
   it('fans CI out behind one aggregate required check', () => {
-    for (const job of ['changes:', 'quality:', 'typecheck:', 'app-build:', 'flatpak:', 'build:']) {
+    for (const job of [
+      'changes:',
+      'quality:',
+      'lint:',
+      'typecheck:',
+      'app-build:',
+      'flatpak:',
+      'build:',
+    ]) {
       expect(ciWorkflow).toContain(`  ${job}`);
     }
-    expect(ciWorkflow).toContain('needs: [changes, quality, typecheck, app-build, flatpak]');
+    expect(ciWorkflow).toContain('needs: [changes, quality, lint, typecheck, app-build, flatpak]');
     expect(ciWorkflow).toContain('FLATPAK_RESULT: ${{ needs.flatpak.result }}');
     expect(ciWorkflow).toContain(
       '[[ "$FLATPAK_RESULT" == \'success\' || "$FLATPAK_RESULT" == \'skipped\' ]]',
     );
+  });
+
+  it('blocks required coverage checks when detection or any shard fails', () => {
+    const gate = testsWorkflow
+      .split('      - name: Verify test shards')[1]
+      .split('  reticulum-sidecar-coverage:')[0]
+      .split('        run: |\n')[1];
+    expect(testsWorkflow).toContain('needs: [changes, test-shards]');
+    for (const changes of ['success', 'failure', 'cancelled', 'skipped']) {
+      for (const shards of ['success', 'failure', 'cancelled', 'skipped']) {
+        const result = spawnSync('bash', ['-c', gate], {
+          env: { ...process.env, CHANGES_RESULT: changes, SHARDS_RESULT: shards },
+        });
+        expect(result.status === 0).toBe(changes === 'success' && shards === 'success');
+      }
+    }
+  });
+
+  it('includes ESLint failure in the required build gate', () => {
+    const gate = ciWorkflow
+      .split('      - name: Verify CI fan-out')[1]
+      .split('        run: |\n')[1];
+    const success = {
+      ...process.env,
+      CHANGES_RESULT: 'success',
+      QUALITY_RESULT: 'success',
+      LINT_RESULT: 'success',
+      TYPECHECK_RESULT: 'success',
+      BUILD_RESULT: 'success',
+      FLATPAK_RESULT: 'skipped',
+      GITHUB_STEP_SUMMARY: '/dev/null',
+    };
+    for (const lint of ['success', 'failure', 'cancelled', 'skipped']) {
+      const result = spawnSync('bash', ['-c', gate], {
+        env: { ...success, LINT_RESULT: lint },
+      });
+      expect(result.status === 0).toBe(lint === 'success');
+    }
+  });
+
+  it('uses distinct artifact names for shards and bounds lint concurrency', () => {
+    expect(testsWorkflow).toContain('name: vitest-blob-${{ matrix.project }}-${{ matrix.shard }}');
+    expect(testsWorkflow).toContain('VITEST_SHARD: ${{ matrix.shard }}/${{ matrix.shards }}');
+    expect(ciWorkflow).toContain('pnpm run lint --concurrency 2');
   });
 
   it('scopes pull request tests and keeps protected events on full coverage', () => {
@@ -77,11 +130,11 @@ describe('CI workflow contracts', () => {
   });
 
   it('pins checkout and removes persisted credentials before running repository code', () => {
-    expect(ciWorkflow.match(new RegExp(`actions/checkout@${CHECKOUT_SHA}`, 'g'))).toHaveLength(5);
+    expect(ciWorkflow.match(new RegExp(`actions/checkout@${CHECKOUT_SHA}`, 'g'))).toHaveLength(6);
     expect(testsWorkflow.match(new RegExp(`actions/checkout@${CHECKOUT_SHA}`, 'g'))).toHaveLength(
       4,
     );
-    expect(ciWorkflow.match(/persist-credentials: false/g)).toHaveLength(5);
+    expect(ciWorkflow.match(/persist-credentials: false/g)).toHaveLength(6);
     expect(testsWorkflow.match(/persist-credentials: false/g)).toHaveLength(4);
   });
 });
