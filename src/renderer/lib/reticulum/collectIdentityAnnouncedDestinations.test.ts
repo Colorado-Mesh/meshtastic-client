@@ -59,4 +59,48 @@ describe('collectIdentityAnnouncedDestinations', () => {
     expect(rows.some((r) => r.destination_hash === CHAT && r.isOpened)).toBe(true);
     expect(rows.some((r) => r.destination_hash === VOICE)).toBe(true);
   });
+
+  it('returns no rows for invalid opened hash or non-empty invalid identity', () => {
+    const byDestination = new Map<string, ReticulumIdentityActivityRow[]>([
+      [CHAT, [row(CHAT, 'lxmf.delivery', 10)]],
+    ]);
+    expect(collectIdentityAnnouncedDestinations('not-a-hash', null, byDestination)).toEqual([]);
+    expect(
+      collectIdentityAnnouncedDestinations(
+        'aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99',
+        null,
+        byDestination,
+      ),
+    ).toEqual([]);
+    expect(collectIdentityAnnouncedDestinations(CHAT, 'deadbeef', byDestination)).toEqual([]);
+    expect(
+      collectIdentityAnnouncedDestinations(
+        CHAT,
+        '11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11',
+        byDestination,
+      ),
+    ).toEqual([]);
+  });
+
+  it('skips rows whose destination hash is not strict 32-hex', () => {
+    const byDestination = new Map<string, ReticulumIdentityActivityRow[]>([
+      [
+        CHAT,
+        [
+          row(CHAT, 'lxmf.delivery', 10),
+          row('aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99', 'lxst.telephony', 20),
+          row('prefix' + CHAT, 'nomadnetwork.node', 30),
+        ],
+      ],
+    ]);
+    const rows = collectIdentityAnnouncedDestinations(CHAT, null, byDestination);
+    expect(rows).toEqual([
+      {
+        destination_hash: CHAT,
+        aspect: 'lxmf.delivery',
+        last_seen: 10,
+        isOpened: true,
+      },
+    ]);
+  });
 });

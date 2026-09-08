@@ -815,7 +815,7 @@ export function registerReticulumDbIpcHandlers({ ipcMain }: ReticulumDbIpcDeps):
     try {
       assertIpcSender(event, 'db:getReticulumIdentityActivityByIdentity');
       if (typeof identityHash !== 'string' || identityHash.length > 128) return [];
-      const key = identityHash.replace(/[^0-9a-f]/gi, '').toLowerCase();
+      const key = canonicalizeHash32(identityHash);
       if (!key) return [];
       const db = getDbForIpc('db:getReticulumIdentityActivityByIdentity');
       if (!db) return [];

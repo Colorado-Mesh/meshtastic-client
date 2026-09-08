@@ -5,6 +5,7 @@ import {
   MAX_RETICULUM_IDENTITY_DESTINATIONS,
   trimMapToMaxSize,
 } from '@/renderer/lib/sessionMemoryCaps';
+import { canonicalizeReticulumDestinationHash } from '@/shared/reticulumDestinationHash';
 
 export interface ReticulumIdentityActivityRow {
   destination_hash: string;
@@ -125,7 +126,7 @@ export const useReticulumIdentityActivityStore = create<ReticulumIdentityActivit
     },
 
     loadForIdentity: async (identityHash) => {
-      const id = normalizeHash(identityHash);
+      const id = canonicalizeReticulumDestinationHash(identityHash);
       if (!id) return [];
       try {
         const rows = (await window.electronAPI.db.getReticulumIdentityActivityByIdentity(
@@ -134,15 +135,22 @@ export const useReticulumIdentityActivityStore = create<ReticulumIdentityActivit
         set((s) => {
           const next = new Map(s.byDestination);
           for (const row of rows) {
-            const dest = normalizeHash(row.destination_hash);
+            const dest = canonicalizeReticulumDestinationHash(row.destination_hash);
             if (!dest) continue;
             const normalized: ReticulumIdentityActivityRow = {
               ...row,
               destination_hash: dest,
               aspect: row.aspect.slice(0, 128),
-              identity_hash: row.identity_hash ? normalizeHash(row.identity_hash) : null,
+              identity_hash: row.identity_hash
+                ? canonicalizeReticulumDestinationHash(row.identity_hash)
+                : null,
             };
             const prev = next.get(dest) ?? [];
+            const hasNamedAspect = prev.some((r) => r.aspect !== 'unknown');
+            // Never reintroduce a persisted unknown placeholder once a named aspect exists.
+            if (normalized.aspect === 'unknown' && hasNamedAspect) {
+              continue;
+            }
             const dropUnknown = normalized.aspect !== 'unknown';
             const filtered = prev.filter(
               (r) => r.aspect !== normalized.aspect && !(dropUnknown && r.aspect === 'unknown'),
@@ -151,11 +159,17 @@ export const useReticulumIdentityActivityStore = create<ReticulumIdentityActivit
           }
           return { byDestination: trimMapToMaxSize(next, MAX_RETICULUM_IDENTITY_DESTINATIONS) };
         });
-        return rows.map((row) => ({
-          ...row,
-          destination_hash: normalizeHash(row.destination_hash),
-          aspect: row.aspect.slice(0, 128),
-        }));
+        return rows.flatMap((row) => {
+          const dest = canonicalizeReticulumDestinationHash(row.destination_hash);
+          if (!dest) return [];
+          return [
+            {
+              ...row,
+              destination_hash: dest,
+              aspect: row.aspect.slice(0, 128),
+            },
+          ];
+        });
       } catch (e) {
         console.debug('[reticulumIdentityActivityStore] loadForIdentity ' + errLikeToLogString(e));
         return [];

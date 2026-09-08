@@ -12,31 +12,29 @@ export interface AnnouncedDestinationRow {
   isOpened: boolean;
 }
 
-function normalizeHash(hash: string): string {
-  return hash.replace(/[^0-9a-f]/gi, '').toLowerCase();
-}
-
 /**
  * Unique `(destination_hash, aspect)` rows for an identity, opened hash first then last_seen desc.
  * Without an identity hash, returns rows for the opened destination from cache (or a single unknown).
+ * Returns [] when the opened hash (or a provided non-empty identity) is not a strict 32-hex hash.
  */
 export function collectIdentityAnnouncedDestinations(
   openedDestinationHash: string,
   identityHash: string | null | undefined,
   byDestination: ReadonlyMap<string, ReticulumIdentityActivityRow[]>,
 ): AnnouncedDestinationRow[] {
-  const opened =
-    canonicalizeReticulumDestinationHash(openedDestinationHash) ??
-    normalizeHash(openedDestinationHash);
+  const opened = canonicalizeReticulumDestinationHash(openedDestinationHash);
   if (!opened) return [];
 
-  const identity = identityHash ? canonicalizeReticulumDestinationHash(identityHash) : null;
+  let identity: string | null = null;
+  if (identityHash != null && identityHash.trim() !== '') {
+    identity = canonicalizeReticulumDestinationHash(identityHash);
+    if (!identity) return [];
+  }
+
   const bestByKey = new Map<string, AnnouncedDestinationRow>();
 
   const consider = (row: ReticulumIdentityActivityRow) => {
-    const dest =
-      canonicalizeReticulumDestinationHash(row.destination_hash) ??
-      normalizeHash(row.destination_hash);
+    const dest = canonicalizeReticulumDestinationHash(row.destination_hash);
     if (!dest) return;
     const aspect = (row.aspect || 'unknown').trim() || 'unknown';
     const key = `${dest}\0${aspect}`;

@@ -207,4 +207,37 @@ describe('announce-bus pressure activity gate', () => {
       'lxst.telephony',
     );
   });
+
+  it('loadForIdentity skips unknown after a named aspect exists (reversed order)', async () => {
+    const identity = '11111111111111111111111111111111';
+    const dest = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const byIdentity = vi.fn().mockResolvedValue([
+      {
+        destination_hash: dest,
+        aspect: 'lxmf.delivery',
+        identity_hash: identity,
+        last_seen: 20,
+      },
+      {
+        destination_hash: dest,
+        aspect: 'unknown',
+        identity_hash: identity,
+        last_seen: 10,
+      },
+    ]);
+    vi.stubGlobal('window', {
+      electronAPI: {
+        db: {
+          getReticulumIdentityActivityByIdentity: byIdentity,
+        },
+      },
+    });
+    await useReticulumIdentityActivityStore.getState().loadForIdentity(identity);
+    expect(
+      useReticulumIdentityActivityStore
+        .getState()
+        .getActivity(dest)
+        .map((r) => r.aspect),
+    ).toEqual(['lxmf.delivery']);
+  });
 });

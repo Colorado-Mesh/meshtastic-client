@@ -595,6 +595,28 @@ describe('reticulum destination / activity prune IPC', () => {
     expect(rows[0]?.aspect).toBe('lxmf.delivery'); // last_seen DESC
   });
 
+  it('getReticulumIdentityActivityByIdentity rejects separators and malformed prefixes', () => {
+    const identity = 'cc'.repeat(16);
+    db!
+      .prepareOnce(
+        `INSERT INTO reticulum_identity_activity (destination_hash, aspect, identity_hash, last_seen, hops)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run('aa'.repeat(16), 'lxmf.delivery', identity, 200, 1);
+
+    const colon = 'cc:cc:cc:cc:cc:cc:cc:cc:cc:cc:cc:cc:cc:cc:cc:cc';
+    expect(handlers.get('db:getReticulumIdentityActivityByIdentity')?.(event, colon)).toEqual([]);
+    expect(
+      handlers.get('db:getReticulumIdentityActivityByIdentity')?.(event, `0x${identity}`),
+    ).toEqual([]);
+    expect(
+      handlers.get('db:getReticulumIdentityActivityByIdentity')?.(event, `${identity}ff`),
+    ).toEqual([]);
+    expect(
+      handlers.get('db:getReticulumIdentityActivityByIdentity')?.(event, identity.toUpperCase()),
+    ).toHaveLength(1);
+  });
+
   it('upsertReticulumIdentityActivityBatch caps at 500 and skips invalid rows', () => {
     const rows = Array.from({ length: 510 }, (_, i) => ({
       destination_hash: i % 2 === 0 ? `h${i.toString(16).padStart(32, '0')}` : null,
