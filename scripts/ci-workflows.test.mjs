@@ -7,6 +7,8 @@ import { describe, expect, it } from 'vitest';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CHECKOUT_SHA = 'd23441a48e516b6c34aea4fa41551a30e30af803';
 const SETUP_NODE_SHA = '249970729cb0ef3589644e2896645e5dc5ba9c38';
+/** pnpm/action-setup v6.1.0 — required for pnpm 12 native bootstrap (esp. Windows). */
+const PNPM_ACTION_SETUP_SHA = 'ea17c68df8912ef543352723c149a84f56e3d413';
 
 function read(relativePath) {
   return fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
@@ -51,7 +53,7 @@ describe('CI workflow contracts', () => {
     expect(testsWorkflow).toContain('cancel-in-progress: true');
     expect(ciWorkflow).toContain('uses: ./.github/actions/setup-node-pnpm');
     expect(testsWorkflow).toContain('uses: ./.github/actions/setup-node-pnpm');
-    expect(setupAction).toContain('pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271');
+    expect(setupAction).toContain(`pnpm/action-setup@${PNPM_ACTION_SETUP_SHA}`);
     expect(setupAction).toContain(`actions/setup-node@${SETUP_NODE_SHA}`);
     expect(setupAction).toContain("default: '22.23.2'");
     expect(setupAction).toContain('pnpm install --frozen-lockfile');
