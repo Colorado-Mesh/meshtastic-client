@@ -40,6 +40,14 @@ jobs:
           node-version: '22'
           cache: 'pnpm'
 
+      # pnpm 12 native bootstrap: PowerShell prefers broken .bin/pnpm.ps1 (silent exit 0).
+      - name: Prefer native pnpm.exe on Windows PATH
+        if: runner.os == 'Windows'
+        run: node scripts/ci-prefer-windows-pnpm-exe.mjs
+
+      - name: Verify pnpm
+        run: node scripts/ci-verify-pnpm.mjs
+
       # After toolchain is on PATH; skip node_modules until install (still fatal on git/node/pnpm).
       - name: Check environment (pre-install)
         run: node scripts/check-environment.mjs --skip-node-modules

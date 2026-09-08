@@ -57,6 +57,23 @@ describe('CI workflow contracts', () => {
     expect(setupAction).toContain(`actions/setup-node@${SETUP_NODE_SHA}`);
     expect(setupAction).toContain("default: '22.23.2'");
     expect(setupAction).toContain('pnpm install --frozen-lockfile');
+    // pnpm 12 native bootstrap: Windows PowerShell hits silent .ps1 shims without this.
+    expect(setupAction).toContain('ci-prefer-windows-pnpm-exe.mjs');
+    expect(setupAction).toContain('ci-verify-pnpm.mjs');
+  });
+
+  it('fixes Windows pnpm PATH and verifies pnpm before packaging installs', () => {
+    for (const relativePath of [
+      '.github/workflows/build.yaml',
+      '.github/workflows/release.yaml',
+      '.github/workflows/e2e.yaml',
+    ]) {
+      const yaml = read(relativePath);
+      expect(yaml, relativePath).toContain('ci-prefer-windows-pnpm-exe.mjs');
+      expect(yaml, relativePath).toContain('ci-verify-pnpm.mjs');
+    }
+    expect(read('.github/workflows/build.yaml')).toContain('assert-win-setup-installers.mjs');
+    expect(read('.github/workflows/release.yaml')).toContain('assert-win-setup-installers.mjs');
   });
 
   it('pins checkout and removes persisted credentials before running repository code', () => {

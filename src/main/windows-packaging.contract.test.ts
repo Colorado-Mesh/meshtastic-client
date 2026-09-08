@@ -163,6 +163,9 @@ describe('Windows packaging (contract)', () => {
     expect(buildWorkflow).toContain(
       'node scripts/test-win-nsis-install.mjs --arch arm64 --probe-7z',
     );
+    expect(buildWorkflow).toContain('ci-prefer-windows-pnpm-exe.mjs');
+    expect(buildWorkflow).toContain('ci-verify-pnpm.mjs');
+    expect(buildWorkflow).toContain('assert-win-setup-installers.mjs');
     expect(buildWorkflow).toContain('needs: build');
     expect(buildWorkflow).not.toContain('win-arm64-install:');
     // READ-ME-FIRST must live under release/ in uploads so artifact LCA stays release/
@@ -214,6 +217,9 @@ describe('Windows packaging (contract)', () => {
     expect(releaseWorkflow).toContain(
       "contains(matrix.build_script, 'dist:win') && matrix.os != 'windows-latest'",
     );
+    expect(releaseWorkflow).toContain('ci-prefer-windows-pnpm-exe.mjs');
+    expect(releaseWorkflow).toContain('ci-verify-pnpm.mjs');
+    expect(releaseWorkflow).toContain('assert-win-setup-installers.mjs');
     expect(releaseWorkflow).toContain('packaging-smoke:');
     expect(releaseWorkflow).toContain('label: x64 NSIS install');
     expect(releaseWorkflow).toContain('node scripts/test-win-nsis-install.mjs --arch x64');

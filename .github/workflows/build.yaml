@@ -73,6 +73,14 @@ jobs:
           node-version: '22'
           cache: 'pnpm'
 
+      # pnpm 12 native bootstrap: PowerShell prefers broken .bin/pnpm.ps1 (silent exit 0).
+      - name: Prefer native pnpm.exe on Windows PATH
+        if: runner.os == 'Windows'
+        run: node scripts/ci-prefer-windows-pnpm-exe.mjs
+
+      - name: Verify pnpm
+        run: node scripts/ci-verify-pnpm.mjs
+
       - name: Install Linux build dependencies
         if: matrix.os == 'ubuntu-latest'
         run: |
@@ -157,6 +165,11 @@ jobs:
       - name: Rename test-build installers with run number
         run: node scripts/rename-test-build-artifacts.mjs --root release
 
+      # Fail closed before upload: README alone must not satisfy a green Windows job.
+      - name: Assert Windows NSIS installers present
+        if: matrix.os == 'windows-latest'
+        run: node scripts/assert-win-setup-installers.mjs --root release
+
       # Stage under release/ so upload-artifact@v7's least-common-ancestor stays
       # release/ (paths outside release/ nest installers as release/release/*.exe and
       # break packaging-smoke, which downloads to path: release).
@@ -209,6 +222,7 @@ jobs:
             # Per-arch NSIS installers (test builds: …-run{N}.exe / …-run{N}-arm64.exe)
             release/*.exe
             release/READ-ME-FIRST-test-build.md
+          if-no-files-found: error
           retention-days: 30
 
   packaging-smoke:

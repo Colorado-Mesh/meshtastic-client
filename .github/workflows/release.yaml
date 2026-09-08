@@ -146,6 +146,14 @@ jobs:
           node-version: '22'
           cache: 'pnpm'
 
+      # pnpm 12 native bootstrap: PowerShell prefers broken .bin/pnpm.ps1 (silent exit 0).
+      - name: Prefer native pnpm.exe on Windows PATH
+        if: runner.os == 'Windows'
+        run: node scripts/ci-prefer-windows-pnpm-exe.mjs
+
+      - name: Verify pnpm
+        run: node scripts/ci-verify-pnpm.mjs
+
       - name: Install Linux build dependencies
         if: matrix.os == 'ubuntu-latest'
         run: |
@@ -238,6 +246,10 @@ jobs:
         # dist:* uses --publish never so electron-builder never POSTs a draft release.
         run: ${{ matrix.build_script }}
 
+      - name: Assert Windows NSIS installers present
+        if: matrix.os == 'windows-latest'
+        run: node scripts/assert-win-setup-installers.mjs --root release
+
       - name: Upload assets to draft GitHub release
         if: >-
           ${{ needs.prepare-github-release.result == 'success'
@@ -299,6 +311,7 @@ jobs:
             release/win-unpacked/**/*
             release/win-arm64-unpacked/**/*
             release/win-x64-unpacked/**/*
+          if-no-files-found: error
           retention-days: 30
 
   finalize-github-release:
