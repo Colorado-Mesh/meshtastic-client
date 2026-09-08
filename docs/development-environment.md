@@ -9,7 +9,7 @@ These requirements apply to all platforms.
 ### 1) Required software
 
 - Git
-- Node.js **22.13.0+** and pnpm **11+** (`package.json` `engines`; the repo pins **`packageManager`** to a specific pnpm release — use [Corepack](https://nodejs.org/api/corepack.html) when available, or `npm install -g corepack@latest` / `npm install -g pnpm@<pin>` on Node 25+ where Corepack is not bundled). `pnpm install` fails on engine mismatch. After pulling a pnpm major bump, `preinstall` and `pnpm run dev` print an upgrade banner with the exact install command if your local pnpm is too old or the wrong major.
+- Node.js **22.13.0+** and pnpm **12+** (`package.json` `engines`; the repo pins **`packageManager`** to a specific pnpm release — use [Corepack](https://nodejs.org/api/corepack.html) when available, or `npm install -g corepack@latest` / `npm install -g pnpm@<pin>` on Node 25+ where Corepack is not bundled). `pnpm install` fails on engine mismatch. After pulling a pnpm major bump, `preinstall` and `pnpm run dev` print an upgrade banner with the exact install command if your local pnpm is too old or the wrong major.
 - [CI](https://github.com/Colorado-Mesh/mesh-client/blob/main/.github/workflows/ci.yaml) uses Node 22
 - Python 3 + `pip` (needed for MkDocs documentation build and yamllint)
 
@@ -308,10 +308,19 @@ pip install --force-reinstall --no-cache-dir \
 # Also skips Electron linux-armv7l archive lookup for Electron >= 44 (those zips are no
 # longer published; Flatpak only ships x64 + arm64).
 node scripts/patch-flatpak-node-generator-playwright.mjs
-# Must match package.json packageManager major (pnpm 11 → v11). Generator defaults to v10.
-PNPM_MAJOR="$(node -p "require('./package.json').packageManager.match(/^pnpm@(\\d+)/)[1]")"
-STORE_VERSION="v${PNPM_MAJOR}"
-flatpak-node-generator pnpm pnpm-lock.yaml \
+# Must match store layout for packageManager (pnpm 11/12 → v11). Generator defaults to v10.
+# pnpm 12 may write a two-document lockfile; generator only accepts one document.
+STORE_VERSION="$(node --input-type=module -e "import fs from 'node:fs'; import { storeVersionFromPackageManager } from './scripts/flatpakPnpmStoreVersion.mjs'; console.log(storeVersionFromPackageManager(JSON.parse(fs.readFileSync('package.json','utf8')).packageManager))")"
+node --input-type=module << 'EOF'
+import fs from 'node:fs';
+import { extractProjectPnpmLockfile } from './scripts/flatpakPnpmStoreVersion.mjs';
+fs.mkdirSync('flatpak', { recursive: true });
+fs.writeFileSync(
+  'flatpak/pnpm-lock.project.yaml',
+  extractProjectPnpmLockfile(fs.readFileSync('pnpm-lock.yaml', 'utf8')),
+);
+EOF
+flatpak-node-generator pnpm flatpak/pnpm-lock.project.yaml \
   --pnpm-store-version "$STORE_VERSION" \
   -o flatpak/generated-sources.json
 ```
@@ -489,7 +498,7 @@ flatpak run --command=flatpak-builder-lint org.freedesktop.Sdk \
 
 | Script        | Description                                                           |
 | ------------- | --------------------------------------------------------------------- |
-| `preinstall`  | Require pnpm 11+ (`check-package-manager.mjs`) then `only-allow pnpm` |
+| `preinstall`  | Require pnpm 12+ (`check-package-manager.mjs`) then `only-allow pnpm` |
 | `postinstall` | Rebuild native Node modules for Electron + apply pnpm patches         |
 | `prepare`     | Enable git hooks (`core.hooksPath = .githooks`)                       |
 | `predist`     | Run `dedupe:dist` before `dist` packaging                             |

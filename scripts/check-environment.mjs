@@ -94,7 +94,7 @@ function readEngines() {
   const pkg = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8'));
   return {
     node: pkg.engines?.node ?? '>=22.13.0',
-    pnpm: pkg.engines?.pnpm ?? '>=11.0.0',
+    pnpm: pkg.engines?.pnpm ?? '>=12.0.0',
     packageManager: typeof pkg.packageManager === 'string' ? pkg.packageManager : undefined,
   };
 }

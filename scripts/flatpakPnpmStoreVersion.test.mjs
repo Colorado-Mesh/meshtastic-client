@@ -11,6 +11,7 @@ import {
   listGeneratedPnpmWorkspaceShellCommands,
   listLockfilePackageIds,
   lockfilePackageIdToTarballName,
+  extractProjectPnpmLockfile,
   missingOfflineTarballs,
   parseGeneratedPnpmManifest,
   pnpmMajorFromPackageManager,
@@ -155,6 +156,11 @@ describe('flatpakPnpmStoreVersion', () => {
     expect(pnpmMajorFromPackageManager('pnpm@11.15.1+sha512.abc')).toBe(11);
     expect(storeVersionFromPackageManager('pnpm@11.15.1')).toBe('v11');
     expect(expectedPnpmStoreVersion(11)).toBe('v11');
+    expect(pnpmMajorFromPackageManager('pnpm@12.3.4+sha512.abc')).toBe(12);
+    // pnpm 12 still uses content-addressable store v11 (lockfile 9).
+    expect(storeVersionFromPackageManager('pnpm@12.3.4')).toBe('v11');
+    expect(expectedPnpmStoreVersion(10)).toBe('v10');
+    expect(expectedPnpmStoreVersion(12)).toBe('v11');
     expect(storeVersionFromPackageManager('npm@10')).toBeNull();
   });
 
@@ -211,6 +217,17 @@ describe('flatpakPnpmStoreVersion', () => {
     expect(flatpakWorkflowStoreVersionViolations(yaml, 'v11')).toEqual([]);
   });
 
+  it('accepts store version from storeVersionFromPackageManager helper', () => {
+    const yaml = `
+      STORE_VERSION="$(node --input-type=module -e "import { storeVersionFromPackageManager } from './scripts/flatpakPnpmStoreVersion.mjs'; …")"
+      node scripts/patch-flatpak-node-generator-playwright.mjs
+      flatpak-node-generator pnpm flatpak/pnpm-lock.project.yaml \\
+        --pnpm-store-version "$STORE_VERSION" \\
+        -o flatpak/generated-sources.json
+    `;
+    expect(flatpakWorkflowStoreVersionViolations(yaml, 'v11')).toEqual([]);
+  });
+
   it('parses lockfile package ids and tarball names', () => {
     const lock = `
 packages:
@@ -226,6 +243,31 @@ packages:
       '@bufbuild__protobuf-2.12.1.tgz',
     );
     expect(lockfilePackageIdToTarballName('lodash@4.17.21')).toBe('lodash-4.17.21.tgz');
+  });
+
+  it('extracts the project document from a pnpm 12 multi-document lockfile', () => {
+    const multi = `---
+lockfileVersion: '9.0'
+importers:
+  .:
+    packageManagerDependencies:
+      pnpm:
+        specifier: 12.3.4
+        version: 12.3.4
+packages:
+  pnpm@12.3.4:
+    resolution: {integrity: sha512-aaa==}
+---
+lockfileVersion: '9.0'
+settings:
+  autoInstallPeers: true
+packages:
+  lodash@4.17.21:
+    resolution: {integrity: sha512-def==}
+`;
+    expect(extractProjectPnpmLockfile(multi)).toContain('lodash@4.17.21');
+    expect(extractProjectPnpmLockfile(multi)).not.toContain('packageManagerDependencies');
+    expect(listLockfilePackageIds(multi)).toEqual(['lodash@4.17.21']);
   });
 
   it('detects missing offline tarballs and parses generated manifest', () => {

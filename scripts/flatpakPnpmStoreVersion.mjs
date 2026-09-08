@@ -1,6 +1,6 @@
 /**
  * Flatpak offline pnpm store version must match the packageManager major
- * (pnpm 11 → store v11). flatpak-node-generator defaults to v10 for lockfile 9.
+ * (pnpm major N → store vN). flatpak-node-generator defaults to v10 for lockfile 9.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -450,10 +450,15 @@ export function pnpmMajorFromPackageManager(packageManager) {
 }
 
 /**
+ * Offline Flatpak pnpm store version for a pnpm CLI major.
+ * Lockfile 9 uses store v10 or v11; pnpm 11 and 12 both materialize store v11
+ * (`pnpm store path` → …/store/v11). flatpak-node-generator rejects v12 today.
+ *
  * @param {number} pnpmMajor
  * @returns {string}
  */
 export function expectedPnpmStoreVersion(pnpmMajor) {
+  if (pnpmMajor >= 11) return 'v11';
   return `v${pnpmMajor}`;
 }
 
@@ -621,7 +626,7 @@ export function flatpakWorkflowStoreVersionViolations(
     }
     violations.push({
       file: fileRel,
-      message: `flatpak.yaml --pnpm-store-version is ${flag}, expected ${expectedStoreVersion} (pnpm packageManager major)`,
+      message: `flatpak.yaml --pnpm-store-version is ${flag}, expected ${expectedStoreVersion} (pnpm store for current packageManager)`,
     });
     return violations;
   }
@@ -635,13 +640,15 @@ export function flatpakWorkflowStoreVersionViolations(
 
 /**
  * Parse package keys from the lockfile `packages:` map (name@version).
+ * For pnpm 12 multi-document lockfiles, only the project document is used
+ * (the leading packageManagerDependencies document is ignored).
  * @param {string} lockfileText
  * @returns {string[]}
  */
 export function listLockfilePackageIds(lockfileText) {
   const ids = [];
   let inPackages = false;
-  for (const line of lockfileText.split('\n')) {
+  for (const line of extractProjectPnpmLockfile(lockfileText).split('\n')) {
     if (/^packages:\s*$/.test(line)) {
       inPackages = true;
       continue;
@@ -656,6 +663,23 @@ export function listLockfilePackageIds(lockfileText) {
     if (id) ids.push(id);
   }
   return ids;
+}
+
+/**
+ * pnpm 12 may write a two-document lockfile: a leading packageManagerDependencies
+ * document, then the project lockfile. flatpak-node-generator uses yaml.safe_load
+ * (single-document) and fails with ComposerError on the second `---`.
+ * Return the project document (last document), unchanged for single-doc lockfiles.
+ *
+ * @param {string} lockfileText
+ * @returns {string}
+ */
+export function extractProjectPnpmLockfile(lockfileText) {
+  const text = String(lockfileText);
+  // Split before each document marker (keep the marker on the following part).
+  const parts = text.split(/(?=^---\r?\n)/m).filter((part) => part.trim().length > 0);
+  if (parts.length <= 1) return text;
+  return parts[parts.length - 1];
 }
 
 /**

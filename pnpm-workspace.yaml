@@ -1,8 +1,19 @@
-# Delay updates by 6 hours (malware is usually caught within 6 hours and dependabot is on a 6 hour delay)
-minimumReleaseAge: 540
+# Delay updates by 1 day (malware is usually caught within hours; matches pnpm default)
+minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - lodash
   - lodash-es
+
+# Reject transitive git/tarball/exotic sources (registry + scoped JSR only)
+blockExoticSubdeps: true
+
+# Refuse installs when a package's trust level drops vs prior releases
+trustPolicy: no-downgrade
+# Known false positives / older lines without trusted-publisher continuity
+trustPolicyExclude:
+  - prettier-plugin-tailwindcss@0.7.4
+  - semver@5.7.2
+  - semver@6.3.1
 
 # Electron breaks without this
 nodeLinker: hoisted

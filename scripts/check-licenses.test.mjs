@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ALLOWED_LICENSE_IDS,
+  enrichPnpmLicensesJson,
   evaluatePnpmLicensesJson,
   formatLicenseCheckReport,
   isLicenseAllowed,
+  licenseFromPackageManifest,
   splitSpdxTopLevel,
   unwrapSpdxParens,
 } from './check-licenses.mjs';
@@ -119,6 +121,126 @@ describe('evaluatePnpmLicensesJson', () => {
   it('throws when a license entry is null or not an object', () => {
     expect(() => evaluatePnpmLicensesJson({ MIT: [null] })).toThrow(/expected package object/);
     expect(() => evaluatePnpmLicensesJson({ MIT: ['bad'] })).toThrow(/expected package object/);
+  });
+});
+
+describe('licenseFromPackageManifest', () => {
+  it('reads string and object license fields', () => {
+    expect(licenseFromPackageManifest({ license: 'MIT' })).toBe('MIT');
+    expect(licenseFromPackageManifest({ license: { type: 'Apache-2.0' } })).toBe('Apache-2.0');
+  });
+
+  it('reads legacy licenses arrays', () => {
+    expect(licenseFromPackageManifest({ licenses: [{ type: 'MIT' }] })).toBe('MIT');
+    expect(
+      licenseFromPackageManifest({ licenses: [{ type: 'MIT' }, { type: 'Apache-2.0' }] }),
+    ).toBe('MIT OR Apache-2.0');
+  });
+});
+
+describe('enrichPnpmLicensesJson', () => {
+  it('repairs Unknown entries from hoisted package.json manifests', () => {
+    const files = new Map([
+      [
+        '/repo/node_modules/@scope/pkg/package.json',
+        JSON.stringify({ name: '@scope/pkg', license: 'MIT' }),
+      ],
+    ]);
+    const enriched = enrichPnpmLicensesJson(
+      {
+        Unknown: [
+          {
+            name: '@scope/pkg',
+            versions: ['1.0.0'],
+            paths: ['/missing/.pnpm/@scope+pkg@1.0.0/node_modules/@scope/pkg'],
+            license: 'Unknown',
+          },
+        ],
+      },
+      {
+        root: '/repo',
+        existsSync: (p) => files.has(p),
+        readFileSync: (p) => {
+          const v = files.get(p);
+          if (v == null) throw new Error(`missing ${p}`);
+          return v;
+        },
+      },
+    );
+    expect(Object.keys(enriched)).toEqual(['MIT']);
+    expect(enriched.MIT).toEqual([
+      expect.objectContaining({ name: '@scope/pkg', license: 'MIT', versions: ['1.0.0'] }),
+    ]);
+  });
+
+  it('resolves SEE LICENSE IN LICENSE via the LICENSE file', () => {
+    const files = new Map([
+      [
+        '/repo/node_modules/react-leaflet-cluster/package.json',
+        JSON.stringify({ name: 'react-leaflet-cluster', license: 'SEE LICENSE IN LICENSE' }),
+      ],
+      [
+        '/repo/node_modules/react-leaflet-cluster/LICENSE',
+        'MIT License\n\nCopyright (c) 2021\n\nPermission is hereby granted, free of charge',
+      ],
+    ]);
+    const enriched = enrichPnpmLicensesJson(
+      {
+        'SEE LICENSE IN LICENSE': [
+          {
+            name: 'react-leaflet-cluster',
+            versions: ['4.1.3'],
+            paths: [],
+            license: 'SEE LICENSE IN LICENSE',
+          },
+        ],
+      },
+      {
+        root: '/repo',
+        existsSync: (p) => files.has(p),
+        readFileSync: (p) => {
+          const v = files.get(p);
+          if (v == null) throw new Error(`missing ${p}`);
+          return v;
+        },
+      },
+    );
+    expect(Object.keys(enriched)).toEqual(['MIT']);
+  });
+
+  it('maps @jsr/meshtastic__* Unknown licenses via @meshtastic LICENSE files', () => {
+    const files = new Map([
+      [
+        '/repo/node_modules/@meshtastic/core/package.json',
+        JSON.stringify({ name: '@meshtastic/core' }),
+      ],
+      [
+        '/repo/node_modules/@meshtastic/core/LICENSE',
+        'GNU GENERAL PUBLIC LICENSE\nVersion 3, 29 June 2007\n',
+      ],
+    ]);
+    const enriched = enrichPnpmLicensesJson(
+      {
+        Unknown: [
+          {
+            name: '@jsr/meshtastic__core',
+            versions: ['2.6.6'],
+            paths: [],
+            license: 'Unknown',
+          },
+        ],
+      },
+      {
+        root: '/repo',
+        existsSync: (p) => files.has(p),
+        readFileSync: (p) => {
+          const v = files.get(p);
+          if (v == null) throw new Error(`missing ${p}`);
+          return v;
+        },
+      },
+    );
+    expect(Object.keys(enriched)).toEqual(['GPL-3.0-only']);
   });
 });
 

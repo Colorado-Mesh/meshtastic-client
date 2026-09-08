@@ -7,12 +7,19 @@
  * so the checker only ever saw one package. pnpm's lockfile license listing is
  * the reliable inventory.
  *
+ * Failure point: pnpm 12 (Rust) `licenses list` often reports every package as
+ * `Unknown` when `nodeLinker: hoisted` — reported paths point at a missing
+ * `.pnpm/<id>/node_modules/...` layout. Fallback: read each package's
+ * `package.json` from the hoisted `node_modules/<name>` tree (and any existing
+ * reported path) before evaluating the allowlist.
+ *
  * SPDX `OR`: allowed if any clause is allowed (caller may choose that license).
  * SPDX `AND`: allowed only if every clause is allowed.
  *
  * Usage: pnpm run check:licenses
  */
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -147,6 +154,209 @@ export function isLicenseAllowed(expression, allowedIds = ALLOWED_LICENSE_IDS) {
 }
 
 /**
+ * Extract an SPDX-ish license string from a package.json-like manifest.
+ *
+ * @param {Record<string, unknown>} manifest
+ * @returns {string}
+ */
+export function licenseFromPackageManifest(manifest) {
+  const license = manifest.license;
+  if (typeof license === 'string' && license.trim()) return license.trim();
+  if (license && typeof license === 'object' && !Array.isArray(license)) {
+    const typed = /** @type {Record<string, unknown>} */ (license).type;
+    if (typeof typed === 'string' && typed.trim()) return typed.trim();
+  }
+
+  const legacy = manifest.licenses;
+  if (typeof legacy === 'string' && legacy.trim()) return legacy.trim();
+  if (Array.isArray(legacy) && legacy.length > 0) {
+    const parts = [];
+    for (const entry of legacy) {
+      if (typeof entry === 'string' && entry.trim()) {
+        parts.push(entry.trim());
+        continue;
+      }
+      if (entry && typeof entry === 'object') {
+        const typed = /** @type {Record<string, unknown>} */ (entry).type;
+        if (typeof typed === 'string' && typed.trim()) parts.push(typed.trim());
+      }
+    }
+    if (parts.length === 1) return parts[0];
+    if (parts.length > 1) return parts.join(' OR ');
+  }
+
+  return 'Unknown';
+}
+
+/**
+ * @param {string} packageName
+ * @param {string} root
+ * @returns {string}
+ */
+export function hoistedPackageManifestPath(packageName, root) {
+  return path.join(root, 'node_modules', ...packageName.split('/'), 'package.json');
+}
+
+/**
+ * Candidate install dirs for a package name under hoisted node_modules.
+ * Meshtastic JSR overrides also appear as `@meshtastic/<name>`.
+ *
+ * @param {string} packageName
+ * @param {string} root
+ * @returns {string[]}
+ */
+export function candidateHoistedPackageDirs(packageName, root) {
+  const dirs = [path.join(root, 'node_modules', ...packageName.split('/'))];
+  const jsrMesh = packageName.match(/^@jsr\/meshtastic__(.+)$/);
+  if (jsrMesh) {
+    dirs.push(path.join(root, 'node_modules', '@meshtastic', jsrMesh[1]));
+  }
+  return dirs;
+}
+
+/**
+ * Best-effort SPDX id from a conventional LICENSE file body.
+ *
+ * @param {string} text
+ * @returns {string | null}
+ */
+export function licenseIdFromLicenseFileText(text) {
+  const sample = String(text).slice(0, 8000);
+  if (/GNU GENERAL PUBLIC LICENSE/i.test(sample) && /Version 3/i.test(sample)) {
+    return 'GPL-3.0-only';
+  }
+  if (/Apache License/i.test(sample) && /Version 2\.0/i.test(sample)) {
+    return 'Apache-2.0';
+  }
+  if (/MIT License/i.test(sample) || /Permission is hereby granted, free of charge/i.test(sample)) {
+    return 'MIT';
+  }
+  if (
+    /BSD 3-Clause/i.test(sample) ||
+    /Redistribution and use in source and binary forms/i.test(sample)
+  ) {
+    return 'BSD-3-Clause';
+  }
+  if (/ISC License/i.test(sample)) return 'ISC';
+  return null;
+}
+
+/**
+ * @param {string} packageDir
+ * @param {{ readFileSync?: typeof fs.readFileSync, existsSync?: typeof fs.existsSync }} [io]
+ * @returns {string | null}
+ */
+function readLicenseFromPackageDir(packageDir, io = {}) {
+  const existsSync = io.existsSync ?? fs.existsSync;
+  const readFileSync = io.readFileSync ?? fs.readFileSync;
+  const manifestPath = path.join(packageDir, 'package.json');
+  if (existsSync(manifestPath)) {
+    try {
+      const raw = readFileSync(manifestPath, 'utf8');
+      const manifest = JSON.parse(raw);
+      if (manifest && typeof manifest === 'object') {
+        const fromManifest = licenseFromPackageManifest(
+          /** @type {Record<string, unknown>} */ (manifest),
+        );
+        if (
+          fromManifest &&
+          !/^unknown$/i.test(fromManifest) &&
+          !/^SEE LICENSE IN /i.test(fromManifest)
+        ) {
+          return fromManifest;
+        }
+      }
+    } catch {
+      // catch-no-log-ok continue to LICENSE file fallback
+    }
+  }
+
+  for (const name of ['LICENSE', 'LICENSE.md', 'LICENSE.txt', 'LICENCE', 'LICENCE.md']) {
+    const licensePath = path.join(packageDir, name);
+    if (!existsSync(licensePath)) continue;
+    try {
+      const text = readFileSync(licensePath, 'utf8');
+      const detected = licenseIdFromLicenseFileText(text);
+      if (detected) return detected;
+    } catch {
+      // catch-no-log-ok try next candidate
+    }
+  }
+  return null;
+}
+
+/**
+ * Repair pnpm 12 hoisted `licenses list` output that marks every package Unknown.
+ *
+ * @param {Record<string, unknown>} licensesJson
+ * @param {{ root?: string, readFileSync?: typeof fs.readFileSync, existsSync?: typeof fs.existsSync }} [options]
+ * @returns {Record<string, unknown>}
+ */
+export function enrichPnpmLicensesJson(licensesJson, options = {}) {
+  if (!licensesJson || typeof licensesJson !== 'object' || Array.isArray(licensesJson)) {
+    throw new Error('check:licenses: expected pnpm licenses JSON object');
+  }
+
+  const root = options.root ?? ROOT;
+  /** @type {Map<string, Array<Record<string, unknown>>>} */
+  const byLicense = new Map();
+
+  for (const [license, entries] of Object.entries(licensesJson)) {
+    if (!Array.isArray(entries)) {
+      throw new Error(
+        `check:licenses: expected array for license ${JSON.stringify(license)}, got ${typeof entries}`,
+      );
+    }
+    for (const entry of entries) {
+      if (!entry || typeof entry !== 'object') {
+        throw new Error(
+          `check:licenses: expected package object under ${JSON.stringify(license)}, got ${
+            entry === null ? 'null' : typeof entry
+          }`,
+        );
+      }
+      const rec = /** @type {Record<string, unknown>} */ ({ ...entry });
+      let resolved =
+        typeof rec.license === 'string' && rec.license.trim() ? rec.license.trim() : license;
+
+      if (!resolved || /^unknown$/i.test(resolved) || /^SEE LICENSE IN /i.test(resolved)) {
+        const paths = Array.isArray(rec.paths)
+          ? rec.paths.filter((p) => typeof p === 'string')
+          : [];
+        /** @type {string[]} */
+        const dirs = [...paths];
+        if (typeof rec.name === 'string') {
+          dirs.push(...candidateHoistedPackageDirs(rec.name, root));
+        }
+        let fromDisk = null;
+        for (const dir of dirs) {
+          fromDisk = readLicenseFromPackageDir(dir, options);
+          if (fromDisk && !/^unknown$/i.test(fromDisk) && !/^SEE LICENSE IN /i.test(fromDisk)) {
+            break;
+          }
+        }
+        if (fromDisk && fromDisk.trim()) resolved = fromDisk.trim();
+        else if (!resolved || /^SEE LICENSE IN /i.test(resolved)) resolved = 'Unknown';
+      }
+
+      rec.license = resolved;
+      const bucket = byLicense.get(resolved) ?? [];
+      bucket.push(rec);
+      byLicense.set(resolved, bucket);
+    }
+  }
+
+  /** @type {Record<string, unknown>} */
+  const out = {};
+  for (const [licenseKey, entries] of [...byLicense.entries()].sort(([a], [b]) =>
+    a.localeCompare(b),
+  )) {
+    out[licenseKey] = entries;
+  }
+  return out;
+}
+
+/**
  * @typedef {{ license: string, name: string, versions: string[] }} LicensePackage
  */
 
@@ -216,7 +426,7 @@ export function loadPnpmLicensesJson(spawnOpts = {}) {
   }
   const text = (result.stdout || '').trim();
   if (!text) throw new Error('check:licenses: pnpm licenses list produced no JSON');
-  return JSON.parse(text);
+  return enrichPnpmLicensesJson(JSON.parse(text));
 }
 
 /**
