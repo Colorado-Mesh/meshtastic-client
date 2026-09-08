@@ -41,13 +41,13 @@ modules:
         pnpm_config_cache: /run/build/mesh-client/.npm
         # Values must be YAML strings (quoted). Unquoted true/false become JSON
         # booleans and flatpak-builder drops the entire env map (GStrv warning).
-        # pnpm 11 supply-chain / verifyDepsBeforeRun must not hit the registry offline.
+        # pnpm supply-chain / verifyDepsBeforeRun must not hit the registry offline.
         PNPM_CONFIG_TRUST_LOCKFILE: 'true'
         PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN: 'false'
     build-commands:
       # Install pnpm standalone from archived release (no network needed).
       # Archive extracts to pnpm-vendor/ (strip-components: 0) so the root `pnpm` binary is
-      # kept and the bundled dist/ does not collide with app dist/. pnpm 11+ requires
+      # kept and the bundled dist/ does not collide with app dist/. pnpm 11+/12 requires
       # dist/pnpm.mjs next to the wrapper binary (install alone is not enough).
       - install -Dm755 pnpm-vendor/pnpm /run/build/mesh-client/.pnpm-bin/pnpm
       - cp -a pnpm-vendor/dist /run/build/mesh-client/.pnpm-bin/dist
@@ -94,15 +94,15 @@ modules:
         path: .
       - flatpak/generated-sources.json
       - type: archive
-        url: https://github.com/pnpm/pnpm/releases/download/v11.25.0/pnpm-linux-x64.tar.gz
-        sha256: 11caeed8b581d460638f836f10f6ead19cbf08d774a5b8e502628b20ebf3ac43
+        url: https://github.com/pnpm/pnpm/releases/download/v12.3.4/pnpm-linux-x64.tar.gz
+        sha256: 9705e5704b4679fb503c963a18d1ac4f105e39aafafca8a2ed346facdf820cd0
         dest: pnpm-vendor
         # pnpm tarball has root-level `pnpm` + `dist/`; default strip-components:1 drops the binary.
         strip-components: 0
         only-arches: [x86_64]
       - type: archive
-        url: https://github.com/pnpm/pnpm/releases/download/v11.25.0/pnpm-linux-arm64.tar.gz
-        sha256: 6d62b433b7a77b77e814dfaca8032bae57bb79c1a5ad50442e688c4f7fed3c8a
+        url: https://github.com/pnpm/pnpm/releases/download/v12.3.4/pnpm-linux-arm64.tar.gz
+        sha256: 95e71a2a30bbc0b77511f95cf096779068dcad6ffcbbfdf0cd4dde9de2b2b97c
         dest: pnpm-vendor
         strip-components: 0
         only-arches: [aarch64]
