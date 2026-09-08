@@ -150,8 +150,11 @@ describe('current production log messages', () => {
     '[ReticulumSidecar] INFO propagation-deposit: stored at propagation node',
     '[ReticulumSidecar] WARN LXMF inbound opportunistic packet len=123',
   ])('does not infer an outage from routine progress: %s', (message) => {
-    const categories = analyzeLogs([entry(message)], 'reticulum').categories;
-    expect(categories.every((finding) => finding.id === 'unclassified')).toBe(true);
+    const warning = entry(message);
+    const categories = analyzeLogs([warning], 'reticulum').categories;
+    expect(categories).toEqual([
+      expect.objectContaining({ id: 'unclassified', count: 1, entries: [warning] }),
+    ]);
   });
 
   it('does not suggest LoRa channel keys for Reticulum decryption failures', () => {
