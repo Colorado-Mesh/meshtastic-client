@@ -15,6 +15,10 @@ vi.mock('react-i18next', () => ({
     t: (key: string, opts?: Record<string, string | number>) => {
       if (opts && 'error' in opts) return `${key}:${String(opts.error)}`;
       if (opts && 'hops' in opts) return `${key}:${String(opts.hops)}`;
+      if (opts && 'hash' in opts) {
+        const aspect = opts.aspect != null ? String(opts.aspect) : '';
+        return `${key}:${aspect}:${String(opts.hash)}`;
+      }
       return key;
     },
   }),
@@ -58,10 +62,13 @@ vi.mock('./QrCodeImage', () => ({
   ),
 }));
 
+import { useReticulumIdentityActivityStore } from '../stores/reticulumIdentityActivityStore';
 import { useReticulumPeerStore } from '../stores/reticulumPeerStore';
 import ReticulumPeerDetailModal from './ReticulumPeerDetailModal';
 
 const PEER_HASH = 'abcdef1234567890abcdef1234567890';
+const IDENTITY_HASH = '11111111111111111111111111111111';
+const VOICE_HASH = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
 describe('ReticulumPeerDetailModal — copy hash', () => {
   beforeEach(() => {
@@ -71,8 +78,10 @@ describe('ReticulumPeerDetailModal — copy hash', () => {
     requestReticulumPeerPathMock.mockReset();
     probeReticulumPeerMock.mockReset();
     vi.mocked(window.electronAPI.db.getReticulumIdentityActivity).mockResolvedValue([]);
+    vi.mocked(window.electronAPI.db.getReticulumIdentityActivityByIdentity).mockResolvedValue([]);
     vi.mocked(window.electronAPI.db.getReticulumDestinations).mockResolvedValue([]);
     vi.mocked(window.electronAPI.db.upsertReticulumDestination).mockResolvedValue(undefined);
+    useReticulumIdentityActivityStore.setState({ byDestination: new Map() });
     useReticulumPeerStore.setState({
       peers: new Map([
         [
@@ -100,8 +109,56 @@ describe('ReticulumPeerDetailModal — copy hash', () => {
       <ReticulumPeerDetailModal peerHash={PEER_HASH} onClose={vi.fn()} onSendMessage={vi.fn()} />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'peerDetailModal.copyHash' }));
+    await user.click(
+      screen.getByRole('button', {
+        name: `peerDetailModal.copyAnnouncedHashAria:peerDetailModal.aspect.unknown:${PEER_HASH}`,
+      }),
+    );
     expect(writeText).toHaveBeenCalledWith(PEER_HASH);
+    expect(addToast).toHaveBeenCalledWith('peerDetailModal.hashCopied', 'success');
+  });
+
+  it('lists announced destinations with aspect qualifiers for one identity', async () => {
+    vi.mocked(window.electronAPI.db.getReticulumIdentityActivity).mockResolvedValue([
+      {
+        destination_hash: PEER_HASH,
+        aspect: 'lxmf.delivery',
+        identity_hash: IDENTITY_HASH,
+        last_seen: 100,
+      },
+    ]);
+    vi.mocked(window.electronAPI.db.getReticulumIdentityActivityByIdentity).mockResolvedValue([
+      {
+        destination_hash: PEER_HASH,
+        aspect: 'lxmf.delivery',
+        identity_hash: IDENTITY_HASH,
+        last_seen: 100,
+      },
+      {
+        destination_hash: VOICE_HASH,
+        aspect: 'lxst.telephony',
+        identity_hash: IDENTITY_HASH,
+        last_seen: 200,
+      },
+    ]);
+
+    render(
+      <ReticulumPeerDetailModal peerHash={PEER_HASH} onClose={vi.fn()} onSendMessage={vi.fn()} />,
+    );
+
+    expect(await screen.findByText('peerDetailModal.aspect.chat')).toBeInTheDocument();
+    expect(await screen.findByText('peerDetailModal.aspect.voice')).toBeInTheDocument();
+    expect(screen.getByText('peerDetailModal.openedDestinationBadge')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', {
+        name: `peerDetailModal.copyAnnouncedHashAria:peerDetailModal.aspect.chat:${PEER_HASH}`,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', {
+        name: `peerDetailModal.copyAnnouncedHashAria:peerDetailModal.aspect.voice:${VOICE_HASH}`,
+      }),
+    ).toBeInTheDocument();
   });
 
   it('shows lxma contact QR when peer public_key is known', async () => {
@@ -173,8 +230,10 @@ describe('ReticulumPeerDetailModal — avatar icon', () => {
     refreshReticulumPeerRouteFromPathsMock.mockClear();
     refreshReticulumPeerRouteFromPathsMock.mockResolvedValue({ ok: false, paths: [] });
     vi.mocked(window.electronAPI.db.getReticulumIdentityActivity).mockResolvedValue([]);
+    vi.mocked(window.electronAPI.db.getReticulumIdentityActivityByIdentity).mockResolvedValue([]);
     vi.mocked(window.electronAPI.db.getReticulumDestinations).mockResolvedValue([]);
     vi.mocked(window.electronAPI.db.upsertReticulumDestination).mockResolvedValue(undefined);
+    useReticulumIdentityActivityStore.setState({ byDestination: new Map() });
     useReticulumPeerStore.setState({
       peers: new Map([
         [
@@ -271,7 +330,9 @@ describe('ReticulumPeerDetailModal — Network route hydrate', () => {
     requestReticulumPeerPathMock.mockReset();
     probeReticulumPeerMock.mockReset();
     vi.mocked(window.electronAPI.db.getReticulumIdentityActivity).mockResolvedValue([]);
+    vi.mocked(window.electronAPI.db.getReticulumIdentityActivityByIdentity).mockResolvedValue([]);
     vi.mocked(window.electronAPI.db.getReticulumDestinations).mockResolvedValue([]);
+    useReticulumIdentityActivityStore.setState({ byDestination: new Map() });
     useReticulumPeerStore.setState({
       peers: new Map(),
       contacts: new Map([
@@ -507,8 +568,10 @@ describe('ReticulumPeerDetailModal — getPeer selector stability (React #185)',
     requestReticulumPeerPathMock.mockReset();
     probeReticulumPeerMock.mockReset();
     vi.mocked(window.electronAPI.db.getReticulumIdentityActivity).mockResolvedValue([]);
+    vi.mocked(window.electronAPI.db.getReticulumIdentityActivityByIdentity).mockResolvedValue([]);
     vi.mocked(window.electronAPI.db.getReticulumDestinations).mockResolvedValue([]);
     vi.mocked(window.electronAPI.db.upsertReticulumDestination).mockResolvedValue(undefined);
+    useReticulumIdentityActivityStore.setState({ byDestination: new Map() });
   });
 
   it('mounts when contact and live path-table route fields differ', async () => {
@@ -522,7 +585,9 @@ describe('ReticulumPeerDetailModal — getPeer selector stability (React #185)',
     );
 
     expect(
-      await screen.findByRole('button', { name: 'peerDetailModal.copyHash' }),
+      await screen.findByRole('button', {
+        name: `peerDetailModal.copyAnnouncedHashAria:peerDetailModal.aspect.unknown:${PEER_HASH}`,
+      }),
     ).toBeInTheDocument();
     expect(screen.getByText('Saved Contact')).toBeInTheDocument();
   });
@@ -552,7 +617,11 @@ describe('ReticulumPeerDetailModal — getPeer selector stability (React #185)',
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: 'peerDetailModal.saveContact' })).toBeNull();
     });
-    expect(screen.getByRole('button', { name: 'peerDetailModal.copyHash' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', {
+        name: `peerDetailModal.copyAnnouncedHashAria:peerDetailModal.aspect.unknown:${PEER_HASH}`,
+      }),
+    ).toBeInTheDocument();
     expect(screen.getByText('Saved Contact')).toBeInTheDocument();
   });
 });

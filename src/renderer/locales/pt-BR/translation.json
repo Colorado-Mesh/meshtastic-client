@@ -750,11 +750,7 @@
     "heardByRepeatersAdditional_one": "{{count}} encaminhador adicional não identificado (hashes: {{hashes}})",
     "heardByRepeatersAdditional_other": "{{count}} encaminhadores adicionais não identificados (hashes: {{hashes}})",
     "reticulumSendAwaitingPeerReceipt": "Enviado (aguardando recebimento dos pares)",
-    "reticulumChatNeedsLxmfDelivery": "Este ponto ainda não tem endereço de entrega LXMF (o chat não pode usar um destino apenas de voz). Aguarde um anúncio LXMF ou cole o hash LXMF de 32 caracteres.",
-    "lxmfHashLabel": "LXMF {{hash}}",
-    "copyLxmfHashAria": "Copiar hash de destino LXMF {{hash}}",
-    "lxmfHashCopied": "Hash de destino LXMF copiado.",
-    "lxmfHashCopyFailed": "Não foi possível copiar o hash de destino LXMF."
+    "reticulumChatNeedsLxmfDelivery": "Este ponto ainda não tem endereço de entrega LXMF (o chat não pode usar um destino apenas de voz). Aguarde um anúncio LXMF ou cole o hash LXMF de 32 caracteres."
   },
   "chatPayload": {
     "mention": "Mencionar {{label}}",
@@ -3403,7 +3399,6 @@
   },
   "peerDetailModal": {
     "networkSection": "Rede",
-    "copyHash": "Hash de destino",
     "editNameAria": "Exibição de nome personalizado",
     "sendMessage": "Enviar Mensagem",
     "pathOk": "Solicitação de caminho enviada.",
@@ -3429,7 +3424,20 @@
     "verifiedRowAria": "Contato verificado",
     "renameFailed": "Não foi possível salvar o nome de exibição.",
     "removeContactConfirmBody": "Isso remove o contato da sua lista salva. As mensagens de bate-papo permanecem; elas permanecem no Histórico se você as enviou.",
-    "backupPaths": "Caminhos de backup"
+    "backupPaths": "Caminhos de backup",
+    "announcedDestinations": "Announced destinations",
+    "openedDestinationBadge": "Opened",
+    "copyAnnouncedHashAria": "Copy {{aspect}} destination hash {{hash}}",
+    "hashCopied": "Destination hash copied.",
+    "hashCopyFailed": "Could not copy destination hash.",
+    "aspect": {
+      "chat": "Chat",
+      "voice": "Voice",
+      "nomad": "Nomad",
+      "rrc": "RRC",
+      "propagation": "Propagation",
+      "unknown": "Unknown"
+    }
   },
   "peerGraph": {
     "title": "Gráfico de Comunicação entre Pares",

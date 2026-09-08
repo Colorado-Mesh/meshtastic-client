@@ -2781,34 +2781,6 @@ function ChatPanel({
                 <span className="min-w-0 truncate">{t('chatPanel.openPeerDetails')}</span>
               </button>
             ) : null;
-          const lxmfHashControl =
-            protocol === 'reticulum' && reticulumDmDestinationHash != null ? (
-              <button
-                type="button"
-                className={`${RETICULUM_DM_HEADER_ACTION_CLASS} font-mono text-[11px]`}
-                title={reticulumDmDestinationHash}
-                aria-label={t('chatPanel.copyLxmfHashAria', {
-                  hash: reticulumDmDestinationHash,
-                })}
-                onClick={() => {
-                  void writeClipboardText(reticulumDmDestinationHash)
-                    .then(() => {
-                      addToast(t('chatPanel.lxmfHashCopied'), 'success');
-                    })
-                    .catch((err: unknown) => {
-                      console.warn('[ChatPanel] copy LXMF hash ' + errLikeToLogString(err));
-                      addToast(t('chatPanel.lxmfHashCopyFailed'), 'error');
-                    });
-                }}
-              >
-                <Copy className="h-3 w-3 shrink-0" aria-hidden />
-                <span className="min-w-0 truncate">
-                  {t('chatPanel.lxmfHashLabel', {
-                    hash: `${reticulumDmDestinationHash.slice(0, 8)}…`,
-                  })}
-                </span>
-              </button>
-            ) : null;
           if (
             !pathBadge &&
             !dmNode &&
@@ -2816,17 +2788,15 @@ function ChatPanel({
             !voiceCallControl &&
             !gamesChallengeControl &&
             !paperShareControl &&
-            !peerDetailsControl &&
-            !lxmfHashControl
+            !peerDetailsControl
           ) {
             return null;
           }
-          // Order: path status → last heard → LXMF hash → peer details → Probe/Path → Call → Challenge → Paper → Send file.
+          // Order: path status → last heard → peer details → Probe/Path → Call → Challenge → Paper → Send file.
           return (
             <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
               {pathBadge}
               {dmNode ? <DmPeerInfoBar dmNode={dmNode} nowMs={nowMs} t={t} /> : null}
-              {lxmfHashControl}
               {peerDetailsControl}
               {pathActions}
               {voiceCallControl}

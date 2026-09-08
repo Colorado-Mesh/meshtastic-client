@@ -171,4 +171,73 @@ describe('announce-bus pressure activity gate', () => {
       vi.useRealTimers();
     }
   });
+
+  it('loadForIdentity merges sibling destinations into byDestination', async () => {
+    const identity = '11111111111111111111111111111111';
+    const chat = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const voice = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    const byIdentity = vi.fn().mockResolvedValue([
+      {
+        destination_hash: chat,
+        aspect: 'lxmf.delivery',
+        identity_hash: identity,
+        last_seen: 10,
+      },
+      {
+        destination_hash: voice,
+        aspect: 'lxst.telephony',
+        identity_hash: identity,
+        last_seen: 20,
+      },
+    ]);
+    vi.stubGlobal('window', {
+      electronAPI: {
+        db: {
+          getReticulumIdentityActivityByIdentity: byIdentity,
+        },
+      },
+    });
+    const rows = await useReticulumIdentityActivityStore.getState().loadForIdentity(identity);
+    expect(byIdentity).toHaveBeenCalledWith(identity);
+    expect(rows).toHaveLength(2);
+    expect(useReticulumIdentityActivityStore.getState().getActivity(chat)[0]?.aspect).toBe(
+      'lxmf.delivery',
+    );
+    expect(useReticulumIdentityActivityStore.getState().getActivity(voice)[0]?.aspect).toBe(
+      'lxst.telephony',
+    );
+  });
+
+  it('loadForIdentity skips unknown after a named aspect exists (reversed order)', async () => {
+    const identity = '11111111111111111111111111111111';
+    const dest = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const byIdentity = vi.fn().mockResolvedValue([
+      {
+        destination_hash: dest,
+        aspect: 'lxmf.delivery',
+        identity_hash: identity,
+        last_seen: 20,
+      },
+      {
+        destination_hash: dest,
+        aspect: 'unknown',
+        identity_hash: identity,
+        last_seen: 10,
+      },
+    ]);
+    vi.stubGlobal('window', {
+      electronAPI: {
+        db: {
+          getReticulumIdentityActivityByIdentity: byIdentity,
+        },
+      },
+    });
+    await useReticulumIdentityActivityStore.getState().loadForIdentity(identity);
+    expect(
+      useReticulumIdentityActivityStore
+        .getState()
+        .getActivity(dest)
+        .map((r) => r.aspect),
+    ).toEqual(['lxmf.delivery']);
+  });
 });

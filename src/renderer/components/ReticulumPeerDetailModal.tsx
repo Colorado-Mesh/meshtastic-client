@@ -9,11 +9,13 @@ import { getIdentityIdForProtocol } from '@/renderer/lib/identityByProtocol';
 import { Z_NODE_DETAIL_MODAL } from '@/renderer/lib/modalZIndex';
 import { normalizeLastHeardMs } from '@/renderer/lib/nodeStatus';
 import { getOfflineIdentityIdForProtocol } from '@/renderer/lib/offlineProtocolIdentities';
+import { collectIdentityAnnouncedDestinations } from '@/renderer/lib/reticulum/collectIdentityAnnouncedDestinations';
 import {
   registerReticulumDestinationHash,
   reticulumHashToNodeId,
 } from '@/renderer/lib/reticulum/destHash';
 import { resolveReticulumChatLxmfDestination } from '@/renderer/lib/reticulum/resolveReticulumChatLxmfDest';
+import { reticulumAnnounceAspectLabel } from '@/renderer/lib/reticulum/reticulumAnnounceAspectLabel';
 import {
   isDefaultReticulumProfileIcon,
   resolveReticulumProfileIconName,
@@ -76,8 +78,10 @@ export default function ReticulumPeerDetailModal({
   const blockContact = useBlockStore((s) => s.block);
   const unblockContact = useBlockStore((s) => s.unblock);
   const activityKey = peerHash.replace(/[^0-9a-f]/gi, '').toLowerCase();
-  const activityRows = useReticulumIdentityActivityStore((s) => s.byDestination.get(activityKey));
+  const byDestination = useReticulumIdentityActivityStore((s) => s.byDestination);
+  const activityRows = byDestination.get(activityKey);
   const loadActivity = useReticulumIdentityActivityStore((s) => s.loadForDestination);
+  const loadActivityForIdentity = useReticulumIdentityActivityStore((s) => s.loadForIdentity);
 
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
@@ -105,6 +109,27 @@ export default function ReticulumPeerDetailModal({
     void loadActivity(peerHash);
   }, [loadActivity, peerHash]);
 
+  const liveIdentityHash = useMemo(() => {
+    const rows = activityRows ?? [];
+    for (const row of rows) {
+      const h = typeof row.identity_hash === 'string' ? row.identity_hash.trim().toLowerCase() : '';
+      if (h) return h;
+    }
+    const peerId =
+      typeof peer?.identity_hash === 'string' ? peer.identity_hash.trim().toLowerCase() : '';
+    return peerId;
+  }, [activityRows, peer]);
+
+  useEffect(() => {
+    if (!liveIdentityHash) return;
+    void loadActivityForIdentity(liveIdentityHash);
+  }, [liveIdentityHash, loadActivityForIdentity]);
+
+  const announcedDestinations = useMemo(
+    () => collectIdentityAnnouncedDestinations(peerHash, liveIdentityHash || null, byDestination),
+    [byDestination, liveIdentityHash, peerHash],
+  );
+
   // Hydrate Network fields from sidecar path slots (path may already exist for Chat).
   useEffect(() => {
     let cancelled = false;
@@ -122,15 +147,6 @@ export default function ReticulumPeerDetailModal({
       cancelled = true;
     };
   }, [peerHash]);
-
-  const liveIdentityHash = useMemo(() => {
-    const rows = activityRows ?? [];
-    for (const row of rows) {
-      const h = typeof row.identity_hash === 'string' ? row.identity_hash.trim().toLowerCase() : '';
-      if (h) return h;
-    }
-    return '';
-  }, [activityRows]);
 
   const verificationMismatch =
     verified &&
@@ -291,13 +307,18 @@ export default function ReticulumPeerDetailModal({
     ? resolveReticulumPeerLabel(peer, peer.display_name ?? peer.custom_display_name)
     : peerHash.slice(0, 12);
 
-  const copyHash = useCallback(async () => {
-    try {
-      await writeClipboardText(peerHash);
-    } catch (e) {
-      console.warn('[ReticulumPeerDetailModal] copy ' + errLikeToLogString(e));
-    }
-  }, [peerHash]);
+  const copyDestinationHash = useCallback(
+    async (hash: string) => {
+      try {
+        await writeClipboardText(hash);
+        addToast(t('peerDetailModal.hashCopied'), 'success');
+      } catch (e) {
+        console.warn('[ReticulumPeerDetailModal] copy ' + errLikeToLogString(e));
+        addToast(t('peerDetailModal.hashCopyFailed'), 'error');
+      }
+    },
+    [addToast, t],
+  );
 
   const requestPath = async () => {
     setBusy(true);
@@ -518,10 +539,7 @@ export default function ReticulumPeerDetailModal({
                 </button>
               </div>
             )}
-            <div className="mt-1 flex flex-wrap items-center gap-2 font-mono text-xs text-gray-400">
-              <span className="truncate" title={peerHash}>
-                {peerHash}
-              </span>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-400">
               <span
                 className={
                   isContact
@@ -541,16 +559,53 @@ export default function ReticulumPeerDetailModal({
                   {t('peerDetailModal.verifyMismatch')}
                 </span>
               ) : null}
-              <button
-                type="button"
-                className="shrink-0 text-amber-400 hover:text-amber-300"
-                aria-label={t('peerDetailModal.copyHash')}
-                onClick={() => {
-                  void copyHash();
-                }}
-              >
-                <Copy className="h-3.5 w-3.5" />
-              </button>
+            </div>
+            <div className="mt-2 space-y-1.5 rounded border border-gray-700/60 p-2">
+              <div className="text-muted text-[10px] tracking-wide uppercase">
+                {t('peerDetailModal.announcedDestinations')}
+              </div>
+              <ul className="space-y-1.5" aria-label={t('peerDetailModal.announcedDestinations')}>
+                {announcedDestinations.map((row) => {
+                  const aspectLabel = reticulumAnnounceAspectLabel(row.aspect, t);
+                  const trunc = `${row.destination_hash.slice(0, 12)}…`;
+                  return (
+                    <li
+                      key={`${row.destination_hash}:${row.aspect}`}
+                      className={`flex min-w-0 flex-wrap items-center gap-2 rounded px-1.5 py-1 ${
+                        row.isOpened ? 'bg-cyan-950/40 ring-1 ring-cyan-700/40' : ''
+                      }`}
+                    >
+                      <span className="rounded bg-slate-700/80 px-1.5 py-0.5 font-sans text-[10px] font-medium text-gray-200">
+                        {aspectLabel}
+                      </span>
+                      {row.isOpened ? (
+                        <span className="rounded bg-cyan-800/50 px-1.5 py-0.5 font-sans text-[10px] font-medium text-cyan-100">
+                          {t('peerDetailModal.openedDestinationBadge')}
+                        </span>
+                      ) : null}
+                      <span
+                        className="min-w-0 flex-1 truncate font-mono text-xs text-gray-300"
+                        title={row.destination_hash}
+                      >
+                        {trunc}
+                      </span>
+                      <button
+                        type="button"
+                        className="shrink-0 text-amber-400 hover:text-amber-300"
+                        aria-label={t('peerDetailModal.copyAnnouncedHashAria', {
+                          aspect: aspectLabel,
+                          hash: row.destination_hash,
+                        })}
+                        onClick={() => {
+                          void copyDestinationHash(row.destination_hash);
+                        }}
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
             <div className="mt-2 space-y-1 rounded border border-gray-700/60 p-2">
               <div className="text-muted text-[10px] tracking-wide uppercase">

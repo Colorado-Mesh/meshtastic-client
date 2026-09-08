@@ -750,11 +750,7 @@
     "heardByRepeatersAdditional_one": "{{count}}其他身份不明的货运代理（哈希值： {{hashes}} ）",
     "heardByRepeatersAdditional_other": "{{count}}其他身份不明的转发商（哈希： {{hashes}} ）",
     "reticulumSendAwaitingPeerReceipt": "已发送（等待同行回执）",
-    "reticulumChatNeedsLxmfDelivery": "此对等方还没有LXMF交付地址（聊天不能使用仅语音目的地）。等待LXMF公告，或粘贴其32个字符的LXMF哈希。",
-    "lxmfHashLabel": "LXMF {{hash}}",
-    "copyLxmfHashAria": "复制LXMF目标哈希{{hash}}",
-    "lxmfHashCopied": "已复制LXMF目标哈希。",
-    "lxmfHashCopyFailed": "无法复制LXMF目标哈希。"
+    "reticulumChatNeedsLxmfDelivery": "此对等方还没有LXMF交付地址（聊天不能使用仅语音目的地）。等待LXMF公告，或粘贴其32个字符的LXMF哈希。"
   },
   "chatPayload": {
     "mention": "提及{{label}}",
@@ -3403,7 +3399,6 @@
   },
   "peerDetailModal": {
     "networkSection": "网络",
-    "copyHash": "复制目标哈希",
     "editNameAria": "自定义显示名称",
     "sendMessage": "发讯",
     "pathOk": "请求已发送。",
@@ -3429,7 +3424,20 @@
     "verifiedRowAria": "已验证联系人48",
     "renameFailed": "无法保存显示名称。",
     "removeContactConfirmBody": "此操作会将联系人从保存的列表中删除。聊天消息会保留；如果您向其发送消息，它们将保留在历史记录中。",
-    "backupPaths": "设置备份路径"
+    "backupPaths": "设置备份路径",
+    "announcedDestinations": "Announced destinations",
+    "openedDestinationBadge": "Opened",
+    "copyAnnouncedHashAria": "Copy {{aspect}} destination hash {{hash}}",
+    "hashCopied": "Destination hash copied.",
+    "hashCopyFailed": "Could not copy destination hash.",
+    "aspect": {
+      "chat": "Chat",
+      "voice": "Voice",
+      "nomad": "Nomad",
+      "rrc": "RRC",
+      "propagation": "Propagation",
+      "unknown": "Unknown"
+    }
   },
   "peerGraph": {
     "title": "同行沟通图表",

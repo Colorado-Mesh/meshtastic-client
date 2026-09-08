@@ -750,11 +750,7 @@
     "heardByRepeatersAdditional_one": "{{count}} forwarder tak dikenal tambahan (hash: {{hashes}})",
     "heardByRepeatersAdditional_other": "{{count}} forwarder tak dikenal tambahan (hash: {{hashes}})",
     "reticulumSendAwaitingPeerReceipt": "Terkirim (menunggu tanda terima sejawat)",
-    "reticulumChatNeedsLxmfDelivery": "Rekan ini belum memiliki alamat pengiriman LXMF (Obrolan tidak dapat menggunakan tujuan khusus Suara). Tunggu pengumuman LXMF, atau tempelkan hash LXMF 32 karakternya.",
-    "lxmfHashLabel": "LXMF {{hash}}",
-    "copyLxmfHashAria": "Salin hash tujuan LXMF {{hash}}",
-    "lxmfHashCopied": "Hash tujuan LXMF disalin.",
-    "lxmfHashCopyFailed": "Tidak dapat menyalin hash tujuan LXMF."
+    "reticulumChatNeedsLxmfDelivery": "Rekan ini belum memiliki alamat pengiriman LXMF (Obrolan tidak dapat menggunakan tujuan khusus Suara). Tunggu pengumuman LXMF, atau tempelkan hash LXMF 32 karakternya."
   },
   "chatPayload": {
     "mention": "Sebutkan {{label}}",
@@ -3403,7 +3399,6 @@
   },
   "peerDetailModal": {
     "networkSection": "Jaringan",
-    "copyHash": "Salin hash tujuan",
     "editNameAria": "Nama tampilan khusus",
     "sendMessage": "Kirim pesan",
     "pathOk": "Permintaan jalur terkirim.",
@@ -3429,7 +3424,20 @@
     "verifiedRowAria": "Kontak terverifikasi",
     "renameFailed": "Tidak dapat menyimpan nama tampilan.",
     "removeContactConfirmBody": "Ini akan menghapus kontak dari daftar tersimpan Anda. Pesan obrolan tetap ada; pesan tersebut akan tetap ada di Riwayat jika Anda mengirimkannya melalui pesan.",
-    "backupPaths": "Jalur cadangan"
+    "backupPaths": "Jalur cadangan",
+    "announcedDestinations": "Announced destinations",
+    "openedDestinationBadge": "Opened",
+    "copyAnnouncedHashAria": "Copy {{aspect}} destination hash {{hash}}",
+    "hashCopied": "Destination hash copied.",
+    "hashCopyFailed": "Could not copy destination hash.",
+    "aspect": {
+      "chat": "Chat",
+      "voice": "Voice",
+      "nomad": "Nomad",
+      "rrc": "RRC",
+      "propagation": "Propagation",
+      "unknown": "Unknown"
+    }
   },
   "peerGraph": {
     "title": "Grafik Komunikasi Rekan",

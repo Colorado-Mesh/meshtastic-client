@@ -750,11 +750,7 @@
     "heardByRepeatersAdditional_one": "{{count}} expéditeur supplémentaire non identifié (hachages : {{hashes}})",
     "heardByRepeatersAdditional_other": "{{count}} expéditeurs supplémentaires non identifiés (hachages : {{hashes}})",
     "reticulumSendAwaitingPeerReceipt": "Envoyé (en attente de réception par les pairs)",
-    "reticulumChatNeedsLxmfDelivery": "Ce pair n'a pas encore d'adresse de livraison LXMF (le chat ne peut pas utiliser une destination vocale uniquement). Attendez une annonce LXMF ou collez leur hachage LXMF de 32 caractères.",
-    "lxmfHashLabel": "LXMF {{hash}}",
-    "copyLxmfHashAria": "Copier le hachage de destination LXMF {{hash}}",
-    "lxmfHashCopied": "Hachage de destination LXMF copié.",
-    "lxmfHashCopyFailed": "Impossible de copier le hachage de destination LXMF."
+    "reticulumChatNeedsLxmfDelivery": "Ce pair n'a pas encore d'adresse de livraison LXMF (le chat ne peut pas utiliser une destination vocale uniquement). Attendez une annonce LXMF ou collez leur hachage LXMF de 32 caractères."
   },
   "chatPayload": {
     "mention": "Mention {{label}}",
@@ -3403,7 +3399,6 @@
   },
   "peerDetailModal": {
     "networkSection": "Réseau",
-    "copyHash": "Hash de Destination",
     "editNameAria": "Affichage Personnalisé",
     "sendMessage": "Envoyer un message",
     "pathOk": "Demande envoyée.",
@@ -3429,7 +3424,20 @@
     "verifiedRowAria": "Contact vérifié",
     "renameFailed": "Impossible d'enregistrer le nom d'affichage.",
     "removeContactConfirmBody": "Cela supprime le contact de votre liste enregistrée. Les messages de chat restent ; ils restent dans l'historique si vous leur avez envoyé un message.",
-    "backupPaths": "Chemins de sauvegarde"
+    "backupPaths": "Chemins de sauvegarde",
+    "announcedDestinations": "Announced destinations",
+    "openedDestinationBadge": "Opened",
+    "copyAnnouncedHashAria": "Copy {{aspect}} destination hash {{hash}}",
+    "hashCopied": "Destination hash copied.",
+    "hashCopyFailed": "Could not copy destination hash.",
+    "aspect": {
+      "chat": "Chat",
+      "voice": "Voice",
+      "nomad": "Nomad",
+      "rrc": "RRC",
+      "propagation": "Propagation",
+      "unknown": "Unknown"
+    }
   },
   "peerGraph": {
     "title": "Graphique de communication par les pairs",

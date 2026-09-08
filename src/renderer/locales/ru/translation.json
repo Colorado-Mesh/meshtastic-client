@@ -788,11 +788,7 @@
     "searchResults_few": "{{count}} результата",
     "searchResults_many": "{{count}} результатов",
     "reticulumSendAwaitingPeerReceipt": "Отправлено (ожидает получения коллегой)",
-    "reticulumChatNeedsLxmfDelivery": "Этот узел еще не имеет адреса доставки LXMF (чат не может использовать пункт назначения только для голоса). Дождитесь объявления LXMF или вставьте их 32-символьный хэш LXMF.",
-    "lxmfHashLabel": "LXMF {{hash}}",
-    "copyLxmfHashAria": "Скопируйте хэш назначения LXMF {{hash}}",
-    "lxmfHashCopied": "Хеш назначения LXMF скопирован.",
-    "lxmfHashCopyFailed": "Не удалось скопировать хэш назначения LXMF."
+    "reticulumChatNeedsLxmfDelivery": "Этот узел еще не имеет адреса доставки LXMF (чат не может использовать пункт назначения только для голоса). Дождитесь объявления LXMF или вставьте их 32-символьный хэш LXMF."
   },
   "chatPayload": {
     "mention": "Упоминание {{label}}",
@@ -3483,7 +3479,6 @@
   },
   "peerDetailModal": {
     "networkSection": "Сеть",
-    "copyHash": "Копировать хэш назначения",
     "editNameAria": "Пользовательское отображение",
     "sendMessage": "Сообщение \"Отправить\"",
     "pathOk": "Запрос направлен.",
@@ -3509,7 +3504,20 @@
     "verifiedRowAria": "Контакт подтвержден",
     "renameFailed": "Не удалось сохранить отображаемое имя.",
     "removeContactConfirmBody": "Контакт будет удален из сохраненного списка. Сообщения чата остаются; они остаются в истории, если вы отправили им сообщение.",
-    "backupPaths": "Пути резервного копирования"
+    "backupPaths": "Пути резервного копирования",
+    "announcedDestinations": "Announced destinations",
+    "openedDestinationBadge": "Opened",
+    "copyAnnouncedHashAria": "Copy {{aspect}} destination hash {{hash}}",
+    "hashCopied": "Destination hash copied.",
+    "hashCopyFailed": "Could not copy destination hash.",
+    "aspect": {
+      "chat": "Chat",
+      "voice": "Voice",
+      "nomad": "Nomad",
+      "rrc": "RRC",
+      "propagation": "Propagation",
+      "unknown": "Unknown"
+    }
   },
   "peerGraph": {
     "title": "График одноранговой связи",
