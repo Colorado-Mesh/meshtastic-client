@@ -2055,7 +2055,14 @@
     "recommendationsHeading": "Rekomendasi",
     "lastMessagePrefix": "Terakhir:",
     "appliesToCategories": "Berlaku untuk: {{labels}}",
-    "severityInfo": "Informasi"
+    "severityInfo": "Informasi",
+    "historyNote": "Temuan menggambarkan peristiwa dalam log ini, belum tentu masalah yang masih aktif.",
+    "copyReport": "Salin laporan pemecahan masalah",
+    "copyHint": "Termasuk pesan log sampel. Tinjau laporan untuk detail pribadi sebelum membagikan.",
+    "copySuccess": "Laporan disalin",
+    "copyFailure": "Tidak dapat menyalin laporan. Coba lagi atau ekspor log.",
+    "evidence": "Lihat bukti untuk {{category}}",
+    "evidenceShown": "Menampilkan {{shown}} dari {{total}} entri yang cocok, terbaru terlebih dahulu."
   },
   "logAnalyzer": {
     "categories": {
@@ -2140,11 +2147,44 @@
         "recommendation": "Riwayat obrolan Simpan & Teruskan tidak dapat diminta dari router (sering kali perlombaan singkat dengan lalu lintas radio lainnya). Jika backlog obrolan tetap kosong, sambungkan kembali atau tunggu detak jantung router berikutnya."
       },
       "serial-reconnect": {
-        "label": "Sambungkan Ulang Serial USB"
+        "label": "Sambungkan Ulang Serial USB",
+        "recommendation": "Port serial USB tidak dapat dibuka kembali atau aliran sebelumnya masih terkunci. Tutup aplikasi lain menggunakan radio, sambungkan kembali kabel, dan sambungkan kembali di aplikasi. Jika berulang, sertakan baris log serial dalam laporan bug."
       },
       "reticulum-nomad-hosting": {
         "label": "Masalah Hosting Halaman Nomad",
         "recommendation": "Hosting Nomad My Pages gagal atau folder konten tidak tersedia. Buka Nomad Network → My Pages, pilih kembali folder pages jika dipindahkan, lalu Start serving. Detail muncul sebagai [nomad-serving] / [NomadHosting] di log."
+      },
+      "renderer-unresponsive": {
+        "label": "Aplikasi berhenti merespons",
+        "recommendation": "Aplikasi berhenti mengirim detak jantung UI. Jika sudah pulih, perhatikan apa yang Anda lakukan di dekat waktu yang tercantum. Jika tetap beku, mulai ulang aplikasi dan sertakan laporan ini saat melaporkan hang berulang."
+      },
+      "database-persistence": {
+        "label": "Perubahan tidak dapat disimpan",
+        "recommendation": "Penulisan basis data kehabisan percobaan ulang atau dijatuhkan. Perubahan yang terlihat dalam sesi ini mungkin tidak bertahan saat restart. Ekspor data penting sebelum keluar, lalu periksa ruang disk kosong dan akses ke folder data aplikasi. Jangan hapus database."
+      },
+      "meshtastic-tcp": {
+        "label": "Koneksi TCP Meshtastic gagal",
+        "recommendation": "Sambungan TCP ke radio Meshtastic gagal. Periksa alamat radio dan port, jangkauan jaringan lokal, dan apakah klien lain menggunakan koneksi sebelum menyambung kembali."
+      },
+      "reticulum-sidecar": {
+        "label": "Layanan Reticulum terganggu",
+        "recommendation": "Layanan Reticulum lokal gagal memulai, merespons, atau mempertahankan koneksi acaranya. Periksa statusnya di Koneksi dan baris log di bawah ini. Jika belum pulih, nyalakan kembali koneksi Reticulum. Komponen layanan bawaan yang hilang mungkin memerlukan pemasangan ulang aplikasi."
+      },
+      "reticulum-delivery": {
+        "label": "Pengiriman atau sinkronisasi Reticulum gagal",
+        "recommendation": "Upaya pengiriman pesan atau sinkronisasi propagasi gagal. Periksa status pesan saat ini sebelum mencoba lagi, selidiki tujuan, dan periksa antarmuka yang diaktifkan. Untuk propagasi, periksa node yang dipilih dan status sinkronisasi di bawah Jaringan; pesan yang disimpan bukan bukti pengiriman penerima."
+      },
+      "reticulum-backpressure": {
+        "label": "Peristiwa atau paket Reticulum dibuang",
+        "recommendation": "Layanan Reticulum setempat menghentikan acara atau paket karena antrian terisi, pelanggan tertinggal, atau muatan melebihi batas. Kurangi transfer massal bersamaan, lalu periksa status pesan sebelum mencoba lagi. Paket yang berulang kali dibuang saat menganggur layak dilaporkan dengan sampel log ini."
+      },
+      "firmware-flash": {
+        "label": "Transfer firmware terhenti",
+        "recommendation": "Transfer firmware berhenti membuat kemajuan dan port serial - nya ditutup. Konfirmasikan firmware dan perangkat yang benar, periksa kabel USB, dan ikuti instruksi pemulihan perangkat atau bootloader sebelum mencoba lagi."
+      },
+      "unclassified": {
+        "label": "Peringatan dan kesalahan lainnya",
+        "recommendation": "Garis log ini tidak cocok dengan diagnosis yang diketahui dan mungkin mencakup pesan pemulihan yang diharapkan. Tinjau stempel waktu dan konteks sekitarnya. Jika masalah berlanjut, ekspor log lengkap dengan laporan ini."
       }
     },
     "recommendationGroups": {

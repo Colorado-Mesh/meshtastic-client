@@ -2055,7 +2055,14 @@
     "recommendationsHeading": "Empfehlungen",
     "lastMessagePrefix": "Zuletzt:",
     "appliesToCategories": "Gilt für: {{labels}}",
-    "severityInfo": "Info"
+    "severityInfo": "Info",
+    "historyNote": "Die Ergebnisse beschreiben Ereignisse in diesem Protokoll, nicht unbedingt Probleme, die noch aktiv sind.",
+    "copyReport": "Fehlerbehebungsbericht kopieren",
+    "copyHint": "Enthält Beispielprotokollmeldungen. Überprüfe den Bericht auf private Details, bevor du ihn teilst.",
+    "copySuccess": "Bericht kopiert!",
+    "copyFailure": "Der Bericht konnte nicht kopiert werden. Versuchen Sie es erneut oder exportieren Sie das Protokoll.",
+    "evidence": "Beweise für {{category}} anzeigen",
+    "evidenceShown": "{{shown}} von {{total}} passenden Einträgen werden angezeigt, die neueste zuerst."
   },
   "logAnalyzer": {
     "categories": {
@@ -2140,11 +2147,44 @@
         "recommendation": "Store & Forward Chat-Verlauf konnte nicht von einem Router angefordert werden (oft ein kurzes Rennen mit anderem Funkverkehr). Wenn das Chat-Backlog leer bleibt, verbinden Sie sich erneut oder warten Sie auf den nächsten Herzschlag des Routers."
       },
       "serial-reconnect": {
-        "label": "USB-Serielle Wiederverbindung"
+        "label": "USB-Serielle Wiederverbindung",
+        "recommendation": "Der serielle USB-Port konnte nicht wieder geöffnet werden oder sein vorheriger Stream ist immer noch gesperrt. Schließen Sie andere Apps mit dem Radio, schließen Sie das Kabel wieder an und stellen Sie die Verbindung in der App wieder her. Wenn es sich wiederholt, fügen Sie die seriellen Protokollzeilen in einen Fehlerbericht ein."
       },
       "reticulum-nomad-hosting": {
         "label": "Probleme beim Hosting von Nomad-Seiten",
         "recommendation": "Das Hosting von Nomad My Pages ist fehlgeschlagen oder der Inhaltsordner ist nicht verfügbar. Öffnen Sie Nomad Network → My Pages, wählen Sie den Seitenordner erneut aus, wenn er verschoben wurde, und beginnen Sie mit der Bereitstellung. Details erscheinen als [nomad-serving] / [NomadHosting] im Protokoll."
+      },
+      "renderer-unresponsive": {
+        "label": "App antwortet nicht mehr",
+        "recommendation": "Die App hat aufgehört, UI-Herzschläge zu senden. Wenn es sich erholt hat, notieren Sie sich, was Sie in der Nähe der angegebenen Zeit getan haben. Wenn sie eingefroren bleibt, starten Sie die App neu und fügen Sie diesen Bericht hinzu, wenn Sie einen wiederkehrenden Ausfall melden."
+      },
+      "database-persistence": {
+        "label": "Die Änderungen konnten nicht gespeichert werden",
+        "recommendation": "Datenbank schreibt erschöpft ihre Wiederholungen oder wurden fallen gelassen. In dieser Sitzung sichtbare Änderungen überstehen einen Neustart möglicherweise nicht. Exportieren Sie wichtige Daten vor dem Beenden, überprüfen Sie dann den freien Speicherplatz und den Zugriff auf den App-Datenordner. Löschen Sie die Datenbank nicht."
+      },
+      "meshtastic-tcp": {
+        "label": "Meshtastic-TCP-Verbindung fehlgeschlagen",
+        "recommendation": "Die TCP-Verbindung zum Meshtastic-Funkgerät ist fehlgeschlagen. Überprüfen Sie die Funkadresse und den Port, die Erreichbarkeit des lokalen Netzwerks und ob ein anderer Client die Verbindung verwendet, bevor Sie die Verbindung wiederherstellen."
+      },
+      "reticulum-sidecar": {
+        "label": "Reticulum-Dienst unterbrochen",
+        "recommendation": "Der lokale Reticulum-Dienst konnte seine Ereignisverbindung nicht starten, nicht reagieren oder nicht aufrechterhalten. Überprüfen Sie den Status in Verbindung und den Protokollzeilen unten. Wenn es sich nicht erholt hat, starten Sie die Reticulum-Verbindung neu. Eine fehlende mitgelieferte Dienstkomponente erfordert möglicherweise eine Neuinstallation der App."
+      },
+      "reticulum-delivery": {
+        "label": "Reticulum-Zustellung oder -Synchronisierung fehlgeschlagen",
+        "recommendation": "Ein Nachrichtenübermittlungs- oder Übertragungssynchronisierungsversuch ist fehlgeschlagen. Überprüfen Sie den aktuellen Nachrichtenstatus, bevor Sie es erneut versuchen, prüfen Sie das Ziel und überprüfen Sie die aktivierten Schnittstellen. Überprüfen Sie für die Übertragung den ausgewählten Knoten und den Synchronisierungsstatus unter Netzwerk. Eine gespeicherte Nachricht ist kein Nachweis für die Zustellung durch den Empfänger."
+      },
+      "reticulum-backpressure": {
+        "label": "Reticulum-Ereignisse oder -Pakete verworfen",
+        "recommendation": "Der lokale Reticulum-Dienst ließ Ereignisse oder Pakete fallen, weil eine Warteschlange gefüllt war, ein Teilnehmer zurückfiel oder eine Nutzlast ein Limit überschritt. Reduzieren Sie gleichzeitige Massenübertragungen und überprüfen Sie dann den Nachrichtenstatus, bevor Sie es erneut versuchen. Wiederholte Drops im Leerlauf sind es wert, mit diesen Protokollbeispielen gemeldet zu werden."
+      },
+      "firmware-flash": {
+        "label": "Firmware-Übertragung blockiert",
+        "recommendation": "Die Firmware-Übertragung hat den Fortschritt gestoppt und die serielle Schnittstelle wurde geschlossen. Überprüfen Sie die richtige Firmware und das richtige Gerät, überprüfen Sie das USB-Kabel und befolgen Sie die Anweisungen zur Gerätewiederherstellung oder zum Bootloader, bevor Sie es erneut versuchen."
+      },
+      "unclassified": {
+        "label": "Sonstige Warnungen und Fehler",
+        "recommendation": "Diese Protokolllinien stimmen nicht mit einer bekannten Diagnose überein und können erwartete Wiederherstellungsmeldungen enthalten. Überprüfen Sie ihre Zeitstempel und den umgebenden Kontext. Wenn ein Problem weiterhin besteht, exportieren Sie das vollständige Protokoll mit diesem Bericht."
       }
     },
     "recommendationGroups": {

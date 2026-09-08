@@ -526,6 +526,7 @@ describe('dedupeRecommendations', () => {
         severity: 'warning',
         lastTs: 1,
         lastMessage: '',
+        entries: [],
       },
       {
         id: 'b',
@@ -534,6 +535,7 @@ describe('dedupeRecommendations', () => {
         severity: 'error',
         lastTs: 2,
         lastMessage: '',
+        entries: [],
       },
     ];
     const d = dedupeRecommendations(cats);
@@ -551,6 +553,7 @@ describe('dedupeRecommendations', () => {
         severity: 'error',
         lastTs: 1,
         lastMessage: '',
+        entries: [],
       },
       {
         id: 'b',
@@ -559,6 +562,7 @@ describe('dedupeRecommendations', () => {
         severity: 'warning',
         lastTs: 2,
         lastMessage: '',
+        entries: [],
       },
     ];
     const d = dedupeRecommendations(cats);

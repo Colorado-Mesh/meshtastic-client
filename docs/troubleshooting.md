@@ -27,7 +27,7 @@ Start here for log analysis, bug reports, and general connection debugging.
 
 ### Connection or transport issues: use Log **Analyze**
 
-Open the **Log** panel (right rail), enable **debug** if needed, reproduce the problem, then click **Analyze**. The app scans recent buffered log lines for patterns (BLE, serial, TCP, MQTT, handshake timeouts, etc.) and lists **suggested next steps**. This complements export/delete: use it before filing an issue so you have concrete log context. Analysis is **heuristic**; treat recommendations as hints, not guarantees.
+Open the **Log** panel (right rail), enable **debug** if needed, reproduce the problem, then click **Analyze**. The app scans recent buffered log lines for patterns (BLE, serial, TCP, MQTT, handshake timeouts, etc.) and lists **suggested next steps**. This complements export/delete: use it before filing an issue so you have concrete log context. Analysis is **heuristic**; treat recommendations as hints, not guarantees. Expand **View evidence** on a finding to inspect its timestamped log lines. **Copy troubleshooting report** copies the findings, specific advice, and recent samples for a support request; review the samples before sharing. See [Log analysis](log-analysis.md) for scope and limitations.
 
 ### Reporting bugs: **Export for GitHub** (App tab)
 

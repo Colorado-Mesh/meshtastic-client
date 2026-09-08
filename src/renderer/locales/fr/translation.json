@@ -2055,7 +2055,14 @@
     "recommendationsHeading": "Recommandations",
     "lastMessagePrefix": "Dernier:",
     "appliesToCategories": "S'applique à : {{labels}}",
-    "severityInfo": "Informations"
+    "severityInfo": "Informations",
+    "historyNote": "Les résultats décrivent les événements dans ce journal, pas nécessairement les problèmes qui sont toujours actifs.",
+    "copyReport": "Copier le rapport de dépannage",
+    "copyHint": "Comprend des exemples de messages de journal. Consultez le rapport pour obtenir des informations privées avant de le partager.",
+    "copySuccess": "Rapport copié",
+    "copyFailure": "Impossible de copier le rapport. Réessayez ou exportez le journal.",
+    "evidence": "Afficher les preuves pour {{category}}",
+    "evidenceShown": "Affichage de {{shown}} entrées correspondantes sur {{total}}, les plus récentes en premier."
   },
   "logAnalyzer": {
     "categories": {
@@ -2140,11 +2147,44 @@
         "recommendation": "L'historique du chat Store & Forward n'a pas pu être demandé à un routeur (souvent une brève course avec d'autres trafics radio). Si le backlog de discussion reste vide, reconnectez-vous ou attendez le prochain battement de cœur du routeur."
       },
       "serial-reconnect": {
-        "label": "USB Serial Reconnect"
+        "label": "USB Serial Reconnect",
+        "recommendation": "Le port série USB n'a pas pu être rouvert ou son flux précédent est toujours verrouillé. Fermez les autres applications à l'aide de la radio, reconnectez le câble et reconnectez-vous dans l'application. S'il se répète, incluez les lignes de journal série dans un rapport de bogue."
       },
       "reticulum-nomad-hosting": {
         "label": "Problèmes d'hébergement de la page Nomad",
         "recommendation": "L'hébergement de Nomad My Pages a échoué ou le dossier de contenu n'est pas disponible. Ouvrez Nomad Network → My Pages, choisissez à nouveau le dossier des pages s'il a été déplacé, puis commencez à servir. Les détails apparaissent sous la forme [nomad-serving] / [NomadHosting] dans le journal."
+      },
+      "renderer-unresponsive": {
+        "label": "L'application a cessé de répondre",
+        "recommendation": "L'application a cessé d'envoyer les battements de cœur de l'interface utilisateur. S'il s'est rétabli, notez ce que vous faisiez près de l'heure indiquée. S'il reste gelé, redémarrez l'application et incluez ce rapport lorsque vous signalez un blocage récurrent."
+      },
+      "database-persistence": {
+        "label": "Les modifications n’ont pas pu être enregistrées.",
+        "recommendation": "Les écritures de base de données ont épuisé leurs tentatives ou ont été abandonnées. Les modifications visibles dans cette session peuvent ne pas survivre à un redémarrage. Exportez les données importantes avant de quitter, puis vérifiez l'espace disque disponible et l'accès au dossier de données de l'application. Ne supprimez pas la base de données."
+      },
+      "meshtastic-tcp": {
+        "label": "Échec de la connexion TCP Meshtastic",
+        "recommendation": "La connexion TCP à la radio Meshtastic a échoué. Vérifiez l'adresse et le port radio, l'accessibilité du réseau local et si un autre client utilise la connexion avant de se reconnecter."
+      },
+      "reticulum-sidecar": {
+        "label": "Service Reticulum interrompu",
+        "recommendation": "Le service Reticulum local n'a pas pu démarrer, répondre ou maintenir sa connexion à l'événement. Vérifiez son état dans Connexion et les lignes de journal ci-dessous. S'il n'a pas récupéré, redémarrez la connexion Reticulum. Un composant de service fourni manquant peut nécessiter la réinstallation de l'application."
+      },
+      "reticulum-delivery": {
+        "label": "Échec de livraison ou de synchronisation Reticulum",
+        "recommendation": "Une tentative de transmission de message ou de synchronisation de propagation a échoué. Vérifiez l'état actuel du message avant de réessayer, sondez la destination et vérifiez les interfaces activées. Pour la propagation, vérifiez le nœud sélectionné et l'état de synchronisation sous Réseau ; un message stocké n'est pas une preuve de livraison du destinataire."
+      },
+      "reticulum-backpressure": {
+        "label": "Événements ou paquets Reticulum perdus",
+        "recommendation": "Le service Reticulum local a laissé tomber des événements ou des paquets parce qu'une file d'attente était remplie, qu'un abonné était en retard ou qu'une charge utile dépassait une limite. Réduisez les transferts groupés simultanés, puis vérifiez l'état du message avant de réessayer. Les gouttes répétées pendant l'inactivité méritent d'être signalées avec ces échantillons de journal."
+      },
+      "firmware-flash": {
+        "label": "Transfert de micrologiciel bloqué",
+        "recommendation": "Le transfert du micrologiciel a cessé de progresser et son port série a été fermé. Confirmez le micrologiciel et le périphérique corrects, vérifiez le câble USB et suivez les instructions de récupération du périphérique ou du chargeur d'amorçage avant de réessayer."
+      },
+      "unclassified": {
+        "label": "Autres avertissements et erreurs",
+        "recommendation": "Ces lignes de journal ne correspondent pas à un diagnostic connu et peuvent inclure des messages de récupération attendus. Passez en revue leurs horodatages et le contexte environnant. Si un problème persiste, exportez le journal complet avec ce rapport."
       }
     },
     "recommendationGroups": {

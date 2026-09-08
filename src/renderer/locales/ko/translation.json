@@ -2055,7 +2055,14 @@
     "recommendationsHeading": "권장 사항",
     "lastMessagePrefix": "마지막:",
     "appliesToCategories": "적용 대상: {{labels}}",
-    "severityInfo": "정보"
+    "severityInfo": "정보",
+    "historyNote": "조사 결과는 이 로그의 이벤트를 설명하며, 여전히 활성 상태인 문제는 아닙니다.",
+    "copyReport": "문제 해결 보고서 복사",
+    "copyHint": "샘플 로그 메시지를 포함합니다. 공유하기 전에 보고서를 검토하여 비공개 세부 정보를 확인하세요.",
+    "copySuccess": "보고서 복사 되었습니다!",
+    "copyFailure": "보고서를 복사할 수 없습니다. 다시 시도하거나 로그를 내보내세요.",
+    "evidence": "{{category}} 에 대한 증거 보기",
+    "evidenceShown": "일치하는 항목이 {{total}} 개 중 {{shown}} 개 표시 중 가장 최신 항목이 먼저 표시됩니다."
   },
   "logAnalyzer": {
     "categories": {
@@ -2140,11 +2147,44 @@
         "recommendation": "라우터에서 스토어 및 포워드 채팅 기록을 요청할 수 없습니다 (종종 다른 무선 트래픽과의 짧은 레이스). 채팅 백로그가 비어 있는 경우 다시 연결하거나 다음 라우터 하트비트를 기다립니다."
       },
       "serial-reconnect": {
-        "label": "USB 직렬 재연결"
+        "label": "USB 직렬 재연결",
+        "recommendation": "USB 직렬 포트를 다시 열 수 없거나 이전 스트림이 여전히 잠겨 있습니다. 라디오를 사용하여 다른 앱을 닫고 케이블을 다시 연결한 다음 앱에서 다시 연결합니다. 반복되는 경우, 버그 보고서에 시리얼 로그 라인을 포함합니다."
       },
       "reticulum-nomad-hosting": {
         "label": "Nomad 페이지 호스팅 문제",
         "recommendation": "Nomad My Pages 호스팅에 실패했거나 콘텐츠 폴더를 사용할 수 없습니다. Nomad Network → My Pages를 열고 페이지 폴더가 이동되면 다시 선택한 다음 서비스를 시작합니다. 세부 정보는 로그에 [nomad-serving] / [NomadHosting] 으로 표시됩니다."
+      },
+      "renderer-unresponsive": {
+        "label": "앱 응답이 중지되었습니다",
+        "recommendation": "앱이 UI 하트비트 전송을 중지했습니다. 회복된 경우, 목록에 표시된 시간 근처에서 무엇을 하고 있었는지 기록하십시오. 정지된 상태로 남아 있는 경우, 앱을 다시 시작하고 반복 중단을 신고할 때 이 보고서를 포함하세요."
+      },
+      "database-persistence": {
+        "label": "변경 사항을 저장할 수 없습니다",
+        "recommendation": "데이터베이스 쓰기가 재시도를 소진했거나 중단되었습니다. 이 세션에서 표시되는 변경 사항은 재시작 후에도 적용되지 않을 수 있습니다. 종료하기 전에 중요한 데이터를 내보낸 다음 사용 가능한 디스크 공간을 확인하고 앱 데이터 폴더에 액세스하십시오. 데이터베이스를 삭제하지 마십시오."
+      },
+      "meshtastic-tcp": {
+        "label": "Meshtastic TCP 연결 실패",
+        "recommendation": "Meshtastic 라디오에 대한 TCP 연결에 실패했습니다. 다시 연결하기 전에 무선 주소 및 포트, 로컬 네트워크 연결 가능성, 다른 클라이언트가 연결을 사용하고 있는지 확인하십시오."
+      },
+      "reticulum-sidecar": {
+        "label": "Reticulum 서비스 중단됨",
+        "recommendation": "로컬 Reticulum 서비스를 시작, 응답 또는 이벤트 연결을 유지하지 못했습니다. 연결 및 아래 로그 라인에서 상태를 확인하십시오. 복구되지 않은 경우 Reticulum 연결을 다시 시작하십시오. 포장된 사이드카가 누락되면 앱을 다시 설치해야 할 수 있습니다."
+      },
+      "reticulum-delivery": {
+        "label": "Reticulum 전송 또는 동기화 실패",
+        "recommendation": "메시지 전송 또는 전파 동기화 시도가 실패했습니다. 다시 시도하기 전에 현재 메시지 상태를 확인하고, 대상을 조사하고, 활성화된 인터페이스를 확인하십시오. 전파의 경우 네트워크에서 선택한 노드 및 동기화 상태를 확인하십시오. 저장된 메시지는 수신자 전달의 증거가 아닙니다."
+      },
+      "reticulum-backpressure": {
+        "label": "Reticulum 이벤트 또는 패킷 누락됨",
+        "recommendation": "대기열이 채워지거나, 구독자가 뒤처지거나, 페이로드가 한도를 초과하여 로컬 Reticulum 서비스가 이벤트 또는 패킷을 삭제했습니다. 동시 대량 전송을 줄인 다음 다시 시도하기 전에 메시지 상태를 확인하십시오. 유휴 상태에서 반복된 낙하는 이러한 로그 샘플로 보고할 가치가 있습니다."
+      },
+      "firmware-flash": {
+        "label": "펌웨어 전송 중지됨",
+        "recommendation": "펌웨어 전송이 중단되고 직렬 포트가 닫혔습니다. 다시 시도하기 전에 올바른 펌웨어와 장치를 확인하고 USB 케이블을 확인하고 장치 복구 또는 부트로더 지침을 따르십시오."
+      },
+      "unclassified": {
+        "label": "기타 경고 및 오류",
+        "recommendation": "이러한 로그 라인은 알려진 진단과 일치하지 않으며 예상되는 복구 메시지를 포함할 수 있습니다. 타임스탬프와 주변 맥락을 검토합니다. 문제가 지속되면 이 보고서로 전체 로그를 내보냅니다."
       }
     },
     "recommendationGroups": {
