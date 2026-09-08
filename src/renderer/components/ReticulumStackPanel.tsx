@@ -25,6 +25,10 @@ import {
 } from '@/shared/reticulum-types';
 
 import { ReticulumInterfacesPanel } from './reticulum/ReticulumInterfacesPanel';
+import {
+  type ReticulumSetupDestination,
+  ReticulumSetupGuide,
+} from './reticulum/ReticulumSetupGuide';
 import { ReticulumLocalInterfaceAlertsBlock } from './ReticulumLocalInterfaceAlertsBlock';
 import { ReticulumLocalInterfaceConnectingBlock } from './ReticulumLocalInterfaceConnectingBlock';
 import { ReticulumRmapConnectionStatus } from './ReticulumRmapConnectionStatus';
@@ -40,6 +44,7 @@ export interface ReticulumStackPanelProps {
   onOpenAppGpsSettings?: () => void;
   /** Open Admin → Bluetooth (USB Clear paired / Start pairing) for BLE bond recovery. */
   onOpenAdminBluetooth?: () => void;
+  onOpenSetupDestination?: (destination: ReticulumSetupDestination) => boolean;
 }
 
 /** Connection tab: stack lifecycle, interface CRUD, and local interface health. */
@@ -51,9 +56,11 @@ export function ReticulumStackPanel({
   onOpenReticulumRmapSettings,
   onOpenAppGpsSettings,
   onOpenAdminBluetooth,
+  onOpenSetupDestination,
 }: ReticulumStackPanelProps) {
   const { t } = useTranslation();
   const [restartError, setRestartError] = useState<string | null>(null);
+  const interfaceControlsRef = useRef<HTMLDivElement>(null);
   const [shareInstanceSetting, setShareInstanceSetting] = useState(false);
   const sidecarEventRef = useRef<(evt: ReticulumSidecarEvent) => void>(() => {});
 
@@ -68,6 +75,7 @@ export function ReticulumStackPanel({
     notifyManualStackStart,
     applySidecarStatus,
     refreshSidecarStatus,
+    refreshIdentity,
   } = useReticulumSidecarApi({
     connecting,
     onStartStack,
@@ -257,142 +265,174 @@ export function ReticulumStackPanel({
   }
 
   return (
-    <div className="bg-deep-black overflow-hidden rounded-lg border border-gray-700">
-      <div className="bg-secondary-dark flex items-center justify-between border-b border-gray-700 px-4 py-3">
-        <h2 className="font-medium text-gray-200">{t('connectionPanel.reticulumStackTitle')}</h2>
-        <span className={`text-xs font-medium ${stackStatusClass}`}>● {stackStatusText}</span>
-      </div>
-      <div className="space-y-3 p-4">
-        <p className="text-muted text-xs">{t('connectionPanel.reticulumStackHint')}</p>
-        {stackError ? (
-          <p className="text-sm text-red-400" role="alert">
-            {stackError}
-          </p>
-        ) : null}
-        {restartError ? (
-          <p className="text-sm text-red-400" role="alert">
-            {restartError}
-          </p>
-        ) : null}
-        {sidecarUiRunning && sidecarStatus.port > 0 ? (
-          <p className="text-muted text-xs" role="status">
-            127.0.0.1:{sidecarStatus.port}
-          </p>
-        ) : null}
-        {sidecarUiRunning ? (
-          <>
-            <ReticulumLocalInterfaceConnectingBlock interfaces={connectingInterfaces} />
-            {sharedInstanceClient ? (
-              <ReticulumSharedInstanceClientBanner
+    <div className="space-y-4">
+      <ReticulumSetupGuide
+        running={sidecarUiRunning}
+        apiReady={sidecarApiReady}
+        connecting={connecting}
+        identity={identity}
+        onStart={async () => {
+          notifyManualStackStart();
+          await onStartStack();
+          await refreshSidecarStatus();
+          await refreshIdentity();
+        }}
+        onRestart={async () => {
+          const result = await restartReticulumStack({
+            onRefresh: refresh,
+            onBeginBleConnectGrace: beginBleConnectGrace,
+          });
+          if (!result.ok) throw new Error(result.message);
+          if (!result.restarted)
+            throw new Error(t('connectionPanel.reticulumInterfaces.restartStackUnavailable'));
+          await refreshSidecarStatus();
+        }}
+        onRefreshIdentity={refreshIdentity}
+        onNavigate={onOpenSetupDestination}
+        onShowInterfaces={() => {
+          interfaceControlsRef.current?.scrollIntoView({ block: 'start' });
+          interfaceControlsRef.current?.focus({ preventScroll: true });
+        }}
+      />
+      <div className="bg-deep-black overflow-hidden rounded-lg border border-gray-700">
+        <div className="bg-secondary-dark flex items-center justify-between border-b border-gray-700 px-4 py-3">
+          <h2 className="font-medium text-gray-200">{t('connectionPanel.reticulumStackTitle')}</h2>
+          <span className={`text-xs font-medium ${stackStatusClass}`}>● {stackStatusText}</span>
+        </div>
+        <div className="space-y-3 p-4">
+          <p className="text-muted text-xs">{t('connectionPanel.reticulumStackHint')}</p>
+          {stackError ? (
+            <p className="text-sm text-red-400" role="alert">
+              {stackError}
+            </p>
+          ) : null}
+          {restartError ? (
+            <p className="text-sm text-red-400" role="alert">
+              {restartError}
+            </p>
+          ) : null}
+          {sidecarUiRunning && sidecarStatus.port > 0 ? (
+            <p className="text-muted text-xs" role="status">
+              127.0.0.1:{sidecarStatus.port}
+            </p>
+          ) : null}
+          {sidecarUiRunning ? (
+            <>
+              <ReticulumLocalInterfaceConnectingBlock interfaces={connectingInterfaces} />
+              {sharedInstanceClient ? (
+                <ReticulumSharedInstanceClientBanner
+                  onRestartStack={handleRestartStack}
+                  onRefresh={refresh}
+                  onBeginBleConnectGrace={beginBleConnectGrace}
+                />
+              ) : null}
+              {sidecarStatus.interfaceIssueAlert ? (
+                <ReticulumSidecarIssueAlertsBlock
+                  alert={sidecarStatus.interfaceIssueAlert}
+                  shareInstanceEnabled={shareInstanceEnabled}
+                  interfaces={interfaces}
+                  onStopStack={async () => {
+                    notifyManualStackStop();
+                    await onStopStack();
+                    await refreshSidecarStatus();
+                  }}
+                  onOpenAdminBluetooth={onOpenAdminBluetooth}
+                />
+              ) : null}
+              <ReticulumLocalInterfaceAlertsBlock
+                alerts={localAlerts}
+                availablePorts={serialPortPaths}
+                bleBondRemovedNames={sidecarStatus.interfaceIssueAlert?.bleBondRemoved}
+                onRefreshPorts={() => {
+                  void refresh();
+                }}
                 onRestartStack={handleRestartStack}
-                onRefresh={refresh}
-                onBeginBleConnectGrace={beginBleConnectGrace}
               />
-            ) : null}
-            {sidecarStatus.interfaceIssueAlert ? (
-              <ReticulumSidecarIssueAlertsBlock
-                alert={sidecarStatus.interfaceIssueAlert}
-                shareInstanceEnabled={shareInstanceEnabled}
+              <ReticulumRmapConnectionStatus
                 interfaces={interfaces}
-                onStopStack={async () => {
-                  notifyManualStackStop();
+                sidecarApiReady={sidecarApiReady}
+                onOpenRmapSettings={onOpenReticulumRmapSettings}
+              />
+              <div ref={interfaceControlsRef} tabIndex={-1}>
+                <ReticulumInterfacesPanel
+                  sidecarApiReady={sidecarApiReady}
+                  sidecarRunning={sidecarUiRunning}
+                  connecting={connecting}
+                  identityConfigured={identity?.configured === true}
+                  identityDisplayName={identity?.display_name ?? null}
+                  onOpenAppGpsSettings={onOpenAppGpsSettings}
+                  interfaces={interfaces}
+                  serialPorts={serialPorts}
+                  serialPortPaths={serialPortPaths}
+                  bleBondRemovedNames={sidecarStatus.interfaceIssueAlert?.bleBondRemoved}
+                  effectivePrimaryLocalSerialInterfaceId={effectivePrimaryLocalSerialInterfaceId}
+                  onRefresh={refresh}
+                  onBeginBleConnectGrace={beginBleConnectGrace}
+                />
+              </div>
+            </>
+          ) : null}
+          {sidecarUiRunning ? (
+            <button
+              type="button"
+              aria-label={t('connectionPanel.reticulumStopStack')}
+              disabled={connecting}
+              onClick={() => {
+                notifyManualStackStop();
+                void (async () => {
                   await onStopStack();
                   await refreshSidecarStatus();
-                }}
-                onOpenAdminBluetooth={onOpenAdminBluetooth}
-              />
-            ) : null}
-            <ReticulumLocalInterfaceAlertsBlock
-              alerts={localAlerts}
-              availablePorts={serialPortPaths}
-              bleBondRemovedNames={sidecarStatus.interfaceIssueAlert?.bleBondRemoved}
-              onRefreshPorts={() => {
-                void refresh();
+                })().catch((e: unknown) => {
+                  console.warn(
+                    '[ReticulumStackPanel] stop stack failed ' +
+                      (e instanceof Error ? e.message : String(e)),
+                  );
+                });
               }}
-              onRestartStack={handleRestartStack}
+              className="w-full rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-red-500 disabled:opacity-40"
+            >
+              {t('connectionPanel.reticulumStopStack')}
+            </button>
+          ) : (
+            <button
+              type="button"
+              aria-label={t('connectionPanel.reticulumStartStack')}
+              disabled={connecting}
+              onClick={() => {
+                notifyManualStackStart();
+                void onStartStack();
+              }}
+              className="w-full rounded-lg bg-amber-700 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-amber-800 disabled:opacity-40"
+            >
+              {connecting
+                ? t('connectionPanel.connecting')
+                : t('connectionPanel.reticulumStartStack')}
+            </button>
+          )}
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-300">
+            <input
+              type="checkbox"
+              checked={autoStart}
+              onChange={(e) => {
+                handleAutoStartChange(e.target.checked);
+              }}
+              aria-label={t('connectionPanel.reticulumAutostart')}
             />
-            <ReticulumRmapConnectionStatus
-              interfaces={interfaces}
-              sidecarApiReady={sidecarApiReady}
-              onOpenRmapSettings={onOpenReticulumRmapSettings}
+            {t('connectionPanel.reticulumAutostart')}
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-300">
+            <input
+              type="checkbox"
+              checked={autoResendOnAnnounce}
+              onChange={(e) => {
+                setAutoResendOnAnnounce(e.target.checked);
+                setReticulumAutoResendOnAnnounceEnabled(e.target.checked);
+              }}
+              aria-label={t('connectionPanel.reticulumAutoResendOnAnnounce')}
             />
-            <ReticulumInterfacesPanel
-              sidecarApiReady={sidecarApiReady}
-              sidecarRunning={sidecarUiRunning}
-              connecting={connecting}
-              identityConfigured={identity?.configured === true}
-              identityDisplayName={identity?.display_name ?? null}
-              onOpenAppGpsSettings={onOpenAppGpsSettings}
-              interfaces={interfaces}
-              serialPorts={serialPorts}
-              serialPortPaths={serialPortPaths}
-              bleBondRemovedNames={sidecarStatus.interfaceIssueAlert?.bleBondRemoved}
-              effectivePrimaryLocalSerialInterfaceId={effectivePrimaryLocalSerialInterfaceId}
-              onRefresh={refresh}
-              onBeginBleConnectGrace={beginBleConnectGrace}
-            />
-          </>
-        ) : null}
-        {sidecarUiRunning ? (
-          <button
-            type="button"
-            aria-label={t('connectionPanel.reticulumStopStack')}
-            disabled={connecting}
-            onClick={() => {
-              notifyManualStackStop();
-              void (async () => {
-                await onStopStack();
-                await refreshSidecarStatus();
-              })().catch((e: unknown) => {
-                console.warn(
-                  '[ReticulumStackPanel] stop stack failed ' +
-                    (e instanceof Error ? e.message : String(e)),
-                );
-              });
-            }}
-            className="w-full rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-red-500 disabled:opacity-40"
-          >
-            {t('connectionPanel.reticulumStopStack')}
-          </button>
-        ) : (
-          <button
-            type="button"
-            aria-label={t('connectionPanel.reticulumStartStack')}
-            disabled={connecting}
-            onClick={() => {
-              notifyManualStackStart();
-              void onStartStack();
-            }}
-            className="w-full rounded-lg bg-amber-700 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-amber-800 disabled:opacity-40"
-          >
-            {connecting
-              ? t('connectionPanel.connecting')
-              : t('connectionPanel.reticulumStartStack')}
-          </button>
-        )}
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-300">
-          <input
-            type="checkbox"
-            checked={autoStart}
-            onChange={(e) => {
-              handleAutoStartChange(e.target.checked);
-            }}
-            aria-label={t('connectionPanel.reticulumAutostart')}
-          />
-          {t('connectionPanel.reticulumAutostart')}
-        </label>
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-300">
-          <input
-            type="checkbox"
-            checked={autoResendOnAnnounce}
-            onChange={(e) => {
-              setAutoResendOnAnnounce(e.target.checked);
-              setReticulumAutoResendOnAnnounceEnabled(e.target.checked);
-            }}
-            aria-label={t('connectionPanel.reticulumAutoResendOnAnnounce')}
-          />
-          {t('connectionPanel.reticulumAutoResendOnAnnounce')}
-        </label>
+            {t('connectionPanel.reticulumAutoResendOnAnnounce')}
+          </label>
+        </div>
       </div>
     </div>
   );

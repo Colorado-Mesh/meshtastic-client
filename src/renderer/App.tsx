@@ -3301,6 +3301,11 @@ function AppContent() {
                                 setActiveTab(networkTabIdx);
                               }
                             }}
+                            onOpenReticulumSetupDestination={(destination) => {
+                              const target = tabSlotIds.indexOf(destination);
+                              if (target >= 0) setActiveTab(target);
+                              return target >= 0;
+                            }}
                             onOpenAppGpsSettings={() => {
                               const appTabIdx = tabSlotIds.indexOf('App');
                               if (appTabIdx >= 0) {
