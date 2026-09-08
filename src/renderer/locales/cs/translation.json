@@ -5965,6 +5965,10 @@
     "actionFailed": "Tento krok neskončil. Vaše uložená nastavení byla zachována. Zkontrolujte podrobnosti a zkuste to znovu.",
     "errorDetails": "Zobrazit podrobnosti o chybě",
     "tabUnavailable": "Tato karta je skrytá. Povolte jej v nastavení karty Aplikace a poté se vraťte k průvodci.",
-    "privateConnection": "Tento hub již má nastavení privátní sítě. Upravte jej v nastavení připojení níže nebo vyberte jiné veřejné centrum."
+    "privateConnection": "Tento hub již má nastavení privátní sítě. Upravte jej v nastavení připojení níže nebo vyberte jiné veřejné centrum.",
+    "identityUnavailable": "Vaši identitu se nepodařilo přečíst. Zkontrolujte, zda Reticulum běží, a zkuste to znovu.",
+    "identitySaveFailed": "Nastavení identity se nepodařilo uložit. Zkuste to znovu.",
+    "interfaceSaveFailed": "Toto připojení se nepodařilo uložit. Zkontrolujte nastavení připojení a zkuste to znovu.",
+    "interfacesUnavailable": "Vaše spojení se nepodařilo přečíst. Zkontrolujte, zda Reticulum běží, a zkuste to znovu."
   }
 }

@@ -5917,6 +5917,10 @@
     "actionFailed": "Dieser Schritt wurde nicht abgeschlossen. Ihre gespeicherten Einstellungen wurden beibehalten. Überprüfen Sie die Details und versuchen Sie es erneut.",
     "errorDetails": "Fehlerdetails anzeigen",
     "tabUnavailable": "Diese Registerkarte ist ausgeblendet. Aktivieren Sie es in den Einstellungen der Registerkarte „App“ und kehren Sie dann zur Anleitung zurück.",
-    "privateConnection": "Dieser Hub verfügt bereits über private Netzwerkeinstellungen. Bearbeiten Sie es in den Verbindungseinstellungen unten oder wählen Sie einen anderen öffentlichen Hub."
+    "privateConnection": "Dieser Hub verfügt bereits über private Netzwerkeinstellungen. Bearbeiten Sie es in den Verbindungseinstellungen unten oder wählen Sie einen anderen öffentlichen Hub.",
+    "identitySaveFailed": "Ihre Identitätseinstellungen konnten nicht gespeichert werden. Versuchen Sie es erneut.",
+    "interfacesUnavailable": "Ihre Verbindungen konnten nicht gelesen werden. Überprüfen Sie, ob Reticulum ausgeführt wird, und versuchen Sie es dann erneut.",
+    "interfaceSaveFailed": "Diese Verbindung konnte nicht gespeichert werden. Überprüfen Sie Ihre Verbindungseinstellungen und versuchen Sie es erneut.",
+    "identityUnavailable": "Ihre Identität konnte nicht gelesen werden. Überprüfen Sie, ob Reticulum ausgeführt wird, und versuchen Sie es dann erneut."
   }
 }

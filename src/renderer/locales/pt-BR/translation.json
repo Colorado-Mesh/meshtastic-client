@@ -5917,6 +5917,10 @@
     "errorDetails": "Mostrar detalhes do erro",
     "tabUnavailable": "Esta guia está oculta. Ative-o nas configurações da guia Aplicativo e retorne ao guia.",
     "actionFailed": "Essa etapa não terminou. Suas configurações salvas foram mantidas. Verifique os detalhes e tente novamente.",
-    "privateConnection": "Este hub já possui configurações de rede privada. Edite-o nas configurações de conexão abaixo ou escolha um hub público diferente."
+    "privateConnection": "Este hub já possui configurações de rede privada. Edite-o nas configurações de conexão abaixo ou escolha um hub público diferente.",
+    "interfaceSaveFailed": "Não foi possível salvar esta conexão. Verifique suas configurações de conexão e tente novamente.",
+    "identityUnavailable": "Não foi possível ler sua identidade. Verifique se o Reticulum está funcionando e tente novamente.",
+    "interfacesUnavailable": "Não foi possível ler suas conexões. Verifique se o Reticulum está funcionando e tente novamente.",
+    "identitySaveFailed": "Não foi possível salvar suas configurações de identidade. Tente novamente."
   }
 }

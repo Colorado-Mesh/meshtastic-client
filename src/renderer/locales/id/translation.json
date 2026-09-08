@@ -5917,6 +5917,10 @@
     "networkHint": "Jaringan menyimpan identitas Anda, cadangan, dan pengaturan pesan offline opsional. Koneksi adalah tempat Anda mengatur cara Anda terhubung. Nomad menelusuri halaman; Remote dan Admin dapat menunggu hingga Anda membutuhkannya.",
     "actionFailed": "Langkah itu belum selesai. Pengaturan Anda yang disimpan telah disimpan. Periksa detailnya dan coba lagi.",
     "tabUnavailable": "Tab ini disembunyikan. Aktifkan di pengaturan tab Aplikasi, lalu kembali ke panduan.",
-    "privateConnection": "Hub ini sudah memiliki pengaturan jaringan pribadi. Edit di pengaturan koneksi di bawah, atau pilih hub publik lain."
+    "privateConnection": "Hub ini sudah memiliki pengaturan jaringan pribadi. Edit di pengaturan koneksi di bawah, atau pilih hub publik lain.",
+    "identitySaveFailed": "Tidak dapat menyimpan setelan identitas Anda. Coba lagi.",
+    "identityUnavailable": "Tidak dapat membaca identitas Anda. Periksa apakah Reticulum sedang berjalan, lalu coba lagi.",
+    "interfacesUnavailable": "Tidak dapat membaca koneksi Anda. Periksa apakah Reticulum sedang berjalan, lalu coba lagi.",
+    "interfaceSaveFailed": "Tidak dapat menyimpan koneksi ini. Periksa pengaturan koneksi Anda dan coba lagi."
   }
 }

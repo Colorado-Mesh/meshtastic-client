@@ -5917,6 +5917,10 @@
     "errorDetails": "エラーの詳細を表示する",
     "restartService": "スタートReticulum",
     "privateConnection": "このハブにはすでにプライベート ネットワーク設定があります。以下の接続設定で編集するか、別のパブリック ハブを選択してください。",
-    "tabUnavailable": "このタブは非表示になっています。 [アプリ] タブの設定で有効にしてから、ガイドに戻ります。"
+    "tabUnavailable": "このタブは非表示になっています。 [アプリ] タブの設定で有効にしてから、ガイドに戻ります。",
+    "identityUnavailable": "あなたの身元を読み取れませんでした。 Reticulum が実行されていることを確認してから、再試行してください。",
+    "identitySaveFailed": "ID 設定を保存できませんでした。もう一度やり直してください。",
+    "interfaceSaveFailed": "この接続を保存できませんでした。接続設定を確認して、もう一度試してください。",
+    "interfacesUnavailable": "接続を読み取れませんでした。 Reticulum が実行されていることを確認してから、再試行してください。"
   }
 }

@@ -5917,6 +5917,10 @@
     "openNetwork": "Ouvrir les paramètres d'identité et de sauvegarde",
     "errorDetails": "Afficher les détails de l'erreur",
     "tabUnavailable": "Cet onglet est masqué. Activez-le dans les paramètres de l'onglet Application, puis revenez au guide.",
-    "privateConnection": "Ce hub dispose déjà de paramètres de réseau privé. Modifiez-le dans les paramètres de connexion ci-dessous ou choisissez un autre hub public."
+    "privateConnection": "Ce hub dispose déjà de paramètres de réseau privé. Modifiez-le dans les paramètres de connexion ci-dessous ou choisissez un autre hub public.",
+    "identityUnavailable": "Impossible de lire votre identité. Vérifiez que Reticulum est en cours d'exécution, puis réessayez.",
+    "interfacesUnavailable": "Impossible de lire vos connexions. Vérifiez que Reticulum est en cours d'exécution, puis réessayez.",
+    "identitySaveFailed": "Impossible d'enregistrer vos paramètres d'identité. Essayer à nouveau.",
+    "interfaceSaveFailed": "Impossible d'enregistrer cette connexion. Vérifiez vos paramètres de connexion et réessayez."
   }
 }

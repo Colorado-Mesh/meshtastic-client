@@ -5917,6 +5917,10 @@
     "errorDetails": "Hata ayrıntılarını göster",
     "actionFailed": "Bu adım tamamlanmadı. Kaydedilen ayarlarınız saklandı. Ayrıntıları kontrol edip tekrar deneyin.",
     "tabUnavailable": "Bu sekme gizlidir. Uygulama sekmesi ayarlarında bunu etkinleştirin, ardından kılavuza dönün.",
-    "privateConnection": "Bu hub'ın zaten özel ağ ayarları var. Aşağıdaki bağlantı ayarlarında bunu düzenleyin veya farklı bir genel merkez seçin."
+    "privateConnection": "Bu hub'ın zaten özel ağ ayarları var. Aşağıdaki bağlantı ayarlarında bunu düzenleyin veya farklı bir genel merkez seçin.",
+    "identityUnavailable": "Kimliğiniz okunamadı. Reticulum'un çalıştığını kontrol edin ve tekrar deneyin.",
+    "identitySaveFailed": "Kimlik ayarlarınız kaydedilemedi. Tekrar deneyin.",
+    "interfacesUnavailable": "Bağlantılarınız okunamadı. Reticulum'un çalıştığını kontrol edin ve tekrar deneyin.",
+    "interfaceSaveFailed": "Bu bağlantı kaydedilemedi. Bağlantı ayarlarınızı kontrol edip tekrar deneyin."
   }
 }

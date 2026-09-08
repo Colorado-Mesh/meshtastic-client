@@ -5917,6 +5917,10 @@
     "restartService": "Inizia Reticulum",
     "actionFailed": "Quel passaggio non è terminato. Le tue impostazioni salvate sono state mantenute. Controlla i dettagli e riprova.",
     "tabUnavailable": "Questa scheda è nascosta. Abilitalo nelle impostazioni della scheda App, quindi torna alla guida.",
-    "privateConnection": "Questo hub dispone già di impostazioni di rete privata. Modificalo nelle impostazioni di connessione di seguito o scegli un hub pubblico diverso."
+    "privateConnection": "Questo hub dispone già di impostazioni di rete privata. Modificalo nelle impostazioni di connessione di seguito o scegli un hub pubblico diverso.",
+    "identityUnavailable": "Impossibile leggere la tua identità. Controlla che Reticulum sia in esecuzione, quindi riprova.",
+    "identitySaveFailed": "Impossibile salvare le impostazioni dell'identità. Riprova.",
+    "interfaceSaveFailed": "Impossibile salvare questa connessione. Controlla le impostazioni di connessione e riprova.",
+    "interfacesUnavailable": "Impossibile leggere le tue connessioni. Controlla che Reticulum sia in esecuzione, quindi riprova."
   }
 }

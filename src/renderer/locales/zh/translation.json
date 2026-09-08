@@ -5917,6 +5917,10 @@
     "actionFailed": "这一步还没有完成。您保存的设置已被保留。检查详细信息并重试。",
     "errorDetails": "显示错误详细信息",
     "tabUnavailable": "该选项卡是隐藏的。在“应用程序”选项卡设置中启用它，然后返回到指南。",
-    "privateConnection": "该中心已具有专用网络设置。在下面的连接设置中进行编辑，或选择其他公共中心。"
+    "privateConnection": "该中心已具有专用网络设置。在下面的连接设置中进行编辑，或选择其他公共中心。",
+    "identityUnavailable": "无法读取您的身份。检查 Reticulum 是否正在运行，然后重试。",
+    "identitySaveFailed": "无法保存您的身份设置。再试一次。",
+    "interfacesUnavailable": "无法读取您的连接。检查 Reticulum 是否正在运行，然后重试。",
+    "interfaceSaveFailed": "无法保存此连接。检查您的连接设置并重试。"
   }
 }

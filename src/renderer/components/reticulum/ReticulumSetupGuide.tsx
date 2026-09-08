@@ -63,6 +63,13 @@ const PRIMARY =
   'rounded-lg bg-amber-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-amber-800 disabled:opacity-50';
 const SECONDARY =
   'rounded-lg border border-gray-600 px-3 py-2 text-sm text-gray-200 hover:bg-slate-700 disabled:opacity-50';
+const SETUP_ERROR_KEYS = {
+  SETUP_PRIVATE_INTERFACE: 'reticulumSetup.privateConnection',
+  SETUP_INTERFACES_UNAVAILABLE: 'reticulumSetup.interfacesUnavailable',
+  SETUP_IDENTITY_UNAVAILABLE: 'reticulumSetup.identityUnavailable',
+  SETUP_INTERFACE_SAVE_FAILED: 'reticulumSetup.interfaceSaveFailed',
+  SETUP_IDENTITY_SAVE_FAILED: 'reticulumSetup.identitySaveFailed',
+} as const;
 
 /** A reopenable field guide: explicit setup actions, live readiness, then useful destinations. */
 export function ReticulumSetupGuide({
@@ -166,9 +173,8 @@ export function ReticulumSetupGuide({
     } catch (e) {
       const detail = errLikeToLogString(e);
       console.warn('[ReticulumSetupGuide] setup action failed ' + detail);
-      setError(
-        detail.includes('SETUP_PRIVATE_INTERFACE') ? t('reticulumSetup.privateConnection') : detail,
-      );
+      const matched = Object.entries(SETUP_ERROR_KEYS).find(([code]) => detail.includes(code));
+      setError(matched ? t(matched[1]) : detail);
     } finally {
       busyRef.current = false;
       setBusy(false);

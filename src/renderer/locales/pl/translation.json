@@ -6011,6 +6011,10 @@
     "actionFailed": "Ten etap się nie zakończył. Twoje zapisane ustawienia zostały zachowane. Sprawdź szczegóły i spróbuj ponownie.",
     "privateConnection": "Ten koncentrator ma już ustawienia sieci prywatnej. Edytuj go w ustawieniach połączenia poniżej lub wybierz inne centrum publiczne.",
     "errorDetails": "Pokaż szczegóły błędu",
-    "tabUnavailable": "Ta zakładka jest ukryta. Włącz tę opcję w ustawieniach zakładki Aplikacja, a następnie wróć do przewodnika."
+    "tabUnavailable": "Ta zakładka jest ukryta. Włącz tę opcję w ustawieniach zakładki Aplikacja, a następnie wróć do przewodnika.",
+    "interfacesUnavailable": "Nie udało się odczytać Twoich połączeń. Sprawdź, czy Reticulum działa, a następnie spróbuj ponownie.",
+    "identitySaveFailed": "Nie można zapisać ustawień Twojej tożsamości. Spróbuj ponownie.",
+    "interfaceSaveFailed": "Nie udało się zapisać tego połączenia. Sprawdź ustawienia połączenia i spróbuj ponownie.",
+    "identityUnavailable": "Nie udało się odczytać Twojej tożsamości. Sprawdź, czy Reticulum działa, a następnie spróbuj ponownie."
   }
 }

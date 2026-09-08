@@ -86,10 +86,32 @@ describe('Reticulum first connection guide', () => {
       const start = screen.getByRole('button', { name: 'Let’s get started' });
       await userEvent.click(start);
       expect(screen.getByRole('alert')).toHaveTextContent('That step did not finish');
+      expect(screen.getByRole('alert').querySelector('details')).toHaveTextContent(
+        'sidecar unavailable',
+      );
       expect(start).toBeEnabled();
       await userEvent.click(start);
       expect(actions.onStart).toHaveBeenCalledTimes(2);
       expect(screen.getByRole('heading', { name: 'Your identity' })).toBeInTheDocument();
+    });
+  });
+
+  it.each([
+    ['SETUP_PRIVATE_INTERFACE', 'This hub already has private network settings'],
+    ['SETUP_INTERFACES_UNAVAILABLE', 'Could not read your connections'],
+    ['SETUP_IDENTITY_UNAVAILABLE', 'Could not read your identity'],
+    ['SETUP_INTERFACE_SAVE_FAILED', 'Could not save this connection'],
+    ['SETUP_IDENTITY_SAVE_FAILED', 'Could not save your identity settings'],
+  ])('explains %s without exposing the internal code', async (code, message) => {
+    await withMockedConsoleWarn(async () => {
+      const actions = props();
+      actions.onStart.mockRejectedValueOnce(new Error(code));
+      render(<ReticulumSetupGuide {...actions} running={false} apiReady={false} />);
+      await userEvent.click(screen.getByRole('button', { name: 'Open setup guide' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Let’s get started' }));
+      const alert = screen.getByRole('alert');
+      expect(alert).toHaveTextContent(message);
+      expect(alert).not.toHaveTextContent(code);
     });
   });
 
@@ -257,6 +279,15 @@ describe('Reticulum first connection guide', () => {
       await Promise.resolve();
     });
     expect(screen.queryByText('Your connection is available')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Open setup guide' }));
+    expect(screen.queryByText('Your connection is available')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
+    await act(async () => {
+      settle({ rns_ready: true, lxmf_ready: true });
+      await Promise.resolve();
+    });
+    expect(await screen.findByText('Your connection is available')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled();
   });
 
   it('has accessible controls and contrast on the connection step', async () => {

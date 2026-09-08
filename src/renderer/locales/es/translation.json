@@ -5917,6 +5917,10 @@
     "actionFailed": "Ese paso no ha terminado. La configuración guardada se ha mantenido. Comprueba los detalles e inténtalo de nuevo.",
     "errorDetails": "Mostrar detalles del error",
     "tabUnavailable": "Esta pestaña está oculta. Habilítelo en la configuración de la pestaña Aplicación y, a continuación, vuelva a la guía.",
-    "privateConnection": "Este centro ya tiene configuraciones de red privada. Edítelo en la configuración de conexión a continuación o elija un centro público diferente."
+    "privateConnection": "Este centro ya tiene configuraciones de red privada. Edítelo en la configuración de conexión a continuación o elija un centro público diferente.",
+    "interfacesUnavailable": "No se pudieron leer tus conexiones. Compruebe que Reticulum se esté ejecutando y vuelva a intentarlo.",
+    "identityUnavailable": "No se pudo leer tu identidad. Compruebe que Reticulum se esté ejecutando y vuelva a intentarlo.",
+    "interfaceSaveFailed": "No se pudo guardar esta conexión. Verifique la configuración de su conexión e inténtelo nuevamente.",
+    "identitySaveFailed": "No se pudo guardar su configuración de identidad. Intentar otra vez."
   }
 }

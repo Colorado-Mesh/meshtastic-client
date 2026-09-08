@@ -5917,6 +5917,10 @@
     "errorDetails": "Foutdetails weergeven",
     "tabUnavailable": "Dit tabblad is verborgen. Schakel het in in de app-tabbladinstellingen en keer vervolgens terug naar de gids.",
     "restartService": "Begin met Reticulum",
-    "privateConnection": "Deze hub beschikt al over privénetwerkinstellingen. Bewerk het in de onderstaande verbindingsinstellingen of kies een andere openbare hub."
+    "privateConnection": "Deze hub beschikt al over privénetwerkinstellingen. Bewerk het in de onderstaande verbindingsinstellingen of kies een andere openbare hub.",
+    "interfaceSaveFailed": "Kan deze verbinding niet opslaan. Controleer uw verbindingsinstellingen en probeer het opnieuw.",
+    "identityUnavailable": "Kan uw identiteit niet lezen. Controleer of Reticulum actief is en probeer het opnieuw.",
+    "identitySaveFailed": "Kan uw identiteitsinstellingen niet opslaan. Probeer het opnieuw.",
+    "interfacesUnavailable": "Kan uw verbindingen niet lezen. Controleer of Reticulum actief is en probeer het opnieuw."
   }
 }

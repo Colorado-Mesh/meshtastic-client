@@ -5917,6 +5917,10 @@
     "actionFailed": "That step did not finish. Your saved settings have been kept. Check the details and try again.",
     "errorDetails": "Show error details",
     "tabUnavailable": "This tab is hidden. Enable it in the App tab settings, then return to the guide.",
-    "privateConnection": "This hub already has private network settings. Edit it in connection settings below, or choose a different public hub."
+    "privateConnection": "This hub already has private network settings. Edit it in connection settings below, or choose a different public hub.",
+    "interfacesUnavailable": "Could not read your connections. Check that Reticulum is running, then try again.",
+    "identityUnavailable": "Could not read your identity. Check that Reticulum is running, then try again.",
+    "interfaceSaveFailed": "Could not save this connection. Check your connection settings and try again.",
+    "identitySaveFailed": "Could not save your identity settings. Try again."
   }
 }
