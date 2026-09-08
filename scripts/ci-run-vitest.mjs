@@ -21,15 +21,23 @@ export function normalizeRelatedPathForVitest(filePath) {
   return filePath.startsWith('-') ? `./${filePath}` : filePath;
 }
 
-export function buildCiVitestArgs({ mode, project, relatedPaths = [] }) {
+export function buildCiVitestArgs({ mode, project, relatedPaths = [], shard = '' }) {
   if (!PROJECTS.has(project)) throw new Error(`Unknown Vitest project: ${project}`);
+  if (shard) {
+    const match = /^([1-9]\d*)\/([1-9]\d*)$/.exec(shard);
+    if (!match || !Number.isSafeInteger(Number(match[2])) || Number(match[1]) > Number(match[2])) {
+      throw new Error(`Invalid Vitest shard: ${shard}`);
+    }
+  }
 
+  const reportSuffix = shard ? `-${shard.replace('/', '-')}` : '';
   const reportArgs = [
     '--project',
     project,
     '--reporter=blob',
-    `--outputFile.blob=.vitest-reports/blob-${project}.json`,
+    `--outputFile.blob=.vitest-reports/blob-${project}${reportSuffix}.json`,
     '--passWithNoTests',
+    ...(shard ? [`--shard=${shard}`] : []),
   ];
   if (mode === 'full') {
     return ['run', '--coverage', '--coverage.clean=false', ...reportArgs];
@@ -52,6 +60,7 @@ export function runCiVitest(selection, opts = {}) {
 function main() {
   const mode = process.env.VITEST_MODE ?? '';
   const project = process.env.VITEST_PROJECT ?? '';
+  const shard = process.env.VITEST_SHARD ?? '';
   let relatedPaths = [];
   try {
     relatedPaths = parseRelatedPaths(process.env.VITEST_PATHS_JSON);
@@ -61,7 +70,7 @@ function main() {
   }
 
   console.error(`ci-run-vitest: ${mode} (${project}; ${relatedPaths.length} related path(s))`);
-  process.exit(runCiVitest({ mode, project, relatedPaths }));
+  process.exit(runCiVitest({ mode, project, relatedPaths, shard }));
 }
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);

@@ -57,8 +57,8 @@ jobs:
           CI_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: node scripts/ci-test-scope.mjs
 
-  tests:
-    name: Coverage (${{ matrix.project }})
+  test-shards:
+    name: Vitest (${{ matrix.project }}, ${{ matrix.shard }}/${{ matrix.shards }})
     needs: changes
     permissions:
       contents: read
@@ -66,7 +66,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        project: [renderer-ui, renderer-logic, main]
+        include:
+          - project: renderer-ui
+            shard: 1
+            shards: 3
+          - project: renderer-ui
+            shard: 2
+            shards: 3
+          - project: renderer-ui
+            shard: 3
+            shards: 3
+          - project: renderer-logic
+            shard: 1
+            shards: 1
+          - project: main
+            shard: 1
+            shards: 1
     env:
       VITEST_COVERAGE_SHARD: '1'
     steps:
@@ -85,13 +100,14 @@ jobs:
           VITEST_MODE: ${{ needs.changes.outputs.vitest_mode }}
           VITEST_PATHS_JSON: ${{ needs.changes.outputs.vitest_paths }}
           VITEST_PROJECT: ${{ matrix.project }}
+          VITEST_SHARD: ${{ matrix.shard }}/${{ matrix.shards }}
         run: node scripts/ci-run-vitest.mjs
 
       - name: Upload blob report
         if: always() && contains(fromJSON(needs.changes.outputs.vitest_projects), matrix.project)
         uses: actions/upload-artifact@v7
         with:
-          name: vitest-blob-${{ matrix.project }}
+          name: vitest-blob-${{ matrix.project }}-${{ matrix.shard }}
           path: .vitest-reports/*
           include-hidden-files: true
           retention-days: 1
@@ -100,6 +116,25 @@ jobs:
       - name: Record skipped project
         if: ${{ !contains(fromJSON(needs.changes.outputs.vitest_projects), matrix.project) }}
         run: echo 'No tests selected for ${{ matrix.project }}.' >> "$GITHUB_STEP_SUMMARY"
+
+  # Keep the required check names stable while the execution matrix changes.
+  tests:
+    name: Coverage (${{ matrix.project }})
+    needs: [changes, test-shards]
+    if: always() && !cancelled()
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        project: [renderer-ui, renderer-logic, main]
+    steps:
+      - name: Verify test shards
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          SHARDS_RESULT: ${{ needs.test-shards.result }}
+        run: |
+          [[ "$CHANGES_RESULT" == 'success' && "$SHARDS_RESULT" == 'success' ]]
 
   reticulum-sidecar-coverage:
     name: Reticulum sidecar coverage
