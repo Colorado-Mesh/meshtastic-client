@@ -4053,7 +4053,9 @@
       "addButton": "+ Kanal Ekle",
       "footerHelp": "Anahtarlar 128 bittir (16 bayt), 32 onaltılık karakter olarak gösterilir. {{nameMax}} karaktere kadar kanal adları. {{channelCount}} kanala kadar (0–{{indexMax}} indeksleri). #Kanallar için \"Addan türet\" seçeneğini kullanın (önde # ile ismin SHA-256'sı).",
       "shareQr": "QR",
-      "shareQrAria": "{{name}} için MeshCore kanal QR'sini göster"
+      "shareQrAria": "{{name}} için MeshCore kanal QR'sini göster",
+      "privateChannel": "Özel kanal (anahtarı girin)",
+      "privateKeyHint": "Paylaşılan kanal anahtarını girin: tamamı sıfır değil, tam olarak 32 onaltılık karakter (16 bayt)."
     },
     "regions": {
       "UNSET": {

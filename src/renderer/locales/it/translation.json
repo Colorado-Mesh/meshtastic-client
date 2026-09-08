@@ -4053,7 +4053,9 @@
       "addButton": "+ Aggiungi canale",
       "footerHelp": "Le chiavi sono a 128 bit (16 byte), visualizzate come 32 caratteri esadecimali. Nomi dei canali fino a {{nameMax}} caratteri. Fino a {{channelCount}} canali (indici 0–{{indexMax}}). Per i canali #, utilizzare \"Deriva dal nome\" (SHA-256 del nome con un # iniziale).",
       "shareQr": "QR",
-      "shareQrAria": "Mostra QR del canale MeshCore per {{name}}"
+      "shareQrAria": "Mostra QR del canale MeshCore per {{name}}",
+      "privateChannel": "Canale privato (inserisci chiave)",
+      "privateKeyHint": "Immettere la chiave del canale condiviso: esattamente 32 caratteri esadecimali (16 byte), non tutti zeri."
     },
     "regions": {
       "UNSET": {

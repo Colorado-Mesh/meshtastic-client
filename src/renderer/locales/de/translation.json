@@ -4053,7 +4053,9 @@
       "addButton": "+ Kanal hinzufügen",
       "footerHelp": "Schlüssel sind 128-Bit (16 Bytes) und werden als 32 Hexadezimalzeichen angezeigt. Kanalnamen mit bis zu {{nameMax}} Zeichen. Bis zu {{channelCount}} Kanäle (Indizes 0–{{indexMax}}). Verwenden Sie für #Kanäle „Vom Namen ableiten“ (SHA-256 des Namens mit einem führenden #).",
       "shareQr": "QR",
-      "shareQrAria": "MeshCore-Kanal-QR für {{name}} anzeigen"
+      "shareQrAria": "MeshCore-Kanal-QR für {{name}} anzeigen",
+      "privateChannel": "Privater Kanal (Schlüssel eingeben)",
+      "privateKeyHint": "Geben Sie den Shared-Channel-Schlüssel ein: genau 32 Hexadezimalzeichen (16 Bytes), nicht nur Nullen."
     },
     "regions": {
       "UNSET": {

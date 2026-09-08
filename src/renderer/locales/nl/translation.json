@@ -4053,7 +4053,9 @@
       "addButton": "+ Kanaal toevoegen",
       "footerHelp": "Sleutels zijn 128-bits (16 bytes), weergegeven als 32 hexadecimale tekens. Kanaalnamen met maximaal {{nameMax}} tekens. Maximaal {{channelCount}} kanalen (index 0–{{indexMax}}). Voor #kanalen gebruikt u 'Afleiden van naam' (SHA-256 van de naam met een # ervoor).",
       "shareQr": "QR",
-      "shareQrAria": "Toon MeshCore-kanaal QR voor {{name}}"
+      "shareQrAria": "Toon MeshCore-kanaal QR voor {{name}}",
+      "privateChannel": "Privékanaal (sleutel invoeren)",
+      "privateKeyHint": "Voer de gedeelde kanaalsleutel in: exact 32 hexadecimale tekens (16 bytes), niet allemaal nullen."
     },
     "regions": {
       "UNSET": {

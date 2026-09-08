@@ -4133,7 +4133,9 @@
       "addButton": "+ Dodaj kanał",
       "footerHelp": "Klucze są 128-bitowe (16 bajtów) i przedstawiane jako 32 znaki szesnastkowe. Nazwy kanałów zawierające maksymalnie {{nameMax}} znaków. Do {{channelCount}} kanałów (indeksy 0–{{indexMax}}). W przypadku #channels użyj opcji „Wyprowadź z nazwy” (SHA-256 nazwy z wiodącym #).",
       "shareQr": "QR",
-      "shareQrAria": "Pokaż QR kanału MeshCore dla {{name}}"
+      "shareQrAria": "Pokaż QR kanału MeshCore dla {{name}}",
+      "privateChannel": "Kanał prywatny (wprowadź klucz)",
+      "privateKeyHint": "Wprowadź klucz kanału współdzielonego: dokładnie 32 znaki szesnastkowe (16 bajtów), a nie same zera."
     },
     "regions": {
       "UNSET": {

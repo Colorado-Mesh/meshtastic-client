@@ -4053,7 +4053,9 @@
       "addButton": "+ 添加频道",
       "footerHelp": "密钥为 128 位（16 字节），显示为 32 个十六进制字符。通道名称最多 {{nameMax}} 个字符。最多 {{channelCount}} 通道（索引 0–{{indexMax}}）。对于#channels，请使用“从名称派生”（带有前导 # 的名称的 SHA-256）。",
       "shareQr": "QR",
-      "shareQrAria": "显示{{name}}的MeshCore频道二维码"
+      "shareQrAria": "显示{{name}}的MeshCore频道二维码",
+      "privateChannel": "私人频道（输入密钥）",
+      "privateKeyHint": "输入共享通道密钥：正好 32 个十六进制字符（16 个字节），不能全为零。"
     },
     "regions": {
       "UNSET": {

@@ -4094,7 +4094,9 @@
       "addButton": "+ Přidat kanál",
       "footerHelp": "Klíče jsou 128bitové (16 bajtů) a zobrazují se jako 32 hexadecimálních znaků. Názvy kanálů až {{nameMax}} znaků. Až {{channelCount}} kanálů (indexy 0–{{indexMax}}). Pro #channels použijte \"Derive from name\" (SHA-256 názvu s úvodním #).",
       "shareQr": "QR",
-      "shareQrAria": "Zobrazit QR kanál MeshCore pro {{name}}"
+      "shareQrAria": "Zobrazit QR kanál MeshCore pro {{name}}",
+      "privateChannel": "Soukromý kanál (zadejte klíč)",
+      "privateKeyHint": "Zadejte klíč sdíleného kanálu: přesně 32 hexadecimálních znaků (16 bajtů), ne všechny nuly."
     },
     "regions": {
       "UNSET": {
