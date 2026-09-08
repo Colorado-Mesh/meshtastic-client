@@ -66,7 +66,8 @@ export function mapRgbToReticulumIconColor(
 }
 
 /**
- * True when stored appearance is unset (missing or legacy `circle`).
+ * True when stored appearance is unset (missing, legacy `circle`, or MeshChat
+ * default / unknown Material icons that should not override LXMFace).
  * Color is ignored — Circle is no longer a real avatar choice.
  */
 export function isDefaultReticulumProfileIcon(
@@ -75,8 +76,7 @@ export function isDefaultReticulumProfileIcon(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- API compatibility
   iconColor?: string | null,
 ): boolean {
-  const name = iconName?.trim().toLowerCase() || 'circle';
-  return name === 'circle';
+  return resolveReticulumProfileIconName(iconName) === 'circle';
 }
 
 export function hasCustomReticulumProfileIcon(
@@ -86,27 +86,27 @@ export function hasCustomReticulumProfileIcon(
   return !isDefaultReticulumProfileIcon(iconName, iconColor);
 }
 
-/** Map Material symbol names (MeshChat / LXMF wire) to supported Lucide badges. */
+/**
+ * Map Material symbol names (MeshChat / LXMF wire) to supported Lucide badges.
+ * Only star / heart / shield / exact `user` (our People picker) override LXMFace.
+ * MeshChat’s default person/account icons and unknown symbols resolve to unset
+ * (`circle`) so the generated face stays the peer’s visual identity.
+ */
+const STAR_WIRE_ALIASES = new Set(['star', 'grade', 'star_rate', 'star_outline', 'star_border']);
+const HEART_WIRE_ALIASES = new Set(['heart', 'favorite', 'favorite_border', 'favorite_outline']);
+const SHIELD_WIRE_ALIASES = new Set(['shield', 'security', 'verified_user', 'gpp_good']);
+
 export function resolveReticulumProfileIconName(
   iconName?: string | null,
 ): ReticulumProfileIconName {
   if (isReticulumProfileIconName(iconName)) return iconName;
   const wire = iconName?.trim().toLowerCase();
   if (!wire || wire === 'circle') return 'circle';
-  if (wire.includes('star') || wire.includes('grade')) return 'star';
-  if (wire.includes('heart') || wire.includes('favorite')) return 'heart';
-  if (wire.includes('shield') || wire.includes('security')) return 'shield';
-  if (
-    wire === 'people' ||
-    wire === 'person' ||
-    wire.includes('person') ||
-    wire.includes('people') ||
-    wire.includes('account') ||
-    wire === 'user'
-  ) {
-    return 'user';
-  }
-  return 'user';
+  if (STAR_WIRE_ALIASES.has(wire)) return 'star';
+  if (HEART_WIRE_ALIASES.has(wire)) return 'heart';
+  if (SHIELD_WIRE_ALIASES.has(wire)) return 'shield';
+  // person / people / account / hiking / custom_* containing a token / anything else → LXMFace
+  return 'circle';
 }
 
 export function parseReticulumIconAppearanceWire(

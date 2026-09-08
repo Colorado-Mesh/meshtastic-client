@@ -280,7 +280,7 @@ describe('ReticulumPeerDetailModal — avatar icon', () => {
     expect(select).toHaveValue('user');
   });
 
-  it('loads wire people icon into People select option', async () => {
+  it('treats wire people icon as unset so LXMFace shows (not People picker)', async () => {
     vi.mocked(window.electronAPI.db.getReticulumDestinations).mockResolvedValue([
       {
         destination_hash: PEER_HASH,
@@ -294,7 +294,7 @@ describe('ReticulumPeerDetailModal — avatar icon', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByLabelText('reticulumProfileIcon.iconNameAria')).toHaveValue('user');
+      expect(screen.getByLabelText('reticulumProfileIcon.iconNameAria')).toHaveValue('circle');
     });
   });
 
