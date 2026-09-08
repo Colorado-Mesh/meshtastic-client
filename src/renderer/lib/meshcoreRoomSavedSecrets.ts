@@ -73,8 +73,9 @@ export async function disableMeshcoreRoomLoginAfterAuthFailure(nodeId: number): 
 }
 
 /**
- * Shared login failure handler: on auth failure disable sync/auto-login (keep password);
- * always record in-memory failure for UI unless the login was aborted.
+ * Shared login failure handler: on auth failure disable sync/auto-login (keep password) and
+ * sticky-skip further connect auto-login; transient errors keep sync/auto-login enabled and only
+ * surface an in-memory UI failure (reconnect / next trigger may retry).
  */
 export async function applyMeshcoreRoomLoginFailure(
   nodeId: number,
@@ -83,7 +84,8 @@ export async function applyMeshcoreRoomLoginFailure(
 ): Promise<void> {
   if (meshcoreIsRoomLoginAbortError(error)) return;
   const msg = error instanceof Error ? error.message : String(error);
-  if (meshcoreRoomLoginErrorIsAuthFailure(error)) {
+  const isAuth = meshcoreRoomLoginErrorIsAuthFailure(error);
+  if (isAuth) {
     try {
       await disableMeshcoreRoomLoginAfterAuthFailure(nodeId);
     } catch (persistErr: unknown) {
@@ -93,5 +95,5 @@ export async function applyMeshcoreRoomLoginFailure(
       );
     }
   }
-  setMeshcoreRoomAutoLoginFailure(nodeId, msg || 'timeout');
+  setMeshcoreRoomAutoLoginFailure(nodeId, msg || 'timeout', { stickySkip: isAuth });
 }

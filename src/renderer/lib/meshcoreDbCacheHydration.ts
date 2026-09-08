@@ -5,7 +5,9 @@ import {
 
 import {
   findMeshcoreDmRfDuplicate,
+  findMeshcoreRoomPostDuplicate,
   isMeshcoreRoomChatMessage,
+  meshcoreReconcileRoomSenderIds,
 } from '../hooks/meshcore/meshcoreHookPreamble';
 import { loadPersistedMeshcoreSelfNodeId } from './meshcoreLastSelfNodeId';
 import {
@@ -151,6 +153,37 @@ export function repairMeshcoreHydratedDmRfDuplicates(messages: ChatMessage[]): C
 }
 
 /**
+ * Collapse room BBS Unknown + named twins loaded from SQLite (same room/body/time window).
+ * Failure point: older builds stored dual-ingress rows that did not dedup.
+ * Fallback: keep resolved identity when replacing an ambiguous twin; otherwise drop the later row.
+ */
+export function repairMeshcoreHydratedRoomPostDuplicates(messages: ChatMessage[]): ChatMessage[] {
+  const kept: ChatMessage[] = [];
+  for (const msg of messages) {
+    if (!isMeshcoreRoomChatMessage(msg)) {
+      kept.push(msg);
+      continue;
+    }
+    const dup = findMeshcoreRoomPostDuplicate(kept, msg);
+    if (!dup) {
+      kept.push(msg);
+      continue;
+    }
+    const dupIndex = kept.indexOf(dup);
+    if (dupIndex < 0) {
+      kept.push(msg);
+      continue;
+    }
+    const existingAmbiguous = dup.sender_id === 0 || dup.sender_name.trim() === 'Unknown';
+    const incomingAmbiguous = msg.sender_id === 0 || msg.sender_name.trim() === 'Unknown';
+    if (existingAmbiguous && !incomingAmbiguous) {
+      kept[dupIndex] = msg;
+    }
+  }
+  return kept;
+}
+
+/**
  * Reclassify room-server traffic that was stored as DMs (PLAIN bot stats, etc.).
  * Failure point: older builds only treated SignedPlain as room BBS.
  * Fallback: map peer Room node id → roomServerId + channel -2 for Rooms tab display.
@@ -162,21 +195,25 @@ export function repairMeshcoreHydratedMessages(
   pubKeyPrefixToNodeId?: Map<string, number>,
   nameByNodeId?: ReadonlyMap<number, string>,
 ): ChatMessage[] {
-  return repairMeshcoreRoomUnknownSenderNames(
-    repairMeshcoreChatWireTailGarbage(
-      repairMeshcoreRoomStoredPostPayloads(
-        repairMeshcoreMisfiledRoomDmMessages(
-          repairMeshcoreHydratedDmRfDuplicates(
-            repairMeshcoreHydrationStaleRoomSends(
-              repairMeshcoreHydratedDmToNode(messages, selfNodeId),
+  return repairMeshcoreHydratedRoomPostDuplicates(
+    meshcoreReconcileRoomSenderIds(
+      repairMeshcoreRoomUnknownSenderNames(
+        repairMeshcoreChatWireTailGarbage(
+          repairMeshcoreRoomStoredPostPayloads(
+            repairMeshcoreMisfiledRoomDmMessages(
+              repairMeshcoreHydratedDmRfDuplicates(
+                repairMeshcoreHydrationStaleRoomSends(
+                  repairMeshcoreHydratedDmToNode(messages, selfNodeId),
+                ),
+              ),
+              roomServerIds,
             ),
+            pubKeyPrefixToNodeId,
           ),
-          roomServerIds,
         ),
-        pubKeyPrefixToNodeId,
+        nameByNodeId,
       ),
     ),
-    nameByNodeId,
   );
 }
 

@@ -1,3 +1,5 @@
+import { clearTransientMeshcoreRoomAutoLoginFailures } from './meshcoreRoomAutoLoginFailure';
+
 /** Probe fields used to decide whether a configured room should auto-login. */
 export interface MeshcoreRoomAutoLoginTargetProbe {
   isRoom: boolean;
@@ -100,8 +102,10 @@ export function runMeshcoreRoomAutoLoginSingleFlight(run: () => Promise<void>): 
  * Disconnect hook — invalidates the in-flight pass. Does not abort radio work;
  * the pass must check {@link isMeshcoreRoomAutoLoginGenerationCurrent} after awaits.
  * Leaves the promise in place so a reconnect trigger joins it instead of overlapping pathSync.
+ * Clears transient (non-auth) auto-login failures so reconnect can retry.
  */
 export function resetMeshcoreRoomAutoLoginSingleFlight(): void {
   generation += 1;
   pending = false;
+  clearTransientMeshcoreRoomAutoLoginFailures();
 }
