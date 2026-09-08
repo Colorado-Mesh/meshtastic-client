@@ -11,7 +11,7 @@ import { dirname, join, resolve, win32 as pathWin32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { resolveDockerSocket } from './run-act.mjs';
-import { formatPnpmPrepareHint } from './check-package-manager.mjs';
+import { formatPnpmPrepareHint, parseEngineFloor } from './check-package-manager.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..');
@@ -181,7 +181,10 @@ function checkPnpm(pnpmEngine, packageManager) {
   const pinMatch =
     typeof packageManager === 'string' ? packageManager.match(/^pnpm@([^+]+)/) : null;
   const pinVersion = pinMatch?.[1] ?? null;
-  const prepareHint = formatPnpmPrepareHint(pinVersion ?? '11');
+  const engineFloor = parseEngineFloor(pnpmEngine);
+  const fallbackHint =
+    engineFloor != null ? `${engineFloor.major}.${engineFloor.minor}.${engineFloor.patch}` : '12';
+  const prepareHint = formatPnpmPrepareHint(pinVersion ?? fallbackHint);
 
   const out = resolvePnpmVersionOutput();
   if (!out) {

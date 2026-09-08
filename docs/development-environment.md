@@ -308,9 +308,18 @@ pip install --force-reinstall --no-cache-dir \
 # Also skips Electron linux-armv7l archive lookup for Electron >= 44 (those zips are no
 # longer published; Flatpak only ships x64 + arm64).
 node scripts/patch-flatpak-node-generator-playwright.mjs
+# Fail fast: version lookup / lockfile extraction must succeed before the generator.
+set -euo pipefail
 # Must match store layout for packageManager (pnpm 11/12 → v11). Generator defaults to v10.
 # pnpm 12 may write a two-document lockfile; generator only accepts one document.
-STORE_VERSION="$(node --input-type=module -e "import fs from 'node:fs'; import { storeVersionFromPackageManager } from './scripts/flatpakPnpmStoreVersion.mjs'; console.log(storeVersionFromPackageManager(JSON.parse(fs.readFileSync('package.json','utf8')).packageManager))")"
+STORE_VERSION="$(
+  node --input-type=module << 'EOF'
+import fs from 'node:fs';
+import { storeVersionFromPackageManager } from './scripts/flatpakPnpmStoreVersion.mjs';
+const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+console.log(storeVersionFromPackageManager(pkg.packageManager));
+EOF
+)"
 node --input-type=module << 'EOF'
 import fs from 'node:fs';
 import { extractProjectPnpmLockfile } from './scripts/flatpakPnpmStoreVersion.mjs';

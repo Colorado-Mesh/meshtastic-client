@@ -8,6 +8,7 @@ import {
   formatLicenseCheckReport,
   isLicenseAllowed,
   licenseFromPackageManifest,
+  parseSeeLicenseInFilename,
   splitSpdxTopLevel,
   unwrapSpdxParens,
 } from './check-licenses.mjs';
@@ -124,6 +125,20 @@ describe('evaluatePnpmLicensesJson', () => {
   });
 });
 
+describe('parseSeeLicenseInFilename', () => {
+  it('accepts basename-only declarations', () => {
+    expect(parseSeeLicenseInFilename('SEE LICENSE IN COPYING')).toBe('COPYING');
+    expect(parseSeeLicenseInFilename('SEE LICENSE IN LICENSE')).toBe('LICENSE');
+  });
+
+  it('rejects path separators and parent traversal', () => {
+    expect(parseSeeLicenseInFilename('SEE LICENSE IN ../COPYING')).toBeNull();
+    expect(parseSeeLicenseInFilename('SEE LICENSE IN foo/COPYING')).toBeNull();
+    expect(parseSeeLicenseInFilename('SEE LICENSE IN foo\\COPYING')).toBeNull();
+    expect(parseSeeLicenseInFilename('MIT')).toBeNull();
+  });
+});
+
 describe('licenseFromPackageManifest', () => {
   it('reads string and object license fields', () => {
     expect(licenseFromPackageManifest({ license: 'MIT' })).toBe('MIT');
@@ -206,6 +221,44 @@ describe('enrichPnpmLicensesJson', () => {
       },
     );
     expect(Object.keys(enriched)).toEqual(['MIT']);
+  });
+
+  it('resolves SEE LICENSE IN COPYING via the declared COPYING file', () => {
+    const files = new Map([
+      [
+        '/repo/node_modules/copying-pkg/package.json',
+        JSON.stringify({ name: 'copying-pkg', license: 'SEE LICENSE IN COPYING' }),
+      ],
+      [
+        '/repo/node_modules/copying-pkg/COPYING',
+        'MIT License\n\nCopyright (c) 2024\n\nPermission is hereby granted, free of charge',
+      ],
+    ]);
+    const enriched = enrichPnpmLicensesJson(
+      {
+        'SEE LICENSE IN COPYING': [
+          {
+            name: 'copying-pkg',
+            versions: ['1.0.0'],
+            paths: [],
+            license: 'SEE LICENSE IN COPYING',
+          },
+        ],
+      },
+      {
+        root: '/repo',
+        existsSync: (p) => files.has(p),
+        readFileSync: (p) => {
+          const v = files.get(p);
+          if (v == null) throw new Error(`missing ${p}`);
+          return v;
+        },
+      },
+    );
+    expect(Object.keys(enriched)).toEqual(['MIT']);
+    expect(enriched.MIT).toEqual([
+      expect.objectContaining({ name: 'copying-pkg', license: 'MIT', versions: ['1.0.0'] }),
+    ]);
   });
 
   it('maps @jsr/meshtastic__* Unknown licenses via @meshtastic LICENSE files', () => {

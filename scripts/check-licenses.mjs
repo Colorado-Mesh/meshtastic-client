@@ -242,13 +242,34 @@ export function licenseIdFromLicenseFileText(text) {
 }
 
 /**
- * @param {string} packageDir
- * @param {{ readFileSync?: typeof fs.readFileSync, existsSync?: typeof fs.existsSync }} [io]
+ * Parse `SEE LICENSE IN <filename>` into a basename-only license file name.
+ * Rejects empty names and any path separators / parent traversal.
+ *
+ * @param {string} declaration
  * @returns {string | null}
  */
-function readLicenseFromPackageDir(packageDir, io = {}) {
+export function parseSeeLicenseInFilename(declaration) {
+  const match = String(declaration).match(/^SEE LICENSE IN\s+(\S.+)$/i);
+  if (!match) return null;
+  const name = match[1].trim();
+  if (!name || /[/\\]/.test(name) || name.includes('..')) return null;
+  return name;
+}
+
+/**
+ * @param {string} packageDir
+ * @param {{ readFileSync?: typeof fs.readFileSync, existsSync?: typeof fs.existsSync }} [io]
+ * @param {string | null} [declaredLicense] License string from pnpm (e.g. SEE LICENSE IN COPYING)
+ * @returns {string | null}
+ */
+function readLicenseFromPackageDir(packageDir, io = {}, declaredLicense = null) {
   const existsSync = io.existsSync ?? fs.existsSync;
   const readFileSync = io.readFileSync ?? fs.readFileSync;
+  /** @type {string[]} */
+  const declaredNames = [];
+  const fromDeclared = parseSeeLicenseInFilename(declaredLicense ?? '');
+  if (fromDeclared) declaredNames.push(fromDeclared);
+
   const manifestPath = path.join(packageDir, 'package.json');
   if (existsSync(manifestPath)) {
     try {
@@ -265,13 +286,27 @@ function readLicenseFromPackageDir(packageDir, io = {}) {
         ) {
           return fromManifest;
         }
+        const seeName = parseSeeLicenseInFilename(fromManifest);
+        if (seeName) declaredNames.push(seeName);
       }
     } catch {
       // catch-no-log-ok continue to LICENSE file fallback
     }
   }
 
-  for (const name of ['LICENSE', 'LICENSE.md', 'LICENSE.txt', 'LICENCE', 'LICENCE.md']) {
+  const candidates = [
+    ...declaredNames,
+    'LICENSE',
+    'LICENSE.md',
+    'LICENSE.txt',
+    'LICENCE',
+    'LICENCE.md',
+    'COPYING',
+  ];
+  const seen = new Set();
+  for (const name of candidates) {
+    if (seen.has(name)) continue;
+    seen.add(name);
     const licensePath = path.join(packageDir, name);
     if (!existsSync(licensePath)) continue;
     try {
@@ -330,7 +365,7 @@ export function enrichPnpmLicensesJson(licensesJson, options = {}) {
         }
         let fromDisk = null;
         for (const dir of dirs) {
-          fromDisk = readLicenseFromPackageDir(dir, options);
+          fromDisk = readLicenseFromPackageDir(dir, options, resolved);
           if (fromDisk && !/^unknown$/i.test(fromDisk) && !/^SEE LICENSE IN /i.test(fromDisk)) {
             break;
           }
