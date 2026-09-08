@@ -12,6 +12,10 @@ Related docs: [README — Reticulum Features](../README.md#reticulum-features), 
 
 ## Quick start
 
+**First time?** Select **Reticulum → Connection → Open setup guide**. The [setup wizard](reticulum-setup-guide.md) walks through your identity, an internet or radio connection, readiness checks, and your first conversation. You can reopen it whenever you need a refresher.
+
+For manual setup:
+
 1. Select the **Reticulum** pill (amber) in the header.
 2. **Connection** → **Start stack** (optional **Auto-start** for next launch).
 3. **Network** → generate or import your LXMF identity (stack must be running).

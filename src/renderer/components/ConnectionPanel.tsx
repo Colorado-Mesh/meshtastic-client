@@ -142,6 +142,7 @@ import FirmwareStatusIndicator from './FirmwareStatusIndicator';
 import { HelpTooltip } from './HelpTooltip';
 import { MqttNetworkPresetSelect } from './MqttNetworkPresetSelect';
 import { PickerSortControls } from './PickerSortControls';
+import type { ReticulumSetupDestination } from './reticulum/ReticulumSetupGuide';
 import { ReticulumStackPanel } from './ReticulumStackPanel';
 import SignalBars from './SignalBars';
 // ─── Last Connection (localStorage) ───────────────────────────────
@@ -397,6 +398,7 @@ interface Props {
   onOpenAppGpsSettings?: () => void;
   /** Reticulum: open Admin Bluetooth for USB Clear paired / Start pairing. */
   onOpenAdminBluetooth?: () => void;
+  onOpenReticulumSetupDestination?: (destination: ReticulumSetupDestination) => boolean;
 }
 
 export default function ConnectionPanel({
@@ -416,6 +418,7 @@ export default function ConnectionPanel({
   onOpenReticulumRmapSettings,
   onOpenAppGpsSettings,
   onOpenAdminBluetooth,
+  onOpenReticulumSetupDestination,
 }: Props) {
   const { t } = useTranslation();
   const capabilities = useRadioProvider(protocol);
@@ -3060,6 +3063,7 @@ export default function ConnectionPanel({
           onOpenReticulumRmapSettings={onOpenReticulumRmapSettings}
           onOpenAppGpsSettings={onOpenAppGpsSettings}
           onOpenAdminBluetooth={onOpenAdminBluetooth}
+          onOpenSetupDestination={onOpenReticulumSetupDestination}
           onStartStack={async () => {
             setReticulumStackError(null);
             try {
