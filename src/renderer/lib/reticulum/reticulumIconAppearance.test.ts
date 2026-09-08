@@ -16,6 +16,11 @@ describe('reticulumIconAppearance', () => {
     expect(hasCustomReticulumProfileIcon('star', 'green')).toBe(true);
     expect(hasCustomReticulumProfileIcon('user', null)).toBe(true);
     expect(hasCustomReticulumProfileIcon('circle', 'amber')).toBe(false);
+    // MeshChat default person icons must not override LXMFace
+    expect(isDefaultReticulumProfileIcon('person', 'green')).toBe(true);
+    expect(isDefaultReticulumProfileIcon('people', 'purple')).toBe(true);
+    expect(hasCustomReticulumProfileIcon('person', 'green')).toBe(false);
+    expect(hasCustomReticulumProfileIcon('hiking', 'amber')).toBe(false);
   });
 
   it('maps foreground rgb to palette color', () => {
@@ -32,11 +37,13 @@ describe('reticulumIconAppearance', () => {
     expect(parsed).toEqual({ icon_name: 'hiking', icon_color: 'amber' });
   });
 
-  it('maps material symbols to lucide names', () => {
+  it('maps material symbols to lucide names; person/unknown stay unset for LXMFace', () => {
     expect(resolveReticulumProfileIconName('favorite')).toBe('heart');
-    expect(resolveReticulumProfileIconName('hiking')).toBe('user');
-    expect(resolveReticulumProfileIconName('people')).toBe('user');
-    expect(resolveReticulumProfileIconName('person')).toBe('user');
     expect(resolveReticulumProfileIconName('star')).toBe('star');
+    expect(resolveReticulumProfileIconName('user')).toBe('user');
+    expect(resolveReticulumProfileIconName('hiking')).toBe('circle');
+    expect(resolveReticulumProfileIconName('people')).toBe('circle');
+    expect(resolveReticulumProfileIconName('person')).toBe('circle');
+    expect(resolveReticulumProfileIconName('account_circle')).toBe('circle');
   });
 });
