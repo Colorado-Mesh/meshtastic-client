@@ -51,8 +51,26 @@ import { useBlockStore } from '@/renderer/stores/blockStore';
 import { buildLxmaContactUri } from '@/shared/meshClientDeepLink';
 
 import { ReticulumNetworkPanel } from './ReticulumNetworkPanel';
+import { ToastProvider } from './Toast';
 
 describe('ReticulumNetworkPanel', () => {
+  it('shows an error toast when the setup guide destination is unavailable', async () => {
+    const onOpenSetupGuide = vi.fn().mockReturnValue(false);
+    render(
+      <ToastProvider>
+        <ReticulumNetworkPanel
+          connecting={false}
+          onStartStack={vi.fn()}
+          onOpenSetupGuide={onOpenSetupGuide}
+        />
+      </ToastProvider>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'reticulumSetup.open' }));
+    expect(onOpenSetupGuide).toHaveBeenCalledOnce();
+    expect(await screen.findByText('reticulumSetup.tabUnavailable')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'common.dismiss' })).toBeInTheDocument();
+  });
+
   it('offers the setup guide through the Connection navigation callback', async () => {
     const onOpenSetupGuide = vi.fn().mockReturnValue(true);
     render(
