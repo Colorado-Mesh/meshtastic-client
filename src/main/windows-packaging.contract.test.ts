@@ -176,6 +176,7 @@ describe('Windows packaging (contract)', () => {
     expect(buildAssertIdx).toBeGreaterThan(-1);
     expect(buildUploadWinIdx).toBeGreaterThan(-1);
     expect(buildPreferIdx).toBeLessThan(buildSetupNodeIdx);
+    expect(buildSetupNodeIdx).toBeLessThan(buildInstallIdx);
     expect(buildVerifyIdx).toBeLessThan(buildInstallIdx);
     expect(buildAssertIdx).toBeLessThan(buildUploadWinIdx);
     expect(buildWorkflow).toMatch(
@@ -245,6 +246,7 @@ describe('Windows packaging (contract)', () => {
     expect(releaseAssertIdx).toBeGreaterThan(-1);
     expect(releaseUploadWinIdx).toBeGreaterThan(-1);
     expect(releasePreferIdx).toBeLessThan(releaseSetupNodeIdx);
+    expect(releaseSetupNodeIdx).toBeLessThan(releaseInstallIdx);
     expect(releaseVerifyIdx).toBeLessThan(releaseInstallIdx);
     expect(releaseAssertIdx).toBeLessThan(releaseUploadWinIdx);
     expect(releaseWorkflow).toMatch(

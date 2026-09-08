@@ -145,6 +145,7 @@ describe('CI workflow contracts', () => {
     );
     expect(preferIdx).toBeLessThan(setupNodeIdx);
     expect(preferIdx).toBeLessThan(installIdx);
+    expect(setupNodeIdx).toBeLessThan(installIdx);
     expect(verifyIdx).toBeLessThan(installIdx);
     expect(setupAction).toMatch(
       /Prefer native pnpm\.exe on Windows PATH[\s\S]*?if: runner\.os == 'Windows'/,
@@ -171,6 +172,7 @@ describe('CI workflow contracts', () => {
         `${relativePath} install`,
       );
       expect(preferIdx, relativePath).toBeLessThan(setupNodeIdx);
+      expect(setupNodeIdx, relativePath).toBeLessThan(installIdx);
       expect(verifyIdx, relativePath).toBeLessThan(installIdx);
       expect(yaml, relativePath).toMatch(
         /Prefer native pnpm\.exe on Windows PATH[\s\S]*?if: runner\.os == 'Windows'[\s\S]*?ci-prefer-windows-pnpm-exe\.mjs/,
