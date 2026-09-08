@@ -39,11 +39,22 @@ describe('reticulumIconAppearance', () => {
 
   it('maps material symbols to lucide names; person/unknown stay unset for LXMFace', () => {
     expect(resolveReticulumProfileIconName('favorite')).toBe('heart');
+    expect(resolveReticulumProfileIconName('favorite_border')).toBe('heart');
     expect(resolveReticulumProfileIconName('star')).toBe('star');
+    expect(resolveReticulumProfileIconName('grade')).toBe('star');
+    expect(resolveReticulumProfileIconName('security')).toBe('shield');
     expect(resolveReticulumProfileIconName('user')).toBe('user');
     expect(resolveReticulumProfileIconName('hiking')).toBe('circle');
     expect(resolveReticulumProfileIconName('people')).toBe('circle');
     expect(resolveReticulumProfileIconName('person')).toBe('circle');
     expect(resolveReticulumProfileIconName('account_circle')).toBe('circle');
+  });
+
+  it('does not classify unknown wire names that merely contain a supported token', () => {
+    expect(resolveReticulumProfileIconName('custom_star')).toBe('circle');
+    expect(resolveReticulumProfileIconName('my_favorite_badge')).toBe('circle');
+    expect(resolveReticulumProfileIconName('super_security_cam')).toBe('circle');
+    expect(isDefaultReticulumProfileIcon('custom_star', 'amber')).toBe(true);
+    expect(hasCustomReticulumProfileIcon('custom_star', 'amber')).toBe(false);
   });
 });

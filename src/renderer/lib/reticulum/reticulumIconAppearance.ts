@@ -92,16 +92,20 @@ export function hasCustomReticulumProfileIcon(
  * MeshChat’s default person/account icons and unknown symbols resolve to unset
  * (`circle`) so the generated face stays the peer’s visual identity.
  */
+const STAR_WIRE_ALIASES = new Set(['star', 'grade', 'star_rate', 'star_outline', 'star_border']);
+const HEART_WIRE_ALIASES = new Set(['heart', 'favorite', 'favorite_border', 'favorite_outline']);
+const SHIELD_WIRE_ALIASES = new Set(['shield', 'security', 'verified_user', 'gpp_good']);
+
 export function resolveReticulumProfileIconName(
   iconName?: string | null,
 ): ReticulumProfileIconName {
   if (isReticulumProfileIconName(iconName)) return iconName;
   const wire = iconName?.trim().toLowerCase();
   if (!wire || wire === 'circle') return 'circle';
-  if (wire.includes('star') || wire.includes('grade')) return 'star';
-  if (wire.includes('heart') || wire.includes('favorite')) return 'heart';
-  if (wire.includes('shield') || wire.includes('security')) return 'shield';
-  // person / people / account / hiking / anything else → LXMFace
+  if (STAR_WIRE_ALIASES.has(wire)) return 'star';
+  if (HEART_WIRE_ALIASES.has(wire)) return 'heart';
+  if (SHIELD_WIRE_ALIASES.has(wire)) return 'shield';
+  // person / people / account / hiking / custom_* containing a token / anything else → LXMFace
   return 'circle';
 }
 
