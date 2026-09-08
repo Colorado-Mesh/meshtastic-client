@@ -103,4 +103,20 @@ describe('collectIdentityAnnouncedDestinations', () => {
       },
     ]);
   });
+
+  it('drops unknown when a named aspect arrives later for the same destination', () => {
+    const byDestination = new Map<string, ReticulumIdentityActivityRow[]>([
+      [CHAT, [row(CHAT, 'unknown', 5), row(CHAT, 'lxmf.delivery', 10)]],
+    ]);
+    const rows = collectIdentityAnnouncedDestinations(CHAT, null, byDestination);
+    expect(rows.map((r) => r.aspect)).toEqual(['lxmf.delivery']);
+  });
+
+  it('skips unknown when a named aspect was already collected for the destination', () => {
+    const byDestination = new Map<string, ReticulumIdentityActivityRow[]>([
+      [CHAT, [row(CHAT, 'lxmf.delivery', 10), row(CHAT, 'unknown', 20)]],
+    ]);
+    const rows = collectIdentityAnnouncedDestinations(CHAT, null, byDestination);
+    expect(rows.map((r) => r.aspect)).toEqual(['lxmf.delivery']);
+  });
 });

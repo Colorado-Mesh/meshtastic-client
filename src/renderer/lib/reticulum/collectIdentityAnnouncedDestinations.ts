@@ -32,11 +32,15 @@ export function collectIdentityAnnouncedDestinations(
   }
 
   const bestByKey = new Map<string, AnnouncedDestinationRow>();
+  /** Destinations that already have at least one non-unknown aspect. */
+  const namedDests = new Set<string>();
 
   const consider = (row: ReticulumIdentityActivityRow) => {
     const dest = canonicalizeReticulumDestinationHash(row.destination_hash);
     if (!dest) return;
     const aspect = (row.aspect || 'unknown').trim() || 'unknown';
+    if (aspect === 'unknown' && namedDests.has(dest)) return;
+
     const key = `${dest}\0${aspect}`;
     const prev = bestByKey.get(key);
     const lastSeen = Number.isFinite(row.last_seen) ? row.last_seen : 0;
@@ -47,6 +51,12 @@ export function collectIdentityAnnouncedDestinations(
         last_seen: lastSeen,
         isOpened: dest === opened,
       });
+    }
+
+    if (aspect !== 'unknown') {
+      namedDests.add(dest);
+      // Drop a previously collected unknown placeholder for this destination.
+      bestByKey.delete(`${dest}\0unknown`);
     }
   };
 
