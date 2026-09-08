@@ -750,11 +750,7 @@
     "heardByRepeatersAdditional_one": "{{count}} 추가 미확인 전달자 (해시: {{hashes}})",
     "heardByRepeatersAdditional_other": "{{count}} 추가 미확인 전달자 (해시: {{hashes}})",
     "reticulumSendAwaitingPeerReceipt": "전송 완료 (동료 영수증 대기 중)",
-    "reticulumChatNeedsLxmfDelivery": "이 동료는 아직 LXMF 배달 주소가 없습니다 (채팅은 음성 전용 목적지를 사용할 수 없습니다). LXMF가 발표될 때까지 기다리거나 32자 LXMF 해시를 붙여넣습니다.",
-    "lxmfHashLabel": "LXMF {{hash}}",
-    "copyLxmfHashAria": "LXMF 대상 해시 {{hash}} 복사",
-    "lxmfHashCopied": "LXMF 대상 해시가 복사되었습니다.",
-    "lxmfHashCopyFailed": "LXMF 대상 해시를 복사할 수 없습니다."
+    "reticulumChatNeedsLxmfDelivery": "이 동료는 아직 LXMF 배달 주소가 없습니다 (채팅은 음성 전용 목적지를 사용할 수 없습니다). LXMF가 발표될 때까지 기다리거나 32자 LXMF 해시를 붙여넣습니다."
   },
   "chatPayload": {
     "mention": "{{label}}을(를) 언급하세요",
@@ -3403,7 +3399,6 @@
   },
   "peerDetailModal": {
     "networkSection": "네트워크",
-    "copyHash": "대상 해시 복사",
     "editNameAria": "사용자 지정 표시 이름을 사용?.",
     "sendMessage": "메시지 전송",
     "pathOk": "경로 요청이 전송되었습니다.",
@@ -3429,7 +3424,20 @@
     "verifiedRowAria": "연락처가 확인되었습니다.",
     "renameFailed": "표시 이름을 저장할 수 없습니다.",
     "removeContactConfirmBody": "이렇게 하면 저장된 목록에서 연락처가 제거됩니다. 채팅 메시지는 계속 유지됩니다. 메시지를 보낸 경우 채팅 메시지는 기록에 남아 있습니다.",
-    "backupPaths": "백업 경로"
+    "backupPaths": "백업 경로",
+    "announcedDestinations": "Announced destinations",
+    "openedDestinationBadge": "Opened",
+    "copyAnnouncedHashAria": "Copy {{aspect}} destination hash {{hash}}",
+    "hashCopied": "Destination hash copied.",
+    "hashCopyFailed": "Could not copy destination hash.",
+    "aspect": {
+      "chat": "Chat",
+      "voice": "Voice",
+      "nomad": "Nomad",
+      "rrc": "RRC",
+      "propagation": "Propagation",
+      "unknown": "Unknown"
+    }
   },
   "peerGraph": {
     "title": "동료 커뮤니케이션 그래프",

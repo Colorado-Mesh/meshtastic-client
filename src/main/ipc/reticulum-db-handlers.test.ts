@@ -78,6 +78,7 @@ describe('reticulum-db-handlers validation', () => {
     expect(handlers.has('db:pruneReticulumDestinationsByCount')).toBe(true);
     expect(handlers.has('db:pruneReticulumIdentityActivityByAge')).toBe(true);
     expect(handlers.has('db:upsertReticulumIdentityActivityBatch')).toBe(true);
+    expect(handlers.has('db:getReticulumIdentityActivityByIdentity')).toBe(true);
     expect(handlers.has('db:listReticulumRemoteAddresses')).toBe(true);
     expect(handlers.has('db:upsertReticulumRemoteAddress')).toBe(true);
     expect(handlers.has('db:deleteReticulumRemoteAddress')).toBe(true);
@@ -561,6 +562,37 @@ describe('reticulum destination / activity prune IPC', () => {
       .all() as { destination_hash: string }[];
     expect(remaining).toHaveLength(1);
     expect(remaining[0]?.destination_hash).toBe('aa'.repeat(16));
+  });
+
+  it('getReticulumIdentityActivityByIdentity returns rows for that identity', () => {
+    const identity = 'cc'.repeat(16);
+    const other = 'dd'.repeat(16);
+    db!
+      .prepareOnce(
+        `INSERT INTO reticulum_identity_activity (destination_hash, aspect, identity_hash, last_seen, hops)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run('aa'.repeat(16), 'lxmf.delivery', identity, 200, 1);
+    db!
+      .prepareOnce(
+        `INSERT INTO reticulum_identity_activity (destination_hash, aspect, identity_hash, last_seen, hops)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run('bb'.repeat(16), 'lxst.telephony', identity, 100, 2);
+    db!
+      .prepareOnce(
+        `INSERT INTO reticulum_identity_activity (destination_hash, aspect, identity_hash, last_seen, hops)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run('ee'.repeat(16), 'lxmf.delivery', other, 300, 1);
+
+    const rows = handlers.get('db:getReticulumIdentityActivityByIdentity')?.(event, identity) as {
+      destination_hash: string;
+      aspect: string;
+    }[];
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.aspect).sort()).toEqual(['lxmf.delivery', 'lxst.telephony']);
+    expect(rows[0]?.aspect).toBe('lxmf.delivery'); // last_seen DESC
   });
 
   it('upsertReticulumIdentityActivityBatch caps at 500 and skips invalid rows', () => {

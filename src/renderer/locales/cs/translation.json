@@ -770,11 +770,7 @@
     "heardByRepeatersDetail_few": "Slyšeno {{count}}: {{names}}",
     "searchResults_few": "{{count}} výsledky",
     "reticulumSendAwaitingPeerReceipt": "Odesláno (čeká se na potvrzení od kolegy)",
-    "reticulumChatNeedsLxmfDelivery": "Tento protějšek zatím nemá doručovací adresu LXMF (Chat nemůže používat cíl pouze pro hlas). Počkejte na oznámení LXMF nebo vložte jeho 32místný hash LXMF.",
-    "lxmfHashLabel": "LXMF {{hash}}",
-    "copyLxmfHashAria": "Kopírovat cílový hash LXMF {{hash}}",
-    "lxmfHashCopied": "Cílový hash LXMF zkopírován.",
-    "lxmfHashCopyFailed": "Nelze zkopírovat cílový hash LXMF."
+    "reticulumChatNeedsLxmfDelivery": "Tento protějšek zatím nemá doručovací adresu LXMF (Chat nemůže používat cíl pouze pro hlas). Počkejte na oznámení LXMF nebo vložte jeho 32místný hash LXMF."
   },
   "chatPayload": {
     "mention": "Zmínit {{label}}",
@@ -3444,7 +3440,6 @@
   },
   "peerDetailModal": {
     "networkSection": "Síť",
-    "copyHash": "Kopírovat cílový hash",
     "editNameAria": "Vlastní zobrazované jméno",
     "sendMessage": "Odeslat zprávu",
     "pathOk": "Žádost o trasu odeslána.",
@@ -3470,7 +3465,20 @@
     "verifiedRowAria": "Kontakt ověřen",
     "renameFailed": "Zobrazovaný název nelze uložit.",
     "removeContactConfirmBody": "Tím odeberete kontakt ze svého uloženého seznamu. Zprávy chatu zůstávají v Historii, pokud jsi jim poslal/a zprávu.",
-    "backupPaths": "Cesty zálohování"
+    "backupPaths": "Cesty zálohování",
+    "announcedDestinations": "Announced destinations",
+    "openedDestinationBadge": "Opened",
+    "copyAnnouncedHashAria": "Copy {{aspect}} destination hash {{hash}}",
+    "hashCopied": "Destination hash copied.",
+    "hashCopyFailed": "Could not copy destination hash.",
+    "aspect": {
+      "chat": "Chat",
+      "voice": "Voice",
+      "nomad": "Nomad",
+      "rrc": "RRC",
+      "propagation": "Propagation",
+      "unknown": "Unknown"
+    }
   },
   "peerGraph": {
     "title": "Graf vzájemné komunikace",

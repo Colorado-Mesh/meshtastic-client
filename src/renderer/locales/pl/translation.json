@@ -788,11 +788,7 @@
     "searchResults_few": "{{count}} wyniki",
     "searchResults_many": "{{count}} wyników",
     "reticulumSendAwaitingPeerReceipt": "Wysłano (oczekiwanie na pokwitowanie)",
-    "reticulumChatNeedsLxmfDelivery": "Ten partner nie ma jeszcze adresu dostawy LXMF (czat nie może używać miejsca docelowego tylko dla połączeń głosowych). Poczekaj na ogłoszenie LXMF lub wklej 32-znakowy skrót LXMF.",
-    "lxmfHashLabel": "LXMF {{hash}}",
-    "copyLxmfHashAria": "Skopiuj skrót miejsca docelowego LXMF {{hash}}",
-    "lxmfHashCopied": "Skopiowano hasz docelowy LXMF.",
-    "lxmfHashCopyFailed": "Nie można skopiować hasza docelowego LXMF."
+    "reticulumChatNeedsLxmfDelivery": "Ten partner nie ma jeszcze adresu dostawy LXMF (czat nie może używać miejsca docelowego tylko dla połączeń głosowych). Poczekaj na ogłoszenie LXMF lub wklej 32-znakowy skrót LXMF."
   },
   "chatPayload": {
     "mention": "Wspomnij o {{label}}",
@@ -3483,7 +3479,6 @@
   },
   "peerDetailModal": {
     "networkSection": "Sieć",
-    "copyHash": "Skopiuj skrót miejsca docelowego",
     "editNameAria": "Niestandardowa nazwa wyświetlana",
     "sendMessage": "Wyślij wiadomość",
     "pathOk": "Wysłano żądanie trasy.",
@@ -3509,7 +3504,20 @@
     "verifiedRowAria": "Kontakt zweryfikowany",
     "renameFailed": "Nie można zapisać nazwy wyświetlanej.",
     "removeContactConfirmBody": "Spowoduje to usunięcie kontaktu z zapisanej listy. Wiadomości na czacie pozostają w Historii, jeśli zostały przez Ciebie wysłane.",
-    "backupPaths": "Ścieżki tworzenia kopii zapasowych"
+    "backupPaths": "Ścieżki tworzenia kopii zapasowych",
+    "announcedDestinations": "Announced destinations",
+    "openedDestinationBadge": "Opened",
+    "copyAnnouncedHashAria": "Copy {{aspect}} destination hash {{hash}}",
+    "hashCopied": "Destination hash copied.",
+    "hashCopyFailed": "Could not copy destination hash.",
+    "aspect": {
+      "chat": "Chat",
+      "voice": "Voice",
+      "nomad": "Nomad",
+      "rrc": "RRC",
+      "propagation": "Propagation",
+      "unknown": "Unknown"
+    }
   },
   "peerGraph": {
     "title": "Wykres komunikacji z partnerami",

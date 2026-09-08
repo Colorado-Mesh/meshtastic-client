@@ -750,11 +750,7 @@
     "heardByRepeatersAdditional_one": "{{count}} ulteriore spedizioniere non identificato (hash: {{hashes}})",
     "heardByRepeatersAdditional_other": "{{count}} ulteriori spedizionieri non identificati (hash: {{hashes}})",
     "reticulumSendAwaitingPeerReceipt": "Inviato (in attesa di ricezione da parte del pari)",
-    "reticulumChatNeedsLxmfDelivery": "Questo peer non ha ancora un indirizzo di consegna LXMF (la chat non può utilizzare una destinazione solo vocale). Attendi un annuncio LXMF o incolla il loro hash LXMF di 32 caratteri.",
-    "lxmfHashLabel": "LXMF {{hash}}",
-    "copyLxmfHashAria": "Copia hash di destinazione LXMF {{hash}}",
-    "lxmfHashCopied": "Hash di destinazione LXMF copiato.",
-    "lxmfHashCopyFailed": "Impossibile copiare l'hash di destinazione LXMF."
+    "reticulumChatNeedsLxmfDelivery": "Questo peer non ha ancora un indirizzo di consegna LXMF (la chat non può utilizzare una destinazione solo vocale). Attendi un annuncio LXMF o incolla il loro hash LXMF di 32 caratteri."
   },
   "chatPayload": {
     "mention": "Menziona {{label}}",
@@ -3403,7 +3399,6 @@
   },
   "peerDetailModal": {
     "networkSection": "Network",
-    "copyHash": "Copia hash di destinazione",
     "editNameAria": "Nome visualizzato personalizzato",
     "sendMessage": "Invia messaggio",
     "pathOk": "Richiesta di traccia oraria",
@@ -3429,7 +3424,20 @@
     "verifiedRowAria": "Contatto verificato",
     "renameFailed": "Impossibile salvare il nome visualizzato.",
     "removeContactConfirmBody": "Questo rimuove il contatto dall'elenco salvato. I messaggi di chat rimangono; rimangono nella Cronologia se li hai inviati.",
-    "backupPaths": "Percorsi di backup"
+    "backupPaths": "Percorsi di backup",
+    "announcedDestinations": "Announced destinations",
+    "openedDestinationBadge": "Opened",
+    "copyAnnouncedHashAria": "Copy {{aspect}} destination hash {{hash}}",
+    "hashCopied": "Destination hash copied.",
+    "hashCopyFailed": "Could not copy destination hash.",
+    "aspect": {
+      "chat": "Chat",
+      "voice": "Voice",
+      "nomad": "Nomad",
+      "rrc": "RRC",
+      "propagation": "Propagation",
+      "unknown": "Unknown"
+    }
   },
   "peerGraph": {
     "title": "Grafico di comunicazione peer",

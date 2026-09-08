@@ -375,6 +375,7 @@ describe('Reticulum sidecar IPC handlers (source contract)', () => {
     expect(RETICULUM_DB_HANDLERS_SOURCE).toContain("'db:exportBlockedContacts'");
     expect(RETICULUM_DB_HANDLERS_SOURCE).toContain("'db:importBlockedContacts'");
     expect(RETICULUM_DB_HANDLERS_SOURCE).toContain("'db:getReticulumIdentityActivity'");
+    expect(RETICULUM_DB_HANDLERS_SOURCE).toContain("'db:getReticulumIdentityActivityByIdentity'");
     expect(RETICULUM_DB_HANDLERS_SOURCE).toContain(
       "ipcMain.handle('db:upsertReticulumIdentityActivityBatch'",
     );

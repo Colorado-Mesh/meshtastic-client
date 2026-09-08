@@ -750,11 +750,7 @@
     "heardByRepeatersAdditional_one": "{{count}} EK tanımlanamayan nakliyeci (hash'ler: {{hashes}})",
     "heardByRepeatersAdditional_other": "{{count}} kimliği belirsiz ek göndericiler (hash'ler: {{hashes}})",
     "reticulumSendAwaitingPeerReceipt": "Gönderildi (akran makbuzu bekleniyor)",
-    "reticulumChatNeedsLxmfDelivery": "Bu akranın henüz LXMF teslimat adresi yok (Sohbet yalnızca Sesli bir hedef kullanamaz). Bir LXMF duyurusu bekleyin veya 32 karakterlik LXMF karmasını yapıştırın.",
-    "lxmfHashLabel": "LXMF {{hash}}",
-    "copyLxmfHashAria": "LXMF hedef karmasını kopyala {{hash}}",
-    "lxmfHashCopied": "LXMF hedef karması kopyalandı.",
-    "lxmfHashCopyFailed": "LXMF hedef karması kopyalanamadı."
+    "reticulumChatNeedsLxmfDelivery": "Bu akranın henüz LXMF teslimat adresi yok (Sohbet yalnızca Sesli bir hedef kullanamaz). Bir LXMF duyurusu bekleyin veya 32 karakterlik LXMF karmasını yapıştırın."
   },
   "chatPayload": {
     "mention": "{{label}}'dan bahsedin",
@@ -3403,7 +3399,6 @@
   },
   "peerDetailModal": {
     "networkSection": "Ağ",
-    "copyHash": "Hedef karmasını kopyala",
     "editNameAria": "Özel görüntü adı",
     "sendMessage": "Mesaj gönder",
     "pathOk": "Talep gönderildi.",
@@ -3429,7 +3424,20 @@
     "verifiedRowAria": "Kişi doğrulandı",
     "renameFailed": "Görünen ad kaydedilemedi.",
     "removeContactConfirmBody": "Bu, kişiyi kayıtlı listenizden kaldırır. Sohbet mesajları kalır; mesaj gönderdiyseniz Geçmiş'te kalır.",
-    "backupPaths": "Yedekleme yolları"
+    "backupPaths": "Yedekleme yolları",
+    "announcedDestinations": "Announced destinations",
+    "openedDestinationBadge": "Opened",
+    "copyAnnouncedHashAria": "Copy {{aspect}} destination hash {{hash}}",
+    "hashCopied": "Destination hash copied.",
+    "hashCopyFailed": "Could not copy destination hash.",
+    "aspect": {
+      "chat": "Chat",
+      "voice": "Voice",
+      "nomad": "Nomad",
+      "rrc": "RRC",
+      "propagation": "Propagation",
+      "unknown": "Unknown"
+    }
   },
   "peerGraph": {
     "title": "Akran İletişim Grafiği",

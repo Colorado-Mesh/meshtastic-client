@@ -811,6 +811,24 @@ export function registerReticulumDbIpcHandlers({ ipcMain }: ReticulumDbIpcDeps):
     }
   });
 
+  ipcMain.handle('db:getReticulumIdentityActivityByIdentity', (event, identityHash: string) => {
+    try {
+      assertIpcSender(event, 'db:getReticulumIdentityActivityByIdentity');
+      if (typeof identityHash !== 'string' || identityHash.length > 128) return [];
+      const key = identityHash.replace(/[^0-9a-f]/gi, '').toLowerCase();
+      if (!key) return [];
+      const db = getDbForIpc('db:getReticulumIdentityActivityByIdentity');
+      if (!db) return [];
+      return db
+        .prepareOnce(
+          'SELECT * FROM reticulum_identity_activity WHERE identity_hash = ? ORDER BY last_seen DESC',
+        )
+        .all(key) as Record<string, unknown>[];
+    } catch (err) {
+      finishDbIpcHandler('db:getReticulumIdentityActivityByIdentity', err);
+    }
+  });
+
   const IDENTITY_ACTIVITY_UPSERT_SQL = `INSERT INTO reticulum_identity_activity (destination_hash, aspect, identity_hash, last_seen, hops)
          VALUES (?, ?, ?, ?, ?)
          ON CONFLICT(destination_hash, aspect) DO UPDATE SET

@@ -788,11 +788,7 @@
     "searchResults_few": "{{count}} результати",
     "searchResults_many": "{{count}} результатів",
     "reticulumSendAwaitingPeerReceipt": "Надіслано (очікується отримання від колеги)",
-    "reticulumChatNeedsLxmfDelivery": "Цей вузол ще не має адреси доставки LXMF (чат не може використовувати призначення лише для голосу). Дочекайтеся оголошення LXMF або вставте їх 32-символьний хеш LXMF.",
-    "lxmfHashLabel": "LXMF {{hash}}",
-    "copyLxmfHashAria": "Скопіювати хеш пункту призначення LXMF {{hash}}",
-    "lxmfHashCopied": "Хеш призначення LXMF скопійовано.",
-    "lxmfHashCopyFailed": "Не вдалося скопіювати хеш призначення LXMF."
+    "reticulumChatNeedsLxmfDelivery": "Цей вузол ще не має адреси доставки LXMF (чат не може використовувати призначення лише для голосу). Дочекайтеся оголошення LXMF або вставте їх 32-символьний хеш LXMF."
   },
   "chatPayload": {
     "mention": "Згадайте {{label}}",
@@ -3483,7 +3479,6 @@
   },
   "peerDetailModal": {
     "networkSection": "Засоби зв'язку",
-    "copyHash": "Скопіювати хеш призначення",
     "editNameAria": "Custom Display (Відображення користувача)",
     "sendMessage": "Надіслати повідомлення",
     "pathOk": "Запит шляху надіслано.",
@@ -3509,7 +3504,20 @@
     "verifiedRowAria": "Контакт підтверджено",
     "renameFailed": "Не вдалося зберегти відображуване ім'я.",
     "removeContactConfirmBody": "Це видалить контакт із збереженого списку. Повідомлення чату залишаються; вони залишаються в історії, якщо ви надіслали їм повідомлення.",
-    "backupPaths": "Шляхи резервного копіювання"
+    "backupPaths": "Шляхи резервного копіювання",
+    "announcedDestinations": "Announced destinations",
+    "openedDestinationBadge": "Opened",
+    "copyAnnouncedHashAria": "Copy {{aspect}} destination hash {{hash}}",
+    "hashCopied": "Destination hash copied.",
+    "hashCopyFailed": "Could not copy destination hash.",
+    "aspect": {
+      "chat": "Chat",
+      "voice": "Voice",
+      "nomad": "Nomad",
+      "rrc": "RRC",
+      "propagation": "Propagation",
+      "unknown": "Unknown"
+    }
   },
   "peerGraph": {
     "title": "Графік однорангової комунікації",

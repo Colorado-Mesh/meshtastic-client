@@ -533,6 +533,15 @@ export interface ElectronAPI {
         hops?: number | null;
       }[]
     >;
+    getReticulumIdentityActivityByIdentity: (identityHash: string) => Promise<
+      {
+        destination_hash: string;
+        aspect: string;
+        identity_hash?: string | null;
+        last_seen: number;
+        hops?: number | null;
+      }[]
+    >;
     upsertReticulumIdentityActivity: (row: {
       destination_hash: string;
       aspect: string;

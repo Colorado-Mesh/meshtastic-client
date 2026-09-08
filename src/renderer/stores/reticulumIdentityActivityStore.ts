@@ -17,6 +17,7 @@ export interface ReticulumIdentityActivityRow {
 interface ReticulumIdentityActivityStoreState {
   byDestination: Map<string, ReticulumIdentityActivityRow[]>;
   loadForDestination: (destinationHash: string) => Promise<ReticulumIdentityActivityRow[]>;
+  loadForIdentity: (identityHash: string) => Promise<ReticulumIdentityActivityRow[]>;
   upsertActivity: (row: ReticulumIdentityActivityRow) => Promise<void>;
   getActivity: (destinationHash: string) => ReticulumIdentityActivityRow[];
 }
@@ -120,6 +121,44 @@ export const useReticulumIdentityActivityStore = create<ReticulumIdentityActivit
       } catch (e) {
         console.debug('[reticulumIdentityActivityStore] load ' + errLikeToLogString(e));
         return get().getActivity(key);
+      }
+    },
+
+    loadForIdentity: async (identityHash) => {
+      const id = normalizeHash(identityHash);
+      if (!id) return [];
+      try {
+        const rows = (await window.electronAPI.db.getReticulumIdentityActivityByIdentity(
+          id,
+        )) as ReticulumIdentityActivityRow[];
+        set((s) => {
+          const next = new Map(s.byDestination);
+          for (const row of rows) {
+            const dest = normalizeHash(row.destination_hash);
+            if (!dest) continue;
+            const normalized: ReticulumIdentityActivityRow = {
+              ...row,
+              destination_hash: dest,
+              aspect: row.aspect.slice(0, 128),
+              identity_hash: row.identity_hash ? normalizeHash(row.identity_hash) : null,
+            };
+            const prev = next.get(dest) ?? [];
+            const dropUnknown = normalized.aspect !== 'unknown';
+            const filtered = prev.filter(
+              (r) => r.aspect !== normalized.aspect && !(dropUnknown && r.aspect === 'unknown'),
+            );
+            next.set(dest, [normalized, ...filtered]);
+          }
+          return { byDestination: trimMapToMaxSize(next, MAX_RETICULUM_IDENTITY_DESTINATIONS) };
+        });
+        return rows.map((row) => ({
+          ...row,
+          destination_hash: normalizeHash(row.destination_hash),
+          aspect: row.aspect.slice(0, 128),
+        }));
+      } catch (e) {
+        console.debug('[reticulumIdentityActivityStore] loadForIdentity ' + errLikeToLogString(e));
+        return [];
       }
     },
 

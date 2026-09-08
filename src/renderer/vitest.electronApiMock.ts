@@ -88,6 +88,7 @@ export function createElectronAPIMock(): ElectronAPI {
       exportBlockedContacts: vi.fn().mockResolvedValue([]),
       importBlockedContacts: vi.fn().mockResolvedValue({ imported: 0, skipped: 0 }),
       getReticulumIdentityActivity: vi.fn().mockResolvedValue([]),
+      getReticulumIdentityActivityByIdentity: vi.fn().mockResolvedValue([]),
       upsertReticulumIdentityActivity: vi.fn().mockResolvedValue({ changes: 1 }),
       upsertReticulumIdentityActivityBatch: vi.fn().mockResolvedValue({ changes: 1 }),
       listReticulumRemoteAddresses: vi.fn().mockResolvedValue([]),

@@ -226,6 +226,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('db:importBlockedContacts', protocol, identityId, hashes),
     getReticulumIdentityActivity: (destinationHash: string) =>
       ipcRenderer.invoke('db:getReticulumIdentityActivity', destinationHash),
+    getReticulumIdentityActivityByIdentity: (identityHash: string) =>
+      ipcRenderer.invoke('db:getReticulumIdentityActivityByIdentity', identityHash),
     upsertReticulumIdentityActivity: (row: {
       destination_hash: string;
       aspect: string;

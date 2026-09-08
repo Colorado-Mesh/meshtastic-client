@@ -750,11 +750,7 @@
     "heardByRepeatersAdditional_one": "{{count}}追加の未確認フォワーダー（ハッシュ： {{hashes}} ）",
     "heardByRepeatersAdditional_other": "{{count}}追加の未確認フォワーダー（ハッシュ： {{hashes}} ）",
     "reticulumSendAwaitingPeerReceipt": "送信済み（ピアレシート待ち）",
-    "reticulumChatNeedsLxmfDelivery": "このピアにはまだLXMF配信アドレスがありません（チャットは音声のみの宛先を使用できません）。LXMFの発表を待つか、32文字のLXMFハッシュを貼り付けます。",
-    "lxmfHashLabel": "LXMF {{hash}}",
-    "copyLxmfHashAria": "LXMF宛先ハッシュ{{hash}}をコピー",
-    "lxmfHashCopied": "LXMF宛先ハッシュがコピーされました。",
-    "lxmfHashCopyFailed": "LXMF宛先ハッシュをコピーできませんでした。"
+    "reticulumChatNeedsLxmfDelivery": "このピアにはまだLXMF配信アドレスがありません（チャットは音声のみの宛先を使用できません）。LXMFの発表を待つか、32文字のLXMFハッシュを貼り付けます。"
   },
   "chatPayload": {
     "mention": "{{label}} について言及してください",
@@ -3403,7 +3399,6 @@
   },
   "peerDetailModal": {
     "networkSection": "ネットワーク",
-    "copyHash": "コピー先ハッシュ",
     "editNameAria": "手動インストール",
     "sendMessage": "メッセージを送信",
     "pathOk": "パスリクエストが送信されました。",
@@ -3429,7 +3424,20 @@
     "verifiedRowAria": "連絡先が認証されました",
     "renameFailed": "表示名を保存できませんでした。",
     "removeContactConfirmBody": "これにより、保存したリストから連絡先が削除されます。チャットメッセージは残ります。メッセージを送信した場合は履歴に残ります。",
-    "backupPaths": "バックアップパス"
+    "backupPaths": "バックアップパス",
+    "announcedDestinations": "Announced destinations",
+    "openedDestinationBadge": "Opened",
+    "copyAnnouncedHashAria": "Copy {{aspect}} destination hash {{hash}}",
+    "hashCopied": "Destination hash copied.",
+    "hashCopyFailed": "Could not copy destination hash.",
+    "aspect": {
+      "chat": "Chat",
+      "voice": "Voice",
+      "nomad": "Nomad",
+      "rrc": "RRC",
+      "propagation": "Propagation",
+      "unknown": "Unknown"
+    }
   },
   "peerGraph": {
     "title": "ピアコミュニケーショングラフ",
