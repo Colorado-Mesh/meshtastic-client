@@ -53,6 +53,19 @@ import { buildLxmaContactUri } from '@/shared/meshClientDeepLink';
 import { ReticulumNetworkPanel } from './ReticulumNetworkPanel';
 
 describe('ReticulumNetworkPanel', () => {
+  it('offers the setup guide through the Connection navigation callback', async () => {
+    const onOpenSetupGuide = vi.fn().mockReturnValue(true);
+    render(
+      <ReticulumNetworkPanel
+        connecting={false}
+        onStartStack={vi.fn()}
+        onOpenSetupGuide={onOpenSetupGuide}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'reticulumSetup.open' }));
+    expect(onOpenSetupGuide).toHaveBeenCalledOnce();
+  });
+
   beforeEach(() => {
     refreshIdentity.mockReset();
     identityState.public_key = null;

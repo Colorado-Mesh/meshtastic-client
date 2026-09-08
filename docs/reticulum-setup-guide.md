@@ -2,6 +2,8 @@
 
 Open **Reticulum → Connection → Open setup guide**. You can get started with your computer and an internet connection; a radio is optional.
 
+**Hide guide** removes the whole guide and its banner from Connection, including after restarting the app. To use it again, select **Network → Open setup guide**. This opens the guide on Connection without resetting your dismissal preference.
+
 1. **Start here:** start Reticulum inside mesh-client. Opening the guide itself does not change your settings.
 2. **Your identity:** choose a name or callsign. The guide keeps an existing identity. For a new identity, save the recovery words before continuing. These words are private; your messaging address is what you share with friends. Already have an identity? Open the restore controls in Network instead of generating a replacement.
 3. **Get connected:** select one public internet hub, configure your RNode through the existing connection controls, or check your existing setup. Internet setup adds or enables only the selected hub and restarts Reticulum. It leaves your other connections intact. A failed restart does not remove the saved connection; retrying reuses it.
