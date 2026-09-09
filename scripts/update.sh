@@ -373,6 +373,70 @@ check_ratspeak_patches() {
   fi
 }
 
+# Track stacked upstream feature PRs that mesh-client pins until they land on main
+# (scripts/ratspeak-stack-ci-pins.env + optional workflow env). Not overlay patches —
+# these are dependency APIs (ReplyFile, multi-file LXMF attachments, …).
+# Format: "owner/repo|pr-number|display-label|cleanup-hint"
+# Keep in sync with scripts/ratspeak-stack-ci-pins.env and reticulum-sidecar/patches/README.md.
+RATSPEAK_STACK_PR_ENTRIES=(
+  'ratspeak/rsReticulum|26|rsReticulum ReplyFile / LinkClient query metadata|clear RS_RETICULUM_REF from scripts/ratspeak-stack-ci-pins.env (+ reticulum-sidecar.yaml / flatpak.yaml env pins)'
+  'ratspeak/rsLXMF|7|rsLXMF multi-file attachment APIs|clear RS_LXMF_REF from scripts/ratspeak-stack-ci-pins.env (+ reticulum-sidecar.yaml / flatpak.yaml env pins)'
+)
+
+check_ratspeak_stack_prs() {
+  local has_stack_pr_warning=0
+  local entry repo pr label cleanup url state
+
+  echo ''
+  echo 'Checking stacked Ratspeak feature PRs (CI pins until merge)...'
+
+  if [ "${#RATSPEAK_STACK_PR_ENTRIES[@]}" -eq 0 ]; then
+    echo '  No stacked feature PRs tracked.'
+    return 0
+  fi
+
+  for entry in "${RATSPEAK_STACK_PR_ENTRIES[@]}"; do
+    IFS='|' read -r repo pr label cleanup <<< "${entry}"
+    url="https://github.com/${repo}/pull/${pr}"
+    state="$(github_pr_state "${repo}" "${pr}")"
+    case "${state}" in
+      open)
+        echo "  ${label}: still open — ${url}"
+        echo "    CI pins via scripts/ratspeak-stack-ci-pins.env (and matching workflow env)."
+        ;;
+      merged)
+        warn_box "${label} (stacked feature PR)" "CI pin" "upstream MERGED" "${url}"
+        echo "  Reason tracked: ${repo}#${pr} merged — ${cleanup}"
+        echo "    then drop this entry from RATSPEAK_STACK_PR_ENTRIES in scripts/update.sh."
+        has_stack_pr_warning=1
+        HAS_WARNING=1
+        ;;
+      closed)
+        warn_box "${label} (stacked feature PR)" "CI pin" "PR closed (not merged?)" "${url}"
+        echo "  Reason tracked: ${repo}#${pr} closed without merge — verify pin still needed,"
+        echo "    then ${cleanup} and drop entry from RATSPEAK_STACK_PR_ENTRIES."
+        has_stack_pr_warning=1
+        HAS_WARNING=1
+        ;;
+      *)
+        echo "  ${label}: could not query ${repo}#${pr} (install gh or check network) — ${url}"
+        ;;
+    esac
+  done
+
+  if [ "${has_stack_pr_warning}" -eq 0 ]; then
+    echo '  Stacked feature PR check complete (pins still match open upstream).'
+  fi
+}
+
+# Test hook: exercise check_ratspeak_stack_prs (fake gh/curl via PATH).
+if [ "${UPDATE_SH_TEST_HOOK:-}" = 'stack-prs-only' ]; then
+  HAS_WARNING=0
+  check_ratspeak_stack_prs
+  printf 'HAS_WARNING=%s\n' "${HAS_WARNING}"
+  exit 0
+fi
+
 # GET GitHub API path (gh preferred, curl fallback). Body on stdout.
 # Exit 0 = body (may be empty), exit 2 = rate-limit payload detected (empty body).
 # Callers must handle exit 2 in the parent shell (command substitution drops side effects).
@@ -589,6 +653,10 @@ RATSPEAK_KNOWN_ORG_REPOS=(
 
 print_ratspeak_upstream_catalog() {
   local entry
+  echo 'RATSPEAK_STACK_PR_ENTRIES:'
+  for entry in "${RATSPEAK_STACK_PR_ENTRIES[@]}"; do
+    echo "  ${entry}"
+  done
   echo 'RATSPEAK_RELEASE_WATCH_ENTRIES:'
   for entry in "${RATSPEAK_RELEASE_WATCH_ENTRIES[@]}"; do
     echo "  ${entry}"
@@ -838,6 +906,7 @@ done
 
 check_pinned_majors
 check_ratspeak_patches
+check_ratspeak_stack_prs
 check_ratspeak_upstream
 
 if [ "${HAS_WARNING}" -eq 0 ]; then

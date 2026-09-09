@@ -788,7 +788,9 @@
     "searchResults_few": "{{count}} результата",
     "searchResults_many": "{{count}} результатов",
     "reticulumSendAwaitingPeerReceipt": "Отправлено (ожидает получения коллегой)",
-    "reticulumChatNeedsLxmfDelivery": "Этот узел еще не имеет адреса доставки LXMF (чат не может использовать пункт назначения только для голоса). Дождитесь объявления LXMF или вставьте их 32-символьный хэш LXMF."
+    "reticulumChatNeedsLxmfDelivery": "Этот узел еще не имеет адреса доставки LXMF (чат не может использовать пункт назначения только для голоса). Дождитесь объявления LXMF или вставьте их 32-символьный хэш LXMF.",
+    "saveAttachment": "Спасти…",
+    "revealAttachment": "Показать в папке"
   },
   "chatPayload": {
     "mention": "Упоминание {{label}}",
@@ -3494,7 +3496,9 @@
     "pageProgressFailoverGeneric": "Попробовать другой маршрут...",
     "pageProgressNoAlternate": "Нет других доступных маршрутов — завершение этой попытки...",
     "hopsAway_few": "На расстоянии {{count}} хопов",
-    "hopsAway_many": "На расстоянии {{count}} хопов"
+    "hopsAway_many": "На расстоянии {{count}} хопов",
+    "downloadFile": "Загрузить",
+    "dismissPreview": "Пропустить"
   },
   "packetDistribution": {
     "overallDistribution": "Общее распределение",

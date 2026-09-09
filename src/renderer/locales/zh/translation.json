@@ -750,7 +750,9 @@
     "heardByRepeatersAdditional_one": "{{count}}其他身份不明的货运代理（哈希值： {{hashes}} ）",
     "heardByRepeatersAdditional_other": "{{count}}其他身份不明的转发商（哈希： {{hashes}} ）",
     "reticulumSendAwaitingPeerReceipt": "已发送（等待同行回执）",
-    "reticulumChatNeedsLxmfDelivery": "此对等方还没有LXMF交付地址（聊天不能使用仅语音目的地）。等待LXMF公告，或粘贴其32个字符的LXMF哈希。"
+    "reticulumChatNeedsLxmfDelivery": "此对等方还没有LXMF交付地址（聊天不能使用仅语音目的地）。等待LXMF公告，或粘贴其32个字符的LXMF哈希。",
+    "saveAttachment": "保存",
+    "revealAttachment": "在文件夹中"
   },
   "chatPayload": {
     "mention": "提及{{label}}",
@@ -3416,7 +3418,9 @@
     "pageProgressFailover": "正在尝试通过{{iface}} （ {{hops}}跳）选择其他路线……",
     "pageProgressFailoverIface": "尝试通过{{iface}}选择其他路线…",
     "pageProgressFailoverGeneric": "正在尝试其他路线…",
-    "pageProgressNoAlternate": "没有其他路线可用—正在完成此尝试…"
+    "pageProgressNoAlternate": "没有其他路线可用—正在完成此尝试…",
+    "downloadFile": "下载",
+    "dismissPreview": "解散"
   },
   "packetDistribution": {
     "overallDistribution": "总体分布",

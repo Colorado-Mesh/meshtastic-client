@@ -750,7 +750,9 @@
     "heardByRepeatersAdditional_one": "{{count}} encaminhador adicional não identificado (hashes: {{hashes}})",
     "heardByRepeatersAdditional_other": "{{count}} encaminhadores adicionais não identificados (hashes: {{hashes}})",
     "reticulumSendAwaitingPeerReceipt": "Enviado (aguardando recebimento dos pares)",
-    "reticulumChatNeedsLxmfDelivery": "Este ponto ainda não tem endereço de entrega LXMF (o chat não pode usar um destino apenas de voz). Aguarde um anúncio LXMF ou cole o hash LXMF de 32 caracteres."
+    "reticulumChatNeedsLxmfDelivery": "Este ponto ainda não tem endereço de entrega LXMF (o chat não pode usar um destino apenas de voz). Aguarde um anúncio LXMF ou cole o hash LXMF de 32 caracteres.",
+    "saveAttachment": "Guardar…",
+    "revealAttachment": "_Mostrar na pasta"
   },
   "chatPayload": {
     "mention": "Mencionar {{label}}",
@@ -3416,7 +3418,9 @@
     "pageProgressFailover": "Tentando uma rota diferente via {{iface}} ({{hops}} saltos)…",
     "pageProgressFailoverIface": "Tentando um trajeto diferente via {{iface}}…",
     "pageProgressFailoverGeneric": "Tentando uma rota diferente...",
-    "pageProgressNoAlternate": "Não há outras rotas disponíveis — concluindo esta tentativa..."
+    "pageProgressNoAlternate": "Não há outras rotas disponíveis — concluindo esta tentativa...",
+    "downloadFile": "Download",
+    "dismissPreview": "Dispensar"
   },
   "packetDistribution": {
     "overallDistribution": "Distribuição Geral",

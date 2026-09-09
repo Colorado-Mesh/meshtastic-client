@@ -750,7 +750,9 @@
     "heardByRepeatersAdditional_one": "{{count}} EK tanımlanamayan nakliyeci (hash'ler: {{hashes}})",
     "heardByRepeatersAdditional_other": "{{count}} kimliği belirsiz ek göndericiler (hash'ler: {{hashes}})",
     "reticulumSendAwaitingPeerReceipt": "Gönderildi (akran makbuzu bekleniyor)",
-    "reticulumChatNeedsLxmfDelivery": "Bu akranın henüz LXMF teslimat adresi yok (Sohbet yalnızca Sesli bir hedef kullanamaz). Bir LXMF duyurusu bekleyin veya 32 karakterlik LXMF karmasını yapıştırın."
+    "reticulumChatNeedsLxmfDelivery": "Bu akranın henüz LXMF teslimat adresi yok (Sohbet yalnızca Sesli bir hedef kullanamaz). Bir LXMF duyurusu bekleyin veya 32 karakterlik LXMF karmasını yapıştırın.",
+    "saveAttachment": "Kaydetmek…",
+    "revealAttachment": "Dizinde"
   },
   "chatPayload": {
     "mention": "{{label}}'dan bahsedin",
@@ -3416,7 +3418,9 @@
     "pageProgressFailover": "{{iface}} ({{hops}} atlama) üzerinden farklı bir rota deniyor…",
     "pageProgressFailoverIface": "{{iface}} üzerinden farklı bir rota deniyor…",
     "pageProgressFailoverGeneric": "Farklı bir rota deniyor...",
-    "pageProgressNoAlternate": "Başka rota yok — bu girişim tamamlanıyor…"
+    "pageProgressNoAlternate": "Başka rota yok — bu girişim tamamlanıyor…",
+    "downloadFile": "İndir",
+    "dismissPreview": "Yok say"
   },
   "packetDistribution": {
     "overallDistribution": "Genel Dağıtım",

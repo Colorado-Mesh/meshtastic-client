@@ -770,7 +770,9 @@
     "heardByRepeatersDetail_few": "Slyšeno {{count}}: {{names}}",
     "searchResults_few": "{{count}} výsledky",
     "reticulumSendAwaitingPeerReceipt": "Odesláno (čeká se na potvrzení od kolegy)",
-    "reticulumChatNeedsLxmfDelivery": "Tento protějšek zatím nemá doručovací adresu LXMF (Chat nemůže používat cíl pouze pro hlas). Počkejte na oznámení LXMF nebo vložte jeho 32místný hash LXMF."
+    "reticulumChatNeedsLxmfDelivery": "Tento protějšek zatím nemá doručovací adresu LXMF (Chat nemůže používat cíl pouze pro hlas). Počkejte na oznámení LXMF nebo vložte jeho 32místný hash LXMF.",
+    "saveAttachment": "Uložit...",
+    "revealAttachment": "Zobrazit ve složce"
   },
   "chatPayload": {
     "mention": "Zmínit {{label}}",
@@ -3456,7 +3458,9 @@
     "pageProgressFailoverIface": "Zkusit jinou trasu přes {{iface}}…",
     "pageProgressFailoverGeneric": "Zkouším jinou trasu...",
     "pageProgressNoAlternate": "Žádné jiné trasy nejsou k dispozici — dokončení tohoto pokusu...",
-    "hopsAway_few": "{{count}} skoky daleko"
+    "hopsAway_few": "{{count}} skoky daleko",
+    "downloadFile": "Stáhnout",
+    "dismissPreview": "Zamítnout"
   },
   "packetDistribution": {
     "overallDistribution": "Celková distribuce",

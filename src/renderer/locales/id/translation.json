@@ -750,7 +750,9 @@
     "heardByRepeatersAdditional_one": "{{count}} forwarder tak dikenal tambahan (hash: {{hashes}})",
     "heardByRepeatersAdditional_other": "{{count}} forwarder tak dikenal tambahan (hash: {{hashes}})",
     "reticulumSendAwaitingPeerReceipt": "Terkirim (menunggu tanda terima sejawat)",
-    "reticulumChatNeedsLxmfDelivery": "Rekan ini belum memiliki alamat pengiriman LXMF (Obrolan tidak dapat menggunakan tujuan khusus Suara). Tunggu pengumuman LXMF, atau tempelkan hash LXMF 32 karakternya."
+    "reticulumChatNeedsLxmfDelivery": "Rekan ini belum memiliki alamat pengiriman LXMF (Obrolan tidak dapat menggunakan tujuan khusus Suara). Tunggu pengumuman LXMF, atau tempelkan hash LXMF 32 karakternya.",
+    "saveAttachment": "Simpan",
+    "revealAttachment": "Tampilkan dalam Folder"
   },
   "chatPayload": {
     "mention": "Sebutkan {{label}}",
@@ -3416,7 +3418,9 @@
     "pageProgressFailover": "Mencoba rute yang berbeda melalui {{iface}} ({{hops}} hop)...",
     "pageProgressFailoverIface": "Mencoba rute lain melalui {{iface}}…",
     "pageProgressFailoverGeneric": "Mencoba rute yang berbeda...",
-    "pageProgressNoAlternate": "Tidak ada rute lain yang tersedia — menyelesaikan upaya ini..."
+    "pageProgressNoAlternate": "Tidak ada rute lain yang tersedia — menyelesaikan upaya ini...",
+    "downloadFile": "Unduh",
+    "dismissPreview": "Tutup"
   },
   "packetDistribution": {
     "overallDistribution": "Distribusi Keseluruhan",

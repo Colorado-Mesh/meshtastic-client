@@ -13,8 +13,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use lxmf_core::constants::{
-    AM_OPUS_OGG, DeliveryMethod, FIELD_FILE_ATTACHMENTS, FIELD_ICON_APPEARANCE, FIELD_REACTION,
-    REACTION_CONTENT, REACTION_TO,
+    AM_OPUS_OGG, DeliveryMethod, FIELD_ICON_APPEARANCE, FIELD_REACTION, REACTION_CONTENT,
+    REACTION_TO,
 };
 use lxmf_core::message::LxMessage;
 
@@ -51,7 +51,7 @@ use super::lxmf_delivery::{
     LXMF_APP, PROPAGATION_SYNC_ANNOUNCE_SETTLE, send_lxmf_delivery_announce,
     spawn_lxmf_announce_loop, spawn_lxmf_inbound_receiver, spawn_lxmf_outbound_backchannel,
 };
-use super::nomad_file::nomad_file_name_from_path;
+use super::nomad_file::{nomad_file_name_from_metadata_or_path, nomad_file_name_from_path};
 use super::nomad_link_errors::map_nomad_link_error;
 use super::nomad_request_payload::nomad_page_request_payload;
 use super::nomad_server::NomadServerHandle;
@@ -1326,7 +1326,7 @@ impl LiveBridge {
         force_path_ok: Option<bool>,
         path_ensure_kind: Option<&'static str>,
         my_gen: u64,
-    ) -> Result<Vec<u8>, NomadRemoteQueryError> {
+    ) -> Result<(Vec<u8>, Option<Vec<u8>>), NomadRemoteQueryError> {
         // Abort before touching the cancel slot so a superseded failover cannot
         // cancel the newer request that already owns last-request-wins.
         if self.nomad_link_generation.load(Ordering::SeqCst) != my_gen {
@@ -1432,7 +1432,9 @@ impl LiveBridge {
                 last_iface: None,
             }),
             query_result = query_fut => {
-                query_result.map_err(|e| {
+                query_result
+                    .map(|resp| (resp.data, resp.metadata))
+                    .map_err(|e| {
                     let raw = format!("{e}");
                     let code = map_nomad_link_error(&raw);
                     NomadRemoteQueryError {
@@ -1695,7 +1697,8 @@ impl LiveBridge {
                 if bytes.len() > DEFAULT_MAX_FILE_BYTES {
                     return nomad_response_too_large_json(&meta);
                 }
-                let file_name = nomad_file_name_from_path(path);
+                let file_name =
+                    nomad_file_name_from_metadata_or_path(meta.resource_metadata.as_deref(), path);
                 let content_base64 =
                     base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
                 let mut out = serde_json::json!({
@@ -5513,6 +5516,12 @@ fn mime_from_file_name(file_name: &str) -> String {
         "image/jpeg".into()
     } else if lower.ends_with(".gif") {
         "image/gif".into()
+    } else if lower.ends_with(".webp") {
+        "image/webp".into()
+    } else if lower.ends_with(".bmp") {
+        "image/bmp".into()
+    } else if lower.ends_with(".avif") {
+        "image/avif".into()
     } else {
         "application/octet-stream".into()
     }
@@ -5552,22 +5561,44 @@ fn icon_appearance_json_from_message(msg: &LxMessage) -> Option<serde_json::Valu
 fn attachment_json_from_message(msg: &LxMessage) -> Option<serde_json::Value> {
     use base64::Engine as _;
 
-    let field = msg.get_field(FIELD_FILE_ATTACHMENTS)?;
-    let value = rmpv::decode::read_value(&mut Cursor::new(field.as_slice())).ok()?;
-    let files = value.as_array()?;
-    let first = files.first()?.as_array()?;
-    let file_name = first.first()?.as_str()?.to_string();
-    let bytes = match first.get(1)? {
-        rmpv::Value::Binary(bin) => bin.clone(),
-        _ => return None,
-    };
-    let mime_type = mime_from_file_name(&file_name);
-    Some(serde_json::json!({
-        "file_name": file_name,
-        "mime_type": mime_type,
-        "size_bytes": bytes.len(),
-        "data_base64": base64::engine::general_purpose::STANDARD.encode(bytes),
-    }))
+    let mut attachments: Vec<serde_json::Value> = Vec::new();
+
+    if let Ok(files) = msg.file_attachments() {
+        for (file_name, bytes) in files {
+            let mime_type = mime_from_file_name(&file_name);
+            attachments.push(serde_json::json!({
+                "file_name": file_name,
+                "mime_type": mime_type,
+                "size_bytes": bytes.len(),
+                "data_base64": base64::engine::general_purpose::STANDARD.encode(bytes),
+            }));
+        }
+    }
+
+    if attachments.is_empty() {
+        if let Ok(Some((format, bytes))) = msg.image_attachment() {
+            let ext = format.trim().trim_start_matches('.').to_lowercase();
+            let file_name = if ext.is_empty() {
+                "image.bin".to_string()
+            } else {
+                format!("image.{ext}")
+            };
+            let mime_type = mime_from_file_name(&file_name);
+            attachments.push(serde_json::json!({
+                "file_name": file_name,
+                "mime_type": mime_type,
+                "size_bytes": bytes.len(),
+                "data_base64": base64::engine::general_purpose::STANDARD.encode(bytes),
+            }));
+        }
+    }
+
+    let first = attachments.first()?.clone();
+    let mut out = first;
+    if let Some(obj) = out.as_object_mut() {
+        obj.insert("attachments".into(), serde_json::Value::Array(attachments));
+    }
+    Some(out)
 }
 
 fn audio_json_from_bytes(mode: u8, bytes: &[u8]) -> serde_json::Value {
@@ -5813,6 +5844,8 @@ struct NomadRemoteQueryOk {
     force_path_ok: Option<bool>,
     path_ensure_kind: Option<&'static str>,
     elapsed_ms: u64,
+    /// Msgpack Resource metadata from a file response (`{"name": ...}`), if any.
+    resource_metadata: Option<Vec<u8>>,
 }
 
 /// Diagnostics for a failed remote Nomad Link query (page or file).
@@ -6181,7 +6214,7 @@ fn path_table_route_from_entry(e: &PathTableRpcEntry) -> PathTableRoute {
 
 #[allow(clippy::too_many_arguments, clippy::result_large_err)] // Nomad Link diagnostics bundle
 fn finish_nomad_link_result(
-    result: Result<Vec<u8>, NomadRemoteQueryError>,
+    result: Result<(Vec<u8>, Option<Vec<u8>>), NomadRemoteQueryError>,
     hash_hex: &str,
     identity_hash_hex: &str,
     hops: u8,
@@ -6194,7 +6227,7 @@ fn finish_nomad_link_result(
     elapsed_ms: u64,
 ) -> Result<(Vec<u8>, NomadRemoteQueryOk), NomadRemoteQueryError> {
     match result {
-        Ok(bytes) => {
+        Ok((bytes, resource_metadata)) => {
             tracing::debug!(
                 target: "nomad",
                 dest = %hash_hex,
@@ -6207,6 +6240,7 @@ fn finish_nomad_link_result(
                 force_path_ok = ?force_path_ok,
                 path_ensure_kind = ?path_ensure_kind,
                 elapsed_ms,
+                has_resource_metadata = resource_metadata.is_some(),
                 "Nomad Link query ok"
             );
             Ok((
@@ -6219,6 +6253,7 @@ fn finish_nomad_link_result(
                     force_path_ok,
                     path_ensure_kind,
                     elapsed_ms,
+                    resource_metadata,
                 },
             ))
         }
@@ -7238,6 +7273,7 @@ mod announce_display_name_tests {
                 force_path_ok: None,
                 path_ensure_kind: None,
                 elapsed_ms: 4200,
+                resource_metadata: None,
             },
         );
         assert_eq!(out["egress"], "tcp");
@@ -7259,6 +7295,7 @@ mod announce_display_name_tests {
             force_path_ok: Some(false),
             path_ensure_kind: Some("cached_hit"),
             elapsed_ms: 1200,
+            resource_metadata: None,
         };
         // Same helper used by remote page and file oversized branches.
         let out = nomad_response_too_large_json(&meta);

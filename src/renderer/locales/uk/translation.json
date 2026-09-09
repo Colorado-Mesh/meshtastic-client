@@ -788,7 +788,9 @@
     "searchResults_few": "{{count}} результати",
     "searchResults_many": "{{count}} результатів",
     "reticulumSendAwaitingPeerReceipt": "Надіслано (очікується отримання від колеги)",
-    "reticulumChatNeedsLxmfDelivery": "Цей вузол ще не має адреси доставки LXMF (чат не може використовувати призначення лише для голосу). Дочекайтеся оголошення LXMF або вставте їх 32-символьний хеш LXMF."
+    "reticulumChatNeedsLxmfDelivery": "Цей вузол ще не має адреси доставки LXMF (чат не може використовувати призначення лише для голосу). Дочекайтеся оголошення LXMF або вставте їх 32-символьний хеш LXMF.",
+    "saveAttachment": "Зберегти",
+    "revealAttachment": "У теці"
   },
   "chatPayload": {
     "mention": "Згадайте {{label}}",
@@ -3494,7 +3496,9 @@
     "pageProgressFailoverGeneric": "Спробувати інший маршрут...",
     "pageProgressNoAlternate": "Немає інших доступних маршрутів — завершення цієї спроби...",
     "hopsAway_few": "за {{count}} хопи",
-    "hopsAway_many": "за {{count}} хопів"
+    "hopsAway_many": "за {{count}} хопів",
+    "downloadFile": "Завантаження",
+    "dismissPreview": "Відпустити"
   },
   "packetDistribution": {
     "overallDistribution": "Загальний розподіл",

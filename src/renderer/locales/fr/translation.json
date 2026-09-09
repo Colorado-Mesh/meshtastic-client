@@ -750,7 +750,9 @@
     "heardByRepeatersAdditional_one": "{{count}} expéditeur supplémentaire non identifié (hachages : {{hashes}})",
     "heardByRepeatersAdditional_other": "{{count}} expéditeurs supplémentaires non identifiés (hachages : {{hashes}})",
     "reticulumSendAwaitingPeerReceipt": "Envoyé (en attente de réception par les pairs)",
-    "reticulumChatNeedsLxmfDelivery": "Ce pair n'a pas encore d'adresse de livraison LXMF (le chat ne peut pas utiliser une destination vocale uniquement). Attendez une annonce LXMF ou collez leur hachage LXMF de 32 caractères."
+    "reticulumChatNeedsLxmfDelivery": "Ce pair n'a pas encore d'adresse de livraison LXMF (le chat ne peut pas utiliser une destination vocale uniquement). Attendez une annonce LXMF ou collez leur hachage LXMF de 32 caractères.",
+    "saveAttachment": "Sauvegarder…",
+    "revealAttachment": "Montrer dans son dossier"
   },
   "chatPayload": {
     "mention": "Mention {{label}}",
@@ -3416,7 +3418,9 @@
     "pageProgressFailover": "Essayer un autre itinéraire via {{iface}} ({{hops}} sauts)…",
     "pageProgressFailoverIface": "Essayer un autre itinéraire via {{iface}}…",
     "pageProgressFailoverGeneric": "Essayer un autre itinéraire...",
-    "pageProgressNoAlternate": "Aucun autre itinéraire disponible — terminer cette tentative…"
+    "pageProgressNoAlternate": "Aucun autre itinéraire disponible — terminer cette tentative…",
+    "downloadFile": "Télécharger",
+    "dismissPreview": "Ignorer"
   },
   "packetDistribution": {
     "overallDistribution": "Répartition globale",
