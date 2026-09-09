@@ -148,7 +148,12 @@ describe('MeshcoreChatChannelManager', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
     await user.clear(screen.getByLabelText('Name'));
     await user.type(screen.getByLabelText('Name'), 'a'.repeat(32));
-    expect(screen.getByLabelText('Name')).toHaveValue('a'.repeat(31));
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    await user.type(screen.getByLabelText('Name'), '{Enter}');
+    expect(props.onSetChannel).not.toHaveBeenCalled();
+    await user.clear(screen.getByLabelText('Name'));
+    await user.type(screen.getByLabelText('Name'), ` ${'a'.repeat(31)} `);
+    expect(screen.getByLabelText('Name')).toHaveValue(` ${'a'.repeat(31)} `);
     await user.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => {
       expect(props.onSetChannel).toHaveBeenCalledWith(

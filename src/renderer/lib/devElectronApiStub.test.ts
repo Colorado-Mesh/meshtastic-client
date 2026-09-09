@@ -40,6 +40,32 @@ describe('devElectronApiStub', () => {
     expect(typeof api.onNobleBleDisconnected(() => {})).toBe('function');
   });
 
+  it('cancels native file-transfer pickers in browser development', async () => {
+    const api = createDevElectronApiStub();
+    await expect(api.reticulum.rncp.showSaveDirectoryDialog()).resolves.toEqual({
+      canceled: true,
+      path: null,
+    });
+    await expect(api.reticulum.rncp.showOpenFileDialog()).resolves.toEqual({
+      canceled: true,
+      path: null,
+    });
+    await expect(api.reticulum.rncp.getStatus()).resolves.toEqual({
+      transfers: [],
+      pending_offers: [],
+    });
+    await expect(api.reticulum.rncp.getListener()).resolves.toEqual({
+      enabled: false,
+      inbound_mode: 'off',
+      allowed: [],
+      blocked: [],
+    });
+    await expect(api.reticulum.rncp.setListener({ enabled: true })).resolves.toEqual({
+      ok: false,
+      error: 'stub',
+    });
+  });
+
   it('assigns unique outbox IDs to queued messages', async () => {
     const api = createDevElectronApiStub();
     const entry = {

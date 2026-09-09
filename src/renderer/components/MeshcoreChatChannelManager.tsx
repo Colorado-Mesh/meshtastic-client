@@ -202,9 +202,11 @@ export default function MeshcoreChatChannelManager({
                     setName(event.target.value);
                   }}
                   maxLength={
-                    privateChannel || name.trimStart().startsWith('#')
-                      ? MESHCORE_CHANNEL_NAME_MAX_LEN
-                      : MESHCORE_CHANNEL_NAME_MAX_LEN - 1
+                    privateChannel
+                      ? undefined
+                      : name.trimStart().startsWith('#')
+                        ? MESHCORE_CHANNEL_NAME_MAX_LEN
+                        : MESHCORE_CHANNEL_NAME_MAX_LEN - 1
                   }
                   placeholder={privateChannel ? undefined : '#channel'}
                   aria-label={t('radioPanel.meshcoreChannelNameLabel')}
