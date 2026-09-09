@@ -55,7 +55,11 @@ overrides:
   # GHSA-v3r7-h72x-cjcm / GHSA-jr45-8vmc-qm54 / GHSA-m8rv-5g2x-5cg5 /
   # GHSA-fxqj-rqcc-2cmp / GHSA-mwp4-54f8-5fhr / GHSA-9f4c-93c8-jc8g /
   # GHSA-v93f-fgjr-hjrj / GHSA-4f78-qhmw-8j8m / GHSA-ff2p-hmqr-hxm4 /
-  # GHSA-f2r8-jv7c-xqmp / GHSA-p2rr-rvmm-c5fp / GHSA-6gmq-8vp8-gcm6).
+  # GHSA-f2r8-jv7c-xqmp / GHSA-p2rr-rvmm-c5fp / GHSA-6gmq-8vp8-gcm6 /
+  # GHSA-2883-xcg3-v3hh / GHSA-w5vr-8v7q-w6rv / GHSA-82fw-gwwq-j7x9 /
+  # GHSA-4w3w-2rp5-g8jm / GHSA-w2rr-34g9-rvrj / GHSA-93r5-fhx6-vmg9 /
+  # GHSA-8344-3jmq-59r6 / GHSA-6h8r-xr42-gp59 / GHSA-27p8-2357-5qqv /
+  # GHSA-c7q8-3ch8-vqpv).
   # brace-expansion: keep a single 5.0.9 floor. GHSA-rgw5-rvv9-x895 is a
   # bypass of the CVE-2026-14257 mitigation and marks >=4.0.0 <5.0.9 vulnerable
   # (only >=5.0.9 counts as patched). CI audit is blocking.
@@ -71,18 +75,28 @@ overrides:
   # undici-types stays on 7.x to match @types/node.
   # postcss: GHSA-fxqj-rqcc-2cmp — floor >=8.5.23.
   # ip-address: GHSA-mwp4-54f8-5fhr (mqtt → socks) — floor >=10.3.1.
-  # @xmldom/xmldom: GHSA-6gmq-8vp8-gcm6 — floor >=0.8.15 (electron-builder →
-  # app-builder-lib → plist / @electron/osx-sign / @electron/universal still
-  # resolve 0.8.13 without an override).
+  # @xmldom/xmldom: GHSA-6gmq-8vp8-gcm6 (+ GHSA-4w3w-2rp5-g8jm /
+  # GHSA-w2rr-34g9-rvrj / GHSA-93r5-fhx6-vmg9 / GHSA-8344-3jmq-59r6 /
+  # GHSA-6h8r-xr42-gp59 / GHSA-27p8-2357-5qqv / GHSA-c7q8-3ch8-vqpv) —
+  # floor >=0.8.15 (electron-builder → app-builder-lib → plist /
+  # @electron/osx-sign / @electron/universal still resolve older 0.8.x without
+  # an override).
+  # js-yaml: GHSA-2883-xcg3-v3hh — floor >=4.3.2.
+  # baseline-browser-mapping: GHSA-w5vr-8v7q-w6rv — floor >=2.11.0.
+  # vitest / @vitest/mocker: GHSA-82fw-gwwq-j7x9 — package.json pins vitest
+  # ^4.1.11 (no override needed while the direct pin holds the floor).
+  # extract-zip (GHSA-7pqw-9j4j-h8q3): no patched release; Electron replaced it
+  # with hardened @electron-internal/extract-zip (not the vulnerable package).
   # electron: deliberate major pin — bump with Flatpak sync + native rebuild smoke.
   '@xmldom/xmldom': ^0.8.15
   app-builder-lib: ^26.15.0
+  baseline-browser-mapping: ^2.11.0
   brace-expansion: ^5.0.9
   builder-util-runtime: ^9.7.0
   electron: ^44.1.0
   fast-uri: ^3.1.6
   ip-address: ^10.3.1
-  js-yaml: ^4.3.0
+  js-yaml: ^4.3.2
   markdown-it@<=14.1.1: '>=14.2.0 <15'
   postcss: ^8.5.25
   shell-quote: ^1.9.0
