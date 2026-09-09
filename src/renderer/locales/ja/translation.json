@@ -1314,7 +1314,19 @@
       "fieldNotANumber": "整数（数字のみ）を入力してください。",
       "fieldOutOfRange": "値が許容範囲外です。",
       "fieldTooLong": "値が長すぎます。",
-      "fieldInvalidOption": "サポートされていない値です。"
+      "fieldInvalidOption": "サポートされていない値です。",
+      "profilesTitle": "Interface profiles",
+      "profilesHint": "Named enable-sets for which interfaces are on. Switching a profile enables its members and disables the rest.",
+      "profilesEmpty": "No profiles yet. Save the current enable-set to create one.",
+      "profilesDefault": "Default",
+      "profilesUnnamed": "(unnamed)",
+      "profilesNamePlaceholder": "Profile name",
+      "profilesSaveCurrent": "Save current",
+      "profilesCreateEmpty": "New empty",
+      "profilesRename": "Rename",
+      "profilesSaveRename": "Save",
+      "profilesDelete": "Delete",
+      "profilesRenameAria": "Rename profile {{name}}"
     },
     "reticulumPeers": {
       "hops": "ホップ",

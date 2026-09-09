@@ -9,6 +9,7 @@ import {
   firstReticulumCatalogFieldError,
   ReticulumInterfaceFieldSet,
 } from '@/renderer/components/reticulum/ReticulumInterfaceFieldSet';
+import { ReticulumInterfaceProfilesSection } from '@/renderer/components/reticulum/ReticulumInterfaceProfilesSection';
 import { useToast } from '@/renderer/components/Toast';
 import {
   rssiForReticulumBleRnodeRow,
@@ -975,6 +976,14 @@ export function ReticulumInterfacesPanel({
           {t('connectionPanel.reticulumInterfaces.restartStackHint')}
         </p>
       ) : null}
+      <ReticulumInterfaceProfilesSection
+        interfaces={interfaces}
+        actionsDisabled={actionsDisabled}
+        onToggle={(id, enabled, typeName) => toggleInterface(id, enabled, typeName)}
+        onApplied={(needsRestartHint) => {
+          if (needsRestartHint) setRestartStackHint(true);
+        }}
+      />
       <InterfacesSection
         interfaces={interfaces}
         osSerialPortPaths={serialPortPaths}

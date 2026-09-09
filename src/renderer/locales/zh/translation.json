@@ -1314,7 +1314,19 @@
       "fieldNotANumber": "输入整数（仅限数字）。",
       "fieldOutOfRange": "值超出允许的范围。",
       "fieldTooLong": "此值太长。",
-      "fieldInvalidOption": "不支持的V值。"
+      "fieldInvalidOption": "不支持的V值。",
+      "profilesTitle": "Interface profiles",
+      "profilesHint": "Named enable-sets for which interfaces are on. Switching a profile enables its members and disables the rest.",
+      "profilesEmpty": "No profiles yet. Save the current enable-set to create one.",
+      "profilesDefault": "Default",
+      "profilesUnnamed": "(unnamed)",
+      "profilesNamePlaceholder": "Profile name",
+      "profilesSaveCurrent": "Save current",
+      "profilesCreateEmpty": "New empty",
+      "profilesRename": "Rename",
+      "profilesSaveRename": "Save",
+      "profilesDelete": "Delete",
+      "profilesRenameAria": "Rename profile {{name}}"
     },
     "reticulumPeers": {
       "hops": "跳数",
