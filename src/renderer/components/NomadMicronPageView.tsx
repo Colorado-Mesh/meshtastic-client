@@ -1,20 +1,25 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 
 import {
+  bindNomadMicronMedia,
   bindNomadMicronPartials,
   buildNomadLinkRequest,
   isExternalHttpUrl,
   isNomadFilePath,
   loadNomadMicronPartial,
   mountNomadMicronHtml,
+  type NomadMicronMediaFetchResult,
   type NomadMicronPartialPageResult,
   parseNomadNetworkLinkUrl,
   renderNomadMicronPage,
 } from '@/renderer/lib/nomad/micronParser';
+import { nomadRasterDataUrl } from '@/renderer/lib/nomad/nomadRasterPreview';
+import { openRrcHubFromLink } from '@/renderer/lib/openRrcHubFromLink';
 import {
   isReticulumLxmfLink,
   parseReticulumLxmfLinkUrl,
 } from '@/renderer/lib/reticulum/reticulumDestinationInput';
+import { isRrcLink } from '@/renderer/lib/rrcLink';
 
 interface NomadMicronPageViewProps {
   content: string;
@@ -31,6 +36,8 @@ interface NomadMicronPageViewProps {
     path: string,
     requestData?: Record<string, string>,
   ) => Promise<NomadMicronPartialPageResult>;
+  /** Fetch NomadNet `/media` WebP bytes for in-page images (not `/file` downloads). */
+  onFetchMedia?: (hash: string, mediaPath: string) => Promise<NomadMicronMediaFetchResult>;
 }
 
 export default function NomadMicronPageView({
@@ -42,6 +49,7 @@ export default function NomadMicronPageView({
   onDownloadFile,
   onOpenDm,
   onFetchPartial,
+  onFetchMedia,
 }: NomadMicronPageViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Keep latest link handlers/context in a ref so Micron remounts only when `content` changes.
@@ -54,6 +62,7 @@ export default function NomadMicronPageView({
     onDownloadFile,
     onOpenDm,
     onFetchPartial,
+    onFetchMedia,
   });
   useLayoutEffect(() => {
     linkContextRef.current = {
@@ -63,8 +72,17 @@ export default function NomadMicronPageView({
       onDownloadFile,
       onOpenDm,
       onFetchPartial,
+      onFetchMedia,
     };
-  }, [defaultPagePath, selectedHash, onNavigate, onDownloadFile, onOpenDm, onFetchPartial]);
+  }, [
+    defaultPagePath,
+    selectedHash,
+    onNavigate,
+    onDownloadFile,
+    onOpenDm,
+    onFetchPartial,
+    onFetchMedia,
+  ]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -75,6 +93,11 @@ export default function NomadMicronPageView({
       const ctx = linkContextRef.current;
       if (isExternalHttpUrl(destination)) {
         window.open(destination, '_blank', 'noopener,noreferrer');
+        return;
+      }
+
+      if (isRrcLink(destination)) {
+        openRrcHubFromLink(destination);
         return;
       }
 
@@ -119,7 +142,12 @@ export default function NomadMicronPageView({
         return;
       }
       event.preventDefault();
-      // micron-parser strips lxmf:// from data-destination; href/title keep the scheme.
+      // micron-parser strips lxmf:// / rrc:// from data-destination; href/title keep schemes.
+      const rrcSource = [href, title, dataDestination].find((v) => v && isRrcLink(v));
+      if (rrcSource) {
+        openRrcHubFromLink(rrcSource);
+        return;
+      }
       const lxmfSource = [href, title].find((v) => v && isReticulumLxmfLink(v));
       const destination = (lxmfSource ?? dataDestination) || href;
       if (!destination) return;
@@ -152,7 +180,27 @@ export default function NomadMicronPageView({
       });
     }
 
+    let cancelled = false;
+    const fetchMedia = linkContextRef.current.onFetchMedia;
+    if (fetchMedia) {
+      void bindNomadMicronMedia(container, {
+        selectedHash: linkContextRef.current.selectedHash,
+        defaultPagePath: linkContextRef.current.defaultPagePath,
+        fetchMedia: (hash, mediaPath) => fetchMedia(hash, mediaPath),
+        toDataUrl: (fileName, contentBase64) =>
+          nomadRasterDataUrl(
+            fileName.toLowerCase().endsWith('.webp') ? fileName : `${fileName}.webp`,
+            contentBase64,
+          ) ?? nomadRasterDataUrl('image.webp', contentBase64),
+      }).then(() => {
+        if (cancelled) {
+          // Unmounted before fetch finished — DOM already replaced/cleared.
+        }
+      });
+    }
+
     return () => {
+      cancelled = true;
       container.removeEventListener('click', onActivate);
       unbindPartials?.();
     };
