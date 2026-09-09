@@ -5366,7 +5366,8 @@
     "addressChoiceNomad": "Página Nomad",
     "addressChoiceDm": "Mensagem direta",
     "byteLimit": {
-      "approaching": "{{count}} / {{limit}}"
+      "approaching": "{{count}} / {{limit}}",
+      "overMax": "Mensagem muito longa — o limite do hub é de {{limit}} bytes"
     },
     "nickLimit": {
       "overMax": "Apelido muito longo — o limite do hub é {{limit}} bytes"

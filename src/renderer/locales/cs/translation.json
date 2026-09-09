@@ -5412,7 +5412,8 @@
     "memberCount_few": "{{count}} členové",
     "userCount_few": "{{count}} uživatelé",
     "byteLimit": {
-      "approaching": "{{count}} / {{limit}}"
+      "approaching": "{{count}} / {{limit}}",
+      "overMax": "Zpráva je příliš dlouhá — limit rozbočovače je {{limit}} bajtů"
     },
     "nickLimit": {
       "overMax": "Přezdívka je příliš dlouhá — limit rozbočovače je {{limit}} bajtů"

@@ -5366,7 +5366,8 @@
     "addressChoiceNomad": "Nomad 페이지",
     "addressChoiceDm": "다이렉트 메시지",
     "byteLimit": {
-      "approaching": "{{count}}/{{limit}}"
+      "approaching": "{{count}}/{{limit}}",
+      "overMax": "메시지가 너무 깁니다 — 허브 한도는 {{limit}} 바이트입니다"
     },
     "nickLimit": {
       "overMax": "별명이 너무 깁니다 — 허브 한도는 {{limit}} 바이트입니다"

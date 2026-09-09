@@ -5,6 +5,8 @@ import {
   isRrcHubMsgBodyLimitError,
   isRrcHubNickLimitError,
   parseRrcHubLimits,
+  resolveRrcMsgBodyLimit,
+  RRC_FALLBACK_MAX_MSG_BODY_BYTES,
   rrcComposerBypassesSplit,
 } from './rrcHubLimits';
 
@@ -25,6 +27,19 @@ describe('parseRrcHubLimits', () => {
       max_rooms_per_session: null,
       rate_limit_msgs_per_minute: null,
     });
+  });
+});
+
+describe('resolveRrcMsgBodyLimit', () => {
+  it('uses the hub WELCOME limit when present', () => {
+    expect(resolveRrcMsgBodyLimit(350)).toBe(350);
+  });
+
+  it('falls back below typical Link MDU when the hub omits a body limit', () => {
+    expect(resolveRrcMsgBodyLimit(null)).toBe(RRC_FALLBACK_MAX_MSG_BODY_BYTES);
+    expect(resolveRrcMsgBodyLimit(undefined)).toBe(RRC_FALLBACK_MAX_MSG_BODY_BYTES);
+    expect(RRC_FALLBACK_MAX_MSG_BODY_BYTES).toBeLessThan(431);
+    expect(RRC_FALLBACK_MAX_MSG_BODY_BYTES).toBeGreaterThan(0);
   });
 });
 

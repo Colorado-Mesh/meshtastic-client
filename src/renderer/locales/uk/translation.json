@@ -5456,7 +5456,8 @@
     "userCount_few": "{{count}} користувачі",
     "userCount_many": "{{count}} користувачів",
     "byteLimit": {
-      "approaching": "{{count}} / {{limit}}"
+      "approaching": "{{count}} / {{limit}}",
+      "overMax": "Задовге повідомлення — ліміт концентратора становить {{limit}} байт"
     },
     "nickLimit": {
       "overMax": "Задовгий псевдонім — ліміт концентратора становить {{limit}} байт"

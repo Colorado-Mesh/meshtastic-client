@@ -5366,7 +5366,8 @@
     "addressChoiceNomad": "Halaman Nomad",
     "addressChoiceDm": "Pesan langsung",
     "byteLimit": {
-      "approaching": "{{count}} / {{limit}}"
+      "approaching": "{{count}} / {{limit}}",
+      "overMax": "Pesan terlalu panjang — batas hub {{limit}} byte"
     },
     "nickLimit": {
       "overMax": "Nama panggilan terlalu panjang — batas hub adalah {{limit}} byte"

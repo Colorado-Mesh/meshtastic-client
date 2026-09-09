@@ -5366,7 +5366,8 @@
     "addressChoiceNomad": "Nomad-pagina",
     "addressChoiceDm": "Direct bericht",
     "byteLimit": {
-      "approaching": "{{count}} / {{limit}}"
+      "approaching": "{{count}} / {{limit}}",
+      "overMax": "Bericht te lang — hublimiet is {{limit}} bytes"
     },
     "nickLimit": {
       "overMax": "Bijnaam te lang — hublimiet is {{limit}} bytes"

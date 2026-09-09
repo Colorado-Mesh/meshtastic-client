@@ -5366,7 +5366,8 @@
     "addressChoiceNomad": "Nomad ページ",
     "addressChoiceDm": "ダイレクトメッセージ",
     "byteLimit": {
-      "approaching": "{{count}}/{{limit}}"
+      "approaching": "{{count}}/{{limit}}",
+      "overMax": "メッセージが長すぎます—ハブの制限は{{limit}}バイトです"
     },
     "nickLimit": {
       "overMax": "ニックネームが長すぎます—ハブの制限は{{limit}}バイトです"

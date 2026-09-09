@@ -5456,7 +5456,8 @@
     "userCount_few": "{{count}} użytkownicy",
     "userCount_many": "{{count}} użytkowników",
     "byteLimit": {
-      "approaching": "{{count}} / {{limit}}"
+      "approaching": "{{count}} / {{limit}}",
+      "overMax": "Wiadomość zbyt długa — limit koncentratora wynosi {{limit}} bajtów"
     },
     "nickLimit": {
       "overMax": "Pseudonim zbyt długi — limit koncentratora to {{limit}} bajtów"

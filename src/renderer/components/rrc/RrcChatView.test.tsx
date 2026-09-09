@@ -475,7 +475,7 @@ describe('RrcChatView mention completer', () => {
     expect(box).toHaveValue('@Zeva ');
   });
 
-  it('Tab selects the highlighted nick from ChatComposer mention list', async () => {
+  it('Tab cycles nick completion while the mention list stays open', async () => {
     const user = userEvent.setup();
     const members = [
       { identity_hash: 'aa'.repeat(16), nickname: 'Zeva' },
@@ -490,6 +490,13 @@ describe('RrcChatView mention completer', () => {
     });
     await user.keyboard('{Tab}');
     expect(box).toHaveValue('@Zeva ');
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    await user.keyboard('{Tab}');
+    expect(box).toHaveValue('@Zoe ');
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    await user.keyboard('{Shift>}{Tab}{/Shift}');
+    expect(box).toHaveValue('@Zeva ');
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
   });
 });
 

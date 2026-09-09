@@ -5366,7 +5366,8 @@
     "addressChoiceNomad": "Nomad sayfası",
     "addressChoiceDm": "Doğrudan mesaj",
     "byteLimit": {
-      "approaching": "{{count}} / {{limit}}"
+      "approaching": "{{count}} / {{limit}}",
+      "overMax": "Mesaj çok uzun — hub sınırı {{limit}} bayt"
     },
     "nickLimit": {
       "overMax": "Takma ad çok uzun — hub sınırı {{limit}} bayt"

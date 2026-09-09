@@ -30,7 +30,7 @@ import {
   findReticulumChatLinks,
   type ReticulumChatLink,
 } from '@/renderer/lib/nomad/reticulumLinkText';
-import { normalizeRrcHubByteLimit, rrcComposerBypassesSplit } from '@/renderer/lib/rrcHubLimits';
+import { resolveRrcMsgBodyLimit, rrcComposerBypassesSplit } from '@/renderer/lib/rrcHubLimits';
 import {
   bodyMentionsRrcNick,
   findNextRrcNickMention,
@@ -362,7 +362,7 @@ export function RrcChatView({
     return `rrc:${hub}:${room}`;
   }, [hubDestHash, activeRoom]);
 
-  const payloadLimit = normalizeRrcHubByteLimit(maxMsgBodyBytes ?? null) ?? undefined;
+  const payloadLimit = resolveRrcMsgBodyLimit(maxMsgBodyBytes);
 
   const estimateSize = useCallback(
     (index: number) => estimateRrcRowHeight(visibleMessages[index]),
@@ -709,7 +709,7 @@ export function RrcChatView({
           sendButtonLabel={t('rrc.send')}
           payloadLimit={payloadLimit}
           useWireByteCount
-          shouldSuppressLimits={(text) => rrcComposerBypassesSplit(text) || payloadLimit == null}
+          shouldSuppressLimits={rrcComposerBypassesSplit}
           onInterceptSend={onInterceptSend}
           onSendChunk={onSendChunk}
           mentionAdapter={mentionAdapter}

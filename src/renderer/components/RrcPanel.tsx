@@ -26,7 +26,9 @@ import {
   computeRrcByteLimitStatus,
   isRrcHubMsgBodyLimitError,
   isRrcHubNickLimitError,
+  resolveRrcMsgBodyLimit,
   rrcComposerBypassesSplit,
+  RrcComposerPreflightError,
 } from '@/renderer/lib/rrcHubLimits';
 import { isRrcHubAutoJoin, toggleRrcHubAutoJoin } from '@/renderer/lib/rrcHubPrefs';
 import { isRrcHubLinked } from '@/renderer/lib/rrcHubSession';
@@ -577,14 +579,15 @@ export default function RrcPanel({
     async (hash: string, opts?: { focus?: boolean }) => {
       const target = hash.trim().toLowerCase();
       if (!target) return;
-      const nickLim = computeRrcByteLimitStatus(nickname, limits.max_nick_bytes);
-      if (nickLim?.phase === 'overMax') {
-        setError(t('rrc.nickLimit.overMax', { limit: nickLim.limit }));
-        return;
-      }
       const wantFocus = opts?.focus !== false;
       const session = useRrcSessionStore.getState();
       const existing = session.sessionsByHub.get(target);
+      const targetNickLimit = existing?.limits.max_nick_bytes;
+      const nickLim = computeRrcByteLimitStatus(nickname, targetNickLimit);
+      if (nickLim?.phase === 'overMax') {
+        setError(t('rrc.nickLimit.overMax', { limit: nickLim.limit }), target);
+        return;
+      }
       // Already tracked and connecting/active — just bring it into focus, never re-connect.
       if (existing && isRrcHubLinked(existing.status)) {
         if (wantFocus) setFocusedHub(target);
@@ -633,7 +636,7 @@ export default function RrcPanel({
         }
       }
     },
-    [limits.max_nick_bytes, nickname, setDisconnectIntent, setError, setFocusedHub, t],
+    [nickname, setDisconnectIntent, setError, setFocusedHub, t],
   );
 
   // Batch-connect hubs marked for auto-join when the Reticulum stack is up.
@@ -811,7 +814,9 @@ export default function RrcPanel({
           if (parsed.command === 'nick') {
             const nickLim = computeRrcByteLimitStatus(parsed.nickname, limits.max_nick_bytes);
             if (nickLim?.phase === 'overMax') {
-              throw new Error(t('rrc.nickLimit.overMax', { limit: nickLim.limit }));
+              throw new RrcComposerPreflightError(
+                t('rrc.nickLimit.overMax', { limit: nickLim.limit }),
+              );
             }
             setNickname(parsed.nickname);
             try {
@@ -853,7 +858,9 @@ export default function RrcPanel({
           if (parsed.command === 'join') {
             const roomLim = computeRrcByteLimitStatus(parsed.room, limits.max_room_name_bytes);
             if (roomLim?.phase === 'overMax') {
-              throw new Error(t('rrc.roomNameLimit.overMax', { limit: roomLim.limit }));
+              throw new RrcComposerPreflightError(
+                t('rrc.roomNameLimit.overMax', { limit: roomLim.limit }),
+              );
             }
             await joinRoom(parsed.room, parsed.key);
             return;
@@ -870,6 +877,15 @@ export default function RrcPanel({
             if (!activeRoom || activeRoom.startsWith('[') || isRrcDmRoom(activeRoom)) {
               useRrcSessionStore.getState().setError(t('rrc.joinRoomPrompt'));
               return;
+            }
+            const bodyLim = computeRrcByteLimitStatus(
+              parsed.action,
+              resolveRrcMsgBodyLimit(limits.max_msg_body_bytes),
+            );
+            if (bodyLim?.phase === 'overMax') {
+              throw new RrcComposerPreflightError(
+                t('rrc.byteLimit.overMax', { limit: bodyLim.limit }),
+              );
             }
             const res = await rrcSendBounded({
               hub_dest_hash: hubDestHash,
@@ -898,6 +914,15 @@ export default function RrcPanel({
             if (resolved?.identity_hash.length !== 32) {
               useRrcSessionStore.getState().setError(t('rrc.slash.msgTargetNotFound'));
               return;
+            }
+            const bodyLim = computeRrcByteLimitStatus(
+              parsed.text,
+              resolveRrcMsgBodyLimit(limits.max_msg_body_bytes),
+            );
+            if (bodyLim?.phase === 'overMax') {
+              throw new RrcComposerPreflightError(
+                t('rrc.byteLimit.overMax', { limit: bodyLim.limit }),
+              );
             }
             const res = await rrcSendBounded({
               hub_dest_hash: hubDestHash,
@@ -1039,6 +1064,8 @@ export default function RrcPanel({
           return;
         }
       } catch (e) {
+        // Keep the draft: ChatComposer only clears after onInterceptSend resolves.
+        if (e instanceof RrcComposerPreflightError) throw e;
         console.warn('[RrcPanel] send ' + errLikeToLogString(e));
         useRrcSessionStore.getState().setError(formatRrcErrorMessage(errLikeToLogString(e), t));
       }
@@ -1054,6 +1081,7 @@ export default function RrcPanel({
       handlePart,
       hubDestHash,
       joinRoom,
+      limits.max_msg_body_bytes,
       limits.max_nick_bytes,
       limits.max_room_name_bytes,
       localIdentityHash,

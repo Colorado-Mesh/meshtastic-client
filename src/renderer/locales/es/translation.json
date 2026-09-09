@@ -5366,7 +5366,8 @@
     "addressChoiceNomad": "Página Nomad",
     "addressChoiceDm": "Mensaje directo",
     "byteLimit": {
-      "approaching": "{{count}} / {{limit}}"
+      "approaching": "{{count}} / {{limit}}",
+      "overMax": "El mensaje es demasiado largo: el límite del concentrador es de {{limit}} bytes"
     },
     "nickLimit": {
       "overMax": "Apodo demasiado largo: el límite del concentrador es {{limit}} bytes"

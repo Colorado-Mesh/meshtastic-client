@@ -5366,7 +5366,8 @@
     "addressChoiceNomad": "Nomad 页面",
     "addressChoiceDm": "私信",
     "byteLimit": {
-      "approaching": "{{count}}/{{limit}}"
+      "approaching": "{{count}}/{{limit}}",
+      "overMax": "消息太长—集线器限制为{{limit}}字节"
     },
     "nickLimit": {
       "overMax": "昵称太长—集线器限制为{{limit}}字节"

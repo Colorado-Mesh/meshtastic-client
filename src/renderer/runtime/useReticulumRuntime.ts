@@ -1069,9 +1069,8 @@ export function useReticulumRuntime(): ProtocolRuntime {
             hubDestHash,
           );
         }
-        if (p.limits) {
-          useRrcSessionStore.getState().setLimits(parseRrcHubLimits(p.limits), hubDestHash);
-        }
+        // Always apply: absent WELCOME limits normalize to {} and clear stale caps.
+        useRrcSessionStore.getState().setLimits(parseRrcHubLimits(p.limits), hubDestHash);
         if (st === 'active' && hubDestHash && p.hub_name) {
           useRrcHubStore.getState().applyWelcomeName(hubDestHash, p.hub_name);
         }
@@ -1096,7 +1095,7 @@ export function useReticulumRuntime(): ProtocolRuntime {
                 hubDestHash,
               );
             }
-            if (sessionSnap?.limits) {
+            if (sessionSnap) {
               useRrcSessionStore
                 .getState()
                 .setLimits(parseRrcHubLimits(sessionSnap.limits), hubDestHash);
