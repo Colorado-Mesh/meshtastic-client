@@ -68,7 +68,7 @@ jobs:
         env:
           WORKSPACE_ROOT: ${{ github.workspace }}/.rsstack
           # Keep in sync with reticulum-sidecar.yaml / ratspeak-stack-ci-pins.env.
-          RS_RETICULUM_REF: 36456230cc29be5722c6f57c95f52c3b655e97f6
+          RS_RETICULUM_REF: 90774570eae7498554b4809d9203765368c5bbed
           RS_LXMF_REF: c3d8b44942e7726dbbe6bb53e0976d4c72134119
         run: bash scripts/clone-ratspeak-stack.sh
 
