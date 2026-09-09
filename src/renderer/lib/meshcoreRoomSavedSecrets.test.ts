@@ -4,6 +4,7 @@ import { mergeAppSetting } from './appSettingsStorage';
 import {
   getMeshcoreRoomAutoLoginFailure,
   setMeshcoreRoomAutoLoginFailure,
+  shouldSkipMeshcoreRoomAutoLogin,
 } from './meshcoreRoomAutoLoginFailure';
 import {
   getMeshcoreRoomCredential,
@@ -119,6 +120,22 @@ describe('meshcoreRoomSavedSecrets', () => {
     expect(cfg.enabled).toBe(true);
     expect(cfg.autoLoginOnConnect).toBe(true);
     expect(getMeshcoreRoomAutoLoginFailure(0x16)).toBe('timeout');
+    expect(shouldSkipMeshcoreRoomAutoLogin(0x16)).toBe(false);
+  });
+
+  it('applyMeshcoreRoomLoginFailure sticky-skips only on auth errors', async () => {
+    await setMeshcoreRoomSyncConfig(0x17, {
+      enabled: true,
+      intervalMinutes: 60,
+      autoLoginOnConnect: true,
+    });
+    await applyMeshcoreRoomLoginFailure(
+      0x17,
+      new Error('room login rejected (wrong password or ACL denied)'),
+      'test',
+    );
+    expect(shouldSkipMeshcoreRoomAutoLogin(0x17)).toBe(true);
+    expect(getMeshcoreRoomSyncConfig(0x17).autoLoginOnConnect).toBe(false);
   });
 
   it('disableMeshcoreRoomLoginAfterAuthFailure disables sync but keeps credential and failure', async () => {

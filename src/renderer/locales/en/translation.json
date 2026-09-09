@@ -115,6 +115,9 @@
     "floodAdvertEvery12h": "Every 12 hours",
     "floodAdvertEvery24h": "Every 24 hours",
     "gpsSection": "GPS / Location",
+    "shareMyLocation": "Share my location",
+    "shareMyLocationHint": "When enabled, this app may look up your location on this computer and send it over Meshtastic, MeshCore, or Reticulum (chat share, radio push, RMAP). When disabled, host GPS lookups and app sending are off; static coordinates still work for your local map only. A radio with its own GPS may still show your position locally. Device firmware may still broadcast until you adjust Radio or Modules settings.",
+    "shareMyLocationOffInfo": "Location sharing is off — host GPS refresh and mesh sending are disabled. Enable Share my location above to use auto-refresh or send your position.",
     "latLabel": "Lat:",
     "lonLabel": "Lon:",
     "gpsSourceDevice": "Device GPS: {{coords}}",
@@ -139,6 +142,22 @@
     "mapFilterDesc": "Hides nodes beyond a set distance from your device. Filtering is display-only — nodes remain in the database.",
     "noGpsFix": "Your device has no GPS fix — filter is enabled but all nodes are shown.",
     "requiresGpsFix": "Note: Requires your device to have a valid GPS fix.",
+    "reticulumBlocklist": {
+      "title": "Blocked contacts",
+      "description": "Blocked senders are dropped before their LXMF messages reach your inbox. Export the list to move it to another install, or import a list to block many senders at once.",
+      "exportButton": "Export blocklist",
+      "exportAria": "Export blocked contacts",
+      "importButton": "Import blocklist",
+      "importAria": "Import blocked contacts",
+      "exportOk": "Exported {{count}} blocked contacts",
+      "exportEmpty": "There are no blocked contacts to export.",
+      "exportFailed": "Could not export the blocklist.",
+      "importOk": "Imported {{imported}} blocked contacts ({{skipped}} skipped)",
+      "importFailed": "Could not import the blocklist.",
+      "unblockAria": "Unblock {{hash}}",
+      "unblockFailed": "Could not unblock that contact.",
+      "empty": "No blocked contacts."
+    },
     "dataManagementSection": "Data Management",
     "dataManagementDesc": "Export your local database (messages & nodes) as a .db file, or import/merge another user's database into yours.",
     "supportSection": "Support / Bug reports",
@@ -267,6 +286,12 @@
     "reduceMotionDesc": "Disables animated icons and decorative effects. Loading spinners and connection status indicators still animate.",
     "use24HourTime": "Use 24-hour time",
     "use24HourTimeDesc": "Force clocks like chat timestamps to 24-hour format. When off, follows your system locale.",
+    "fontSize": "Font size",
+    "fontSizeDesc": "Adjust text size across the app. Maps, charts, and the terminal are not affected.",
+    "decreaseFontSize": "Decrease font size",
+    "increaseFontSize": "Increase font size",
+    "resetFontSize": "Reset",
+    "resetFontSizeAria": "Reset font size",
     "storeForwardAutoFetchHistory": "Automatically fetch Store & Forward chat history on connect",
     "storeForwardAutoFetchHistoryHint": "On RF connect, request chat history with the selected catch-up profile. Turn off if your gateway MQTT bridge is overloaded.",
     "storeForwardHistoryProfileLabel": "Store & Forward catch-up profile",
@@ -494,9 +519,22 @@
     "sentViaTcp": "Sent via TCP",
     "sentViaNetwork": "Sent via network",
     "sentViaMultiple": "Sent via {{vias}}",
+    "heardByRepeaters_one": "Heard by {{count}}",
+    "heardByRepeaters_other": "Heard by {{count}}",
+    "heardByRepeatersDetail_one": "Heard by {{count}}: {{names}}",
+    "heardByRepeatersDetail_other": "Heard by {{count}}: {{names}}",
+    "heardByRepeatersAdditional_one": "{{count}} additional unidentified forwarder (hashes: {{hashes}})",
+    "heardByRepeatersAdditional_other": "{{count}} additional unidentified forwarders (hashes: {{hashes}})",
+    "heardByRepeaterNodeFallback": "Node {{nodeId}}",
+    "heardByNetwork": "Heard by network",
+    "notHeardTimeout": "Not heard (timeout)",
+    "routeRelaysPredicted": "Route: ~{{count}} relays via {{hop}}",
+    "routeRelaysPredictedHopsOnly": "Route: ~{{count}} relays",
+    "routeViaPredicted": "Route: via {{hop}}",
     "reticulumSendSending": "Sending…",
+    "reticulumSendAwaitingPeerReceipt": "Sent (awaiting peer receipt)",
     "reticulumSendPropagated": "Queued at propagation node",
-    "reticulumSendStoredAtPn": "Stored at propagation node",
+    "reticulumSendStoredAtPn": "Stored at propagation node (not yet delivered to peer)",
     "reticulumSendStoringLocally": "Saving to your local propagation inbox…",
     "reticulumSendStoredLocally": "Kept in your local propagation inbox (not delivered to peer)",
     "reticulumPnAbbrev": "PN",
@@ -505,6 +543,7 @@
     "reticulumSendPaperTooltip": "Shared as an encrypted LXMF paper message (QR / lxm:// link)",
     "reticulumSendFailed": "Failed to send",
     "reticulumNoPropagationNode": "No propagation node configured. Set a preferred propagation node on the Reticulum Network tab.",
+    "reticulumChatNeedsLxmfDelivery": "This peer has no LXMF delivery address yet (Chat cannot use a Voice-only destination). Wait for an LXMF announce, or paste their 32-character LXMF hash.",
     "reticulumSendTimeout": "Send timed out. The Reticulum stack may be starting or busy — try again.",
     "sentViaPropagation": "Propagation node",
     "sentViaLocalPropagation": "Local propagation inbox",
@@ -790,53 +829,9 @@
     "staleLoss": "Connection may be lost — no data received recently",
     "reconnect": "Reconnect",
     "reconnectingAttempt": "Reconnecting… attempt {{attempt}}/{{max}}",
-    "serialReselect": "USB serial connection lost — select your device again",
+    "serialReselect": "USB serial connection lost — reselect the port, or power-cycle the radio if it still will not connect",
     "serialReselectAction": "Select serial port",
     "statusRegion": "Connection status"
-  },
-  "reticulumVoice": {
-    "call": "Call",
-    "answer": "Answer",
-    "reject": "Reject",
-    "incomingTitle": "Incoming voice call",
-    "inCall": "In call",
-    "connecting": "Connecting…",
-    "ringing": "Ringing…",
-    "callAria": "Start LXST voice call",
-    "answerAria": "Answer voice call",
-    "rejectAria": "Reject voice call",
-    "hangupAria": "Hang up voice call",
-    "muteAria": "Mute microphone",
-    "unmuteAria": "Unmute microphone",
-    "elapsedAria": "Call elapsed time {{time}}",
-    "txAria": "Transmitted voice frames {{count}}",
-    "rxAria": "Received voice frames {{count}}",
-    "statsSeparator": "·",
-    "txFrames": "TX {{count}}",
-    "txPackets": "pkt {{count}}",
-    "rxFrames": "RX {{count}}",
-    "capabilityHeard": "LXST telephony announce heard for this peer",
-    "capabilityUnknown": "LXST telephony announce not heard yet (call may still work)",
-    "capabilityHeardShort": "LXST",
-    "capabilityUnknownShort": "?",
-    "help": {
-      "interop": "LXST voice needs a peer running LXST telephony (Sideband, Ratspeak, or mesh-client). Not a voice-note clip. Python LXST is the reference; rsLXST is experimental."
-    },
-    "toast": {
-      "busy": "Line busy.",
-      "connectFailed": "Could not connect.",
-      "rejected": "Call rejected.",
-      "noAnswer": "No answer — call timed out.",
-      "failed": "Voice call failed."
-    },
-    "errors": {
-      "noIdentity": "Cannot call: peer identity not known yet. Wait for an announce or probe the peer.",
-      "callFailed": "Voice call failed.",
-      "callInProgress": "A voice call is already in progress.",
-      "notRunning": "Voice is not available until the Reticulum stack is running.",
-      "micFailed": "Could not access the microphone for voice.",
-      "muteFailed": "Could not update microphone mute on the voice session."
-    }
   },
   "connectionPanel": {
     "maxReconnectAttempts": "Max MQTT reconnect attempts",
@@ -949,6 +944,7 @@
     "reticulumStackHint": "Start the local Reticulum/LXMF sidecar before creating an identity on the Network tab.",
     "reticulumStartStack": "Start stack",
     "reticulumStopStack": "Stop stack",
+    "reticulumAutoResendOnAnnounce": "Retry failed messages when a peer announces",
     "reticulumAutostart": "Auto-start stack when opening Connection",
     "reticulumStackRunning": "Stack running",
     "reticulumStackRunningAs": "Running — {{name}}",
@@ -1049,6 +1045,8 @@
       "replaceIdentityConfirmAction": "Replace identity",
       "mnemonic": "Write down this phrase and store it safely.",
       "confirmSaved": "I have saved my recovery phrase",
+      "identityHashLabel": "Identity hash:",
+      "copyIdentityHash": "Copy identity hash",
       "hashLabel": "LXMF hash:",
       "copyLxmfHash": "Copy LXMF hash",
       "saveDisplayName": "Save display name",
@@ -1235,6 +1233,7 @@
       "showPassphrase": "Show passphrase",
       "hidePassphrase": "Hide passphrase",
       "flowControl": "Flow control (TX ready-gate)",
+      "flowControlBleHint": "On Bluetooth, the radio often never sends CMD_READY. Mesh-Client still paces TX (waits briefly for READY, then continues) so flow control reduces overload without freezing the queue.",
       "advanced": "Advanced",
       "advancedHint": "Additional key=value pairs for this interface, one per line. Known fields (host, mode, network name, …) stay in the form above.",
       "advancedAria": "Advanced interface key-value options",
@@ -1289,12 +1288,42 @@
         "rnodeBle": "LoRa mesh via Bluetooth RNode.",
         "rnodeWifi": "LoRa mesh via RNode Wi-Fi (tcp:// host).",
         "blePeer": "BLE peer mesh using seed peer addresses.",
-        "generic": "Reticulum network interface."
+        "generic": "Reticulum network interface.",
+        "serial": "Generic serial link to a TNC, modem, or another host over a wire. Set the line parameters to match the far end.",
+        "ax25kiss": "AX.25 packet radio through a KISS TNC. Requires your callsign and an SSID (0-15) identifying this station.",
+        "local": "Shared-instance socket on this machine. Other local tools (rnsd, Nomad Network, rnsh) can attach to this stack through it. The socket path is derived from this interface's name, so renaming it changes the address other tools must use."
       },
       "rfProfile": {
         "coordinated": "Coordinated regional",
         "fallback": "Global fallback",
         "legacy": "Legacy presets"
+      },
+      "advancedFields": "Advanced settings",
+      "fieldRequired": "This field is required.",
+      "fieldNotANumber": "Enter a whole number (digits only).",
+      "fieldOutOfRange": "Value is out of the allowed range.",
+      "fieldTooLong": "Value is too long.",
+      "fieldInvalidOption": "Unsupported value.",
+      "field": {
+        "port": "Port",
+        "speed": "Speed (baud)",
+        "databits": "Data bits",
+        "parity": "Parity",
+        "stopbits": "Stop bits",
+        "callsign": "Callsign",
+        "ssid": "SSID",
+        "flow_control": "Flow control",
+        "preamble": "Preamble (ms)",
+        "txtail": "TX tail (ms)",
+        "persistence": "Persistence",
+        "slottime": "Slot time (ms)"
+      },
+      "fieldOption": {
+        "parity": {
+          "N": "None",
+          "E": "Even",
+          "O": "Odd"
+        }
       }
     },
     "reticulumRmap": {
@@ -1491,6 +1520,8 @@
     "confirmDeleteButton": "Delete?",
     "cancelDelete": "Cancel delete",
     "newGroupNamePlaceholder": "New group name…",
+    "needSelfNode": "Connect a radio first so your node ID is known before creating a contact group.",
+    "failedCreateGroup": "Failed to create group: {{message}}",
     "manageMembers": "Manage members",
     "manageMembersOf": "Manage members of {{name}}",
     "rename": "Rename",
@@ -2007,7 +2038,8 @@
     "sessionRowAria": "{{app}} game with {{peer}}",
     "apps": {
       "ttt": "Tic-Tac-Toe",
-      "chess": "Chess"
+      "chess": "Chess",
+      "four_in_a_row": "Four in a Row"
     },
     "status": {
       "pending": "Pending",
@@ -2074,6 +2106,19 @@
       "cellEmptyAria": "Cell {{index}}, empty",
       "cellOccupiedAria": "Cell {{index}}, {{marker}}"
     },
+    "fourInARow": {
+      "youWon": "You won!",
+      "opponentWon": "Opponent won.",
+      "draw": "Draw.",
+      "yourTurn": "Your turn",
+      "opponentTurn": "Opponent's turn",
+      "yourMarker": "You are {{marker}}",
+      "moveCount": "{{count}} moves",
+      "boardAria": "Four in a Row board",
+      "columnAria": "Column {{column}}, bottom to top: {{contents}}. Drop here",
+      "columnFullAria": "Column {{column}}, bottom to top: {{contents}}. Full",
+      "columnEmptyContents": "empty"
+    },
     "chess": {
       "youWon": "You won!",
       "opponentWon": "Opponent won.",
@@ -2116,6 +2161,13 @@
       "sessionExpired": "This game expired after a period of inactivity and can no longer be played. Use Delete session to remove it."
     }
   },
+  "gpxExport": {
+    "button": "Export GPX",
+    "buttonAria": "Export position history as GPX",
+    "success": "GPX exported",
+    "failed": "GPX export failed",
+    "empty": "No position history to export"
+  },
   "identityVault": {
     "title": "Identity vault",
     "hint": "Optionally encrypt a local vault secret with a passcode (minimum 8 characters). This does not replace exporting a portable .rsi or raw identity file.",
@@ -2145,7 +2197,14 @@
     "recommendationsHeading": "Recommendations",
     "lastMessagePrefix": "Last:",
     "appliesToCategories": "Applies to: {{labels}}",
-    "severityInfo": "Info"
+    "severityInfo": "Info",
+    "historyNote": "Findings describe events in this log, not necessarily problems that are still active.",
+    "copyReport": "Copy troubleshooting report",
+    "copyHint": "Includes sample log messages. Review the report for private details before sharing.",
+    "copySuccess": "Report copied",
+    "copyFailure": "Could not copy the report. Try again or export the log.",
+    "evidence": "View evidence for {{category}}",
+    "evidenceShown": "Showing {{shown}} of {{total}} matching entries, newest first."
   },
   "logAnalyzer": {
     "categories": {
@@ -2222,7 +2281,8 @@
         "recommendation": "Store & Forward chat history could not be requested from a router (often a brief race with other radio traffic). If chat backlog stays empty, reconnect or wait for the next router heartbeat."
       },
       "serial-reconnect": {
-        "label": "USB Serial Reconnect"
+        "label": "USB Serial Reconnect",
+        "recommendation": "The USB serial port could not be reopened or its previous stream is still locked. Close other apps using the radio, reconnect the cable, and reconnect in the app. If it repeats, include the serial log lines in a bug report."
       },
       "sdk-meshtastic": {
         "label": "Meshtastic SDK Warnings/Errors",
@@ -2235,6 +2295,38 @@
       "reticulum-nomad-hosting": {
         "label": "Nomad Page Hosting Issues",
         "recommendation": "Nomad My Pages hosting failed or the content folder is unavailable. Open Nomad Network → My Pages, re-choose the pages folder if it moved, then Start serving. Details appear as [nomad-serving] / [NomadHosting] in the log."
+      },
+      "renderer-unresponsive": {
+        "label": "App stopped responding",
+        "recommendation": "The app stopped sending UI heartbeats. If it has recovered, note what you were doing near the listed time. If it remains frozen, restart the app and include this report when reporting a recurring hang."
+      },
+      "database-persistence": {
+        "label": "Changes could not be saved",
+        "recommendation": "Database writes exhausted their retries or were dropped. Changes visible in this session may not survive a restart. Export important data before quitting, then check free disk space and access to the app data folder. Do not delete the database."
+      },
+      "meshtastic-tcp": {
+        "label": "Meshtastic TCP connection failed",
+        "recommendation": "The TCP connection to the Meshtastic radio failed. Check the radio address and port, local network reachability, and whether another client is using the connection before reconnecting."
+      },
+      "reticulum-sidecar": {
+        "label": "Reticulum service interrupted",
+        "recommendation": "The local Reticulum service failed to start, respond, or maintain its event connection. Check its status in Connection and the log lines below. If it has not recovered, restart the Reticulum connection. A missing packaged sidecar may require reinstalling the app."
+      },
+      "reticulum-delivery": {
+        "label": "Reticulum delivery or sync failed",
+        "recommendation": "A message delivery or propagation sync attempt failed. Check the current message status before retrying, probe the destination, and check enabled interfaces. For propagation, check the selected node and sync status under Network; a stored message is not proof of recipient delivery."
+      },
+      "reticulum-backpressure": {
+        "label": "Reticulum events or packets dropped",
+        "recommendation": "The local Reticulum service dropped events or packets because a queue filled, a subscriber fell behind, or a payload exceeded a limit. Reduce concurrent bulk transfers, then check message status before retrying. Repeated drops while idle are worth reporting with these log samples."
+      },
+      "firmware-flash": {
+        "label": "Firmware transfer stalled",
+        "recommendation": "The firmware transfer stopped making progress and its serial port was closed. Confirm the correct firmware and device, check the USB cable, and follow the device recovery or bootloader instructions before retrying."
+      },
+      "unclassified": {
+        "label": "Other warnings and errors",
+        "recommendation": "These log lines do not match a known diagnosis and may include expected recovery messages. Review their timestamps and surrounding context. If a problem persists, export the full log with this report."
       }
     },
     "recommendationGroups": {
@@ -2268,6 +2360,12 @@
     "narrowLogPanel": "Narrow log panel",
     "widenLogPanel": "Widen log panel",
     "clearFailed": "Could not clear log"
+  },
+  "longSession": {
+    "title": "Restart recommended",
+    "body": "mesh-client has been running for four days with Bluetooth radio connected. Restart the app to reduce the risk of crashes on long Noble BLE sessions.",
+    "restart": "Restart",
+    "dismiss": "Dismiss"
   },
   "mapPanel": {
     "locationUnavailable": "Location unavailable.",
@@ -2304,12 +2402,6 @@
     "extraRfReceptions": "extra RF receptions",
     "originatorPacket": "packet",
     "originatorPackets": "packets"
-  },
-  "meshcoreRoute": {
-    "me": "● Me",
-    "direct": "Direct",
-    "segmentTooltip": "Path hash {{hex}}",
-    "segmentResolvedTooltip": "{{hex}} → {{name}}"
   },
   "meshcore": {
     "errors": {
@@ -2395,6 +2487,9 @@
     "maxHopsHelp": "Only auto-add if the advert path has at most this many hops. Leave blank for no limit. (0–{{uiMax}}; device may clamp to {{wireMax}}.)",
     "maxHopsInvalid": "Enter a whole number from 0 to 63, or leave blank for no limit.",
     "contactsListAppHeading": "Contacts list (app)",
+    "autoOffloadWhenFull": "Auto-offload when radio is full",
+    "autoOffloadWhenFullLabel": "Auto-offload when full",
+    "autoOffloadWhenFullDesc": "When the companion reports contacts storage is full, automatically offload contacts to the app database (same as Offload).",
     "showRefreshLabel": "Show refresh control",
     "showRefreshDesc": "Show a refresh button on the Contacts tab (desktop substitute for pull-to-refresh).",
     "showPublicKeysLabel": "Show public keys",
@@ -2404,6 +2499,12 @@
     "clearingContacts": "Clearing…",
     "clearAllContactsButton": "Clear all contacts",
     "noLimitPlaceholder": "No limit"
+  },
+  "meshcoreRoute": {
+    "me": "● Me",
+    "direct": "Direct",
+    "segmentTooltip": "Path hash {{hex}}",
+    "segmentResolvedTooltip": "{{hex}} → {{name}}"
   },
   "meshcoreTelemetryPrivacy": {
     "summary": "Telemetry privacy",
@@ -2867,6 +2968,18 @@
       "save": "Save stack settings",
       "saveFailed": "Failed to save stack settings."
     },
+    "reticulumPathTable": {
+      "title": "Path table",
+      "description": "Clearing the path table drops every cached route. Routes are relearned as new announces arrive, so the first message to a peer may take longer.",
+      "clear": "Clear path table",
+      "clearAria": "Clear the path table",
+      "clearing": "Clearing...",
+      "confirmTitle": "Clear path table?",
+      "confirmBody": "Every cached route is dropped. Routes are rebuilt from new announces.",
+      "confirmAction": "Clear",
+      "clearOk": "Path table cleared ({{count}} routes dropped)",
+      "clearFailed": "Could not clear the path table."
+    },
     "reticulumPnHosting": {
       "title": "Advanced PN hosting (danger zone)",
       "warning": "These settings control local propagation-node hosting, autopeer, PoW costs, and Sync refusal for high-cost remotes. Misconfiguration can burn CPU, fill disk, or accept many peers.",
@@ -3121,7 +3234,11 @@
     "recvFloodDirectLabel": "Recv (Flood / Direct)",
     "totalSentLabel": "Total Sent",
     "totalRecvLabel": "Total Recv",
-    "rxErrorsLabel": "RX Errors"
+    "rxErrorsLabel": "RX Errors",
+    "xeddsaSigned": "XEdDSA signed",
+    "xeddsaSignedHint": "The radio has verified an XEdDSA signature from this node, so its public key is cryptographically attested.",
+    "keyManuallyVerified": "Key verified",
+    "keyManuallyVerifiedHint": "This node's public key was manually confirmed by an operator."
   },
   "nodeInfoBody": {
     "longName": "Long Name",
@@ -3301,142 +3418,6 @@
     "offlineBody": "Last heard: {{time}}",
     "unknown": "unknown"
   },
-  "rrc": {
-    "hubsTitle": "RRC Hubs",
-    "hubs": {
-      "favourites": "Favourites",
-      "discovered": "Discovered"
-    },
-    "noFavouriteHubs": "No favourite RRC hubs yet. Star a hub from Discovered or after connecting by hash.",
-    "searchHubs": "Search hubs…",
-    "searchRooms": "Search rooms…",
-    "nickname": "Nickname",
-    "refreshHubs": "Refresh hubs",
-    "expandSidebar": "Expand hub list",
-    "collapseSidebar": "Collapse hub list",
-    "expandRooms": "Expand room list",
-    "collapseRooms": "Collapse room list",
-    "expandMembers": "Expand members list",
-    "collapseMembers": "Collapse members list",
-    "manualHashPlaceholder": "Hub destination hash (32 hex)",
-    "connectManual": "Connect to hash",
-    "invalidHubHash": "Enter a valid 32-character hex destination hash.",
-    "connectFailed": "Could not connect to RRC hub.",
-    "disconnectFailed": "Could not disconnect from RRC hub.",
-    "maxHubsConnected": "You can stay connected to at most 8 RRC hubs. Disconnect one first.",
-    "enableHubAutoJoin": "Turn on hub auto-join",
-    "disableHubAutoJoin": "Turn off hub auto-join",
-    "hubAutoJoinOnHint": "Auto-join on — click to turn off",
-    "hubAutoJoinOffHint": "Auto-join off — click to connect this hub when the stack starts",
-    "hubLegend": "● connected · ◌ connecting · ◐ auto-join on · ○ idle · A toggles auto-join",
-    "hubMarker": {
-      "connected": "Connected",
-      "connecting": "Connecting",
-      "autoJoin": "Auto-join enabled",
-      "idle": "Not connected"
-    },
-    "joinFailed": "Could not join room.",
-    "partFailed": "Could not leave room.",
-    "sendFailed": "Could not send message.",
-    "stackNotReady": "Reticulum stack is not ready yet. Wait until connected, then try again.",
-    "sidecarNotRunning": "Reticulum sidecar is not running. Start the stack on Connection, then try again.",
-    "selectHub": "Select hub {{name}}",
-    "selectHubUnread": "Select hub {{name}}, {{marker}}, {{count}} unread",
-    "selectHubPrompt": "Select an RRC hub to connect.",
-    "favoriteHub": "Favourite hub",
-    "unfavoriteHub": "Remove hub favourite",
-    "hopsAway_one": "{{count}} hop away",
-    "hopsAway_other": "{{count}} hops away",
-    "noDiscoveredHubs": "No live RRC hubs discovered yet. Keep the stack running to listen for announces.",
-    "rooms": "Rooms",
-    "joinedRooms": "Joined",
-    "listedRooms": "Listed",
-    "recentRooms": "Recent",
-    "joinRoom": "Room name",
-    "roomKeyOptional": "Room key (optional)",
-    "join": "Join room",
-    "joinRoomPrompt": "Join a room to start chatting.",
-    "joinRoomHelp": "Rooms are live groups on this hub. Join by name, try Listed, or type /list and /help.",
-    "listHint": "Tip: /list shows registered public rooms on rrcd hubs. /help for commands.",
-    "refreshRoomList": "Refresh room list (/list)",
-    "favoriteRoom": "Favourite room",
-    "unfavoriteRoom": "Remove room favourite",
-    "enableAutoJoin": "Turn on room auto-join",
-    "disableAutoJoin": "Turn off room auto-join",
-    "roomAutoJoinOnHint": "Auto-join on — click to turn off",
-    "roomAutoJoinOffHint": "Auto-join off — click to join this room when the hub connects",
-    "roomLegend": "★ favourite · A toggles auto-join",
-    "noRoomsJoined": "No rooms joined yet.",
-    "noTopic": "No topic set",
-    "memberCount_one": "{{count}} member",
-    "memberCount_other": "{{count}} members",
-    "userCount_one": "{{count}} user",
-    "userCount_other": "{{count}} users",
-    "selectRoom": "Open room {{name}}",
-    "leaveRoom": "Leave room",
-    "clearHistory": "Clear history",
-    "clearHistoryTitle": "Clear room history",
-    "clearHistoryConfirm": "Delete all saved message history for {{room}}? This cannot be undone.",
-    "clearHistoryConfirmAction": "Delete history",
-    "disconnect": "Disconnect",
-    "cancelConnect": "Cancel",
-    "toggleTimestamps": "Toggle timestamps",
-    "muteRoom": "Mute room",
-    "unmuteRoom": "Unmute room",
-    "members": "Members",
-    "refreshWho": "Refresh members (/who)",
-    "msgNick": "Message {{name}}",
-    "noMembers": "No member list from hub.",
-    "copyMessage": "Copy message",
-    "jumpToLatest": "Jump to Latest",
-    "messagePlaceholder": "Message or /command…",
-    "whisperReplyPlaceholder": "Reply to {{name}} or /msg…",
-    "send": "Send",
-    "dismissBanner": "Dismiss notice",
-    "directNoticeUnsupported": "This hub does not support direct NOTICE (/msg).",
-    "capDirectNotice": "direct msg",
-    "errors": {
-      "linkProofTimeout": "Timed out waiting for the hub link (link proof). Try again, or check path/hops to the hub.",
-      "pathTimeout": "Could not find a path to the hub. Wait for a fresher announce, then reconnect.",
-      "welcomeTimeout": "Connected but the hub did not send WELCOME in time. Try again.",
-      "proxyRateLimit": "Too many requests right now (proxy rate limit hit). Please wait a few moments and try again."
-    },
-    "moderation": {
-      "hubParted": "The hub parted you from the room.",
-      "removedFromRoom": "Removed from room by the hub (kick, ban, or remote part).",
-      "removedFromRoomSystem": "The hub parted you from {{room}}."
-    },
-    "slash": {
-      "helpIntro": "=== RRC help ===",
-      "helpClient": "Client commands:",
-      "helpNick": "/nick NAME — change nickname",
-      "helpJoin": "/join ROOM [key] — join a room (optional +k key)",
-      "helpPart": "/part [room] — leave room (default: active)",
-      "helpMe": "/me ACTION — send ACTION emote",
-      "helpMsg": "/msg NICK|HASH text — direct NOTICE whisper (rrcd)",
-      "helpClear": "/clear — clear local transcript for this room",
-      "helpQuit": "/quit — disconnect from hub",
-      "helpHub": "Hub commands (rrcd; sent as MSG). Current room is inserted when omitted:",
-      "helpList": "/list — list registered public rooms",
-      "helpWho": "/who [room] — list members (bare /who uses the focused room)",
-      "helpTopic": "/topic [text], /mode +m, /op NICK, /kick NICK, … — room moderation (ops; rrcd wants /cmd ROOM …)",
-      "helpNote": "Replies with no room land in the focused room. Other hubs may not support these commands.",
-      "usageNick": "Usage: /nick NAME",
-      "usageJoin": "Usage: /join ROOM [key]",
-      "usageMe": "Usage: /me ACTION",
-      "usageMsg": "Usage: /msg NICK|HASH text",
-      "msgTargetNotFound": "Could not resolve /msg target to a full identity hash. Join a room or use the full hash.",
-      "nickChanged": "Nickname set to {{name}}",
-      "commandSent": "Command sent: {{cmd}}"
-    },
-    "status": {
-      "disconnected": "Disconnected",
-      "connecting": "Connecting…",
-      "awaiting_welcome": "Waiting for hub…",
-      "active": "Connected",
-      "reconnecting": "Reconnecting…"
-    }
-  },
   "nomadNetwork": {
     "title": "Nomad Network",
     "favourites": "Favourites",
@@ -3552,7 +3533,50 @@
       "noPages": "No pages yet. Add .mu files to the chosen folder (for example index.mu).",
       "failed": "Could not update Nomad serving.",
       "previewSite": "Open in browser",
-      "previewSiteAria": "Preview this hosted Nomad site in the browser"
+      "previewSiteAria": "Preview this hosted Nomad site in the browser",
+      "newPage": "New page",
+      "newPageName": "Page filename (must end in .mu)",
+      "invalidPageName": "Enter a filename ending in .mu, without .. or absolute paths.",
+      "edit": "Edit",
+      "editPage": "Edit {{path}}",
+      "delete": "Delete",
+      "deletePage": "Delete {{path}}",
+      "deleteConfirm": "Delete this page? This removes the file from the served folder.",
+      "deleteConfirmAria": "Confirm deleting this page",
+      "deleteError": "Could not delete the page.",
+      "openError": "Could not open the page for editing.",
+      "editorTitle": "Edit Micron page",
+      "editorAria": "Micron page source",
+      "editorPreview": "Preview",
+      "toolbarAria": "Micron formatting actions",
+      "toolbar": {
+        "bold": "Bold",
+        "italic": "Italic",
+        "underline": "Underline",
+        "h1": "Heading 1",
+        "h2": "Heading 2",
+        "h3": "Heading 3",
+        "alignLeft": "Align left",
+        "alignCenter": "Center",
+        "alignRight": "Align right",
+        "divider": "Divider",
+        "link": "Link"
+      },
+      "linkTargetPrompt": "Link target (page path or destination hash)",
+      "save": "Save",
+      "saveError": "Could not save the page.",
+      "unsaved": "Unsaved changes",
+      "discard": "Discard changes",
+      "discardConfirm": "This page has unsaved changes.",
+      "discardConfirmAria": "Discard unsaved changes and close",
+      "close": "Close editor",
+      "closeBackdropAria": "Close the Micron page editor",
+      "pageTooLarge": "That page is too large to host (limit 512 KiB).",
+      "pageNotFound": "That page no longer exists in the served folder.",
+      "invalidPagePath": "That page path is not allowed.",
+      "pageIoError": "Could not read or write the page on disk.",
+      "pageNotUtf8": "That page is not valid UTF-8 text.",
+      "pageWriteFailed": "Could not write the page."
     }
   },
   "packetDistribution": {
@@ -3577,7 +3601,19 @@
   "peerDetailModal": {
     "networkSection": "Network",
     "backupPaths": "Backup paths",
-    "copyHash": "Copy destination hash",
+    "announcedDestinations": "Announced destinations",
+    "openedDestinationBadge": "Opened",
+    "copyAnnouncedHashAria": "Copy {{aspect}} destination hash {{hash}}",
+    "hashCopied": "Destination hash copied.",
+    "hashCopyFailed": "Could not copy destination hash.",
+    "aspect": {
+      "chat": "Chat",
+      "voice": "Voice",
+      "nomad": "Nomad",
+      "rrc": "RRC",
+      "propagation": "Propagation",
+      "unknown": "Unknown"
+    },
     "editNameAria": "Custom display name",
     "sendMessage": "Send message",
     "saveContact": "Save as contact",
@@ -3632,6 +3668,7 @@
   },
   "peerListPanel": {
     "heading": "Peers",
+    "pathMediumTitle": "Active path medium: {{medium}}",
     "tabPeers": "Peers",
     "tabHistory": "History",
     "tabContacts": "Contacts",
@@ -3654,6 +3691,9 @@
     "colFavorite": "Favourite",
     "toggleFavorite": "Toggle favourite",
     "openChat": "Open chat",
+    "chatNeedsLxmfDelivery": "No LXMF delivery address for this peer yet. Wait for an LXMF announce, or open Chat with their 32-character LXMF hash — Voice (lxst.telephony) destinations cannot receive Chat.",
+    "voiceAspectBadge": "Voice",
+    "voiceAspectTitle": "This path-table row is an LXST telephony destination. Chat remaps to the peer’s LXMF delivery hash when known.",
     "paths": "Paths",
     "pathsAria": "Paths · {{hash}}",
     "pathsDetailAria": "Ranked paths for {{hash}}",
@@ -3680,6 +3720,50 @@
     "groupFilterAria": "Filter contacts by group",
     "allGroups": "All groups",
     "manageGroups": "Manage groups"
+  },
+  "qrIngest": {
+    "qrImageAlt": "QR code",
+    "encodeFailed": "Could not generate QR code",
+    "paperIngested": "Paper message decrypted into Chat",
+    "paperInvalidUri": "That does not look like a valid LXMF paper link",
+    "paperDecryptFailed": "Could not decrypt paper message — is this the correct identity?",
+    "paperIdentityNotConfigured": "Reticulum identity is not ready — start the stack and configure identity first",
+    "paperIngestFailed": "Could not ingest paper message",
+    "contactImported": "Contact added from deep link",
+    "contactImportFailed": "Could not import contact from link",
+    "unknownLink": "Unrecognized link",
+    "identityShown": "Opened identity share link",
+    "channelLinkReceived": "Channel link opened — review import on the Radio tab",
+    "showIdentityQr": "Show identity QR",
+    "showIdentityQrAria": "Show QR code for this identity",
+    "chooseImage": "Scan image…",
+    "chooseImageAria": "Choose an image file containing a QR code",
+    "scanCamera": "Scan with camera",
+    "scanCameraAria": "Scan a QR code with the camera",
+    "stopCamera": "Stop camera",
+    "stopCameraAria": "Stop camera QR scan",
+    "pasteImageHint": "You can also paste a QR image here (Ctrl/Cmd+V).",
+    "cameraPreviewAria": "Camera preview for QR scanning",
+    "noQrFound": "No QR code found in that image",
+    "decodeFailed": "Could not read QR code from image",
+    "cameraDenied": "Camera permission denied — enable it in system privacy settings",
+    "cameraUnavailable": "Camera is not available on this device",
+    "confirmContactImportTitle": "Import contact?",
+    "confirmContactImportBody": "Add {{name}} from an external link to your Reticulum contacts?",
+    "confirmContactImportAction": "Import contact",
+    "confirmMeshcoreContactImportTitle": "Import MeshCore contact?",
+    "confirmMeshcoreContactImportBody": "Add {{name}} from a MeshCore contact QR to your contacts?",
+    "confirmMeshcoreContactImportAction": "Import MeshCore contact",
+    "confirmMeshcoreChannelImportTitle": "Import MeshCore channel?",
+    "confirmMeshcoreChannelImportBody": "Apply channel {{name}} from a MeshCore channel QR on the Radio tab?",
+    "confirmMeshcoreChannelImportAction": "Import channel",
+    "lxmaRegisterFailed": "Could not register contact public key (is the Reticulum stack running?)",
+    "meshcoreContactImported": "MeshCore contact added from QR",
+    "meshcoreContactImportFailed": "Could not import MeshCore contact from QR",
+    "meshcoreChannelImported": "MeshCore channel link received — review on the Radio tab",
+    "meshcoreChannelImportFailed": "Could not import MeshCore channel from QR",
+    "meshcoreChannelPrefill": "Channel details filled from QR — save to apply",
+    "meshcoreChannelNoFreeIndex": "All MeshCore channel slots are full — delete one before importing"
   },
   "radioPanel": {
     "offloadedContacts": "Offloaded {{count}} contacts to database.",
@@ -3806,62 +3890,73 @@
     "applyLoraSuccess": "LoRa settings applied successfully!",
     "importConfigJson": "Import Config JSON",
     "offloadContacts": "Offload",
+    "contactsFullAlarm": "Radio contact storage is full. Offload contacts to the app database to free slots.",
+    "contactsFullAlarmAction": "Offload",
+    "contactsFullAutoOffloadStarted": "Radio contacts full — starting auto-offload…",
     "offloading": "Offloading…",
     "offloadingProgress": "Removing {{current}} of {{total}}…",
     "offloadCancelled": "Offload cancelled.",
     "offloadCancelledPartial": "Offload cancelled after removing {{count}} contacts from radio.",
     "displayUnits": {
-      "0": {
+      "METRIC": {
         "label": "Metric"
       },
-      "1": {
+      "IMPERIAL": {
         "label": "Imperial"
       }
     },
     "deviceRoles": {
-      "0": {
+      "CLIENT": {
         "label": "Client",
         "description": "Normal client mode"
       },
-      "1": {
+      "CLIENT_MUTE": {
         "label": "Client Mute",
-        "description": "Client that does not transmit"
+        "description": "Client that does not forward packets. Applying this role also disables GPS broadcasts and map report on the device."
       },
-      "2": {
+      "ROUTER": {
         "label": "Router",
         "description": "Dedicated router/repeater"
       },
-      "3": {
+      "ROUTER_CLIENT": {
         "label": "Router Client",
-        "description": "Router + client mode"
+        "description": "Router + client mode. Deprecated in firmware 2.3.15 — use Router or Client."
       },
-      "4": {
-        "label": "Client Base",
-        "description": "Base station for client devices"
+      "REPEATER": {
+        "label": "Repeater",
+        "description": "Rebroadcasts packets without originating any. Deprecated in firmware 2.7.11 — creates holes in the rebroadcast chain."
       },
-      "5": {
+      "TRACKER": {
         "label": "Tracker",
         "description": "GPS tracker only"
       },
-      "6": {
+      "SENSOR": {
         "label": "Sensor",
         "description": "Telemetry sensor node"
       },
-      "7": {
+      "TAK": {
         "label": "TAK",
         "description": "TAK-enabled device"
       },
-      "8": {
+      "CLIENT_HIDDEN": {
         "label": "Client Hidden",
         "description": "Client, hidden from node list"
       },
-      "9": {
+      "LOST_AND_FOUND": {
         "label": "Lost and Found",
         "description": "Broadcasts position for recovery"
       },
-      "10": {
+      "TAK_TRACKER": {
         "label": "TAK Tracker",
         "description": "TAK tracker mode"
+      },
+      "ROUTER_LATE": {
+        "label": "Router Late",
+        "description": "Router that rebroadcasts only after other nodes have had a chance, for dense mesh cores."
+      },
+      "CLIENT_BASE": {
+        "label": "Client Base",
+        "description": "Base station for client devices"
       }
     },
     "contactsOnRadioBadgeTitle": "{{part}} contacts on radio",
@@ -3968,6 +4063,8 @@
     "meshcoreGenerateRandomKey": "Generate random",
     "meshcoreChannelNameLabel": "Name",
     "meshcoreChannel": {
+      "privateChannel": "Private channel (enter key)",
+      "privateKeyHint": "Enter the shared channel key: exactly 32 hexadecimal characters (16 bytes), not all zeros.",
       "defaultName": "Channel {{index}}",
       "addTitle": "Add Channel",
       "editTitle": "Edit Channel {{index}}",
@@ -3996,109 +4093,196 @@
     "tzdefDesc": "POSIX timezone string e.g. EST5EDT,M3.2.0,M11.1.0. See https://github.com/nayarsystems/posix_tz_db for a reference list.",
     "tzdefPlaceholder": "e.g. EST5EDT,M3.2.0,M11.1.0",
     "regions": {
-      "0": {
+      "UNSET": {
         "label": "Unset"
       },
-      "1": {
+      "US": {
         "label": "US"
       },
-      "2": {
+      "EU_433": {
         "label": "EU_433"
       },
-      "3": {
+      "EU_868": {
         "label": "EU_868"
       },
-      "4": {
+      "CN": {
         "label": "CN"
       },
-      "5": {
+      "JP": {
         "label": "JP"
       },
-      "6": {
+      "ANZ": {
         "label": "ANZ"
       },
-      "7": {
+      "KR": {
         "label": "KR"
       },
-      "8": {
+      "TW": {
         "label": "TW"
       },
-      "9": {
+      "RU": {
         "label": "RU"
       },
-      "10": {
+      "IN": {
         "label": "IN"
       },
-      "11": {
+      "NZ_865": {
         "label": "NZ_865"
       },
-      "12": {
+      "TH": {
         "label": "TH"
       },
-      "13": {
+      "LORA_24": {
+        "label": "LORA_24"
+      },
+      "UA_433": {
         "label": "UA_433"
       },
-      "14": {
+      "UA_868": {
         "label": "UA_868"
       },
-      "15": {
+      "MY_433": {
         "label": "MY_433"
       },
-      "16": {
+      "MY_919": {
         "label": "MY_919"
       },
-      "17": {
+      "SG_923": {
         "label": "SG_923"
       },
-      "18": {
-        "label": "LORA_24"
+      "PH_433": {
+        "label": "PH_433"
+      },
+      "PH_868": {
+        "label": "PH_868"
+      },
+      "PH_915": {
+        "label": "PH_915"
+      },
+      "ANZ_433": {
+        "label": "ANZ_433"
+      },
+      "KZ_433": {
+        "label": "KZ_433"
+      },
+      "KZ_863": {
+        "label": "KZ_863"
+      },
+      "NP_865": {
+        "label": "NP_865"
+      },
+      "BR_902": {
+        "label": "BR_902"
+      },
+      "ITU1_2M": {
+        "label": "ITU1_2M"
+      },
+      "ITU2_2M": {
+        "label": "ITU2_2M"
+      },
+      "EU_866": {
+        "label": "EU_866"
+      },
+      "EU_874": {
+        "label": "EU_874"
+      },
+      "EU_917": {
+        "label": "EU_917"
+      },
+      "EU_N_868": {
+        "label": "EU_N_868"
+      },
+      "ITU3_2M": {
+        "label": "ITU3_2M"
+      },
+      "ITU1_70CM": {
+        "label": "ITU1_70CM"
+      },
+      "ITU2_70CM": {
+        "label": "ITU2_70CM"
+      },
+      "ITU3_70CM": {
+        "label": "ITU3_70CM"
+      },
+      "ITU2_125CM": {
+        "label": "ITU2_125CM"
       }
     },
     "modemPresets": {
-      "0": {
+      "LONG_FAST": {
         "label": "Long Fast"
       },
-      "1": {
+      "LONG_SLOW": {
         "label": "Long Slow"
       },
-      "2": {
-        "label": "Long Moderate"
+      "VERY_LONG_SLOW": {
+        "label": "Very Long Slow"
       },
-      "3": {
-        "label": "Short Fast"
+      "MEDIUM_SLOW": {
+        "label": "Medium Slow"
       },
-      "4": {
-        "label": "Short Slow"
-      },
-      "5": {
+      "MEDIUM_FAST": {
         "label": "Medium Fast"
       },
-      "6": {
-        "label": "Medium Slow"
+      "SHORT_SLOW": {
+        "label": "Short Slow"
+      },
+      "SHORT_FAST": {
+        "label": "Short Fast"
+      },
+      "LONG_MODERATE": {
+        "label": "Long Moderate"
+      },
+      "SHORT_TURBO": {
+        "label": "Short Turbo"
+      },
+      "LONG_TURBO": {
+        "label": "Long Turbo"
+      },
+      "LITE_FAST": {
+        "label": "Lite Fast"
+      },
+      "LITE_SLOW": {
+        "label": "Lite Slow"
+      },
+      "NARROW_FAST": {
+        "label": "Narrow Fast"
+      },
+      "NARROW_SLOW": {
+        "label": "Narrow Slow"
+      },
+      "TINY_FAST": {
+        "label": "Tiny Fast"
+      },
+      "TINY_SLOW": {
+        "label": "Tiny Slow"
+      },
+      "MEDIUM_TURBO": {
+        "label": "Medium Turbo"
       }
     },
     "rebroadcastModes": {
-      "0": {
+      "ALL": {
         "label": "All",
         "description": "Rebroadcast all packets (default)."
       },
-      "1": {
+      "ALL_SKIP_DECODING": {
         "label": "All Skip Decoding",
         "description": "Rebroadcast all without decoding. Reduces CPU on dedicated routers."
       },
-      "2": {
+      "LOCAL_ONLY": {
         "label": "Local Only",
         "description": "Only rebroadcast packets from nodes heard directly on RF."
       },
-      "3": {
+      "KNOWN_ONLY": {
         "label": "Known Only",
         "description": "Only rebroadcast from nodes in the local node database."
       },
-      "4": {
+      "NONE": {
         "label": "None",
         "description": "Do not rebroadcast any packets."
       },
-      "5": {
+      "CORE_PORTNUMS_ONLY": {
         "label": "Core Portnums Only",
         "description": "Only rebroadcast essential portnums (text, nodeinfo, position, telemetry)."
       }
@@ -4108,7 +4292,9 @@
     "meshcoreNameFieldLabel": "Name",
     "longNameHintMeshcore": "Advertised node name (emoji supported)",
     "longNameHintMeshtastic": "Display name (max 39 chars)",
-    "shortNameHint": "Short identifier shown on tiny displays (max 4 chars)",
+    "shortNameHint": "Short identifier shown on tiny displays (max 4 UTF-8 bytes; most emojis use all 4 bytes)",
+    "validationShortNameTooLong": "Short Name must fit within 4 UTF-8 bytes",
+    "validationShortNameEmojiTooLarge": "This character is too large for Short Name (max 4 UTF-8 bytes per name)",
     "licensedHamLabel": "Licensed (Ham Radio Operator)",
     "licensedHamDescription": "Enables additional frequencies for licensed amateur radio operators",
     "screenOnDurationLabel": "Screen On Duration",
@@ -4139,6 +4325,8 @@
     "minIntervalLabel": "Min interval",
     "fixedPositionLabel": "Fixed Position",
     "sendPositionToDevice": "Send Position to Device",
+    "sendPositionDisabledShareOff": "Enable Share my location in App → GPS / Location to send your position to the device.",
+    "clientMuteGpsSuppressed": "Client Mute applied — GPS broadcasts and MQTT map reporting disabled on device.",
     "powerSavingModeLabel": "Power Saving Mode",
     "powerSavingModeDesc": "Enable low-power mode. Reduces responsiveness but significantly extends battery life.",
     "minWakeDurationLabel": "Min wake duration",
@@ -4211,22 +4399,22 @@
     "enableMessageBubblesLabel": "Message Bubbles",
     "enableMessageBubblesDesc": "Show incoming messages in a bubble on the display.",
     "oledTypes": {
-      "0": {
+      "OLED_AUTO": {
         "label": "Auto"
       },
-      "1": {
+      "OLED_SSD1306": {
         "label": "SSD1306"
       },
-      "2": {
+      "OLED_SH1106": {
         "label": "SH1106"
       },
-      "3": {
+      "OLED_SH1107": {
         "label": "SH1107 (128x64)"
       },
-      "4": {
+      "OLED_SH1107_128_128": {
         "label": "SH1107 (128x128)"
       },
-      "5": {
+      "OLED_SH1107_ROTATED": {
         "label": "SH1107 Rotated"
       }
     },
@@ -4254,6 +4442,34 @@
       },
       "2": {
         "label": "No PIN"
+      }
+    },
+    "enumDeprecatedSuffix": "(deprecated)",
+    "lockdown": {
+      "title": "Firmware Lockdown",
+      "description": "A locked radio rejects configuration changes until it is unlocked with its passphrase. Status is reported by the firmware; radios without lockdown support never report one.",
+      "stateLabel": "State",
+      "stateNotReported": "Not reported by this radio",
+      "reasonLabel": "Reason",
+      "bootsRemainingLabel": "Reboots remaining",
+      "validUntilLabel": "Unlocked until",
+      "backoffLabel": "Retry backoff",
+      "backoffValue": "{{seconds}}s",
+      "passphraseLabel": "Passphrase",
+      "provision": "Provision",
+      "unlock": "Unlock",
+      "unlockAria": "Unlock or provision firmware lockdown",
+      "lockNow": "Lock now",
+      "lockNowAria": "Lock the radio immediately",
+      "disable": "Disable lockdown",
+      "disableAria": "Disable firmware lockdown",
+      "states": {
+        "STATE_UNSPECIFIED": "Unspecified",
+        "NEEDS_PROVISION": "Needs provisioning",
+        "LOCKED": "Locked",
+        "UNLOCKED": "Unlocked",
+        "UNLOCK_FAILED": "Unlock failed",
+        "DISABLED": "Disabled"
       }
     }
   },
@@ -4748,351 +4964,6 @@
     "showChatNoticeAria": "Show the propagation node reminder banner in Chat",
     "showChatNoticeHint": "Turn this off to hide the Chat banner that appears when no propagation node is available."
   },
-  "reticulumRmapDiscovery": {
-    "sectionTitle": "RMAP v4 discovery",
-    "publishToggle": "Publish on RMAP v4",
-    "hint": "Enables RMAP publishing and App GPS coordinates on all enabled RMAP-capable interfaces (RNode/Multi, KISS, BLE peer, I2P, UDP, pipe). The checkbox is on only when every eligible interface is publishing; a partial state is indeterminate — check again to sync the rest. Use per-interface RMAP toggles on Connection for fine control. LoRa paths also enable transport and the rmap.world hub.",
-    "coordsStatus": "Map coordinates: {{lat}}, {{lon}} (from App → GPS / Location)",
-    "gpsMissingWarning": "Set static GPS in App → GPS / Location before publishing on RMAP.",
-    "announceIntervalMin": "Announce interval (minutes)",
-    "heightMeters": "Height above sea level (m, optional)",
-    "reachableOn": "Reachable on (hostname or script, optional)",
-    "helpLink": "RMAP guide",
-    "openGlobalMap": "Open global map",
-    "openGlobalMapAria": "Open RMAP v4 global map on rmap.world",
-    "gpsRequiredTitle": "GPS coordinates required",
-    "gpsRequiredBody": "RMAP map markers need latitude and longitude. Set static coordinates under App → GPS / Location, then try again.",
-    "openAppGps": "Open App GPS settings",
-    "applySuccess": "RMAP discovery settings applied.",
-    "applyPartialSuccess": "RMAP settings applied to {{applied}} of {{total}} interfaces.",
-    "disableSuccess": "RMAP publishing disabled on local interfaces.",
-    "disablePartialSuccess": "RMAP publishing disabled on {{applied}} of {{total}} interfaces.",
-    "applyFailed": "Failed to apply RMAP settings: {{error}}",
-    "noPublishTargets": "No enabled RMAP-capable interfaces. Enable an RNode, KISS, BLE peer, I2P, UDP, or pipe interface first.",
-    "restartTitle": "Restart Reticulum stack?",
-    "restartBody": "Interface and transport changes require a stack restart to take effect.",
-    "restartConfirm": "Restart now",
-    "restartFailed": "Stack restart failed: {{error}}",
-    "reachableOnError": {
-      "invalid": "Invalid reachable on value.",
-      "invalidHost": "Invalid hostname for reachable on.",
-      "tooLong": "Reachable on value is too long."
-    }
-  },
-  "reticulumTopology": {
-    "title": "Network topology",
-    "self": "You",
-    "centerRns": "RNS",
-    "hopBadge": "{{count}}h",
-    "ariaLabel": "Reticulum network topology graph",
-    "noNodes": "No topology data yet — connect the Reticulum stack and refresh.",
-    "nodeCount": "{{count}} nodes",
-    "edgeCount": "{{count}} links",
-    "hiddenCountLimit": "Showing {{shown}} of {{total}} nodes (limit {{limit}})",
-    "visibleNodeLimitNote": "Graph shows at most {{distantLimit}} nodes.",
-    "rfOnly": "RF only",
-    "showDistantPeers": "Show distant peers",
-    "maxHopsFilter": "Max hops",
-    "maxHopsAll": "All hops",
-    "maxHopsOption": "{{count}} hops",
-    "interfaceStatus": "{{online}} online, {{offline}} offline interfaces",
-    "interfaceTooltip": "{{name}} — {{status}}",
-    "interfaceStatusOnline": "online",
-    "interfaceStatusOffline": "offline",
-    "glyphWifi": "Wi-Fi interface",
-    "glyphLora": "LoRa interface",
-    "glyphTcp": "TCP interface",
-    "glyphSerial": "Serial interface",
-    "unassignedInterface": "Other paths",
-    "legendSelf": "This node",
-    "legendInterfaceOnline": "Interface online",
-    "legendInterfaceOffline": "Interface offline",
-    "legendPeerUser": "LXMF peer",
-    "legendPeerServer": "Nomad node",
-    "interfaceLink": "Interface link",
-    "peerLink": "Peer link"
-  },
-  "rfHistograms": {
-    "title": "RF Signal Distribution",
-    "subtitle": "{{count}} nodes observed",
-    "noNodes": "No nodes observed yet",
-    "snrTitle": "SNR Distribution",
-    "snrAxis": "SNR (dB)",
-    "rssiTitle": "RSSI Distribution",
-    "rssiAxis": "RSSI (dBm)",
-    "hopTitle": "Hop Count Distribution",
-    "hopAxis": "Hops"
-  },
-  "roleInfo": {
-    "placeholderDash": "-",
-    "unknownRole": "Unknown ({{role}})",
-    "roles": {
-      "client": "Client",
-      "clientMute": "Client Mute",
-      "router": "Router",
-      "routerClient": "Router Client",
-      "repeater": "Repeater",
-      "tracker": "Tracker",
-      "sensor": "Sensor",
-      "tak": "TAK",
-      "clientHidden": "Client Hidden",
-      "lostAndFound": "Lost & Found",
-      "takTracker": "TAK Tracker",
-      "routerLate": "Router Late",
-      "clientBase": "Client Base"
-    }
-  },
-  "roomsPanel": {
-    "title": "Room servers",
-    "collapseRoomList": "Collapse room list",
-    "expandRoomList": "Expand room list",
-    "noRoomsYet": "No room servers discovered yet. Room contacts appear when type Room advertises on the mesh.",
-    "selectRoom": "Select a room server to view and post messages",
-    "postCount": "{{count}} posts",
-    "lastPost": "Last post",
-    "loginTitle": "Login to room server",
-    "adminLoginTitle": "Room admin login",
-    "loginHelp": "Try blank for read-only. Try \"hello\" as the default read/write guest password. Continue read-only also sends a blank password.",
-    "emptyGuestLoginHint": "Blank Login is read-only when the room allows it. Enter \"hello\" (or the room's guest password) to post.",
-    "unreadPosts": "{{count}} new",
-    "collapsedRoomWithUnread": "{{label}}, {{count}} unread",
-    "adminLoginHelp": "Enter the room admin password to manage settings and ACLs. Default is often \"hello\".",
-    "guestPasswordLabel": "Guest password",
-    "guestPasswordPlaceholder": "hello",
-    "adminPasswordLabel": "Admin password",
-    "adminPasswordPlaceholder": "password",
-    "loginButton": "Login",
-    "loggingIn": "Logging in…",
-    "loggingInMarkerAria": "Logging in to room server",
-    "favorite": "Favorite room",
-    "unfavorite": "Remove room from favorites",
-    "loginAllSaved": "Log in all",
-    "loginAllSavedAria": "Log in to all saved room servers",
-    "loginAllSavedTooltip": "Queue login for each room with a saved password (one at a time)",
-    "loginAllSavedDisabledNotConnected": "Connect your radio to log in to rooms",
-    "loginAllSavedDisabledAllLoggedIn": "All rooms with saved passwords are already logged in",
-    "loginAllSavedDisabledNoSavedPasswords": "Save a room password first to use log in all",
-    "loginAllInProgress": "Logging in to {{count}} rooms (one at a time)…",
-    "loggingInQueue": "Logging in to {{count}} rooms (now: {{name}})…",
-    "loggingInOtherRoom": "Logging in to {{name}}…",
-    "loginFailed": "Room login failed",
-    "cancelLogin": "Cancel login",
-    "cancelLoginHint": "Another room login may finish on the radio first. Cancel stops further attempts for this room.",
-    "cancelLoginDialog": "Cancel room login dialog",
-    "continueReadOnly": "Continue read-only",
-    "readOnlyBadge": "Read-only",
-    "readOnlyHint": "You have read-only access. Enter the guest password (often \"hello\") or admin password to post.",
-    "upgradeAccess": "Upgrade access",
-    "noPostsYet": "No posts in this room yet.",
-    "postPlaceholder": "Post to room…",
-    "postButton": "Post",
-    "postFailed": "Failed to post to room",
-    "posting": "Posting…",
-    "leaveRoom": "Leave room",
-    "leavingRoom": "Leaving…",
-    "leaveRoomInProgress": "Leaving room…",
-    "leaveRoomHint": "Waiting for your radio to confirm logout. This can take a few seconds over the mesh.",
-    "leaveRoomFailed": "Could not leave room",
-    "manageRoom": "Manage on Repeaters",
-    "manageJumpHint": "Infrastructure controls (ping, status, CLI, ACL setperm) are on the Repeaters tab.",
-    "aclPubkeyLabel": "Public key (64 hex)",
-    "aclPubkeyPlaceholder": "0123456789abcdef…",
-    "aclLevelLabel": "Permission level",
-    "aclLevelRemove": "Remove access",
-    "aclLevelGuest": "Guest (read-only)",
-    "aclLevelReadWrite": "Read/Write (can post)",
-    "aclLevelAdmin": "Admin",
-    "aclApply": "Apply ACL",
-    "rememberPassword": "Remember password",
-    "autoSync": "Auto-sync",
-    "autoSyncTooltip": "Periodically re-login to fetch new posts when the radio is connected",
-    "historyLocalHint": "On login, mesh-client requests recent posts still in the room server ring buffer (when this device has no local watermark yet). Enable Auto-sync to stay subscribed while connected.",
-    "syncIntervalLabel": "Sync interval",
-    "syncInterval60": "Every 60 minutes",
-    "syncInterval120": "Every 2 hours",
-    "syncInterval240": "Every 4 hours",
-    "saveSyncConfig": "Save sync settings",
-    "autoLoginOnConnect": "Auto-login when connected",
-    "autoLoginOnConnectTooltip": "Log in automatically when the radio connects (requires saved password; RF only)",
-    "autoLoginRequiresSavedPassword": "Save password first to enable auto-login",
-    "savedPasswordsHeading": "Saved passwords",
-    "savedPasswordsCount": "Saved passwords ({{count}})",
-    "savedPasswordOrphanLabel": "Room 0x{{nodeId}}",
-    "statusPasswordSaved": "Password saved for this room (sky marker when not logged in).",
-    "statusLoggedInSession": "Logged in",
-    "statusLoggedInSessionTooltip": "Active client session. It persists until you leave the room or disconnect. If the room server is unreachable, leave and log in again when it is back.",
-    "statusAutoLoginEnabled": "Auto-login on connect is enabled.",
-    "badgeAutoLogin": "Auto-login",
-    "badgeAutoSync": "Auto-sync",
-    "forgetSavedPassword": "Forget saved password",
-    "forgetSavedPasswordAria": "Forget saved password for this room",
-    "forgetSavedPasswordConfirmTitle": "Forget saved password?",
-    "forgetSavedPasswordConfirmBody": "Removes the stored guest/admin password for this room and turns off auto-login and auto-sync. You will need to enter the password again to log in.",
-    "stopAutoLogin": "Stop auto-login",
-    "stopAutoLoginAria": "Stop automatic login for this room when the radio connects",
-    "sidebarLegendTitle": "Room status markers",
-    "legendNotSaved": "No saved password",
-    "legendNotSavedTooltip": "Empty circle — no password stored for this room",
-    "legendSaved": "Password saved",
-    "legendSavedTooltip": "Sky half-circle — password stored; log in to open a session",
-    "legendLoggedIn": "Logged in",
-    "legendLoggedInTooltip": "Green dot — active client session (leave room if the server is offline)",
-    "autoLoginFailed": "Auto-login failed: {{error}}",
-    "autoLoginFailedAria": "Auto-login failed: {{error}}",
-    "jumpToLatest": "Jump to latest",
-    "jumpToUnread": "Jump to unread",
-    "newMessagesDivider": "New messages",
-    "lastSync": "Last sync",
-    "membersHeading": "Members",
-    "membersHeadingWithCount": "Members ({{count}})",
-    "membersRecognizedHeading": "Recognized posters",
-    "membersRecognizedEmpty": "No recognized posters in this room yet.",
-    "membersAclHeading": "Access control (ACL)",
-    "membersAclEmpty": "No ACL entries returned. Remote `get acl` is often serial-only on room firmware.",
-    "membersAclRemoteHint": "ACL listing may be empty over the radio even when users have access. Use USB serial or setperm in Manage below.",
-    "membersRefreshAcl": "Refresh ACL",
-    "membersAclLoading": "Loading ACL…",
-    "membersAclLastFetched": "ACL fetched {{time}}",
-    "membersAclFetchFailed": "Could not fetch ACL"
-  },
-  "searchModal": {
-    "closeSearch": "Close search",
-    "placeholder": "Search all messages… (user:name, channel:name)",
-    "noResults": "No results",
-    "hint": "Type to search across all messages",
-    "resultCount": "{{count}} result(s) — click to navigate"
-  },
-  "securityPanel": {
-    "keyRegenRequested": "Key regeneration requested. Device will generate new keys.",
-    "failed": "Failed: {{message}}",
-    "adminKeysApplied": "Admin keys applied.",
-    "adminSettingsApplied": "Administration settings applied.",
-    "backupFailed": "Backup failed: {{message}}",
-    "restoreFailed": "Restore failed: {{message}}",
-    "noBackupFound": "No backup found",
-    "missingKeyMaterial": "Missing key material",
-    "unknownError": "Unknown error",
-    "dataSigned": "Data signed successfully.",
-    "signNoResult": "Sign operation returned no result.",
-    "signFailed": "Sign failed: {{message}}",
-    "privateKeyExported": "Private key exported.",
-    "exportNoKey": "Export returned no key.",
-    "exportFailed": "Export failed: {{message}}",
-    "privateKeyImported": "Private key imported. Restart may be required.",
-    "importFailed": "Import failed.",
-    "importFailedWithMessage": "Import failed: {{message}}",
-    "adminKeyLabel": "Admin key {{number}}",
-    "removeAdminKey": "Remove admin key {{number}}",
-    "sectionDmKeys": "DM Keys",
-    "sectionAdminKeys": "Admin Keys",
-    "sectionAdminSettings": "Administration Settings",
-    "sectionKeyBackup": "Key Backup / Restore",
-    "sectionMeshcoreCrypto": "MeshCore Cryptography",
-    "adminKeyPlaceholder": "Base64-encoded 32-byte public key",
-    "signTextPlaceholder": "Enter text to sign...",
-    "importKeyPlaceholder": "Paste base64-encoded private key...",
-    "connectToManage": "Connect to a device to manage security settings.",
-    "publicKeyLabel": "Public Key",
-    "copyPublicKey": "Copy",
-    "publicKeyCopied": "Public key copied to clipboard.",
-    "remoteAdminSetupHint": "Copy this key and add it as an Admin Key on remote nodes you want to configure. See Meshtastic remote admin docs.",
-    "privateKeyLabel": "Private Key",
-    "privateKeyHint": "Keep your private key secret. It is used to encrypt direct messages.",
-    "regenerateKeys": "Regenerate Keys",
-    "regeneratingKeys": "Regenerating...",
-    "adminKeysIntro": "Up to {{max}} public keys authorized to send admin commands to this device. Each must be a base64-encoded 32-byte Curve25519 public key.",
-    "invalidAdminKey": "Must be a valid base64-encoded 32-byte key",
-    "removeAdminKeyButton": "Remove",
-    "addAdminKey": "+ Add Admin Key",
-    "applyAdminKeys": "Apply Admin Keys",
-    "applySettings": "Apply Settings",
-    "applying": "Applying...",
-    "managedDevice": "Managed Device",
-    "managedDeviceDesc": "Device is managed by a mesh administrator.",
-    "serialConsole": "Serial Console",
-    "serialConsoleDesc": "Enable serial console over the Stream API.",
-    "debugLogApi": "Debug Log API",
-    "debugLogApiDesc": "Output live debug logging over serial or Bluetooth.",
-    "adminChannel": "Admin Channel (insecure)",
-    "adminChannelDesc": "Allow incoming device control over the insecure legacy admin channel.",
-    "keyBackupUnavailable": "System keychain encryption is not available on this platform. Backup and restore are disabled.",
-    "keyBackupDesc": "Back up this node's public and private keys to the system keychain (encrypted). The private key restores your mesh identity after factory reset.",
-    "keyBackupNotIncluded": "Does not restore channels, NodeDB, messages, contacts, or remote admin keys.",
-    "backupAvailableForNode": "Backup saved for {{label}}",
-    "backupLabelMeshtastic": "Meshtastic · {{detail}}",
-    "backupLabelMeshcore": "MeshCore · {{detail}}",
-    "noBackupForNode": "No backup for {{label}}",
-    "keysBackedUpForDevice": "Keys backed up for {{label}}.",
-    "otherBackupsCount": "{{count}} other device backup(s) stored",
-    "restoreFromBackup": "Restore from backup…",
-    "restoreFromBackupTitle": "Restore from backup",
-    "restoreFromBackupConfirm": "Restore keys for {{label}} to the connected device?",
-    "restoreVerifySuccess": "Keys restored successfully.",
-    "restoreVerifyFailed": "Restore completed but key verification failed. Reconnect and check Security.",
-    "removeBackup": "Remove backup",
-    "removeBackupConfirm": "Remove the stored backup for this node from this computer?",
-    "backupRemoved": "Backup removed.",
-    "meshcorePrivateKeyHint": "Use Export Private Key below to view key material. Backup stores the full key pair on this computer.",
-    "backupKeys": "Backup Keys",
-    "restoreKeys": "Restore Keys",
-    "working": "Working...",
-    "meshcoreCryptoDesc": "Sign data with your device key, or export/import your private key for backup.",
-    "signDataLabel": "Sign Data",
-    "signDataButton": "Sign Data",
-    "signing": "Signing...",
-    "signatureBase64Label": "Signature (Base64)",
-    "exportPrivateKeyButton": "Export Private Key",
-    "exportingPrivateKey": "Exporting...",
-    "privateKeyBase64Label": "Private Key (Base64)",
-    "exportKeyWarning": "Keep this key secure. Anyone with access can decrypt your private messages.",
-    "importPrivateKeyLabel": "Import Private Key",
-    "importPrivateKeyButton": "Import Private Key",
-    "importingPrivateKey": "Importing...",
-    "regenerateKeysConfirm": "Regenerating keys will replace your current DM public and private keys. Any existing encrypted messages will no longer be decryptable. Are you sure?"
-  },
-  "sidebar": {
-    "disabledTabTooltip": "Not available in this mode"
-  },
-  "signalPropagation": {
-    "oneLiners": {
-      "stayOnTheAir": "Stay on the air",
-      "helloOperator": "Hello, operator",
-      "thanksForMeshing": "Thanks for meshing",
-      "builtForCommunities": "Built for communities everywhere",
-      "stayConnected": "Stay connected",
-      "signalsOut": "Signals out",
-      "gladYouAreHere": "Glad you are here",
-      "keepTheMeshAlive": "Keep the mesh alive"
-    }
-  },
-  "tabs": {
-    "connection": "Connection",
-    "chat": "Chat",
-    "games": "Games",
-    "rrc": "RRC",
-    "remote": "Remote",
-    "nomadnetwork": "Nomad Network",
-    "contacts": "Contacts",
-    "nodes": "Nodes",
-    "peers": "Peers",
-    "map": "Map",
-    "radio": "Radio",
-    "network": "Network",
-    "modules": "Modules",
-    "telemetry": "Telemetry",
-    "security": "Security",
-    "tak": "TAK",
-    "app": "App",
-    "diagnostics": "Diagnostics",
-    "stats": "Stats",
-    "sniffer": "Sniffer",
-    "repeaters": "Repeaters",
-    "rooms": "Rooms",
-    "rf": "RF",
-    "graph": "Graph",
-    "topology": "Network topology",
-    "admin": "Administration"
-  },
   "reticulumRemote": {
     "navAria": "Remote sections",
     "sidecarNotRunning": "Start the Reticulum stack to use the remote shell and file transfer.",
@@ -5309,6 +5180,547 @@
       "announceReceiveDestListenerOff": "Enable inbound file receive (Ask or Allow listed) before announcing."
     }
   },
+  "reticulumRmapDiscovery": {
+    "sectionTitle": "RMAP v4 discovery",
+    "publishToggle": "Publish on RMAP v4",
+    "disabledShareOff": "Enable Share my location in App → GPS / Location to publish on RMAP.",
+    "hint": "Enables RMAP publishing and App GPS coordinates on all enabled RMAP-capable interfaces (RNode/Multi, KISS, BLE peer, I2P, UDP, pipe). The checkbox is on only when every eligible interface is publishing; a partial state is indeterminate — check again to sync the rest. Use per-interface RMAP toggles on Connection for fine control. LoRa paths also enable transport and the rmap.world hub.",
+    "coordsStatus": "Map coordinates: {{lat}}, {{lon}} (from App → GPS / Location)",
+    "gpsMissingWarning": "Set static GPS in App → GPS / Location before publishing on RMAP.",
+    "announceIntervalMin": "Announce interval (minutes)",
+    "heightMeters": "Height above sea level (m, optional)",
+    "reachableOn": "Reachable on (hostname or script, optional)",
+    "helpLink": "RMAP guide",
+    "openGlobalMap": "Open global map",
+    "openGlobalMapAria": "Open RMAP v4 global map on rmap.world",
+    "gpsRequiredTitle": "GPS coordinates required",
+    "gpsRequiredBody": "RMAP map markers need latitude and longitude. Set static coordinates under App → GPS / Location, then try again.",
+    "openAppGps": "Open App GPS settings",
+    "applySuccess": "RMAP discovery settings applied.",
+    "applyPartialSuccess": "RMAP settings applied to {{applied}} of {{total}} interfaces.",
+    "disableSuccess": "RMAP publishing disabled on local interfaces.",
+    "disablePartialSuccess": "RMAP publishing disabled on {{applied}} of {{total}} interfaces.",
+    "applyFailed": "Failed to apply RMAP settings: {{error}}",
+    "noPublishTargets": "No enabled RMAP-capable interfaces. Enable an RNode, KISS, BLE peer, I2P, UDP, or pipe interface first.",
+    "restartTitle": "Restart Reticulum stack?",
+    "restartBody": "Interface and transport changes require a stack restart to take effect.",
+    "restartConfirm": "Restart now",
+    "restartFailed": "Stack restart failed: {{error}}",
+    "reachableOnError": {
+      "invalid": "Invalid reachable on value.",
+      "invalidHost": "Invalid hostname for reachable on.",
+      "tooLong": "Reachable on value is too long."
+    }
+  },
+  "reticulumTopology": {
+    "title": "Network topology",
+    "self": "You",
+    "centerRns": "RNS",
+    "hopBadge": "{{count}}h",
+    "ariaLabel": "Reticulum network topology graph",
+    "noNodes": "No topology data yet — connect the Reticulum stack and refresh.",
+    "nodeCount": "{{count}} nodes",
+    "edgeCount": "{{count}} links",
+    "hiddenCountLimit": "Showing {{shown}} of {{total}} nodes (limit {{limit}})",
+    "visibleNodeLimitNote": "Graph shows at most {{distantLimit}} nodes.",
+    "rfOnly": "RF only",
+    "showDistantPeers": "Show distant peers",
+    "maxHopsFilter": "Max hops",
+    "maxHopsAll": "All hops",
+    "maxHopsOption": "{{count}} hops",
+    "interfaceStatus": "{{online}} online, {{offline}} offline interfaces",
+    "interfaceTooltip": "{{name}} — {{status}}",
+    "interfaceStatusOnline": "online",
+    "interfaceStatusOffline": "offline",
+    "glyphWifi": "Wi-Fi interface",
+    "glyphLora": "LoRa interface",
+    "glyphTcp": "TCP interface",
+    "glyphSerial": "Serial interface",
+    "unassignedInterface": "Other paths",
+    "legendSelf": "This node",
+    "legendInterfaceOnline": "Interface online",
+    "legendInterfaceOffline": "Interface offline",
+    "legendPeerUser": "LXMF peer",
+    "legendPeerServer": "Nomad node",
+    "interfaceLink": "Interface link",
+    "peerLink": "Peer link"
+  },
+  "reticulumVoice": {
+    "call": "Call",
+    "answer": "Answer",
+    "reject": "Reject",
+    "incomingTitle": "Incoming voice call",
+    "inCall": "In call",
+    "connecting": "Connecting…",
+    "ringing": "Ringing…",
+    "callAria": "Start LXST voice call",
+    "answerAria": "Answer voice call",
+    "rejectAria": "Reject voice call",
+    "hangupAria": "Hang up voice call",
+    "muteAria": "Mute microphone",
+    "unmuteAria": "Unmute microphone",
+    "elapsedAria": "Call elapsed time {{time}}",
+    "txAria": "Transmitted voice frames {{count}}",
+    "rxAria": "Received voice frames {{count}}",
+    "statsSeparator": "·",
+    "txFrames": "TX {{count}}",
+    "txPackets": "pkt {{count}}",
+    "rxFrames": "RX {{count}}",
+    "capabilityHeard": "LXST telephony announce heard for this peer",
+    "capabilityUnknown": "LXST telephony announce not heard yet (call may still work)",
+    "capabilityHeardShort": "LXST",
+    "capabilityUnknownShort": "?",
+    "help": {
+      "interop": "LXST voice needs a peer running LXST telephony (Sideband, Ratspeak, or mesh-client). Not a voice-note clip. Python LXST is the reference; rsLXST is experimental."
+    },
+    "toast": {
+      "busy": "Line busy.",
+      "connectFailed": "Could not connect.",
+      "rejected": "Call rejected.",
+      "noAnswer": "No answer — call timed out.",
+      "failed": "Voice call failed."
+    },
+    "errors": {
+      "noIdentity": "Cannot call: peer identity not known yet. Wait for an announce or probe the peer.",
+      "callFailed": "Voice call failed.",
+      "callInProgress": "A voice call is already in progress.",
+      "notRunning": "Voice is not available until the Reticulum stack is running.",
+      "micFailed": "Could not access the microphone for voice.",
+      "muteFailed": "Could not update microphone mute on the voice session."
+    }
+  },
+  "rfHistograms": {
+    "title": "RF Signal Distribution",
+    "subtitle": "{{count}} nodes observed",
+    "noNodes": "No nodes observed yet",
+    "snrTitle": "SNR Distribution",
+    "snrAxis": "SNR (dB)",
+    "rssiTitle": "RSSI Distribution",
+    "rssiAxis": "RSSI (dBm)",
+    "hopTitle": "Hop Count Distribution",
+    "hopAxis": "Hops"
+  },
+  "roleInfo": {
+    "placeholderDash": "-",
+    "unknownRole": "Unknown ({{role}})",
+    "roles": {
+      "client": "Client",
+      "clientMute": "Client Mute",
+      "router": "Router",
+      "routerClient": "Router Client",
+      "repeater": "Repeater",
+      "tracker": "Tracker",
+      "sensor": "Sensor",
+      "tak": "TAK",
+      "clientHidden": "Client Hidden",
+      "lostAndFound": "Lost & Found",
+      "takTracker": "TAK Tracker",
+      "routerLate": "Router Late",
+      "clientBase": "Client Base"
+    }
+  },
+  "roomsPanel": {
+    "title": "Room servers",
+    "collapseRoomList": "Collapse room list",
+    "expandRoomList": "Expand room list",
+    "noRoomsYet": "No room servers discovered yet. Room contacts appear when type Room advertises on the mesh.",
+    "selectRoom": "Select a room server to view and post messages",
+    "postCount": "{{count}} posts",
+    "lastPost": "Last post",
+    "loginTitle": "Login to room server",
+    "adminLoginTitle": "Room admin login",
+    "loginHelp": "Try blank for read-only. Try \"hello\" as the default read/write guest password. Continue read-only also sends a blank password.",
+    "emptyGuestLoginHint": "Blank Login is read-only when the room allows it. Enter \"hello\" (or the room's guest password) to post.",
+    "unreadPosts": "{{count}} new",
+    "collapsedRoomWithUnread": "{{label}}, {{count}} unread",
+    "adminLoginHelp": "Enter the room admin password to manage settings and ACLs. Default is often \"hello\".",
+    "guestPasswordLabel": "Guest password",
+    "guestPasswordPlaceholder": "hello",
+    "adminPasswordLabel": "Admin password",
+    "adminPasswordPlaceholder": "password",
+    "loginButton": "Login",
+    "loggingIn": "Logging in…",
+    "loggingInMarkerAria": "Logging in to room server",
+    "favorite": "Favorite room",
+    "unfavorite": "Remove room from favorites",
+    "loginAllSaved": "Log in all",
+    "loginAllSavedAria": "Log in to all saved room servers",
+    "loginAllSavedTooltip": "Queue login for each room with a saved password (one at a time)",
+    "loginAllSavedDisabledNotConnected": "Connect your radio to log in to rooms",
+    "loginAllSavedDisabledAllLoggedIn": "All rooms with saved passwords are already logged in",
+    "loginAllSavedDisabledNoSavedPasswords": "Save a room password first to use log in all",
+    "loginAllInProgress": "Logging in to {{count}} rooms (one at a time)…",
+    "loggingInQueue": "Logging in to {{count}} rooms (now: {{name}})…",
+    "loggingInOtherRoom": "Logging in to {{name}}…",
+    "loginFailed": "Room login failed",
+    "cancelLogin": "Cancel login",
+    "cancelLoginHint": "Another room login may finish on the radio first. Cancel stops further attempts for this room.",
+    "cancelLoginDialog": "Cancel room login dialog",
+    "continueReadOnly": "Continue read-only",
+    "readOnlyBadge": "Read-only",
+    "readOnlyHint": "You have read-only access. Enter the guest password (often \"hello\") or admin password to post.",
+    "upgradeAccess": "Upgrade access",
+    "noPostsYet": "No posts in this room yet.",
+    "postPlaceholder": "Post to room…",
+    "postButton": "Post",
+    "postFailed": "Failed to post to room",
+    "posting": "Posting…",
+    "leaveRoom": "Leave room",
+    "leavingRoom": "Leaving…",
+    "leaveRoomInProgress": "Leaving room…",
+    "leaveRoomHint": "Waiting for your radio to confirm logout. This can take a few seconds over the mesh.",
+    "leaveRoomFailed": "Could not leave room",
+    "manageRoom": "Manage on Repeaters",
+    "manageJumpHint": "Infrastructure controls (ping, status, CLI, ACL setperm) are on the Repeaters tab.",
+    "aclPubkeyLabel": "Public key (64 hex)",
+    "aclPubkeyPlaceholder": "0123456789abcdef…",
+    "aclLevelLabel": "Permission level",
+    "aclLevelRemove": "Remove access",
+    "aclLevelGuest": "Guest (read-only)",
+    "aclLevelReadWrite": "Read/Write (can post)",
+    "aclLevelAdmin": "Admin",
+    "aclApply": "Apply ACL",
+    "rememberPassword": "Remember password",
+    "autoSync": "Auto-sync",
+    "autoSyncTooltip": "Periodically re-login to fetch new posts when the radio is connected",
+    "historyLocalHint": "On login, mesh-client requests recent posts still in the room server ring buffer (when this device has no local watermark yet). Enable Auto-sync to stay subscribed while connected.",
+    "syncIntervalLabel": "Sync interval",
+    "syncInterval60": "Every 60 minutes",
+    "syncInterval120": "Every 2 hours",
+    "syncInterval240": "Every 4 hours",
+    "saveSyncConfig": "Save sync settings",
+    "autoLoginOnConnect": "Auto-login when connected",
+    "autoLoginOnConnectTooltip": "Log in automatically when the radio connects (requires saved password; RF only)",
+    "autoLoginRequiresSavedPassword": "Save password first to enable auto-login",
+    "savedPasswordsHeading": "Saved passwords",
+    "savedPasswordsCount": "Saved passwords ({{count}})",
+    "savedPasswordOrphanLabel": "Room 0x{{nodeId}}",
+    "statusPasswordSaved": "Password saved for this room (sky marker when not logged in).",
+    "statusLoggedInSession": "Logged in",
+    "statusLoggedInSessionTooltip": "Active client session. It persists until you leave the room or disconnect. If the room server is unreachable, leave and log in again when it is back.",
+    "statusAutoLoginEnabled": "Auto-login on connect is enabled.",
+    "badgeAutoLogin": "Auto-login",
+    "badgeAutoSync": "Auto-sync",
+    "forgetSavedPassword": "Forget saved password",
+    "forgetSavedPasswordAria": "Forget saved password for this room",
+    "forgetSavedPasswordConfirmTitle": "Forget saved password?",
+    "forgetSavedPasswordConfirmBody": "Removes the stored guest/admin password for this room and turns off auto-login and auto-sync. You will need to enter the password again to log in.",
+    "stopAutoLogin": "Stop auto-login",
+    "stopAutoLoginAria": "Stop automatic login for this room when the radio connects",
+    "sidebarLegendTitle": "Room status markers",
+    "legendNotSaved": "No saved password",
+    "legendNotSavedTooltip": "Empty circle — no password stored for this room",
+    "legendSaved": "Password saved",
+    "legendSavedTooltip": "Sky half-circle — password stored; log in to open a session",
+    "legendLoggedIn": "Logged in",
+    "legendLoggedInTooltip": "Green dot — active client session (leave room if the server is offline)",
+    "autoLoginFailed": "Auto-login failed: {{error}}",
+    "autoLoginFailedAria": "Auto-login failed: {{error}}",
+    "jumpToLatest": "Jump to latest",
+    "jumpToUnread": "Jump to unread",
+    "newMessagesDivider": "New messages",
+    "lastSync": "Last sync",
+    "membersHeading": "Members",
+    "membersHeadingWithCount": "Members ({{count}})",
+    "membersRecognizedHeading": "Recognized posters",
+    "membersRecognizedEmpty": "No recognized posters in this room yet.",
+    "membersAclHeading": "Access control (ACL)",
+    "membersAclEmpty": "No ACL entries returned. Remote `get acl` is often serial-only on room firmware.",
+    "membersAclRemoteHint": "ACL listing may be empty over the radio even when users have access. Use USB serial or setperm in Manage below.",
+    "membersRefreshAcl": "Refresh ACL",
+    "membersAclLoading": "Loading ACL…",
+    "membersAclLastFetched": "ACL fetched {{time}}",
+    "membersAclFetchFailed": "Could not fetch ACL"
+  },
+  "rrc": {
+    "hubsTitle": "RRC Hubs",
+    "openNomadPage": "Open Nomad page {{address}}",
+    "openDm": "Open direct message with {{address}}",
+    "openReticulumAddress": "Open Reticulum address {{address}}",
+    "addressChoiceTitle": "Open Reticulum address",
+    "addressChoiceMessage": "{{address}} could be a Nomad page or a peer. Which would you like to open?",
+    "addressChoiceNomad": "Nomad page",
+    "addressChoiceDm": "Direct message",
+    "hubs": {
+      "favourites": "Favourites",
+      "discovered": "Discovered"
+    },
+    "noFavouriteHubs": "No favourite RRC hubs yet. Star a hub from Discovered or after connecting by hash.",
+    "searchHubs": "Search hubs…",
+    "searchRooms": "Search rooms…",
+    "nickname": "Nickname",
+    "refreshHubs": "Refresh hubs",
+    "expandSidebar": "Expand hub list",
+    "collapseSidebar": "Collapse hub list",
+    "expandRooms": "Expand room list",
+    "collapseRooms": "Collapse room list",
+    "expandMembers": "Expand members list",
+    "collapseMembers": "Collapse members list",
+    "manualHashPlaceholder": "Hub destination hash (32 hex)",
+    "connectManual": "Connect to hash",
+    "invalidHubHash": "Enter a valid 32-character hex destination hash.",
+    "connectFailed": "Could not connect to RRC hub.",
+    "disconnectFailed": "Could not disconnect from RRC hub.",
+    "maxHubsConnected": "You can stay connected to at most 8 RRC hubs. Disconnect one first.",
+    "enableHubAutoJoin": "Turn on hub auto-join",
+    "disableHubAutoJoin": "Turn off hub auto-join",
+    "hubAutoJoinOnHint": "Auto-join on — click to turn off",
+    "hubAutoJoinOffHint": "Auto-join off — click to connect this hub when the stack starts",
+    "hubLegend": "● connected · ◌ connecting · ◐ auto-join on · ○ idle · A toggles auto-join",
+    "hubMarker": {
+      "connected": "Connected",
+      "connecting": "Connecting",
+      "autoJoin": "Auto-join enabled",
+      "idle": "Not connected"
+    },
+    "joinFailed": "Could not join room.",
+    "partFailed": "Could not leave room.",
+    "sendFailed": "Could not send message.",
+    "stackNotReady": "Reticulum stack is not ready yet. Wait until connected, then try again.",
+    "sidecarNotRunning": "Reticulum sidecar is not running. Start the stack on Connection, then try again.",
+    "selectHub": "Select hub {{name}}",
+    "selectHubUnread": "Select hub {{name}}, {{marker}}, {{count}} unread",
+    "selectHubPrompt": "Select an RRC hub to connect.",
+    "favoriteHub": "Favourite hub",
+    "unfavoriteHub": "Remove hub favourite",
+    "hopsAway_one": "{{count}} hop away",
+    "hopsAway_other": "{{count}} hops away",
+    "noDiscoveredHubs": "No live RRC hubs discovered yet. Keep the stack running to listen for announces.",
+    "rooms": "Rooms",
+    "joinedRooms": "Joined",
+    "listedRooms": "Listed",
+    "recentRooms": "Recent",
+    "joinRoom": "Room name",
+    "roomKeyOptional": "Room key (optional)",
+    "join": "Join room",
+    "joinRoomPrompt": "Join a room to start chatting.",
+    "joinRoomHelp": "Rooms are live groups on this hub. Join by name, try Listed, or type /list and /help.",
+    "listHint": "Tip: /list shows registered public rooms on rrcd hubs. /help for commands.",
+    "refreshRoomList": "Refresh room list (/list)",
+    "favoriteRoom": "Favourite room",
+    "unfavoriteRoom": "Remove room favourite",
+    "enableAutoJoin": "Turn on room auto-join",
+    "disableAutoJoin": "Turn off room auto-join",
+    "roomAutoJoinOnHint": "Auto-join on — click to turn off",
+    "roomAutoJoinOffHint": "Auto-join off — click to join this room when the hub connects",
+    "roomLegend": "★ favourite · A toggles auto-join",
+    "noRoomsJoined": "No rooms joined yet.",
+    "noTopic": "No topic set",
+    "memberCount_one": "{{count}} member",
+    "memberCount_other": "{{count}} members",
+    "userCount_one": "{{count}} user",
+    "userCount_other": "{{count}} users",
+    "selectRoom": "Open room {{name}}",
+    "leaveRoom": "Leave room",
+    "clearHistory": "Clear history",
+    "clearHistoryTitle": "Clear room history",
+    "clearHistoryConfirm": "Delete all saved message history for {{room}}? This cannot be undone.",
+    "clearHistoryConfirmAction": "Delete history",
+    "disconnect": "Disconnect",
+    "cancelConnect": "Cancel",
+    "toggleTimestamps": "Toggle timestamps",
+    "muteRoom": "Mute room",
+    "unmuteRoom": "Unmute room",
+    "members": "Members",
+    "refreshWho": "Refresh members (/who)",
+    "msgNick": "Message {{name}}",
+    "noMembers": "No full member list from hub (busy rooms may exceed link size). Names appear as people join or chat.",
+    "whoReplyMissing": "No member list from the hub for {{room}} (reply may exceed link size). Names will appear as people join or chat.",
+    "copyMessage": "Copy message",
+    "jumpToLatest": "Jump to Latest",
+    "messagePlaceholder": "Message or /command…",
+    "whisperReplyPlaceholder": "Reply to {{name}} or /msg…",
+    "send": "Send",
+    "dismissBanner": "Dismiss notice",
+    "directNoticeUnsupported": "This hub does not support direct NOTICE (/msg).",
+    "capDirectNotice": "direct msg",
+    "errors": {
+      "linkProofTimeout": "Timed out waiting for the hub link (link proof). Try again, or check path/hops to the hub.",
+      "pathTimeout": "Could not find a path to the hub. Wait for a fresher announce, then reconnect.",
+      "welcomeTimeout": "Connected but the hub did not send WELCOME in time. Try again.",
+      "proxyRateLimit": "Too many requests right now (proxy rate limit hit). Please wait a few moments and try again."
+    },
+    "moderation": {
+      "hubParted": "The hub parted you from the room.",
+      "removedFromRoom": "Removed from room by the hub (kick, ban, or remote part).",
+      "removedFromRoomSystem": "The hub parted you from {{room}}."
+    },
+    "slash": {
+      "helpIntro": "=== RRC help ===",
+      "helpClient": "Client commands:",
+      "helpNick": "/nick NAME — change nickname",
+      "helpJoin": "/join ROOM [key] — join a room (optional +k key)",
+      "helpPart": "/part [room] — leave room (default: active)",
+      "helpMe": "/me ACTION — send ACTION emote",
+      "helpMsg": "/msg NICK|HASH text — direct NOTICE whisper (rrcd)",
+      "helpClear": "/clear — clear local transcript for this room",
+      "helpQuit": "/quit — disconnect from hub",
+      "helpHub": "Hub commands (rrcd; sent as MSG). Current room is inserted when omitted:",
+      "helpList": "/list — list registered public rooms",
+      "helpWho": "/who [room] — list members (bare /who uses the focused room)",
+      "helpTopic": "/topic [text], /mode +m, /op NICK, /kick NICK, … — room moderation (ops; rrcd wants /cmd ROOM …)",
+      "helpNote": "Replies with no room land in the focused room. Other hubs may not support these commands.",
+      "usageNick": "Usage: /nick NAME",
+      "usageJoin": "Usage: /join ROOM [key]",
+      "usageMe": "Usage: /me ACTION",
+      "usageMsg": "Usage: /msg NICK|HASH text",
+      "msgTargetNotFound": "Could not resolve /msg target to a full identity hash. Join a room or use the full hash.",
+      "nickChanged": "Nickname set to {{name}}",
+      "commandSent": "Command sent: {{cmd}}"
+    },
+    "status": {
+      "disconnected": "Disconnected",
+      "connecting": "Connecting…",
+      "awaiting_welcome": "Waiting for hub…",
+      "active": "Connected",
+      "reconnecting": "Reconnecting…"
+    }
+  },
+  "searchModal": {
+    "closeSearch": "Close search",
+    "placeholder": "Search all messages… (user:name, channel:name)",
+    "noResults": "No results",
+    "hint": "Type to search across all messages",
+    "resultCount": "{{count}} result(s) — click to navigate"
+  },
+  "securityPanel": {
+    "keyRegenRequested": "Key regeneration requested. Device will generate new keys.",
+    "failed": "Failed: {{message}}",
+    "adminKeysApplied": "Admin keys applied.",
+    "adminSettingsApplied": "Administration settings applied.",
+    "backupFailed": "Backup failed: {{message}}",
+    "restoreFailed": "Restore failed: {{message}}",
+    "noBackupFound": "No backup found",
+    "missingKeyMaterial": "Missing key material",
+    "unknownError": "Unknown error",
+    "dataSigned": "Data signed successfully.",
+    "signNoResult": "Sign operation returned no result.",
+    "signFailed": "Sign failed: {{message}}",
+    "privateKeyExported": "Private key exported.",
+    "exportNoKey": "Export returned no key.",
+    "exportFailed": "Export failed: {{message}}",
+    "privateKeyImported": "Private key imported. Restart may be required.",
+    "importFailed": "Import failed.",
+    "importFailedWithMessage": "Import failed: {{message}}",
+    "adminKeyLabel": "Admin key {{number}}",
+    "removeAdminKey": "Remove admin key {{number}}",
+    "sectionDmKeys": "DM Keys",
+    "sectionAdminKeys": "Admin Keys",
+    "sectionAdminSettings": "Administration Settings",
+    "sectionKeyBackup": "Key Backup / Restore",
+    "sectionMeshcoreCrypto": "MeshCore Cryptography",
+    "adminKeyPlaceholder": "Base64-encoded 32-byte public key",
+    "signTextPlaceholder": "Enter text to sign...",
+    "importKeyPlaceholder": "Paste base64-encoded private key...",
+    "connectToManage": "Connect to a device to manage security settings.",
+    "publicKeyLabel": "Public Key",
+    "copyPublicKey": "Copy",
+    "publicKeyCopied": "Public key copied to clipboard.",
+    "remoteAdminSetupHint": "Copy this key and add it as an Admin Key on remote nodes you want to configure. See Meshtastic remote admin docs.",
+    "privateKeyLabel": "Private Key",
+    "privateKeyHint": "Keep your private key secret. It is used to encrypt direct messages.",
+    "regenerateKeys": "Regenerate Keys",
+    "regeneratingKeys": "Regenerating...",
+    "adminKeysIntro": "Up to {{max}} public keys authorized to send admin commands to this device. Each must be a base64-encoded 32-byte Curve25519 public key.",
+    "invalidAdminKey": "Must be a valid base64-encoded 32-byte key",
+    "removeAdminKeyButton": "Remove",
+    "addAdminKey": "+ Add Admin Key",
+    "applyAdminKeys": "Apply Admin Keys",
+    "applySettings": "Apply Settings",
+    "applying": "Applying...",
+    "managedDevice": "Managed Device",
+    "managedDeviceDesc": "Device is managed by a mesh administrator.",
+    "serialConsole": "Serial Console",
+    "serialConsoleDesc": "Enable serial console over the Stream API.",
+    "debugLogApi": "Debug Log API",
+    "debugLogApiDesc": "Output live debug logging over serial or Bluetooth.",
+    "adminChannel": "Admin Channel (insecure)",
+    "adminChannelDesc": "Allow incoming device control over the insecure legacy admin channel.",
+    "keyBackupUnavailable": "System keychain encryption is not available on this platform. Backup and restore are disabled.",
+    "keyBackupDesc": "Back up this node's public and private keys to the system keychain (encrypted). The private key restores your mesh identity after factory reset.",
+    "keyBackupNotIncluded": "Does not restore channels, NodeDB, messages, contacts, or remote admin keys.",
+    "backupAvailableForNode": "Backup saved for {{label}}",
+    "backupLabelMeshtastic": "Meshtastic · {{detail}}",
+    "backupLabelMeshcore": "MeshCore · {{detail}}",
+    "noBackupForNode": "No backup for {{label}}",
+    "keysBackedUpForDevice": "Keys backed up for {{label}}.",
+    "otherBackupsCount": "{{count}} other device backup(s) stored",
+    "restoreFromBackup": "Restore from backup…",
+    "restoreFromBackupTitle": "Restore from backup",
+    "restoreFromBackupConfirm": "Restore keys for {{label}} to the connected device?",
+    "restoreVerifySuccess": "Keys restored successfully.",
+    "restoreVerifyFailed": "Restore completed but key verification failed. Reconnect and check Security.",
+    "removeBackup": "Remove backup",
+    "removeBackupConfirm": "Remove the stored backup for this node from this computer?",
+    "backupRemoved": "Backup removed.",
+    "meshcorePrivateKeyHint": "Use Export Private Key below to view key material. Backup stores the full key pair on this computer.",
+    "backupKeys": "Backup Keys",
+    "restoreKeys": "Restore Keys",
+    "working": "Working...",
+    "meshcoreCryptoDesc": "Sign data with your device key, or export/import your private key for backup.",
+    "signDataLabel": "Sign Data",
+    "signDataButton": "Sign Data",
+    "signing": "Signing...",
+    "signatureBase64Label": "Signature (Base64)",
+    "exportPrivateKeyButton": "Export Private Key",
+    "exportingPrivateKey": "Exporting...",
+    "privateKeyBase64Label": "Private Key (Base64)",
+    "exportKeyWarning": "Keep this key secure. Anyone with access can decrypt your private messages.",
+    "importPrivateKeyLabel": "Import Private Key",
+    "importPrivateKeyButton": "Import Private Key",
+    "importingPrivateKey": "Importing...",
+    "regenerateKeysConfirm": "Regenerating keys will replace your current DM public and private keys. Any existing encrypted messages will no longer be decryptable. Are you sure?"
+  },
+  "sidebar": {
+    "disabledTabTooltip": "Not available in this mode"
+  },
+  "signalMeter": {
+    "rssi": "RSSI",
+    "snr": "SNR",
+    "rssiValue": "{{value}} dBm",
+    "noData": "—",
+    "aria": "Signal meter: RSSI {{rssi}}, SNR {{snr}}, level {{level}}"
+  },
+  "signalPropagation": {
+    "oneLiners": {
+      "stayOnTheAir": "Stay on the air",
+      "helloOperator": "Hello, operator",
+      "thanksForMeshing": "Thanks for meshing",
+      "builtForCommunities": "Built for communities everywhere",
+      "stayConnected": "Stay connected",
+      "signalsOut": "Signals out",
+      "gladYouAreHere": "Glad you are here",
+      "keepTheMeshAlive": "Keep the mesh alive"
+    }
+  },
+  "tabs": {
+    "connection": "Connection",
+    "chat": "Chat",
+    "games": "Games",
+    "rrc": "RRC",
+    "remote": "Remote",
+    "nomadnetwork": "Nomad Network",
+    "contacts": "Contacts",
+    "nodes": "Nodes",
+    "peers": "Peers",
+    "map": "Map",
+    "radio": "Radio",
+    "network": "Network",
+    "modules": "Modules",
+    "telemetry": "Telemetry",
+    "security": "Security",
+    "tak": "TAK",
+    "app": "App",
+    "diagnostics": "Diagnostics",
+    "stats": "Stats",
+    "sniffer": "Sniffer",
+    "repeaters": "Repeaters",
+    "rooms": "Rooms",
+    "rf": "RF",
+    "graph": "Graph",
+    "topology": "Network topology",
+    "admin": "Administration"
+  },
   "takServerPanel": {
     "title": "TAK Server",
     "description": "Built-in TAK server for ATAK / WinTAK / iTAK compatibility. Broadcasts mesh node positions as Cursor on Target (CoT) events.",
@@ -5346,7 +5758,8 @@
     "regenerateWarning": "Regenerating invalidates existing ATAK data packages — you will need to re-import.",
     "durationSec": "{{s}}s",
     "durationMin": "{{m}}m",
-    "durationHourMin": "{{h}}h {{m}}m"
+    "durationHourMin": "{{h}}h {{m}}m",
+    "atakUndecodable": "Payload not recognized as a TAK packet"
   },
   "telemetryPanel": {
     "title": "Telemetry",
@@ -5387,69 +5800,17 @@
     "chartAriaSignal": "Signal quality chart: latest SNR {{snr}} dB, RSSI {{rssi}} dBm, {{count}} points",
     "chartAriaTempHumidity": "Temperature and humidity chart: latest temperature {{temperature}}, humidity {{humidity}} percent, {{count}} points",
     "chartAriaPressure": "Barometric pressure chart: latest {{pressure}} hPa, {{count}} points",
-    "chartAriaIaq": "Air quality chart: latest IAQ {{iaq}}, {{count}} points"
-  },
-  "signalMeter": {
-    "rssi": "RSSI",
-    "snr": "SNR",
-    "rssiValue": "{{value}} dBm",
-    "noData": "—",
-    "aria": "Signal meter: RSSI {{rssi}}, SNR {{snr}}, level {{level}}"
-  },
-  "gpxExport": {
-    "button": "Export GPX",
-    "buttonAria": "Export position history as GPX",
-    "success": "GPX exported",
-    "failed": "GPX export failed",
-    "empty": "No position history to export"
-  },
-  "qrIngest": {
-    "qrImageAlt": "QR code",
-    "encodeFailed": "Could not generate QR code",
-    "paperIngested": "Paper message decrypted into Chat",
-    "paperInvalidUri": "That does not look like a valid LXMF paper link",
-    "paperDecryptFailed": "Could not decrypt paper message — is this the correct identity?",
-    "paperIdentityNotConfigured": "Reticulum identity is not ready — start the stack and configure identity first",
-    "paperIngestFailed": "Could not ingest paper message",
-    "contactImported": "Contact added from deep link",
-    "contactImportFailed": "Could not import contact from link",
-    "unknownLink": "Unrecognized link",
-    "identityShown": "Opened identity share link",
-    "channelLinkReceived": "Channel link opened — review import on the Radio tab",
-    "showIdentityQr": "Show identity QR",
-    "showIdentityQrAria": "Show QR code for this identity",
-    "chooseImage": "Scan image…",
-    "chooseImageAria": "Choose an image file containing a QR code",
-    "scanCamera": "Scan with camera",
-    "scanCameraAria": "Scan a QR code with the camera",
-    "stopCamera": "Stop camera",
-    "stopCameraAria": "Stop camera QR scan",
-    "pasteImageHint": "You can also paste a QR image here (Ctrl/Cmd+V).",
-    "cameraPreviewAria": "Camera preview for QR scanning",
-    "noQrFound": "No QR code found in that image",
-    "decodeFailed": "Could not read QR code from image",
-    "cameraDenied": "Camera permission denied — enable it in system privacy settings",
-    "cameraUnavailable": "Camera is not available on this device",
-    "confirmContactImportTitle": "Import contact?",
-    "confirmContactImportBody": "Add {{name}} from an external link to your Reticulum contacts?",
-    "confirmContactImportAction": "Import contact",
-    "confirmMeshcoreContactImportTitle": "Import MeshCore contact?",
-    "confirmMeshcoreContactImportBody": "Add {{name}} from a MeshCore contact QR to your contacts?",
-    "confirmMeshcoreContactImportAction": "Import MeshCore contact",
-    "confirmMeshcoreChannelImportTitle": "Import MeshCore channel?",
-    "confirmMeshcoreChannelImportBody": "Apply channel {{name}} from a MeshCore channel QR on the Radio tab?",
-    "confirmMeshcoreChannelImportAction": "Import channel",
-    "lxmaRegisterFailed": "Could not register contact public key (is the Reticulum stack running?)",
-    "meshcoreContactImported": "MeshCore contact added from QR",
-    "meshcoreContactImportFailed": "Could not import MeshCore contact from QR",
-    "meshcoreChannelImported": "MeshCore channel link received — review on the Radio tab",
-    "meshcoreChannelImportFailed": "Could not import MeshCore channel from QR",
-    "meshcoreChannelPrefill": "Channel details filled from QR — save to apply",
-    "meshcoreChannelNoFreeIndex": "All MeshCore channel slots are full — delete one before importing"
+    "chartAriaIaq": "Air quality chart: latest IAQ {{iaq}}, {{count}} points",
+    "sectionParticulates": "Particulates, CO₂ and Lightning",
+    "chartAriaParticulates": "Particulate chart: latest PM2.5 {{pm25}}, CO₂ {{co2}}, {{count}} points",
+    "axisParticulates": "µg/m³ · strikes",
+    "axisCo2": "ppm",
+    "seriesPm25": "PM2.5 (µg/m³)",
+    "seriesCo2": "CO₂ (ppm)",
+    "seriesLightningStrikes": "Lightning strikes (1h)"
   },
   "toasts": {
     "firmwareAvailable": "Firmware update available: v{{version}}",
-    "longSessionRestartNudge": "Mesh-client has been running for four days. Restart the app to reduce the risk of crashes on long MeshCore BLE sessions.",
     "meshcoreDistanceFilterHint": "You have {{count}} contacts with GPS on the map. Enable the distance filter in App → Appearance to focus on nearby nodes.",
     "newMessages_one": "{{protocol}}: {{count}} new message",
     "newMessages_other": "{{protocol}}: {{count}} new messages"
@@ -5472,5 +5833,96 @@
     "menuToastAvailableTitle": "Update available",
     "menuToastAvailableBody": "Version {{version}} is available.",
     "menuToastErrorTitle": "Update check failed"
+  },
+  "reticulumSetup": {
+    "eyebrow": "RETICULUM · GETTING STARTED",
+    "title": "Your first connection",
+    "intro": "New to Reticulum? Set up a connection, find people, and learn where things live.",
+    "open": "Open setup guide",
+    "hide": "Hide guide",
+    "stepsLabel": "Reticulum setup steps",
+    "startTitle": "Start here",
+    "identityTitle": "Your identity",
+    "connectionTitle": "Get connected",
+    "exploreTitle": "Try it out",
+    "startBody": "Reticulum connects people and apps over the internet, local networks, or compatible radios. You can try it with just this computer and an internet connection.",
+    "startHint": "This guide starts Reticulum inside the app. Then you will choose a name and a way to reach other people.",
+    "startAction": "Let’s get started",
+    "working": "Working…",
+    "identityBody": "Your identity is your account on this network. It lives on this computer, with no signup or central account provider. Your messaging address stays the same when you change your name.",
+    "existingIdentity": "You already have an identity. This guide keeps it and updates only your display name.",
+    "nameLabel": "Name or callsign",
+    "nameHint": "This name is shared with peers. A nickname is fine; it does not need to be your real name.",
+    "saveIdentity": "Save name and continue",
+    "importIdentity": "I have an identity to restore",
+    "backupTitle": "Keep your recovery words safe",
+    "backupBody": "These words restore your identity if you lose this computer. Save them somewhere private now. Never give them to someone who asks for your messaging address. You can also export a protected backup from Network later.",
+    "savedWords": "I have saved my recovery words",
+    "continue": "Continue",
+    "back": "Back",
+    "connectionBody": "An interface is simply a connection into Reticulum. Choose how you want to reach the network. You can add other connections later.",
+    "routeLabel": "How to connect",
+    "routes": {
+      "internet": {
+        "title": "Internet",
+        "body": "A public hub connects you to other people. No radio needed; a good place to start."
+      },
+      "radio": {
+        "title": "RNode radio",
+        "body": "Use compatible radio hardware and the settings of your local radio network."
+      },
+      "existing": {
+        "title": "Existing setup",
+        "body": "Keep your current interfaces and check whether they are ready."
+      }
+    },
+    "hubLabel": "Public internet hub",
+    "hubHint": "Start with one hub. The app will add or enable this connection and restart Reticulum to apply it. Public hubs can see your IP address and may sometimes be unavailable.",
+    "connectHub": "Connect to this hub",
+    "hubSaved": "Connection saved. Checking it after the restart…",
+    "radioDevice": "Use a device running RNode firmware. A Meshtastic or MeshCore radio is not automatically an RNode; do not flash or change firmware without checking your device’s instructions.",
+    "radioSettings": "Open connection settings below, add an RNode interface, choose USB or Bluetooth, and use the frequency, bandwidth, spreading factor, and coding rate supplied by your local group.",
+    "radioCheck": "Enable the interface and apply its restart prompt, then return to this guide. A working radio connection still needs another compatible station in range.",
+    "openInterfaces": "Open connection settings below",
+    "existingHint": "The guide will check your existing interfaces without changing them. A local-network interface reaches nearby Reticulum devices on that network; it does not by itself connect you to public internet peers.",
+    "checkTitle": "Checking your connection",
+    "ready": "Your connection is available",
+    "checkStack": "Reticulum network",
+    "checkMessaging": "Messaging service",
+    "checkConnection": "Chosen connection",
+    "available": "Ready",
+    "waiting": "Waiting",
+    "readyHint": "This confirms the local services and connection are up. It does not guarantee a particular person is reachable.",
+    "waitHint": "Starting up can take a moment. If a hub stays unavailable, check your internet connection or choose another hub. For a radio, check its cable, pairing, and local settings.",
+    "checkFailed": "The app could not read the current status. Check that Reticulum is running, then try again.",
+    "checkAgain": "Check again",
+    "restartHint": "Restarting briefly interrupts active Reticulum connections. Saved settings remain available if you close the guide.",
+    "exploreBody": "You have the essentials. Start with one direct message or a group chat; you can explore the other tools whenever you need them.",
+    "connectionLost": "The connection is no longer ready. Go back to check it before sending.",
+    "addressTitle": "Your messaging address",
+    "addressBody": "Share this address with a friend so they can message you. LXMF is the messaging system used by Reticulum apps; this is your LXMF address, not your recovery words.",
+    "copyAddress": "Copy my messaging address",
+    "addressCopied": "Messaging address copied",
+    "firstMessage": "Ask a friend for their LXMF address. In Peers, use the address field to look them up, then open a chat and send a short message.",
+    "discoveryHint": "Peers also fills as the app hears announces: small introductions from people and services. Give it time. Some entries are services, not people you can message.",
+    "deliveryHint": "Look for Delivered on a direct message. Stored at a propagation node means an intermediary has the message; it does not mean your friend has read or received it.",
+    "peersTitle": "Find people",
+    "peersBody": "Peers is your starting point for direct messages. Save people as contacts so you can find them again.",
+    "openPeers": "Open Peers",
+    "roomsTitle": "Join a conversation",
+    "roomsBody": "RRC is group chat. Open it, choose a hub, connect, and join a room. It is separate from your direct messages.",
+    "openRooms": "Open group chat",
+    "networkHint": "Network holds your identity, backups, and optional offline-message settings. Connection is where you manage how you connect. Nomad browses pages; Remote and Admin can wait until you need them.",
+    "openNetwork": "Open identity and backup settings",
+    "stopped": "Reticulum is stopped or still starting. Start it to continue setup.",
+    "restartService": "Start Reticulum",
+    "actionFailed": "That step did not finish. Your saved settings have been kept. Check the details and try again.",
+    "errorDetails": "Show error details",
+    "tabUnavailable": "This tab is hidden. Enable it in the App tab settings, then return to the guide.",
+    "privateConnection": "This hub already has private network settings. Edit it in connection settings below, or choose a different public hub.",
+    "interfacesUnavailable": "Could not read your connections. Check that Reticulum is running, then try again.",
+    "identityUnavailable": "Could not read your identity. Check that Reticulum is running, then try again.",
+    "interfaceSaveFailed": "Could not save this connection. Check your connection settings and try again.",
+    "identitySaveFailed": "Could not save your identity settings. Try again."
   }
 }

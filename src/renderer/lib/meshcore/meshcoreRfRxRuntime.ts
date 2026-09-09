@@ -9,7 +9,10 @@ import type { Dispatch, RefObject, SetStateAction } from 'react';
 
 import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
 
-import { parseMeshCoreRfPacket } from '../../../shared/meshcoreRfPacketParse';
+import {
+  meshCorePathInvariantPayloadId,
+  parseMeshCoreRfPacket,
+} from '../../../shared/meshcoreRfPacketParse';
 import { MAX_DEVICE_LOGS, MAX_TELEMETRY_POINTS } from '../../hooks/meshcore/meshcoreHookPreamble';
 import { useDiagnosticsStore } from '../../stores/diagnosticsStore';
 import { upsertNode, upsertNodeRecord, useNodeStore } from '../../stores/nodeStore';
@@ -21,6 +24,7 @@ import {
   type PacketClass,
 } from '../foreignLoraDetection';
 import { applyMeshcoreLateRfHopEnrichment } from '../meshcoreLateRfHopEnrichment';
+import { buildMeshcorePathResolutionFromNodes } from '../meshcorePathChainDisplay';
 import {
   meshcoreRawPacketLogFromBytesFallback,
   meshcoreRawPacketResolveFromParsed,
@@ -42,6 +46,11 @@ import { getStoredMeshProtocol } from '../storedMeshProtocol';
 import { meshNodeToNodeRecord } from '../storeRecordAdapters';
 import { MESHCORE_RAW_SELF_FLOOD_ADVERT_COALESCE_MS } from '../timeConstants';
 import type { MeshNode, MQTTStatus, TelemetryPoint } from '../types';
+import {
+  hasOpenHeardRepeatWindow,
+  recordMeshcoreRfRx,
+  resolveMeshcoreHeardRepeaterFromNode,
+} from './heardRepeatTracker';
 import type { DeviceLogEntry, MeshCoreSelfInfo, RxPacketEntry } from './meshcoreHookTypes';
 import { persistMeshcoreNodeInfoAfterAdvert } from './meshcoreLiveContactPersist';
 import {
@@ -673,6 +682,87 @@ function publishMeshcoreRfMqttPacketLog(
 }
 
 /**
+ * Credit Repeater/Room path hashes on self-originated channel TX overhear (relay coverage).
+ * Additive only — does not alter hops-away, Foreign LoRa bridge, or repeater-admin flows.
+ */
+function applyMeshcoreHeardRepeatFromRfRx(
+  ctx: MeshcoreRfParseContext,
+  effectiveFromNodeId: number | null,
+  rawU8: Uint8Array,
+  snr: number,
+  rssi: number,
+  now: number,
+  deps: MeshcoreRfRxDeps,
+): void {
+  const identityId = deps.meshcoreIdentityIdRef.current;
+  if (!identityId) return;
+  const myNodeNum = deps.myNodeNumRef.current;
+  if (myNodeNum === 0) return;
+
+  const selfPubKey =
+    deps.pubKeyMapRef.current.get(myNodeNum) ?? deps.selfInfoRef.current?.publicKey;
+  const isSelfRf = meshcoreRfIsSelfOriginated(rawU8, selfPubKey, myNodeNum);
+  const isOwnMeshcoreTx =
+    isSelfRf || (effectiveFromNodeId != null && effectiveFromNodeId === myNodeNum);
+  // GRP_TXT has no cleartext originator — still credit path hashes while a TX window is open.
+  const treatAsOwnChannelFlood = ctx.payloadTypeString === 'GRP_TXT';
+  const payloadIdentity =
+    ctx.parseOk && ctx.parsed.ok
+      ? meshCorePathInvariantPayloadId(ctx.parsed.payloadTypeNibble, ctx.parsed.innerPayload)
+      : null;
+  if (!isOwnMeshcoreTx && !treatAsOwnChannelFlood) return;
+  if (!hasOpenHeardRepeatWindow(identityId, now)) return;
+
+  // Empty-path channel flood: bind payload identity only (no path segments to credit).
+  if (ctx.pathBytes.length === 0) {
+    if (treatAsOwnChannelFlood || isOwnMeshcoreTx) {
+      recordMeshcoreRfRx({
+        identityId,
+        isOwnMeshcoreTx,
+        treatAsOwnChannelFlood,
+        pathBytes: [],
+        pathHashSizeBytes: ctx.pathHashSizeBytes,
+        myNodeNum,
+        myPubKey: selfPubKey,
+        payloadIdentity,
+        snr,
+        rssi,
+        now,
+        candidates: [],
+        resolveRepeater: () => null,
+      });
+    }
+    return;
+  }
+
+  const nodes = deps.readNodes();
+  const resolution = buildMeshcorePathResolutionFromNodes(nodes);
+  // MeshCore contacts store pubkeys in pubKeyMapRef; MeshNode often omits public_key_hex.
+  // 2/3-byte path matching requires the live map or resolution stays empty (Heard by stays 0).
+  const pubKeyByNodeId = new Map(resolution.pubKeyByNodeId);
+  for (const [nodeId, key] of deps.pubKeyMapRef.current) {
+    pubKeyByNodeId.set(nodeId, key);
+  }
+  recordMeshcoreRfRx({
+    identityId,
+    isOwnMeshcoreTx,
+    treatAsOwnChannelFlood,
+    pathBytes: ctx.pathBytes,
+    pathHashSizeBytes: ctx.pathHashSizeBytes,
+    myNodeNum,
+    myPubKey: selfPubKey,
+    payloadIdentity,
+    snr,
+    rssi,
+    now,
+    candidates: resolution.candidates,
+    pubKeyByNodeId,
+    resolveRepeater: (nodeId) =>
+      resolveMeshcoreHeardRepeaterFromNode(nodeId, nodes.get(nodeId) ?? null),
+  });
+}
+
+/**
  * Full RF RX (event 136) handling: device log + signal telemetry, raw packet log with hop/foreign
  * LoRa bridging, and throttled MQTT packet-log publish. Mirrors the original inline
  * `handleRfRx` — including its early return once the foreign-LoRa proximity gate fails, which
@@ -710,6 +800,7 @@ export function handleMeshcoreRfRx(payload: MeshcoreRfRxPayload, deps: MeshcoreR
       ctx.fromNodeId ?? meshtasticSenderIdForRawLogFallback(ctx.parseOk, rawU8);
     const rxEntry = buildMeshcoreRfRawPacketEntry(ctx, effectiveFromNodeId, now, snr, rssi, rawU8);
     pushMeshcoreRfRawPacketLog(deps, rxEntry);
+    applyMeshcoreHeardRepeatFromRfRx(ctx, effectiveFromNodeId, rawU8, snr, rssi, now, cachedDeps);
 
     if (
       ctx.parseOk &&

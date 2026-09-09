@@ -127,7 +127,7 @@ export function evaluatePnpmRequirement(foundVersion, spec) {
       : 'pnpm (see package.json engines / packageManager)';
 
   const hintTarget =
-    pinnedVersion ?? (floor ? `${floor.major}.${floor.minor}.${floor.patch}` : '11');
+    pinnedVersion ?? (floor ? `${floor.major}.${floor.minor}.${floor.patch}` : '12');
   const hintLines = buildPnpmUpgradeHintLines(hintTarget, {
     corepackAvailable: spec.corepackAvailable,
   });

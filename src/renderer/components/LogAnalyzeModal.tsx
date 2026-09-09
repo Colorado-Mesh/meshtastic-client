@@ -1,9 +1,12 @@
 import type { TFunction } from 'i18next';
 import { PARENT_HOVER_ATTR, X } from 'lucide-react-motion';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
 import { useParentIconTrigger } from '@/renderer/lib/icons/iconMotionContext';
+import { buildLogAnalysisReport } from '@/renderer/lib/logAnalysisReport';
+import { writeClipboardText } from '@/renderer/lib/writeClipboardText';
 import { useTimeFormatStore } from '@/renderer/stores/timeFormatStore';
 
 import {
@@ -49,7 +52,8 @@ export default function LogAnalyzeModal({
   const use24HourTime = useTimeFormatStore((s) => s.use24HourTime);
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  const result = analyzeLogs(entries, protocol);
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'copied' | 'failed'>('idle');
+  const result = useMemo(() => analyzeLogs(entries, protocol), [entries, protocol]);
   const timeRange = formatTimeRange(result.oldestTs, result.newestTs, use24HourTime);
   const dedupedRecs = dedupeRecommendations(result.categories);
 
@@ -68,14 +72,17 @@ export default function LogAnalyzeModal({
     if (!isOpen) return;
     const root = dialogRef.current;
     if (!root) return;
-    const focusables = Array.from(
-      root.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])',
-      ),
-    ).filter((el) => el.offsetParent !== null || root.contains(el));
-    if (focusables.length > 0) focusables[0].focus();
+    const getFocusables = () =>
+      Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary',
+        ),
+      ).filter((el) => el.offsetParent !== null || root.contains(el));
+    getFocusables()[0]?.focus();
     const onTab = (e: KeyboardEvent) => {
-      if (e.key !== 'Tab' || focusables.length === 0) return;
+      if (e.key !== 'Tab') return;
+      const focusables = getFocusables();
+      if (focusables.length === 0) return;
       const first = focusables[0];
       const last = focusables[focusables.length - 1];
       if (e.shiftKey) {
@@ -93,6 +100,17 @@ export default function LogAnalyzeModal({
       root.removeEventListener('keydown', onTab);
     };
   }, [isOpen]);
+
+  const copyReport = async () => {
+    setCopyStatus('copying');
+    try {
+      await writeClipboardText(buildLogAnalysisReport(result, protocol, t));
+      setCopyStatus('copied');
+    } catch (error) {
+      console.warn('[LogAnalyzeModal] copy report failed ' + errLikeToLogString(error));
+      setCopyStatus('failed');
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -127,7 +145,7 @@ export default function LogAnalyzeModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="log-analyze-title"
-        className="bg-deep-black relative z-10 flex max-h-[80vh] w-full max-w-lg flex-col rounded-xl border border-gray-700 shadow-2xl"
+        className="bg-deep-black relative z-10 flex max-h-[80vh] w-full max-w-2xl flex-col rounded-xl border border-gray-700 shadow-2xl"
       >
         <div className="flex shrink-0 items-center justify-between border-b border-gray-700 px-5 py-4">
           <h2 id="log-analyze-title" className="text-lg font-semibold text-gray-100">
@@ -168,9 +186,34 @@ export default function LogAnalyzeModal({
           <p className="text-muted mt-2 text-xs leading-snug">
             {t('logAnalyzeModal.protocolNote')}
           </p>
+          <p className="text-muted mt-1 text-xs">{t('logAnalyzeModal.historyNote')}</p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              aria-label={t('logAnalyzeModal.copyReport')}
+              disabled={copyStatus === 'copying' || result.totalEntries === 0}
+              onClick={() => {
+                void copyReport();
+              }}
+              className="rounded border border-gray-600 bg-slate-800 px-3 py-1.5 text-xs text-gray-200 hover:bg-slate-700 disabled:opacity-50"
+            >
+              {t('logAnalyzeModal.copyReport')}
+            </button>
+            {copyStatus === 'copied' && (
+              <span role="status" className="text-xs text-gray-300">
+                {t('logAnalyzeModal.copySuccess')}
+              </span>
+            )}
+            {copyStatus === 'failed' && (
+              <span role="alert" className="text-xs text-red-400">
+                {t('logAnalyzeModal.copyFailure')}
+              </span>
+            )}
+          </div>
+          <p className="text-muted mt-1 text-xs">{t('logAnalyzeModal.copyHint')}</p>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           {result.categories.length === 0 ? (
             <p className="py-8 text-center text-gray-500">{t('logAnalyzeModal.emptyState')}</p>
           ) : (
@@ -178,8 +221,8 @@ export default function LogAnalyzeModal({
               {result.categories.map((cat) => (
                 <div key={cat.id} className="bg-secondary-dark/50 space-y-1 rounded-lg px-3 py-2">
                   <div className="flex items-center justify-between gap-2">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className="shrink-0 text-sm text-gray-200">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="text-sm text-gray-200">
                         {t(LOG_ANALYZER_CATEGORY_LABEL_KEYS[cat.id])}
                       </span>
                       <span
@@ -201,41 +244,80 @@ export default function LogAnalyzeModal({
                       {t('logAnalyzeModal.lastMessagePrefix')} {cat.lastMessage}
                     </p>
                   ) : null}
+                  <details className="pt-1 text-xs">
+                    <summary className="cursor-pointer rounded py-1 text-gray-200 focus-visible:outline-2 focus-visible:outline-offset-2">
+                      {t('logAnalyzeModal.evidence', {
+                        category: t(LOG_ANALYZER_CATEGORY_LABEL_KEYS[cat.id]),
+                      })}
+                    </summary>
+                    <p className="text-muted my-2">
+                      {t('logAnalyzeModal.evidenceShown', {
+                        shown: Math.min(cat.count, 20),
+                        total: cat.count,
+                      })}
+                    </p>
+                    <ol
+                      className="max-h-64 space-y-2 overflow-y-auto"
+                      aria-label={t('logAnalyzeModal.evidence', {
+                        category: t(LOG_ANALYZER_CATEGORY_LABEL_KEYS[cat.id]),
+                      })}
+                    >
+                      {cat.entries.slice(0, 20).map((entry, index) => (
+                        <li
+                          key={index}
+                          className="border-l-2 border-gray-600 pl-2 font-mono text-gray-300"
+                        >
+                          <div className="break-all">
+                            <time dateTime={new Date(entry.ts).toISOString()}>
+                              {new Date(entry.ts).toLocaleString(undefined, {
+                                hour12: !use24HourTime,
+                              })}
+                            </time>
+                            {' · '}
+                            {entry.level}
+                            {' · '}
+                            {entry.source}
+                          </div>
+                          <p className="mt-1 break-all whitespace-pre-wrap">{entry.message}</p>
+                        </li>
+                      ))}
+                    </ol>
+                  </details>
                 </div>
               ))}
             </div>
           )}
-        </div>
 
-        {result.categories.length > 0 && (
-          <div className="shrink-0 border-t border-gray-700 px-5 py-4">
-            <h3 className="text-muted mb-2 text-xs tracking-wide uppercase">
-              {t('logAnalyzeModal.recommendationsHeading')}
-            </h3>
-            <ul className="space-y-1.5">
-              {dedupedRecs.map((row) => (
-                <li
-                  key={row.recommendationGroup}
-                  className="flex items-start gap-2 text-sm text-gray-300"
-                >
-                  <span className={`${severityColor(row.severity)} mt-0.5`}>•</span>
-                  <span>
-                    {t(resolveLogAnalyzerRecommendationKey(row.recommendationGroup))}
-                    {row.categoryIds.length > 1 ? (
-                      <span className="text-muted mt-0.5 block text-xs">
-                        {t('logAnalyzeModal.appliesToCategories', {
-                          labels: row.categoryIds
-                            .map((id) => t(LOG_ANALYZER_CATEGORY_LABEL_KEYS[id]))
-                            .join(', '),
-                        })}
-                      </span>
-                    ) : null}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+          {result.categories.length > 0 && (
+            <div className="mt-4 border-t border-gray-700 pt-4">
+              <h3 className="text-muted mb-2 text-xs tracking-wide uppercase">
+                {t('logAnalyzeModal.recommendationsHeading')}
+              </h3>
+              <ul className="space-y-1.5">
+                {dedupedRecs.map((row) => (
+                  <li
+                    key={row.recommendationGroup}
+                    className="flex items-start gap-2 text-sm text-gray-300"
+                  >
+                    <span className={`${severityColor(row.severity)} mt-0.5`}>•</span>
+                    <span>
+                      {t(resolveLogAnalyzerRecommendationKey(row.recommendationGroup))}
+                      {row.categoryIds.length > 1 ? (
+                        <span className="text-muted mt-0.5 block text-xs">
+                          {t('logAnalyzeModal.appliesToCategories', {
+                            labels: row.categoryIds
+                              .map((id) => t(LOG_ANALYZER_CATEGORY_LABEL_KEYS[id]))
+                              .join(', '),
+                          })}
+                        </span>
+                      ) : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

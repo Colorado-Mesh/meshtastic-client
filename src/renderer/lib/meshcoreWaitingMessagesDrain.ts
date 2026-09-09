@@ -9,6 +9,7 @@ import {
 import { meshcoreTraceResponsesInFlightCount } from './meshcoreTracePathMultiplex';
 import {
   MESHCORE_WAITING_MESSAGES_AFTER_TX_DEFER_MS,
+  MESHCORE_WAITING_MESSAGES_CIRCUIT_OPEN_BACKOFF_FACTOR,
   MESHCORE_WAITING_MESSAGES_CONGESTED_RETRY_MS,
   MESHCORE_WAITING_MESSAGES_DRAIN_DEBOUNCE_MS,
   MESHCORE_WAITING_MESSAGES_POLL_MS,
@@ -137,6 +138,39 @@ export function shouldSkipMeshcoreSilentBulkGetWaitingMessages(): boolean {
   return silentBulkSkipped || silentBulkCliPreempt;
 }
 
+/** Poll interval for the 5-minute safety-net (stretched while silent-bulk circuit is open). */
+export function meshcoreWaitingMessagesPeriodicPollIntervalMs(): number {
+  return shouldSkipMeshcoreSilentBulkGetWaitingMessages()
+    ? MESHCORE_WAITING_MESSAGES_POLL_MS * MESHCORE_WAITING_MESSAGES_CIRCUIT_OPEN_BACKOFF_FACTOR
+    : MESHCORE_WAITING_MESSAGES_POLL_MS;
+}
+
+/** True when the periodic safety-net poll may run (respects circuit-open stretch). */
+export function meshcoreWaitingMessagesPeriodicPollDue(
+  lastRunAtMs: number,
+  nowMs: number,
+): boolean {
+  return nowMs - lastRunAtMs >= meshcoreWaitingMessagesPeriodicPollIntervalMs();
+}
+
+/** Congested-retry delay while companion TX is deferred (stretched when circuit is open). */
+export function meshcoreWaitingMessagesCongestedRetryMs(): number {
+  return shouldSkipMeshcoreSilentBulkGetWaitingMessages()
+    ? MESHCORE_WAITING_MESSAGES_CONGESTED_RETRY_MS *
+        MESHCORE_WAITING_MESSAGES_CIRCUIT_OPEN_BACKOFF_FACTOR
+    : MESHCORE_WAITING_MESSAGES_CONGESTED_RETRY_MS;
+}
+
+/**
+ * Silent auto-drain path: pyMC/OpenHop TCP often never answers bulk getWaitingMessages, so
+ * prefer syncNextMessage immediately instead of paying a silent bulk timeout every connect.
+ */
+export function shouldPreferMeshcoreSilentIncrementalDrain(
+  connectionType?: MeshcoreCompanionTransport,
+): boolean {
+  return connectionType === 'tcp' || shouldSkipMeshcoreSilentBulkGetWaitingMessages();
+}
+
 /** Record a successful silent bulk drain (including empty queue). */
 export function noteMeshcoreSilentBulkSuccess(): void {
   silentBulkTimeoutStreak = 0;
@@ -164,6 +198,17 @@ export function resetMeshcoreSilentBulkBreaker(): void {
   silentBulkCliPreempt = false;
 }
 
+/** Test / support-bundle snapshot of silent-bulk circuit state. */
+export function getMeshcoreSilentBulkDrainSnapshot(): {
+  silentBulkSkipped: boolean;
+  silentBulkTimeoutStreak: number;
+} {
+  return {
+    silentBulkSkipped: silentBulkSkipped,
+    silentBulkTimeoutStreak: silentBulkTimeoutStreak,
+  };
+}
+
 export type MeshcoreCompanionTransport = 'ble' | 'serial' | 'tcp' | null | undefined;
 
 export function waitingMessagesDrainTimeoutMs(
@@ -173,8 +218,8 @@ export function waitingMessagesDrainTimeoutMs(
   if (showSyncBanner) {
     return MESHCORE_WAITING_MESSAGES_SYNC_TIMEOUT_MS;
   }
-  // BLE and USB serial both starve companion TX when bulk hangs — keep silent bulk short.
-  if (connectionType === 'serial' || connectionType === 'ble') {
+  // BLE, USB serial, and TCP/pyMC starve companion TX when bulk hangs — keep silent bulk short.
+  if (connectionType === 'serial' || connectionType === 'ble' || connectionType === 'tcp') {
     return MESHCORE_WAITING_MESSAGES_SERIAL_SILENT_TIMEOUT_MS;
   }
   return MESHCORE_WAITING_MESSAGES_SILENT_TIMEOUT_MS;
@@ -286,7 +331,7 @@ export function scheduleMeshcoreWaitingMessagesDrain(
         debounceTimer = setTimeout(() => {
           debounceTimer = null;
           scheduleMeshcoreWaitingMessagesDrain(drain, options);
-        }, MESHCORE_WAITING_MESSAGES_CONGESTED_RETRY_MS);
+        }, meshcoreWaitingMessagesCongestedRetryMs());
         return;
       }
       options?.onDeferredChange?.(false);

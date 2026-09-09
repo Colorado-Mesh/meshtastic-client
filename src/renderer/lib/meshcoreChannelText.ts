@@ -28,13 +28,12 @@ const BRACKET_PREFIX = /^@\[([^\]]*)\]\s*(.*)$/su;
 /** Optional mesh-client parent key suffix inside brackets: `@[Display Name#1780235760]`. */
 /** Inbound keys may be firmware seconds or ms-scale; outbound text replies are keyless. */
 const BRACKET_REPLY_KEY_SUFFIX = /#(\d{10,})$/;
+const UNSAFE_WIRE_NAME = /\]|#\d{10,}$/u;
 
+/** Normalize a MeshCore reply target, returning empty for names the bracket wire cannot encode. */
 export function sanitizeMeshcoreWireName(name: string): string {
-  return name
-    .replace(/\p{Extended_Pictographic}/gu, '')
-    .replace(/[\uFE00-\uFE0F\u200D]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const normalized = name.replace(/\s+/g, ' ').trim();
+  return UNSAFE_WIRE_NAME.test(normalized) ? '' : normalized;
 }
 
 /** Build `@[Name#replyKey]` prefix (keyed wire; used by some inbound clients, not mesh-client outbound). */
@@ -46,7 +45,7 @@ export function formatMeshcoreWireReplyPrefix(displayName: string, replyKey: num
   return `@[${name}#${key}]`;
 }
 
-/** Keyless tapback prefix: `@[Display Name]` (sanitized; official companion tapback wire). */
+/** Keyless tapback prefix: `@[Display Name]` (official companion tapback wire). */
 export function formatMeshcoreWireTapbackPrefix(displayName: string): string {
   const clean = sanitizeMeshcoreWireName(displayName);
   return `@[${clean.length > 0 ? clean : 'Unknown'}]`;
@@ -683,8 +682,9 @@ const GENERIC_MESHCORE_REPLY_BODIES = new Set([
 ]);
 
 /**
- * True when a reply body substantively references `parentPayload` (keep an explicit wire `#key`
- * parent). Generic short replies and tapbacks return false so a stale keyed parent can upgrade.
+ * True when a reply body substantively references `parentPayload` so a persisted parent survives
+ * hydration even when its explicit wire-key provenance is unavailable. Generic short replies and
+ * tapbacks return false so a stale keyed parent can upgrade.
  */
 export function meshcoreReplyBodyReferencesParent(body: string, parentPayload: string): boolean {
   const bodyNorm = normalizePayloadMatchText(body);
@@ -751,7 +751,6 @@ function tryUpgradeMeshcoreReplyToLatestSameSender(
   targetName: string,
   lookupOpts: MeshcoreReplyLookupOptions,
   currentParent: ChatMessage | undefined,
-  explicitWireKey: boolean,
 ): { replyId: number; parent: ChatMessage } | null {
   const resolvedKey = resolveMeshcoreLatestBracketParentKey(msg, prior, targetName);
   if (resolvedKey == null) return null;
@@ -761,7 +760,7 @@ function tryUpgradeMeshcoreReplyToLatestSameSender(
     return { replyId: resolvedKey, parent: resolvedParent };
   }
   if (resolvedParent.timestamp <= currentParent.timestamp) return null;
-  if (explicitWireKey && meshcoreReplyBodyReferencesParent(msg.payload, currentParent.payload)) {
+  if (meshcoreReplyBodyReferencesParent(msg.payload, currentParent.payload)) {
     return null;
   }
   return { replyId: resolvedKey, parent: resolvedParent };
@@ -933,22 +932,6 @@ function meshcoreWireHadExplicitReplyKey(msg: ChatMessage): boolean {
   return /#\d{4,}\]/u.test(raw);
 }
 
-function meshcoreWireReplyKeyFromMessage(msg: ChatMessage): number | undefined {
-  const normalized = normalizeMeshcoreIncomingText(msg.meshcoreDedupeKey ?? msg.payload);
-  return normalized.wireReplyKey;
-}
-
-/** Firmware seconds `#key` resolved a parent — keep it; do not upgrade to latest-from-sender. */
-function meshcoreTrustExplicitSecWireReplyKey(
-  msg: ChatMessage,
-  parent: ChatMessage | undefined,
-): boolean {
-  const wireReplyKey = meshcoreWireReplyKeyFromMessage(msg);
-  if (wireReplyKey == null || parent == null) return false;
-  if (wireReplyKey >= MESHCORE_REPLY_KEY_MS_THRESHOLD) return false;
-  return meshcoreMessageMatchesReplyKey(parent, wireReplyKey);
-}
-
 /** True when this row is a reply to someone else's message (not self-tapback / own outbound). */
 function meshcoreIsIncomingBracketReply(msg: ChatMessage, targetName: string | undefined): boolean {
   if (!targetName?.trim()) return false;
@@ -959,6 +942,7 @@ function meshcoreIsIncomingBracketReply(msg: ChatMessage, targetName: string | u
  * Fill / lightly repair reply previews.
  * - Own outbound rows: keep explicit composer `replyId` (never "latest from sender").
  * - Incoming `@[Name]` without `#key`: re-resolve latest target message once the full thread is loaded.
+ * - Incoming keyed rows: keep a corroborated parent, but refresh stale seconds/ms keys for generic replies.
  */
 function refreshMeshcoreReplyParent(msg: ChatMessage, prior: readonly ChatMessage[]): ChatMessage {
   if (msg.emoji != null && msg.replyId != null) return msg;
@@ -985,17 +969,13 @@ function refreshMeshcoreReplyParent(msg: ChatMessage, prior: readonly ChatMessag
     if (hintParent) {
       replyId = meshcoreCanonicalReplyKey(hintParent);
       parent = hintParent;
-    } else if (
-      !(explicitWireKey && !parent) &&
-      !meshcoreTrustExplicitSecWireReplyKey(msg, parent)
-    ) {
+    } else if (!(explicitWireKey && !parent)) {
       const upgraded = tryUpgradeMeshcoreReplyToLatestSameSender(
         msg,
         prior,
         targetName,
         lookupOpts,
         parent,
-        explicitWireKey,
       );
       if (upgraded) {
         replyId = upgraded.replyId;
@@ -1009,7 +989,6 @@ function refreshMeshcoreReplyParent(msg: ChatMessage, prior: readonly ChatMessag
       targetName,
       lookupOpts,
       parent,
-      false,
     );
     if (upgraded) {
       replyId = upgraded.replyId;

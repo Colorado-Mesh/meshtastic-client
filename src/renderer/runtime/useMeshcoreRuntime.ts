@@ -21,6 +21,7 @@ import {
   throwIfMeshcoreOffloadAborted,
 } from '@/renderer/lib/meshcoreOffload';
 import { NOBLE_BLE_YIELD_RELEASED_EVENT } from '@/renderer/lib/nobleBleYieldReleased';
+import { touch } from '@/shared/touch';
 
 import { bytesToHex } from '../../shared/hexBytes';
 import {
@@ -133,9 +134,21 @@ import {
   meshcoreIdentityHasFullKeyPair,
   tryPersistMeshcorePublicKeyFromRadio,
 } from '../lib/letsMeshJwt';
+import { canTransmitLocation } from '../lib/locationTransmit';
 import { runLoraRfReconnectAttempt } from '../lib/loraRfReconnectAttempt';
+import {
+  clearHeardRepeatWindow,
+  clearHeardRepeatWindowIfMessage,
+  openHeardRepeatWindow,
+  renameHeardRepeatWindowMessageId,
+} from '../lib/meshcore/heardRepeatTracker';
 import { assignCayenneTemperatureFields } from '../lib/meshcore/meshcoreCayenneTemperature';
 import { ensureMeshcoreChatSenderInNodeStore } from '../lib/meshcore/meshcoreChatSenderNode';
+import {
+  attachMeshcoreContactCapacityPush,
+  clearMeshcoreFirmwareContactsFullLatch,
+  registerMeshcoreContactsFullOffloadRunner,
+} from '../lib/meshcore/meshcoreContactCapacityPush';
 import { takeMeshcoreDiscoverSelfCache } from '../lib/meshcore/meshcoreDiscoverSelfCache';
 import { syncMeshcoreDmAckToMessageStore } from '../lib/meshcore/meshcoreDmAckRuntime';
 import type {
@@ -297,7 +310,7 @@ import {
 import { resolveMeshcoreActiveConnection } from '../lib/meshcoreResolveActiveConnection';
 import {
   clearMeshcoreRoomAutoLoginFailure,
-  getMeshcoreRoomAutoLoginFailure,
+  shouldSkipMeshcoreRoomAutoLogin,
 } from '../lib/meshcoreRoomAutoLoginFailure';
 import {
   isMeshcoreRoomAutoLoginGenerationCurrent,
@@ -421,6 +434,7 @@ import {
   endMeshcoreSilentBulkCliPreempt,
   logMeshcoreWaitingMessagesDrainError,
   markMeshcoreCompanionTx,
+  meshcoreWaitingMessagesPeriodicPollDue,
   preemptMeshcoreSilentBulkForCli,
   scheduleMeshcoreWaitingMessagesDrain,
   shouldRunMeshcoreWaitingMessagesPeriodicPoll,
@@ -440,6 +454,7 @@ import {
 import { getOfflineIdentityIdForProtocol } from '../lib/offlineProtocolIdentities';
 import { parseStoredJson } from '../lib/parseStoredJson';
 import { reactionGlyphFromPicker } from '../lib/reactions';
+import { useRelayCoverageStore } from '../lib/relayCoverage/relayCoverageStore';
 import {
   calculateRepeaterCliTimeout,
   type CliHistoryEntry,
@@ -470,6 +485,8 @@ import { messageRecordsToChatMessages, nodeRecordsToMeshNodeMap } from '../lib/s
 import {
   computeRoomPostTotalTimeoutMs,
   MESHCORE_MAX_RECONNECT_DELAY_MS,
+  MESHCORE_POST_CONNECT_SELF_TELEMETRY_DRAIN_WAIT_MS,
+  MESHCORE_POST_CONNECT_SELF_TELEMETRY_TIMEOUT_MS,
   MESHCORE_REPEATER_PING_SETTLE_MAX_MS,
   MESHCORE_ROOM_AUTO_LOGIN_DEBOUNCE_MS,
   MESHCORE_ROOM_LOGIN_HOP_BASE_MS,
@@ -481,8 +498,6 @@ import {
   MESHCORE_ROOM_SYNC_TICK_MS,
   MESHCORE_STATS_POLL_MS,
   MESHCORE_TRACE_PING_TOTAL_TIMEOUT_MS,
-  MESHCORE_WAITING_MESSAGES_AFTER_TX_DEFER_MS,
-  MESHCORE_WAITING_MESSAGES_DRAIN_DEBOUNCE_MS,
   MESHCORE_WAITING_MESSAGES_POLL_MS,
   MESHCORE_WAITING_MESSAGES_SILENT_TIMEOUT_MS,
   POWER_RESUME_MESHCORE_MESHTASTIC_SETTLE_MS,
@@ -676,6 +691,7 @@ export function useMeshcoreRuntime() {
   const meshcoreConnectTypeRef = useRef<'ble' | 'serial' | 'tcp'>('ble');
   const meshcoreIngressDetachRef = useRef<(() => void) | null>(null);
   const meshcoreIngestDetachRef = useRef<(() => void) | null>(null);
+  const meshcoreContactCapacityPushDetachRef = useRef<(() => void) | null>(null);
   const meshcoreIdentityIdRef = useRef<string | null>(null);
   /** Driver identity from connect until initConn binds the store identity. */
   const meshcorePendingDriverIdentityRef = useRef<string | null>(null);
@@ -810,7 +826,9 @@ export function useMeshcoreRuntime() {
     Promise.resolve(null),
   );
   /** Post-connect self telemetry (altitude); assigned to {@link requestTelemetry} below. */
-  const requestTelemetryMeshCoreRef = useRef<(nodeId: number) => Promise<void>>(async () => {});
+  const requestTelemetryMeshCoreRef = useRef<
+    (nodeId: number, opts?: { timeoutMs?: number }) => Promise<void>
+  >(async () => {});
   /** Rate-limit debug logs when optional packet-logger IPC publish fails. */
   const lastPacketLogPublishFailureLogAtRef = useRef(0);
   const meshcoreHookMountedRef = useRef(true);
@@ -1917,6 +1935,10 @@ export function useMeshcoreRuntime() {
         meshcoreIngestDetachRef.current();
         meshcoreIngestDetachRef.current = null;
       }
+      if (meshcoreContactCapacityPushDetachRef.current) {
+        meshcoreContactCapacityPushDetachRef.current();
+        meshcoreContactCapacityPushDetachRef.current = null;
+      }
       const driverIdentity =
         opts?.driverIdentityId ??
         (meshcoreDriverConnectedRef.current
@@ -1937,9 +1959,15 @@ export function useMeshcoreRuntime() {
         }
         meshcoreIngressDetachRef.current = null;
       }
+      const coverageIdentity =
+        driverIdentity ?? meshcoreIdentityIdRef.current ?? meshcorePendingDriverIdentityRef.current;
       meshcoreIdentityIdRef.current = null;
       meshcorePendingDriverIdentityRef.current = null;
       setMeshcoreIdentityId(null);
+      if (coverageIdentity) {
+        clearHeardRepeatWindow(coverageIdentity);
+        useRelayCoverageStore.getState().clearIdentity(coverageIdentity);
+      }
       clearMeshcorePubKeyRegistry();
       meshcoreConnEventListenersTeardownRef.current?.();
       meshcoreConnEventListenersTeardownRef.current = null;
@@ -1948,13 +1976,13 @@ export function useMeshcoreRuntime() {
   );
 
   const getRemoteAdminKeyForNode = useCallback((nodeNum: number): string | undefined => {
-    void nodeNum;
+    touch(nodeNum);
     return undefined;
   }, []);
 
   const setRemoteAdminKeyForNode = useCallback((nodeNum: number, key: string): Promise<void> => {
-    void nodeNum;
-    void key;
+    touch(nodeNum);
+    touch(key);
     // Meshtastic-only remote admin; MeshCore has no equivalent.
     return Promise.resolve();
   }, []);
@@ -2564,11 +2592,16 @@ export function useMeshcoreRuntime() {
         if (meshcoreIngestDetachRef.current) {
           meshcoreIngestDetachRef.current();
         }
+        if (meshcoreContactCapacityPushDetachRef.current) {
+          meshcoreContactCapacityPushDetachRef.current();
+        }
         if (identityId) {
           meshcoreIngestDetachRef.current = attachMeshcoreIngest(identityId, {
             onPathUpdated: handleMeshcorePathUpdatedFromIngest,
             rawPacketsForHopCorrelation: () => rawPacketsRef.current,
           });
+          meshcoreContactCapacityPushDetachRef.current =
+            attachMeshcoreContactCapacityPush(identityId);
           setConnection(identityId, {
             status: 'connected',
             connectionType: transportType === 'tcp' ? 'http' : transportType,
@@ -2838,6 +2871,57 @@ export function useMeshcoreRuntime() {
           }
         }
 
+        // Await MsgWaiting drain before post-init side effects so syncDeviceTime / autoadd /
+        // MQTT export cannot contend with syncNextMessage on the companion TCP/RF lane.
+        const runPostConnectSelfTelemetryIfReady = async (): Promise<void> => {
+          await awaitMeshcoreWaitingMessagesDrainIdle(
+            () => waitingMessagesDrainBusyRef.current,
+            MESHCORE_POST_CONNECT_SELF_TELEMETRY_DRAIN_WAIT_MS,
+          );
+          if (meshcoreSetupGenerationRef.current !== setupGen || connRef.current !== conn) {
+            return;
+          }
+          if (
+            waitingMessagesCountRef.current > 0 ||
+            shouldRunMeshcoreWaitingMessagesPeriodicPoll(waitingMessagesCountRef.current)
+          ) {
+            console.debug(
+              '[useMeshcoreRuntime] post-connect self telemetry skipped (waiting messages pending)',
+            );
+            return;
+          }
+          if (waitingMessagesDrainBusyRef.current) {
+            console.debug(
+              '[useMeshcoreRuntime] post-connect self telemetry skipped (waiting-message drain still busy)',
+            );
+            return;
+          }
+          const telemetryTimeoutMs =
+            transportType === 'tcp' ? MESHCORE_POST_CONNECT_SELF_TELEMETRY_TIMEOUT_MS : undefined;
+          await requestTelemetryMeshCoreRef
+            .current(myNodeId, { timeoutMs: telemetryTimeoutMs })
+            .catch((e: unknown) => {
+              if (isMeshcoreTcpTransportDeadError(e) || isMeshcoreSetupAbortError(e)) return;
+              console.debug(
+                '[useMeshcoreRuntime] post-connect self telemetry (altitude) ' +
+                  errLikeToLogString(e),
+              );
+            });
+        };
+
+        try {
+          await processWaitingMessagesRef.current?.({ showSyncBanner: false });
+        } catch (e: unknown) {
+          // catch-no-log-ok logMeshcoreWaitingMessagesDrainError handles logging
+          logMeshcoreWaitingMessagesDrainError(
+            'initConn: proactive getWaitingMessages failed',
+            e,
+            false,
+          );
+        }
+        // After drain: kick telemetry without blocking post-init companion RPCs (autoadd/time sync).
+        void runPostConnectSelfTelemetryIfReady();
+
         const skipTcpSocketWork = isMeshcoreTcpBurstDeadBridge({
           transportType,
           burstCaptured: meshcoreTcpInitBurstCapturedRef.current,
@@ -2857,46 +2941,6 @@ export function useMeshcoreRuntime() {
                   '[useMeshcoreRuntime] post-connect refreshOurPosition ' + errLikeToLogString(e),
                 );
               });
-              // Give MsgWaiting drain a head start; if the lane is still busy, defer once
-              // more after the same window (do not drop telemetry on first busy sighting).
-              const postConnectTelemetryDelayMs =
-                MESHCORE_WAITING_MESSAGES_DRAIN_DEBOUNCE_MS +
-                MESHCORE_WAITING_MESSAGES_AFTER_TX_DEFER_MS;
-              const schedulePostConnectSelfTelemetry = (allowReschedule: boolean): void => {
-                window.setTimeout(() => {
-                  if (meshcoreSetupGenerationRef.current !== setupGen || connRef.current !== conn) {
-                    return;
-                  }
-                  if (waitingMessagesDrainBusyRef.current) {
-                    if (allowReschedule) {
-                      console.debug(
-                        '[useMeshcoreRuntime] post-connect self telemetry deferred (waiting-message drain busy)',
-                      );
-                      schedulePostConnectSelfTelemetry(false);
-                      return;
-                    }
-                    console.debug(
-                      '[useMeshcoreRuntime] post-connect self telemetry skipped (waiting-message drain still busy)',
-                    );
-                    return;
-                  }
-                  void requestTelemetryMeshCoreRef.current(myNodeId).catch((e: unknown) => {
-                    if (isMeshcoreTcpTransportDeadError(e) || isMeshcoreSetupAbortError(e)) return;
-                    console.debug(
-                      '[useMeshcoreRuntime] post-connect self telemetry (altitude) ' +
-                        errLikeToLogString(e),
-                    );
-                  });
-                }, postConnectTelemetryDelayMs);
-              };
-              if (waitingMessagesDrainBusyRef.current) {
-                console.debug(
-                  '[useMeshcoreRuntime] post-connect self telemetry deferred (waiting-message drain busy)',
-                );
-                schedulePostConnectSelfTelemetry(false);
-              } else {
-                schedulePostConnectSelfTelemetry(true);
-              }
             });
           });
 
@@ -3040,7 +3084,8 @@ export function useMeshcoreRuntime() {
           assertInitConnStillLive();
           maybeAutoLaunchMeshcoreMqttAfterIdentity();
 
-          // Proactively fetch any messages that queued while disconnected (no Chat banner).
+          // Messages often land during post-init (autoadd / time sync). pyMC TCP may not push
+          // event 131, so run one follow-up silent drain after the companion lane is free.
           scheduleMeshcoreWaitingMessagesDrain(
             async () => {
               try {
@@ -3048,7 +3093,7 @@ export function useMeshcoreRuntime() {
               } catch (e: unknown) {
                 // catch-no-log-ok logMeshcoreWaitingMessagesDrainError handles logging
                 logMeshcoreWaitingMessagesDrainError(
-                  'initConn: proactive getWaitingMessages failed',
+                  'initConn: post-init follow-up getWaitingMessages failed',
                   e,
                   false,
                 );
@@ -3061,13 +3106,20 @@ export function useMeshcoreRuntime() {
           );
 
           // Periodic safety-net poll in case the device never re-sends event 131.
+          // Tick at the base interval; gate with circuit-open stretch via last-run timestamp.
           if (meshcoreWaitingMessagesPollRef.current)
             clearInterval(meshcoreWaitingMessagesPollRef.current);
+          let lastPeriodicWaitingMessagesDrainAt = Date.now();
           meshcoreWaitingMessagesPollRef.current = setInterval(() => {
             if (!meshcoreHookMountedRef.current) return;
             if (!shouldRunMeshcoreWaitingMessagesPeriodicPoll(waitingMessagesCountRef.current)) {
               return;
             }
+            const now = Date.now();
+            if (!meshcoreWaitingMessagesPeriodicPollDue(lastPeriodicWaitingMessagesDrainAt, now)) {
+              return;
+            }
+            lastPeriodicWaitingMessagesDrainAt = now;
             scheduleMeshcoreWaitingMessagesDrain(
               async () => {
                 try {
@@ -4429,19 +4481,33 @@ export function useMeshcoreRuntime() {
             connRef.current != null ||
             isMeshcoreTcpOpenHopDeadAccepted() ||
             meshcoreTcpBridgeDeadRef.current;
+          const heardIdentityId = meshcoreIdentityIdRef.current;
+          const provisionalHeardId = `out:mc-ch:${sentAt}:${channelIdx}`;
+          if (hadRadioConn && heardIdentityId) {
+            // Open before TX so fast repeater overhears during send can still credit.
+            openHeardRepeatWindow(heardIdentityId, provisionalHeardId);
+          }
           if (hadRadioConn) {
-            await runMeshcoreUserTxWithLiveTcp(async () => {
-              const liveConn = connRef.current;
-              if (!liveConn) throw new Error('Not connected to radio');
-              const work = liveConn.sendChannelTextMessage(channelIdx, textToSend);
-              if (
-                isMeshcoreTcpOpenHopDeadAccepted() ||
-                meshcoreOpenHopUserTxReopenInFlightRef.current
-              ) {
-                trackMeshcoreTcpUserTxSend(work);
+            try {
+              await runMeshcoreUserTxWithLiveTcp(async () => {
+                const liveConn = connRef.current;
+                if (!liveConn) throw new Error('Not connected to radio');
+                const work = liveConn.sendChannelTextMessage(channelIdx, textToSend);
+                if (
+                  isMeshcoreTcpOpenHopDeadAccepted() ||
+                  meshcoreOpenHopUserTxReopenInFlightRef.current
+                ) {
+                  trackMeshcoreTcpUserTxSend(work);
+                }
+                await work;
+              });
+            } catch (txErr) {
+              if (heardIdentityId) {
+                clearHeardRepeatWindowIfMessage(heardIdentityId, provisionalHeardId);
+                useRelayCoverageStore.getState().remove(heardIdentityId, provisionalHeardId);
               }
-              await work;
-            });
+              throw txErr;
+            }
             markMeshcoreCompanionTx();
             void fetchAndUpdateLocalStats().catch((e: unknown) => {
               console.warn(
@@ -4449,7 +4515,7 @@ export function useMeshcoreRuntime() {
                   errLikeToLogString(e),
               );
             });
-            addMessage({
+            const channelMsgId = addMessage({
               sender_id: myNodeNumRef.current,
               sender_name: selfInfo?.name ?? 'Me',
               payload: displayPayload,
@@ -4458,6 +4524,12 @@ export function useMeshcoreRuntime() {
               status: 'acked',
               replyId: replyField,
             });
+            if (channelMsgId && heardIdentityId && channelMsgId !== provisionalHeardId) {
+              renameHeardRepeatWindowMessageId(heardIdentityId, provisionalHeardId, channelMsgId);
+              useRelayCoverageStore
+                .getState()
+                .renameMessage(heardIdentityId, provisionalHeardId, channelMsgId);
+            }
             if (mqttStatusRef.current === 'connected') {
               void window.electronAPI.mqtt
                 .publishMeshcorePacketLog({
@@ -4929,6 +5001,7 @@ export function useMeshcoreRuntime() {
   const sendPositionToDeviceMeshCore = useCallback(
     async (lat: number, lon: number) => {
       if (!connRef.current) return;
+      if (!canTransmitLocation({ protocol: 'meshcore' })) return;
       const latInt = Math.round(lat * MESHCORE_COORD_SCALE);
       const lonInt = Math.round(lon * MESHCORE_COORD_SCALE);
       try {
@@ -5626,7 +5699,7 @@ export function useMeshcoreRuntime() {
   );
 
   const requestTelemetry = useCallback(
-    async (nodeId: number) => {
+    async (nodeId: number, opts?: { timeoutMs?: number }) => {
       setMeshcoreRepeaterRpcPending((prev) =>
         setRepeaterAdminRpcPending(prev, nodeId, 'telemetry', true),
       );
@@ -5655,7 +5728,7 @@ export function useMeshcoreRuntime() {
             });
             throw new Error(MESHCORE_ERR_NOT_CONNECTED);
           }
-          const timeoutMs = MESHCORE_TELEMETRY_TIMEOUT_MS;
+          const timeoutMs = opts?.timeoutMs ?? MESHCORE_TELEMETRY_TIMEOUT_MS;
           try {
             const conn = resolveMeshcoreConn();
             if (!conn) {
@@ -6648,7 +6721,7 @@ export function useMeshcoreRuntime() {
         hasPubKey: Boolean(pubKeyMapRef.current.get(nodeId)),
         loggedIn: meshcoreIsRoomLoggedIn(nodeId),
         queued: meshcoreIsRoomLoginQueued(nodeId),
-        autoLoginFailed: Boolean(getMeshcoreRoomAutoLoginFailure(nodeId)),
+        autoLoginFailed: shouldSkipMeshcoreRoomAutoLogin(nodeId),
       }));
       await Promise.allSettled(
         targets.map(async (nodeId) => {
@@ -7828,7 +7901,11 @@ export function useMeshcoreRuntime() {
         });
       }
 
-      if (pos.source === 'static' && connRef.current) {
+      if (
+        pos.source === 'static' &&
+        connRef.current &&
+        canTransmitLocation({ protocol: 'meshcore' })
+      ) {
         // Do not write SetAdvertLatLon during initConn contacts dump — OpenHop FINs mid-dump when
         // GPS/stats/advert RPCs interleave with getContacts (meshcore.js shared Ok/Err).
         if (meshcoreInitConnInFlightRef.current) {
@@ -8181,6 +8258,30 @@ export function useMeshcoreRuntime() {
     ensureTcpLiveForUserTx,
     runMeshcoreUserTxWithLiveTcp,
   ]);
+
+  useEffect(() => {
+    registerMeshcoreContactsFullOffloadRunner(async () => {
+      const removedFromRadio = await offloadContactsFromRadio();
+      const offloadedCount = await window.electronAPI.db.offloadAllMeshcoreContacts();
+      try {
+        await refreshContacts();
+      } catch (e) {
+        console.warn(
+          '[useMeshcoreRuntime] refreshContacts after contacts-full offload failed ' +
+            errLikeToLogString(e),
+        );
+        pushAppToast(i18n.t('radioPanel.offloadReconcileRefreshFailed'), 'error');
+      }
+      clearMeshcoreFirmwareContactsFullLatch();
+      pushAppToast(
+        i18n.t('radioPanel.offloadedContacts', {
+          count: Math.max(offloadedCount, removedFromRadio),
+        }),
+        'success',
+      );
+    });
+    return () => registerMeshcoreContactsFullOffloadRunner(null);
+  }, [offloadContactsFromRadio, refreshContacts]);
 
   return useMemo(
     () => ({

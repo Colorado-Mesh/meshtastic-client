@@ -7,11 +7,16 @@ import { isMeshcoreOpenWireCompatEnabled } from '../lib/appSettingsStorage';
 import { connectionDriver } from '../lib/drivers/ConnectionDriver';
 import { errLikeToLogString } from '../lib/errLikeToLogString';
 import {
+  clearHeardRepeatWindowIfMessage,
+  openHeardRepeatWindow,
+} from '../lib/meshcore/heardRepeatTracker';
+import {
   isMeshcoreTcpOpenHopDeadAccepted,
   trackMeshcoreTcpUserTxSend,
 } from '../lib/meshcore/meshcoreTcpInitBurst';
 import { resolveMeshcoreOutboundWireText } from '../lib/meshcoreChannelText';
 import { listChatMessagesFromStore } from '../lib/meshcoreStoreDedup';
+import { useRelayCoverageStore } from '../lib/relayCoverage/relayCoverageStore';
 import { sendReticulumChatMessage } from '../lib/reticulum/sendReticulumChatMessage';
 import { tryGetMeshcoreSession } from '../lib/sessions/meshcoreSession';
 import { tryGetMeshtasticSession } from '../lib/sessions/meshtasticSession';
@@ -99,7 +104,7 @@ export function useSendMessage(
   destination?: number,
   replyTo?: string,
   retryOfStoreId?: string,
-) => void {
+) => string | undefined {
   const { addToast } = useToast();
   const { t } = useTranslation();
   return useCallback(
@@ -118,18 +123,22 @@ export function useSendMessage(
       }
       // Reticulum: sidecar LXMF send (no ConnectionDriver handle).
       if (identity.protocol.type === 'reticulum') {
-        sendReticulumChatMessage({
-          identityId,
-          text,
-          channelIndex,
-          destination,
-          replyTo,
-          retryOfStoreId,
-          onNoPropagationNode: () => {
-            addToast(t('chatPanel.reticulumNoPropagationNode'), 'error');
-          },
-        });
-        return;
+        return (
+          sendReticulumChatMessage({
+            identityId,
+            text,
+            channelIndex,
+            destination,
+            replyTo,
+            retryOfStoreId,
+            onNoPropagationNode: () => {
+              addToast(t('chatPanel.reticulumNoPropagationNode'), 'error');
+            },
+            onMissingLxmfDelivery: () => {
+              addToast(t('chatPanel.reticulumChatNeedsLxmfDelivery'), 'error');
+            },
+          }) ?? undefined
+        );
       }
 
       const handle = connectionDriver.getHandle(identityId);
@@ -190,6 +199,19 @@ export function useSendMessage(
         replyTo,
       };
       addMessage(identityId, record);
+
+      // MeshCore channel floods: Chat sends via this hook (not useMeshcoreRuntime).
+      // Open the heard-repeat listen window on the provisional bubble id (renameMessageId
+      // re-keys coverage if packetId later replaces it).
+      if (isMeshcore && !isMeshcoreDm) {
+        openHeardRepeatWindow(identityId, provisionalId);
+      }
+
+      const abandonMeshcoreHeardRepeat = (): void => {
+        if (!(isMeshcore && !isMeshcoreDm)) return;
+        clearHeardRepeatWindowIfMessage(identityId, provisionalId);
+        useRelayCoverageStore.getState().remove(identityId, provisionalId);
+      };
 
       if (isMeshtastic) {
         void window.electronAPI.db
@@ -263,6 +285,7 @@ export function useSendMessage(
             console.warn('[useSendMessage] OpenHop live reopen failed ' + errMsg);
             updateMessageStatus(identityId, provisionalId, 'failed', errMsg);
             persistMeshcoreOutboundRow(record, myNodeNum, meshcoreSenderName, 'failed');
+            abandonMeshcoreHeardRepeat();
           }
         })();
         return;
@@ -270,6 +293,7 @@ export function useSendMessage(
 
       if (!handle) {
         console.warn('[useSendMessage] no handle for', identityId);
+        abandonMeshcoreHeardRepeat();
         return;
       }
 
@@ -336,6 +360,7 @@ export function useSendMessage(
             if (identity.protocol.type === 'meshcore') {
               persistMeshcoreOutboundRow(record, myNodeNum, meshcoreSenderName, 'failed');
             }
+            abandonMeshcoreHeardRepeat();
             if (isMeshtastic && meshtasticTempPacketId != null) {
               void window.electronAPI.db
                 .updateMessageStatus(meshtasticTempPacketId, 'failed', errMsg)

@@ -9,7 +9,7 @@ These requirements apply to all platforms.
 ### 1) Required software
 
 - Git
-- Node.js **22.13.0+** and pnpm **11+** (`package.json` `engines`; the repo pins **`packageManager`** to a specific pnpm release — use [Corepack](https://nodejs.org/api/corepack.html) when available, or `npm install -g corepack@latest` / `npm install -g pnpm@<pin>` on Node 25+ where Corepack is not bundled). `pnpm install` fails on engine mismatch. After pulling a pnpm major bump, `preinstall` and `pnpm run dev` print an upgrade banner with the exact install command if your local pnpm is too old or the wrong major.
+- Node.js **22.13.0+** and pnpm **12+** (`package.json` `engines`; the repo pins **`packageManager`** to a specific pnpm release — use [Corepack](https://nodejs.org/api/corepack.html) when available, or `npm install -g corepack@latest` / `npm install -g pnpm@<pin>` on Node 25+ where Corepack is not bundled). `pnpm install` fails on engine mismatch. After pulling a pnpm major bump, `preinstall` and `pnpm run dev` print an upgrade banner with the exact install command if your local pnpm is too old or the wrong major.
 - [CI](https://github.com/Colorado-Mesh/mesh-client/blob/main/.github/workflows/ci.yaml) uses Node 22
 - Python 3 + `pip` (needed for MkDocs documentation build and yamllint)
 
@@ -83,11 +83,11 @@ pnpm install
 
 ### Reticulum sidecar (optional)
 
-Reticulum/LXMF runs in a separate Rust binary (`mesh-client-reticulum`) spawned by the Electron main process. The MIT TypeScript layers talk to it over localhost HTTP/WS only. You only need this when working on the **Reticulum** protocol tab.
+Reticulum/LXMF runs in a separate Rust binary (`mesh-client-reticulum`) spawned by the Electron main process. The GPL-3.0-or-later TypeScript layers talk to it over localhost HTTP/WS only. You only need this when working on the **Reticulum** protocol tab.
 
 #### Installing Rust
 
-**Recommended: [rustup](https://rustup.rs/)** — matches [CI](.github/workflows/reticulum-sidecar.yaml) and `pnpm run update`:
+**Recommended: [rustup](https://rustup.rs/)** — matches [CI](../.github/workflows/reticulum-sidecar.yaml) and `pnpm run update`:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -140,10 +140,10 @@ In Electron dev: open the **Reticulum** protocol pill (amber) → **Connection**
 
 #### Keep Rust and the sidecar current
 
-`pnpm run update` updates Node dependencies **and**, when `cargo` is available:
+`pnpm run update` updates Node dependencies and:
 
-1. Runs `rustup update` (or `brew upgrade rust` if you use Homebrew rust without rustup)
-2. Rebuilds the sidecar with `cargo build` in `reticulum-sidecar/`
+1. Syncs Flatpak vendored Electron archives to match `package.json` (`scripts/sync-flatpak-electron.mjs`)
+2. When `cargo` is available: runs `rustup update` (or `brew upgrade rust` if you use Homebrew rust without rustup) and rebuilds the sidecar with `cargo build` in `reticulum-sidecar/`
 
 **Scope:** `pnpm update` / `pnpm-lock.yaml` changes are **repo-local** (commit the lockfile on your branch). The sidecar rebuild writes only to gitignored `reticulum-sidecar/target/`. **Rust toolchain updates are not repo-scoped** — `rustup update` refreshes the toolchain in your user profile (`~/.rustup`, `~/.cargo/bin`), shared by any Rust project on the machine. The committed [`rust-toolchain.toml`](../reticulum-sidecar/rust-toolchain.toml) selects `stable` and required components for this crate; rustup applies it when you build or lint inside `reticulum-sidecar/`.
 
@@ -259,15 +259,15 @@ Complete reference of all pnpm scripts in [`package.json`](../package.json), org
 
 #### Package (distributables)
 
-| Script               | Description                                                                  |
-| -------------------- | ---------------------------------------------------------------------------- |
-| `dist`               | Build for current platform → `release/`                                      |
-| `dist:mac`           | Build macOS .dmg + .zip + verify packaging (`verify-mac-packaging.mjs`)      |
-| `dist:mac:publish`   | Build macOS and upload to release server                                     |
-| `dist:linux`         | Build Linux x64 + arm64 (.AppImage, .deb, .rpm) + verify packaging           |
-| `dist:linux:publish` | Build Linux and upload to release server                                     |
-| `dist:win`           | Build Windows .exe installer (hoisted install workaround) + verify packaging |
-| `dist:win:publish`   | Build Windows and upload to release server                                   |
+| Script               | Description                                                                                                       |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `dist`               | Build for current platform → `release/`                                                                           |
+| `dist:mac`           | Build macOS x64 + arm64 `.dmg` + `.zip` + verify packaging (`verify-mac-packaging.mjs` stages ZIP install notice) |
+| `dist:mac:publish`   | Build macOS and upload to release server                                                                          |
+| `dist:linux`         | Build Linux x64 + arm64 (.AppImage, .deb, .rpm) + verify packaging                                                |
+| `dist:linux:publish` | Build Linux and upload to release server                                                                          |
+| `dist:win`           | Build Windows .exe installer (hoisted install workaround) + verify packaging                                      |
+| `dist:win:publish`   | Build Windows and upload to release server                                                                        |
 
 `dist:mac`, `dist:linux`, and `predist` run `dedupe:dist` (`scripts/dedupe-dist.mjs`) before packaging; that helper retries on transient `@jsr/_tmp_*` rename races. `dist:win` uses `scripts/dist-win-hoisted-install.mjs` and restores `node_modules` afterward.
 
@@ -305,11 +305,39 @@ flatpak install --user -y flathub org.electronjs.Electron2.BaseApp//24.08
 pip install --force-reinstall --no-cache-dir \
   "git+https://github.com/flatpak/flatpak-builder-tools@ac5a296ac6111aa2319daf532f609a067b88d8a9#subdirectory=node"
 # Skip Playwright browser vendoring (GitHub /raw/ 404s; Electron E2E skips downloads).
+# Also skips Electron linux-armv7l archive lookup for Electron >= 44 (those zips are no
+# longer published; Flatpak only ships x64 + arm64).
 node scripts/patch-flatpak-node-generator-playwright.mjs
-# Must match package.json packageManager major (pnpm 11 → v11). Generator defaults to v10.
-PNPM_MAJOR="$(node -p "require('./package.json').packageManager.match(/^pnpm@(\\d+)/)[1]")"
-STORE_VERSION="v${PNPM_MAJOR}"
-flatpak-node-generator pnpm pnpm-lock.yaml \
+# Fail fast: version lookup / lockfile extraction must succeed before the generator.
+set -euo pipefail
+# Must match store layout for packageManager (pnpm 11/12 → v11). Generator defaults to v10.
+# pnpm 12 may write a two-document lockfile; generator only accepts one document.
+STORE_VERSION="$(
+  node --input-type=module << 'EOF'
+import fs from 'node:fs';
+import { storeVersionFromPackageManager } from './scripts/flatpakPnpmStoreVersion.mjs';
+// Failure point: missing/invalid packageManager → null (generator would get a bad --pnpm-store-version).
+// Fallback: exit non-zero under set -e so flatpak-node-generator never runs.
+const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+const storeVersion = storeVersionFromPackageManager(pkg.packageManager);
+if (storeVersion == null) {
+  throw new Error(
+    `storeVersionFromPackageManager returned null for packageManager=${JSON.stringify(pkg.packageManager)}`,
+  );
+}
+console.log(storeVersion);
+EOF
+)"
+node --input-type=module << 'EOF'
+import fs from 'node:fs';
+import { extractProjectPnpmLockfile } from './scripts/flatpakPnpmStoreVersion.mjs';
+fs.mkdirSync('flatpak', { recursive: true });
+fs.writeFileSync(
+  'flatpak/pnpm-lock.project.yaml',
+  extractProjectPnpmLockfile(fs.readFileSync('pnpm-lock.yaml', 'utf8')),
+);
+EOF
+flatpak-node-generator pnpm flatpak/pnpm-lock.project.yaml \
   --pnpm-store-version "$STORE_VERSION" \
   -o flatpak/generated-sources.json
 ```
@@ -396,38 +424,39 @@ flatpak run --command=flatpak-builder-lint org.freedesktop.Sdk \
 
 #### Typecheck
 
-| Script                    | Description                                                                                               |
-| ------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `typecheck`               | TypeScript check: renderer + main process                                                                 |
-| `typecheck:strict-shared` | Strict TypeScript (`noUncheckedIndexedAccess` + `exactOptionalPropertyTypes`) for `src/shared`            |
-| `check:pr`                | PR-parity local gate: lint + typecheck + strict-shared + full `test:run` (+ sidecar if branch touches it) |
+| Script                    | Description                                                                                         |
+| ------------------------- | --------------------------------------------------------------------------------------------------- |
+| `typecheck`               | TypeScript check: renderer + main process                                                           |
+| `typecheck:strict-shared` | Strict TypeScript (`noUncheckedIndexedAccess` + `exactOptionalPropertyTypes`) for `src/shared`      |
+| `check:pr`                | Comprehensive local gate: lint + typecheck + strict-shared + full `test:run` (+ path-aware sidecar) |
 
 #### Quality checks
 
-| Script                                | Description                                                            |
-| ------------------------------------- | ---------------------------------------------------------------------- |
-| `check:codeql-extensions`             | Verify CodeQL extension allowlist for custom queries                   |
-| `check:console-log`                   | Fail on bare `console.log` in production paths                         |
-| `check:db-migrations`                 | Verify SQLite migrations are valid                                     |
-| `check:electron-security`             | Verify Electron security settings (CSP, sandbox, etc.)                 |
-| `check:environment`                   | Verify local dev prerequisites (run after clone)                       |
-| `check:flatpak`                       | Lint Flatpak manifest and wrapper scripts                              |
-| `check:flatpak-offline-pnpm`          | PR/release offline Flatpak pnpm store vN + lockfile coverage           |
-| `check:i18n`                          | Verify English keys, unused keys, and locale quality rules             |
-| `check:i18n:branch`                   | Run i18n quality checks on keys new/changed vs `HEAD` only             |
-| `check:insecure-temp-files`           | Predictable `os.tmpdir()` writes (CodeQL `js/insecure-temporary-file`) |
-| `check:ipc-contract`                  | Verify IPC channel contracts between main/preload/renderer             |
-| `check:licenses`                      | Allowlist dependency licenses (`pnpm licenses list` + SPDX policy)     |
-| `check:log-injection`                 | Detect unsanitized user data in log calls                              |
-| `check:log-panel-filter`              | Verify log panel filter wiring                                         |
-| `check:log-service-sinks`             | Verify log service sink configuration                                  |
-| `check:protocol-string-gates`         | Enforce protocol capability gates over string compares                 |
-| `check:reticulum-decommissioned-hubs` | Keep TS/Rust decommissioned hub lists aligned                          |
-| `check:reticulum-interface-modes`     | Keep TS/Rust Reticulum interface-mode catalogs aligned                 |
-| `check:reticulum-sidecar`             | Full-feature `cargo fmt` + Clippy + test (skips when `cargo` missing)  |
-| `check:silent-catches`                | Detect empty or unlogged catch blocks                                  |
-| `check:url-hostname-sanitization`     | Verify URL hostname sanitization helpers                               |
-| `check:xss-patterns`                  | Detect risky DOM/HTML sink patterns                                    |
+| Script                                | Description                                                             |
+| ------------------------------------- | ----------------------------------------------------------------------- |
+| `check:codeql-extensions`             | Verify CodeQL extension allowlist for custom queries                    |
+| `check:console-log`                   | Fail on bare `console.log` in production paths                          |
+| `check:db-migrations`                 | Verify SQLite migrations are valid                                      |
+| `check:electron-security`             | Verify Electron security settings (CSP, sandbox, etc.)                  |
+| `check:environment`                   | Verify local dev prerequisites (run after clone)                        |
+| `check:flatpak`                       | Lint Flatpak manifest and wrapper scripts                               |
+| `check:flatpak-offline-pnpm`          | PR/release offline Flatpak pnpm store vN + lockfile coverage            |
+| `check:i18n`                          | Verify English keys, unused keys, and locale quality rules              |
+| `check:i18n:branch`                   | Run i18n quality checks on keys new/changed vs `HEAD` only              |
+| `check:insecure-temp-files`           | Predictable `os.tmpdir()` writes (CodeQL `js/insecure-temporary-file`)  |
+| `check:ipc-contract`                  | Verify IPC channel contracts between main/preload/renderer              |
+| `check:licenses`                      | Allowlist dependency licenses (`pnpm licenses list` + SPDX policy)      |
+| `check:log-injection`                 | Detect unsanitized user data in log calls                               |
+| `check:log-panel-filter`              | Verify log panel filter wiring                                          |
+| `check:log-service-sinks`             | Verify log service sink configuration                                   |
+| `check:pinned-majors`                 | Warn when a pinned override is behind a newer npm major (needs network) |
+| `check:protocol-string-gates`         | Enforce protocol capability gates over string compares                  |
+| `check:reticulum-decommissioned-hubs` | Keep TS/Rust decommissioned hub lists aligned                           |
+| `check:reticulum-interface-modes`     | Keep TS/Rust Reticulum interface-mode catalogs aligned                  |
+| `check:reticulum-sidecar`             | Full-feature `cargo fmt` + Clippy + test (skips when `cargo` missing)   |
+| `check:silent-catches`                | Detect empty or unlogged catch blocks                                   |
+| `check:url-hostname-sanitization`     | Verify URL hostname sanitization helpers                                |
+| `check:xss-patterns`                  | Detect risky DOM/HTML sink patterns                                     |
 
 #### Documentation
 
@@ -486,12 +515,14 @@ flatpak run --command=flatpak-builder-lint org.freedesktop.Sdk \
 
 | Script        | Description                                                           |
 | ------------- | --------------------------------------------------------------------- |
-| `preinstall`  | Require pnpm 11+ (`check-package-manager.mjs`) then `only-allow pnpm` |
+| `preinstall`  | Require pnpm 12+ (`check-package-manager.mjs`) then `only-allow pnpm` |
 | `postinstall` | Rebuild native Node modules for Electron + apply pnpm patches         |
 | `prepare`     | Enable git hooks (`core.hooksPath = .githooks`)                       |
 | `predist`     | Run `dedupe:dist` before `dist` packaging                             |
 
 `postinstall` runs `scripts/rebuild-native.mjs` for Electron native addons and applies `patchedDependencies` from `pnpm-workspace.yaml` (Meshtastic JSR transports, MeshCore, `readable-stream`, `usb`, etc.). When bumping patched packages, update hashes under `patches/` and keep `WATCH_ENTRIES` in `scripts/update.sh` in sync — see [AGENTS.md](../AGENTS.md#6-commands--ci-checks).
+
+`pnpm run update` also runs `check_pinned_majors` (`scripts/check-pinned-majors.mjs`), which warns when an `overrides` pin in `pnpm-workspace.yaml` has fallen behind a newer npm major — a stale `undici: ^7.29.0` floor once withheld an upstream main-process crash fix. Caps that are correct because the consuming package forbids the newer major (or because the pin is a platform target, e.g. `electron`) are recorded with a reason in `PINNED_MAJOR_EXCEPTIONS`; add an entry there instead of silencing the warning. The check needs network access, so it is warn-only and is not part of pre-commit or `check:pr`.
 
 ### Dependabot dependency updates
 
@@ -548,7 +579,7 @@ Worker counts are derived in [`vitest.harness.mts`](../vitest.harness.mts) via `
 
 By default all three Vitest projects run in **parallel** (`groupOrder: 0`). On memory-constrained hosts, set `VITEST_SEQUENTIAL_PROJECTS=1` to run `renderer-ui` first, then `renderer-logic` + `main` together (legacy behavior).
 
-CI runs coverage in three parallel jobs (`renderer-ui`, `renderer-logic`, `main`) and merges blob reports via `pnpm run test:coverage:merge` (see [`.github/workflows/tests.yaml`](../.github/workflows/tests.yaml)).
+Pull-request CI selects merge-base-related tests across these project jobs. Merge-queue, `main`, manual, and unsafe-to-scope changes run all three with coverage and merge blob reports via `pnpm run test:coverage:merge` (see [`.github/workflows/tests.yaml`](../.github/workflows/tests.yaml)).
 
 #### Playwright Electron E2E
 
@@ -615,7 +646,7 @@ pnpm run dist:win   # Windows -> .exe installer in release/
 
 Output goes to the `release/` directory.
 
-**macOS (`dist:mac`)** runs `electron-builder --mac --publish never`, then **`node scripts/verify-mac-packaging.mjs`**. The verify step asserts `.dmg` + `.zip` artifacts, symlink-preserving ZIP extract (`ditto -xk`), DMG mount, launcher/framework sizes, and bundled Reticulum sidecar — same checks CI `packaging-smoke` uses on downloaded artifacts. It does **not** require signing secrets; unsigned local builds are expected to pass verify.
+**macOS (`dist:mac`)** runs `electron-builder --mac --x64 --arm64 --publish never` (Intel + Apple Silicon DMG/ZIP pairs), then **`node scripts/verify-mac-packaging.mjs`**. Verify stages **`00-READ-ME-BEFORE-EXTRACTING-macOS-ZIP.txt`** for GitHub Releases, asserts both arch `.dmg` + `.zip` artifacts, deep-validates every archive (symlink-preserving ZIP extract via `ditto -xk`, DMG mount including **IMPORTANT-Read-Me.txt**), launcher/framework sizes, Squirrel/Mantle/ReactiveObjC framework symlinks, and bundled Reticulum sidecar — same checks CI `packaging-smoke` uses on downloaded artifacts. **Developer ID–signed** builds also run `codesign --verify --deep --strict` and `xcrun stapler validate` on the finished `.app`, plus `codesign --verify --strict` on the bundled Reticulum sidecar; unsigned or ad-hoc (non–Developer ID) local builds skip that gate and are still expected to pass verify. Building both arches is slower than a single-arch pack.
 
 **Optional macOS signing (release parity):** export the same env vars CI uses before `pnpm run dist:mac` or `dist:mac:publish`:
 
@@ -651,7 +682,7 @@ After `pnpm install`, repo hooks are enabled via `core.hooksPath` (see the `prep
 
 ESLint: production `src/**` enforces `no-unsafe-*`; test files keep those off. `no-unnecessary-condition` is enforced for `src/shared/**` and `src/renderer/lib/**` only.
 
-Green pre-commit does **not** replace PR CI: [`.github/workflows/tests.yaml`](../.github/workflows/tests.yaml) always runs the full Vitest suite with coverage. Use `pnpm run check:pr` before opening a PR.
+Green pre-commit does **not** replace PR CI: [`.github/workflows/tests.yaml`](../.github/workflows/tests.yaml) runs merge-base-related tests on pull requests and fails closed to full Vitest when scoping is unsafe. The merge queue always reruns full Vitest with coverage. Use `pnpm run check:pr` for a comprehensive local gate before opening a PR.
 
 Hook order (authoritative source: [`.githooks/pre-commit`](../.githooks/pre-commit)):
 
@@ -667,7 +698,7 @@ Hook order (authoritative source: [`.githooks/pre-commit`](../.githooks/pre-comm
 10. `pnpm audit --audit-level=high` only when dependency manifests staged; `actionlint` when `.github/workflows/*` staged; `yamllint` when any `*.yaml` / `*.yml` staged
 11. `pnpm run test:staged` (`scripts/precommit-tests.mjs`: staged-only `vitest related`; full suite when vitest config/setup mocks or dependency manifests change; skip when no source/test staged)
 
-**Release / CI full suite:** `pnpm run release` (`scripts/release.sh`) and PR [`tests.yaml`](../.github/workflows/tests.yaml) always run `pnpm run test:run` (full Vitest) — never `test:staged`. Release also runs the ungated `check:*` set and requires actionlint + yamllint. Use `pnpm run check:pr` for the same Vitest/lint/typecheck surface locally before a PR.
+**Release / protected CI full suite:** `pnpm run release` (`scripts/release.sh`), merge-queue `merge_group`, `main` push, and manual [`tests.yaml`](../.github/workflows/tests.yaml) runs always execute full Vitest. Pull requests use merge-base-related tests unless a safe fallback requires the full suite. Release also runs the ungated `check:*` set and requires actionlint + yamllint. Use `pnpm run check:pr` for the comprehensive Vitest/lint/typecheck surface locally before a PR.
 
 Install hook dependencies via [Helper scripts](#8-helper-scripts-auto-install-where-possible) (`setup:actionlint`, yamllint via pip/brew/apt).
 
@@ -755,6 +786,8 @@ Auto-translation uses MyMemory by default. Incremental translations (new keys on
 
 ## macOS
 
+Electron **44** (this repo’s runtime) requires **macOS 13 Ventura** or later for both `pnpm run dev` and packaged builds. Monterey hosts are unsupported.
+
 ### Install prerequisites
 
 1. Install Git (Xcode CLT includes it):
@@ -801,7 +834,7 @@ If you work on the Reticulum protocol tab, install Rust and build the sidecar �
 
 ### macOS release-download note (not required for source development)
 
-If a downloaded app reports "Mesh-client is damaged and can't be opened", see [macOS: File is damaged and cannot be opened](troubleshooting.md#macos-file-is-damaged-and-cannot-be-opened).
+If a downloaded app reports "Mesh-client is damaged and can't be opened", see [macOS: File is damaged and cannot be opened](troubleshooting.md#macos-file-is-damaged-and-cannot-be-opened). If launch fails with `Library not loaded: Squirrel.framework` after extracting the macOS **ZIP with 7-Zip**, see [macOS: Squirrel.framework after ZIP extract](troubleshooting.md#macos-library-not-loaded-squirrelframework-after-zip-extract).
 
 ## Windows
 

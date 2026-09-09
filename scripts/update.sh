@@ -97,6 +97,21 @@ update_rust_toolchain() {
   return 0
 }
 
+# Keep Flatpak offline Electron archives aligned with package.json (CI check:flatpak).
+# Idempotent when already in sync; fetches SHASUMS256.txt when Electron moved.
+sync_flatpak_electron() {
+  if [ ! -f 'scripts/sync-flatpak-electron.mjs' ]; then
+    echo 'scripts/sync-flatpak-electron.mjs missing — skipping Flatpak Electron sync.' >&2
+    return 0
+  fi
+  if ! command -v node > /dev/null 2>&1; then
+    echo 'Error: node is required to sync Flatpak Electron archives.' >&2
+    return 1
+  fi
+  echo 'Syncing Flatpak Electron vendored archives...'
+  node scripts/sync-flatpak-electron.mjs
+}
+
 # Rebuild Reticulum sidecar after dependency/toolchain updates
 rebuild_reticulum_sidecar() {
   if [ ! -f 'reticulum-sidecar/Cargo.toml' ]; then
@@ -204,6 +219,34 @@ process.stdin.on("end", () => {
 ' 2> /dev/null || echo 'unknown'
 }
 
+# Warn when a pinned override in pnpm-workspace.yaml is behind a newer major.
+# Network-dependent and warn-only: exit 10 means unexplained drift, anything else
+# (including offline) is treated as clean. See scripts/check-pinned-majors.mjs.
+check_pinned_majors() {
+  if ! command -v node > /dev/null 2>&1; then
+    echo ''
+    echo 'Checking pinned overrides for newer major versions... node missing — skip.'
+    return 0
+  fi
+
+  local status=0
+  node scripts/check-pinned-majors.mjs || status=$?
+  if [ "${status}" -eq 10 ]; then
+    HAS_WARNING=1
+  elif [ "${status}" -ne 0 ]; then
+    echo -e "  ${YELLOW}check-pinned-majors exited ${status} — treating as inconclusive.${NC}"
+  fi
+  return 0
+}
+
+# Test hook: exercise check_pinned_majors without running the rest of the update.
+if [ "${UPDATE_SH_TEST_HOOK:-}" = 'pinned-majors-only' ]; then
+  HAS_WARNING=0
+  check_pinned_majors
+  printf 'HAS_WARNING=%s\n' "${HAS_WARNING}"
+  exit 0
+fi
+
 # Warn when local Ratspeak overlays may be obsolete after upstream merges.
 # Keep patch basenames in sync with scripts/lib/ratspeak-overlay-apply-list.sh
 # and reticulum-sidecar/patches/*.patch / patches/README.md.
@@ -213,7 +256,6 @@ check_ratspeak_patches() {
     'rsReticulum-packet-tap.patch|ratspeak/rsReticulum|10|rsReticulum packet-tap|https://github.com/ratspeak/rsReticulum/pull/10'
     'rsReticulum-path-medium-slots.patch|ratspeak/rsReticulum||rsReticulum path-medium slots|'
     'rsReticulum-auto-beacon-utun.patch|ratspeak/rsReticulum|11|rsReticulum auto-beacon utun|https://github.com/ratspeak/rsReticulum/pull/11'
-    'rsReticulum-link-client-nomad.patch|ratspeak/rsReticulum|14|rsReticulum LinkClient Nomad|https://github.com/ratspeak/rsReticulum/pull/14'
     'rsReticulum-link-client-proof-budget.patch|ratspeak/rsReticulum||rsReticulum LinkClient proof-budget remaining-deadline|'
     'rsReticulum-ble-rnode-pairing-transition-debounce.patch|ratspeak/rsReticulum|20|rsReticulum BLE RNode pairing-transition debounce|https://github.com/ratspeak/rsReticulum/pull/20'
     'rsReticulum-ble-rnode-bond-desync.patch|ratspeak/rsReticulum|21|rsReticulum BLE RNode bond-desync halt + bond-aware reconnect|https://github.com/ratspeak/rsReticulum/pull/21'
@@ -221,11 +263,13 @@ check_ratspeak_patches() {
     'rsReticulum-inbound-raw-saturation-log.patch|ratspeak/rsReticulum||rsReticulum inbound-raw saturation log|'
     'rsReticulum-interface-tx-queue-stats.patch|ratspeak/rsReticulum||rsReticulum interface TX queue stats|'
     'rsReticulum-announce-rebroadcast-exclude-rf.patch|ratspeak/rsReticulum||rsReticulum announce rebroadcast exclude RF sinks (ratspeak/rsReticulum#24)|https://github.com/ratspeak/rsReticulum/issues/24'
+    'rsReticulum-ble-rnode-flow-control-ready-timeout.patch|ratspeak/rsReticulum||rsReticulum BLE RNode flow-control READY timeout|'
     'rsLXMF-propagation-sync-peering.patch|ratspeak/rsLXMF|4|rsLXMF propagation sync peering|https://github.com/ratspeak/rsLXMF/pull/4'
     'rsLXMF-propagation-node-policy-setters.patch|ratspeak/rsLXMF|6|rsLXMF PropagationNode policy setters|https://github.com/ratspeak/rsLXMF/pull/6'
     'rsLXMF-propagation-node-deferred-messagestore-load.patch|ratspeak/rsLXMF||rsLXMF PropagationNode deferred messagestore load|'
     'rsLXMF-link-delivery-has-pending-to.patch|ratspeak/rsLXMF||rsLXMF LinkDeliveryManager has_pending_to|'
     'rsLXMF-propagation-client-abort-transfer.patch|ratspeak/rsLXMF||rsLXMF PropagationClient abort_transfer for cancelled Sync|'
+    'rsLXMF-propagation-client-lrproof-diagnostics.patch|ratspeak/rsLXMF||rsLXMF PropagationClient LRPROOF establish diagnostics|'
   )
   local patches_dir='reticulum-sidecar/patches'
   local has_ratspeak_warning=0
@@ -514,7 +558,7 @@ process.exit(a === b || a.startsWith(b) || b.startsWith(a) ? 0 : 1);
 RATSPEAK_RELEASE_WATCH_ENTRIES=(
   'ratspeak/rsLXST||rsLXST voice (lxst-telephony)|v0.2.0'
   'ratspeak/lrgp-rs||lrgp-rs games (LRGP)|v0.4.1'
-  'ratspeak/Ratspeak|games-parity|Ratspeak client (review Games tab parity)|v1.0.28'
+  'ratspeak/Ratspeak|games-parity|Ratspeak client (review Games tab parity)|v1.0.31'
   'ratspeak/LXMFace||LXMFace identicons (vendored in renderer)|file:js/lxmface.js@308a729d5bf951880633e5e174b3b7628203106b'
   'ratspeak/Ratspeak||Ratspeak identity vault (vendored in sidecar)|file:crates/ratspeak-runtime/src/vault.rs@19e2a0d19202d4c7562adba79ac706ec352fdb86'
 )
@@ -530,14 +574,17 @@ RATSPEAK_KNOWN_ORG_REPOS=(
   'ratkey'
   'rathole'
   'ratspeak-docs'
+  'ratspeak-handheld'
   'ratspeak-website'
   'revanity-go'
   'rsCardputer'
   'rsDeck'
   'rsLXMF'
+  'rsLXMFLite'
   'rsLXST'
   'rsPager'
   'rsReticulum'
+  'rsReticulumLite'
 )
 
 print_ratspeak_upstream_catalog() {
@@ -703,7 +750,11 @@ fi
 WATCH_ENTRIES=(
   '@jsr/meshtastic__core|@meshtastic/core|https://www.npmjs.com/package/@meshtastic/core|Custom patch (clean BLE disconnect) + upstream may introduce breaking changes'
   '@jsr/meshtastic__transport-web-serial|@jsr/meshtastic__transport-web-serial|https://www.npmjs.com/package/@jsr/meshtastic__transport-web-serial|Custom patch (USB serial clean disconnect)'
+  '@jsr/meshtastic__protobufs|@meshtastic/protobufs|https://github.com/meshtastic/protobufs/tags|Schema drift: new enum values (regions, presets, hardware models) and messages need UI + decode review'
+  '@jsr/meshtastic__transport-http|@meshtastic/transport-http|https://www.npmjs.com/package/@jsr/meshtastic__transport-http|HTTP transport for Meshtastic; upstream may introduce breaking changes'
   '@liamcottle/meshcore.js|@liamcottle/meshcore.js|https://www.npmjs.com/package/@liamcottle/meshcore.js|Custom patch (protocol fixes) + upstream may introduce breaking changes'
+  '@michaelhart/meshcore-decoder|@michaelhart/meshcore-decoder|https://www.npmjs.com/package/@michaelhart/meshcore-decoder|MeshCore packet decoding; wire-format changes affect Sniffer/diagnostics'
+  'app-builder-lib|app-builder-lib|https://www.npmjs.com/package/app-builder-lib|Custom patch (macOS CSC_LINK set-key-partition-list keychain password; electron-builder#10101)'
   'usb|usb|https://www.npmjs.com/package/usb|Custom patch (macOS C++17 std compat)'
   'readable-stream|readable-stream|https://www.npmjs.com/package/readable-stream|Custom patch (bundler process/ path compat)'
   'debug|debug|https://www.npmjs.com/package/debug|Custom patch (inlined ms/humanize for bundler compat)'
@@ -754,6 +805,9 @@ echo ''
 echo 'Running pnpm prune...'
 pnpm prune
 
+echo ''
+sync_flatpak_electron
+
 HAS_WARNING=0
 
 echo ''
@@ -782,6 +836,7 @@ for i in "${!KEYS[@]}"; do
   fi
 done
 
+check_pinned_majors
 check_ratspeak_patches
 check_ratspeak_upstream
 

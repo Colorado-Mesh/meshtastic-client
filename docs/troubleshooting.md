@@ -5,6 +5,7 @@ Setup (clone, prerequisites, Flatpak build steps) is in [development-environment
 ## Contents
 
 - [Quick reference](#quick-reference)
+- [System requirements](#system-requirements)
 - [Development and building](#development-and-building)
 - [Installation and packaged apps](#installation-and-packaged-apps)
 - [Database and local data](#database-and-local-data)
@@ -26,7 +27,7 @@ Start here for log analysis, bug reports, and general connection debugging.
 
 ### Connection or transport issues: use Log **Analyze**
 
-Open the **Log** panel (right rail), enable **debug** if needed, reproduce the problem, then click **Analyze**. The app scans recent buffered log lines for patterns (BLE, serial, TCP, MQTT, handshake timeouts, etc.) and lists **suggested next steps**. This complements export/delete: use it before filing an issue so you have concrete log context. Analysis is **heuristic**; treat recommendations as hints, not guarantees.
+Open the **Log** panel (right rail), enable **debug** if needed, reproduce the problem, then click **Analyze**. The app scans recent buffered log lines for patterns (BLE, serial, TCP, MQTT, handshake timeouts, etc.) and lists **suggested next steps**. This complements export/delete: use it before filing an issue so you have concrete log context. Analysis is **heuristic**; treat recommendations as hints, not guarantees. Expand **View evidence** on a finding to inspect its timestamped log lines. **Copy troubleshooting report** copies the findings, specific advice, and recent samples for a support request; review the samples before sharing. See [Log analysis](log-analysis.md) for scope and limitations.
 
 ### Reporting bugs: **Export for GitHub** (App tab)
 
@@ -92,6 +93,18 @@ The top-level **`legend`** explains that ids like `offline-meshcore` are **inter
 Developer bundle only: `reticulum/config` (rnsd INI) and `reticulum/mesh_client_stack.json` (mnemonic redacted).
 
 Attach the GitHub report zip (or paste `debug-snapshot.json` from it; redact `myNodeNum` if you prefer). Do **not** attach the developer bundle or `mesh-client.db` to this public issue.
+
+## System requirements
+
+Packaged Mesh-Client (Electron **44**) needs:
+
+| Platform    | Minimum                                                                                         |
+| ----------- | ----------------------------------------------------------------------------------------------- |
+| **macOS**   | **13 Ventura** or later (`LSMinimumSystemVersion` in the app bundle; Monterey is not supported) |
+| **Windows** | Windows 10 version **1809+** or Windows 11                                                      |
+| **Linux**   | x86_64 or aarch64 (AppImage, `.deb`, `.rpm`, Flatpak)                                           |
+
+If the app will not launch on an older macOS, upgrade the host OS — this is not a Gatekeeper quarantine issue. See also [README — System requirements](../README.md#system-requirements).
 
 ## Development and building
 
@@ -342,6 +355,69 @@ After running `xattr`, check Privacy & Security again (scroll to the bottom); th
 - This may also be a native module signing issue; try rebuilding: `pnpm run dist:mac`
 - If building from source: make sure `pnpm install` completed without errors
 
+### macOS: Library not loaded: Squirrel.framework after ZIP extract
+
+**Symptom:** Mesh-client crashes immediately on launch (often on macOS 26 / Tahoe). Crash Reporter or Console shows:
+
+```text
+Termination Reason: Namespace DYLD, Code 1, Library missing
+Library not loaded: @rpath/Squirrel.framework/Squirrel
+Referenced from: .../Electron Framework.framework/Versions/A/Electron Framework
+```
+
+Similar errors may mention `Mantle.framework` or `ReactiveObjC.framework`. Electron Framework may load; the sibling auto-update frameworks fail first.
+
+**Cause:** The **macOS `.zip`** from [GitHub Releases](https://github.com/Colorado-Mesh/mesh-client/releases) was extracted with a tool that **does not preserve macOS framework symlinks** — especially **7-Zip**, and sometimes Finder Archive Utility. That flattens entries such as `Squirrel.framework/Squirrel` into tiny invalid files, so dyld aborts at launch. The release artifact itself is fine; the installed `.app` bundle is broken.
+
+**Fix:**
+
+1. Delete the broken copy (for example `/Applications/Mesh-client.app`).
+2. Reinstall using one of these (preferred first):
+   - **`.dmg` (recommended):** open the arm64 DMG, drag **Mesh-client** to **Applications**, launch from there.
+   - **`.zip` with [Keka](https://www.keka.io/en/)** or Terminal:
+     ```bash
+     ditto -xk Mesh-client-*-arm64-mac.zip ~/Desktop/mesh-extract
+     ```
+     Then move `Mesh-client.app` to `/Applications`.
+3. **Do not** re-extract the macOS ZIP with **7-Zip**.
+
+**Optional check** after a good install:
+
+```bash
+ls -la /Applications/Mesh-client.app/Contents/Frameworks/Squirrel.framework
+file /Applications/Mesh-client.app/Contents/Frameworks/Squirrel.framework/Versions/A/Squirrel
+```
+
+Expect `Squirrel` and `Versions/Current` to be **symlinks**; `Versions/A/Squirrel` should report a Mach-O dylib (not a tiny text file).
+
+Official releases also ship `00-READ-ME-BEFORE-EXTRACTING-macOS-ZIP.txt` on the release page, and the DMG includes **IMPORTANT-Read-Me.txt** with the same guidance.
+
+### macOS: `codesign --verify --deep --strict` fails after install
+
+**Symptom:** Gatekeeper / `spctl --assess` accepts the app as **Notarized Developer ID**, but:
+
+```bash
+codesign --verify --deep --strict --verbose=4 /path/to/Mesh-client.app
+# Mesh-client.app: invalid signature (code or signature have been modified)
+```
+
+Nested Electron / Squirrel frameworks or Helper apps may report the same error.
+
+**Cause:** Almost always a **locally damaged copy**, not a post-sign rewrite on GitHub Releases. Official DMGs are signed, notarized, and stapled; release CI runs `codesign --verify --deep --strict` plus `xcrun stapler validate` on the finished app inside each DMG/ZIP when the build is Developer ID signed. Flattened framework symlinks (bad ZIP extract) or a broken Finder copy can invalidate the seal. A stapled notarization ticket may still be present after that damage, but the damaged bundle can still fail code-signature validation or Gatekeeper assessment.
+
+**Check the pristine artifact first** (prefer the DMG mount, not a hand-copied tree):
+
+```bash
+mkdir -p /tmp/mesh-dmg
+trap 'hdiutil detach /tmp/mesh-dmg 2>/dev/null || true' EXIT
+hdiutil attach -readonly -nobrowse -mountpoint /tmp/mesh-dmg Mesh-client-*-arm64.dmg
+codesign --verify --deep --strict --verbose=4 /tmp/mesh-dmg/Mesh-client.app
+spctl --assess --type execute --verbose=4 /tmp/mesh-dmg/Mesh-client.app
+xcrun stapler validate /tmp/mesh-dmg/Mesh-client.app
+```
+
+Or extract the ZIP with `ditto -xk` (not 7-Zip) and verify that tree. If the mounted DMG / `ditto` extract passes but `/Applications/Mesh-client.app` fails, reinstall from the DMG and delete the broken copy. See [Library not loaded: Squirrel.framework](#macos-library-not-loaded-squirrelframework-after-zip-extract) above.
+
 ### Flatpak: `vmwgfx: driver missing` (VMware on macOS)
 
 **Symptom**: `flatpak run org.coloradomesh.MeshClient` fails or exits after Mesa logs `vmwgfx: driver missing` (use `flatpak -v run ...` to see it). Common on **Linux guests in VMware Fusion or Workstation with a macOS host**, including **aarch64** Ubuntu/ARM VMs.
@@ -381,7 +457,7 @@ flatpak run org.coloradomesh.MeshClient
 
 **Symptom**: `flatpak run org.coloradomesh.MeshClient` prints `Command failed` right after `Running 'bwrap … -- mesh-client'` with no window. Common on **Arch, CachyOS, KDE Plasma 6, and Hyprland** (pure Wayland). The AppImage from the same release often works.
 
-**Cause**: The Flatpak sandbox mounts an empty `/tmp/.X11-unix`, so Electron cannot fall back to X11 unless the wrapper passes Wayland/Ozone flags. Older bundles also omitted Chromium sandbox flags and `TMPDIR` setup that zypak expects.
+**Cause**: The Flatpak sandbox mounts an empty `/tmp/.X11-unix`, so Electron cannot fall back to X11 unless the wrapper passes Wayland/Ozone flags. Older bundles also omitted Chromium sandbox flags and `TMPDIR` setup that zypak expects. A different immediate exit with `No usable sandbox!` on hardened hosts is covered in [Flatpak: "No usable sandbox!" on Ubuntu 23.10+ / hardened Linux](#flatpak-no-usable-sandbox-on-ubuntu-2310--hardened-linux).
 
 The log line `F: /lib32 does not exist in runtime` is **harmless** on x86_64-only runtimes — not the failure cause.
 
@@ -414,6 +490,28 @@ flatpak uninstall --user org.coloradomesh.MeshClient
 flatpak install --user ./org.coloradomesh.MeshClient-x86_64.flatpak
 flatpak run org.coloradomesh.MeshClient
 ```
+
+### Flatpak: "No usable sandbox!" on Ubuntu 23.10+ / hardened Linux
+
+**Symptom**: `flatpak run org.coloradomesh.MeshClient` exits immediately with no window. The terminal may show `zypak-helper` lines (for example `Wait found events, but sd-event found none`) followed by:
+
+```text
+FATAL:content/browser/zygote_host/zygote_host_impl_linux.cc:129] No usable sandbox!
+```
+
+**Cause**: The host blocks **unprivileged user namespaces** (common on **Ubuntu 23.10+** with AppArmor `apparmor_restrict_unprivileged_userns`, and on some hardened **Fedora** / **Arch** setups). The Flatpak wrapper passes `--disable-setuid-sandbox` (zypak owns Chromium sandboxing), so when user namespaces are unavailable Chromium has no usable sandbox and aborts.
+
+**Fix in app**: Current releases auto-retry with `--no-sandbox` when this fatal is detected (same fallback as `pnpm start` via `scripts/start-electron.mjs`). Reinstall the latest `.flatpak` from [GitHub Releases](https://github.com/Colorado-Mesh/mesh-client/releases) if you are on an older bundle.
+
+**Workaround** (skip the probe, force `--no-sandbox` on first launch):
+
+```bash
+MESH_CLIENT_NO_SANDBOX=1 flatpak run org.coloradomesh.MeshClient
+```
+
+The **outer Flatpak bubblewrap sandbox** still isolates the app when Chromium runs with `--no-sandbox`; only the inner Chromium namespace sandbox is relaxed.
+
+**Host root-cause fix** (optional — restores the inner Chromium sandbox): allow unprivileged user namespaces on the host, or add an AppArmor profile exception. See the upstream Chromium guide: [AppArmor userns restrictions](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md). On older kernels, `kernel.unprivileged_userns_clone=1` may also be required — see [Linux launch notes](development-environment.md#linux-launch-notes) in development-environment.md.
 
 ## Database and local data
 
@@ -655,7 +753,8 @@ After sleep or hibernate, mesh-client uses the same resume path as macOS: reconn
 If mesh-client stays open for **days** on a busy mesh (especially **MeshCore BLE-only** with hundreds of repeaters):
 
 - **Restart the app every 1–2 days** to limit main-process uptime (reduces risk of native BLE / V8 edge cases after ~72h).
-- After **4 days**, mesh-client shows a one-time toast suggesting a restart.
+- After **4 days** with **Noble BLE connected** on **macOS or Windows**, mesh-client shows a **persistent restart banner** plus an OS notification (Dock badge on macOS, taskbar flash on Windows). Restart relaunches the process; Dismiss hides the nudge for 12 hours. Linux uses Web Bluetooth (different stack) and does not show this prompt. Serial/TCP-only sessions are not prompted.
+- Mid-session `EXC_BREAKPOINT` / SIGTRAP after multi-day Noble BLE is **confirmed on macOS**; the same failure class on Windows is **unconfirmed**, so the day-4 prompt there is precautionary. The mechanism is **suspected** to be a native Noble / Electron main-process teardown race (working hypothesis: a timer tick intersecting V8 GC firing into freed CoreBluetooth state) — not established. What is certain is that it is **outside mesh-client’s JavaScript control** — not a corrupt database and not catchable with `try/catch`. Mitigation is process recycle (restart) and preferring Serial/TCP for always-on desks. Tracked upstream as [stoprocent/noble#140](https://github.com/stoprocent/noble/issues/140) — attach your `.ips` crash report there if you can reproduce it.
 - **MeshCore:** default contact cap is **10,000** (App settings); enable **auto-prune by age** if you want SQLite trimmed below that. Avoid bulk repeater status/neighbors refresh when not needed — thousands of `syncNextMessage timed out` lines in the log usually mean the companion radio is overloaded.
 - **Meshtastic:** default node cap is **10,000**; enable **auto-prune** in App settings as needed.
 - **Reticulum:** restart the sidecar/stack periodically on always-on nodes; message retention prunes run at startup and every 6 hours while the app is open.
@@ -802,6 +901,18 @@ When the Meshtastic SDK logs a routing / queue failure, mesh-client intercepts m
 
 **Reconnect ownership:** TCP disconnect/reconnect is owned by `useMeshcoreRuntime` + `rfReconnectController` (single-owner scheduler). Conn side effects **skip** `handleConnectionLost` when `connectType === 'tcp'` so the runtime `meshcore:tcp-disconnected` listener does not double-enter the reconnect scheduler.
 
+### MeshCore TCP / pyMC: initial connect MsgWaiting drain slow or paused
+
+**Symptoms**: After TCP connect to pyMC/OpenHop, the header shows **Fetching queued messages…** or **Message sync paused while the radio is busy…** for one to two minutes; Chat backlog arrives slowly; developer bundle may show `ui.waitingMessagesDrainDeferred: true` and log lines like `requestTelemetry error timeout` ~120s after connect.
+
+**Cause**: Post-connect self telemetry (optional altitude fetch) used to run before proactive MsgWaiting drain and could hold the companion RF lane for up to **120s**. Silent bulk `getWaitingMessages` on TCP also used a **45s** timeout before falling back to one-at-a-time `syncNextMessage`. On busy meshes the companion queue can keep growing during init RPCs (contacts/channels dump, autoadd, MQTT export) before drain starts.
+
+**Fix**:
+
+1. Upgrade to a build that starts MsgWaiting drain right after the contacts/channels dump (not after all post-init side effects), runs post-connect telemetry only after drain, and uses **syncNextMessage-only** silent drain on TCP (pyMC/OpenHop often never answers bulk `getWaitingMessages`).
+2. On MeshCore tab, use **Sync now** if the header still shows a backlog after connect.
+3. In support bundles, check `ui.meshcoreDrain` for `meshcoreCompanionRepeaterRfBusy`, `meshcoreAdminRpcInFlightCount`, and `meshcoreSilentBulkTimeoutStreak` when triaging repeat reports.
+
 ### MeshCore contact delete and sticky Rooms badge
 
 - Deleting a contact from Chat/Contacts removes the SQLite contact row **and** room BBS messages for that `room_server_id` (so Rooms unread cannot outlive the room server).
@@ -886,7 +997,7 @@ The client deduplicates overlapping RF and MQTT hears within **5 minutes** (cros
 
 ### MeshCore: Room server login, posts, and Windows 10
 
-**Minimum Windows**: Mesh-Client (Electron 41) supports **Windows 10 version 1809+** and Windows 11. Windows 10 22H2 is supported; issues reported only on Win10 are usually MeshCore protocol or app regressions, not an unsupported OS.
+**Minimum Windows**: Mesh-Client (Electron 44) supports **Windows 10 version 1809+** and Windows 11. Windows 10 22H2 is supported; issues reported only on Win10 are usually MeshCore protocol or app regressions, not an unsupported OS. See [System requirements](#system-requirements) for the full platform table (including **macOS 13 Ventura+**).
 
 **Rooms vs Chat**: Official MeshCore room clients use the **Rooms** tab BBS login path. Room-server posts appear there (`SignedPlain` / channel `-2`), **not** in Chat channel pills. Admin traffic sent as normal **channel text** shows in **Chat** only.
 
@@ -945,7 +1056,7 @@ The client deduplicates overlapping RF and MQTT hears within **5 minutes** (cros
 **Queue badge stuck at `Q: 255/256`**:
 
 - Usually means the companion radio outbound queue is nearly full. Enable debug logging and export logs if the badge stays red for minutes with no traffic; look for `[useMeshcoreRuntime] high queue depth=`.
-- Some **HTTP/TCP** companions pad the legacy 7-byte STATS CORE frame to 9 bytes with `raw[7]=0` and `raw[8]=0xff` (padding sentinel). mesh-client treats that signature as 7-byte layout (`queue_len` at byte 6). If chat send/receive works but the badge is red with `rawHex` ending in `0000ff`, upgrade to a build that includes this fix ([#600](https://github.com/Colorado-Mesh/mesh-client/issues/600)).
+- Some **HTTP/TCP** companions pad the legacy 7-byte STATS CORE frame to 9 bytes with `raw[7]=0` and `raw[8]=0xff` (padding sentinel) or `raw[8]=0x18` (`RESP_CODE_STATS` framing leak). mesh-client treats those signatures as 7-byte layout (`queue_len` at byte 6). If chat send/receive works but the badge shows a stuck non-zero depth (e.g. `Q: 24/256` with `rawHex` ending in `000018`), upgrade to a build that includes this fix ([#600](https://github.com/Colorado-Mesh/mesh-client/issues/600)).
 - On older builds, CORE stats could also be mis-parsed (false `Q: 255/256` with normal traffic).
 
 **Windows packaged updater: `Cannot find module 'semver'`**:
@@ -1085,7 +1196,7 @@ Quit mesh-client fully, reopen, and click **Start stack** again.
    ./scripts/clone-ratspeak-stack.sh
    pnpm run reticulum:sidecar:build
    ```
-   Or apply individual overlays (`./scripts/apply-rsReticulum-packet-tap.sh`, `./scripts/apply-rsReticulum-auto-beacon-utun.sh`, `./scripts/apply-rsReticulum-link-client-nomad.sh`, …) then `pnpm run reticulum:sidecar:build`.
+   Or apply individual overlays (`./scripts/apply-rsReticulum-packet-tap.sh`, `./scripts/apply-rsReticulum-auto-beacon-utun.sh`, `./scripts/apply-rsReticulum-link-client-proof-budget.sh`, …) then `pnpm run reticulum:sidecar:build`.
 3. **Workaround on old builds**: disable **AutoInterface** under Connection → Interfaces if LAN discovery is not needed (TCP/RNode paths still work).
 4. **Physical NIC failures** (`en0`, `wlan0`, …): restart the stack; check firewall/multicast permissions — that indicates real LAN discovery failure, not VPN noise.
 5. **Local DMs hang with Auto + LAN TCP hub** — see [Reticulum local DMs hang with AutoInterface + private TCP hub](#reticulum-local-dms-hang-with-autointerface--private-tcp-hub).
@@ -1207,7 +1318,7 @@ TCP/network Nomad Links use path-scaled initiator hops (`link_hops = clamp(path_
 
 **Fix**:
 
-1. Ensure rsReticulum overlay is applied: `./scripts/apply-rsReticulum-link-client-nomad.sh` (see [patches/README.md](../reticulum-sidecar/patches/README.md); upstream [ratspeak/rsReticulum#14](https://github.com/ratspeak/rsReticulum/pull/14)).
+1. Ensure `.rsstack/rsReticulum` is on floated `origin/main` — handler-free `resolve_destination_on_transport` in `crates/rns-runtime/src/link_client.rs` supersedes the retired `rsReticulum-link-client-nomad` overlay (see [patches/README.md](../reticulum-sidecar/patches/README.md)).
 2. Rebuild sidecar: `pnpm run reticulum:sidecar:build`, restart stack.
 3. Prefer low-hop nodes while testing; hop count is shown in the Nomad list.
 4. Match the humanized message to the table above — `path_timeout` / high hops often mean RF reachability limits, not a mesh-client bug.
@@ -1421,6 +1532,20 @@ Bond-stale **TX queue full** hints (`txQueueDropsHintBleBondStale`) point at the
 **Cause**: Colorado Mesh is a **regional** broker. mesh-client prompts existing Colorado-preset (or Colorado host) users once so non-Colorado users can switch to **LetsMesh**. Auto-launch will not connect to Colorado until that choice is stored.
 
 **Fix**: Choose **I am in Colorado** to keep the preset (Auto-connect resumes if enabled), or **Switch to LetsMesh**. The choice is stored in `mesh-client:coloradoMqttRegionAck-v1` and is not shown again. Selecting Colorado Mesh later shows a confirm that the preset is for Colorado-area users and publishes under `meshcore/DEN`.
+
+### Reticulum: announces / Nomad / RRC work but Chat fails both ways
+
+**Symptoms**: Both mesh-client instances hear announces, Nomad pages and RRC work, probes look reachable, but Chat DMs never arrive either way. Developer bundles show outbound `to_hash` values that are **not** the peer’s Network **LXMF** hash. Diagnostics may list **Direct LXMF link … timed out** against a hash that identity activity marks as `lxst.telephony`. When **MeshChatX** (or another RNS app) runs on one side, the other may briefly show **Delivered** via RF — that Complete is for MeshChatX’s LXMF identity, not mesh-client Chat.
+
+**Cause**: The RNS path table lists **every** destination aspect. Opening **Peers → Message** (or a stale DM) on an `lxst.telephony` row sends LXMF Chat to a Voice destination. mesh-client remaps Message to the peer’s `lxmf.delivery` hash when identity activity knows it; without an LXMF announce it refuses send.
+
+**Fix / retest checklist**:
+
+1. **Fully quit** MeshChatX / other Reticulum apps on both machines during a mesh-client ↔ mesh-client test.
+2. On **Network**, confirm each side’s **LXMF** hash (not only the identity hash). Example pair: upstairs `ac978c…` ↔ downstairs `e3359f…`.
+3. Open Chat from Peers **Message** (or paste the peer’s 32-character **LXMF** hash). The DM header shows a copyable **LXMF** prefix — it must match Network, not a Voice-only row.
+4. If Direct still fails, set Propagation to **Auto** or **Manual** with a usable PN (Propagation **Off** has no cascade after Direct timeout).
+5. Export **both** Developer bundles; check `reticulum_messages.to_hash` against `reticulum_identity_activity` (`lxmf.delivery` vs `lxst.telephony`) and `reticulum/lxmf-outbound.log` for Direct Completes / Failed lines.
 
 ### Reticulum DM stuck on Sending (MeshChatX / shared instance)
 
@@ -1852,6 +1977,8 @@ With **Wi‑Fi off** or **airplane mode** on, using a **packaged** build if poss
 ### Update check fails / footer update status
 
 The app functions fully offline; this is not a critical error. If "Update check failed" appears in the console, verify network connectivity. Update checks are rate-limited by the GitHub API and may silently skip when the limit is reached. The footer shows **Update error** when a check fails; use **Check for updates** in the app menu or retry from the footer when applicable.
+
+**Footer shows vX.Y.Z then Update error after Cut release:** The GitHub release may have been published with an `untagged-*` tag instead of `vX.Y.Z` (draft-fork race). On GitHub → Releases, confirm the latest release tag is `vX.Y.Z`. Repair with `GH_TOKEN=YOUR_ADMIN_PAT node scripts/repair-published-release-tag.mjs --tag vX.Y.Z`, or edit the release in the GitHub UI. Future releases are blocked at CI verify when the draft tag is wrong.
 
 ### Language and Translations
 

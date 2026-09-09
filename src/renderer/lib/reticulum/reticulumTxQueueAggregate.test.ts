@@ -33,7 +33,7 @@ describe('aggregateReticulumLocalRfTxQueue', () => {
     ).toBeNull();
   });
 
-  it('aggregates a single online BLE RNode at empty fill', () => {
+  it('exposes Q for an online BLE RNode at empty or idle-baseline fill (not buffering)', () => {
     expect(
       aggregateReticulumLocalRfTxQueue([
         row({
@@ -45,6 +45,22 @@ describe('aggregateReticulumLocalRfTxQueue', () => {
       ]),
     ).toEqual({
       free: 256,
+      maxlen: 256,
+      res: 0,
+      interfaceName: 'RNode 41F4',
+      buffering: false,
+    });
+    expect(
+      aggregateReticulumLocalRfTxQueue([
+        row({
+          name: 'RNode 41F4',
+          type: 'rnode',
+          tx_queue_used: 12,
+          tx_queue_max: 256,
+        }),
+      ]),
+    ).toEqual({
+      free: 244,
       maxlen: 256,
       res: 0,
       interfaceName: 'RNode 41F4',
@@ -136,12 +152,27 @@ describe('aggregateReticulumLocalRfTxQueue', () => {
     ).toBeNull();
   });
 
-  it('sets buffering when any scoped interface has used > 0', () => {
+  it('picks the fuller iface for small idle backlog without marking buffering', () => {
     const agg = aggregateReticulumLocalRfTxQueue([
       row({ name: 'Idle', type: 'rnode', tx_queue_used: 0, tx_queue_max: 256 }),
-      row({ name: 'Busy', type: 'rnode', tx_queue_used: 1, tx_queue_max: 256 }),
+      row({ name: 'Busy', type: 'rnode', tx_queue_used: 10, tx_queue_max: 256 }),
+    ]);
+    expect(agg).toEqual({
+      free: 246,
+      maxlen: 256,
+      res: 0,
+      interfaceName: 'Busy',
+      buffering: false,
+    });
+  });
+
+  it('sets buffering when scoped interface fill is significant', () => {
+    const agg = aggregateReticulumLocalRfTxQueue([
+      row({ name: 'Idle', type: 'rnode', tx_queue_used: 0, tx_queue_max: 256 }),
+      row({ name: 'Busy', type: 'rnode', tx_queue_used: 20, tx_queue_max: 256 }),
     ]);
     expect(agg?.buffering).toBe(true);
     expect(agg?.interfaceName).toBe('Busy');
+    expect(agg?.free).toBe(236);
   });
 });

@@ -625,4 +625,102 @@ describe('meshcoreStoreDedup', () => {
     expect(result.message.receivedVia).toBe('both');
     expect(result.message.rxHops).toBe(2);
   });
+
+  it('merges room Unknown (sender_id 0) with a named twin into one resolved row', () => {
+    const roomId = 0x6c08b3d9;
+    const authorId = 1429514792;
+    const tsMs = 1_786_817_958_000;
+    const named = buildMeshcoreRoomIncomingMessage({
+      rawText: 'Test 12:19',
+      roomServerId: roomId,
+      authorId,
+      authorName: '🛜 NV0N 01',
+      timestamp: tsMs,
+      receivedVia: 'rf',
+    });
+    const unknown = buildMeshcoreRoomIncomingMessage({
+      rawText: 'Test 12:19',
+      roomServerId: roomId,
+      authorId: 0,
+      authorName: 'Unknown',
+      timestamp: tsMs,
+      receivedVia: 'rf',
+    });
+    upsertMeshcoreMessageWithDedup(ID, named);
+    const result = upsertMeshcoreMessageWithDedup(ID, unknown);
+    expect(result.inserted).toBe(false);
+    expect(result.message.sender_id).toBe(authorId);
+    expect(result.message.sender_name).toBe('🛜 NV0N 01');
+    expect(Object.values(useMessageStore.getState().messages[ID] ?? {})).toHaveLength(1);
+  });
+
+  it('upgrades an existing Unknown room row when a named twin arrives', () => {
+    const roomId = 0x6c08b3d9;
+    const authorId = 1429514792;
+    const tsMs = 1_786_979_939_000;
+    upsertMeshcoreMessageWithDedup(
+      ID,
+      buildMeshcoreRoomIncomingMessage({
+        rawText: '@[🛜 NV0N 01] 👋',
+        roomServerId: roomId,
+        authorId: 0,
+        authorName: 'Unknown',
+        timestamp: tsMs,
+        receivedVia: 'rf',
+      }),
+    );
+    const result = upsertMeshcoreMessageWithDedup(
+      ID,
+      buildMeshcoreRoomIncomingMessage({
+        rawText: '@[🛜 NV0N 01] 👋',
+        roomServerId: roomId,
+        authorId,
+        authorName: '🛜 NV0N 01',
+        timestamp: tsMs,
+        receivedVia: 'rf',
+      }),
+    );
+    expect(result.inserted).toBe(false);
+    expect(result.message.sender_id).toBe(authorId);
+    expect(result.message.sender_name).toBe('🛜 NV0N 01');
+    expect(Object.values(useMessageStore.getState().messages[ID] ?? {})).toHaveLength(1);
+  });
+
+  it('does not merge Unknown into an arbitrary sender when two resolved peers share room/body/time', () => {
+    const roomId = 0x6c08b3d9;
+    const tsMs = 1_786_900_000_000;
+    const alice = buildMeshcoreRoomIncomingMessage({
+      rawText: 'hello room',
+      roomServerId: roomId,
+      authorId: 0x11111111,
+      authorName: 'Alice',
+      timestamp: tsMs,
+      receivedVia: 'rf',
+    });
+    const bob = buildMeshcoreRoomIncomingMessage({
+      rawText: 'hello room',
+      roomServerId: roomId,
+      authorId: 0x22222222,
+      authorName: 'Bob',
+      timestamp: tsMs,
+      receivedVia: 'rf',
+    });
+    const unknown = buildMeshcoreRoomIncomingMessage({
+      rawText: 'hello room',
+      roomServerId: roomId,
+      authorId: 0,
+      authorName: 'Unknown',
+      timestamp: tsMs,
+      receivedVia: 'rf',
+    });
+    upsertMeshcoreMessageWithDedup(ID, alice);
+    upsertMeshcoreMessageWithDedup(ID, bob);
+    const result = upsertMeshcoreMessageWithDedup(ID, unknown);
+    expect(result.inserted).toBe(true);
+    expect(result.message.sender_id).toBe(0);
+    expect(result.message.sender_name).toBe('Unknown');
+    const rows = Object.values(useMessageStore.getState().messages[ID] ?? {});
+    expect(rows).toHaveLength(3);
+    expect(rows.filter((r) => r.senderName === 'Unknown' || r.from === 0)).toHaveLength(1);
+  });
 });

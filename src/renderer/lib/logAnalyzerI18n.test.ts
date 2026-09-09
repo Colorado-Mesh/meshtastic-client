@@ -9,7 +9,8 @@ import {
   resolveLogAnalyzerRecommendationKey,
 } from './logAnalyzerI18n';
 
-function getByFlatKeyPath(root: unknown, flatKey: string): unknown {
+function getByFlatKeyPath(root: unknown, flatKey: string | undefined): unknown {
+  if (!flatKey) return undefined;
   let cur: unknown = root;
   for (const part of flatKey.split('.')) {
     if (cur == null || typeof cur !== 'object' || !(part in cur)) {
@@ -49,6 +50,15 @@ describe('logAnalyzerI18n key maps', () => {
         String(value).length,
         `empty group recommendation for ${group}: ${key}`,
       ).toBeGreaterThan(0);
+    }
+  });
+
+  it('every real finding resolves its own advice instead of the internal-error fallback', () => {
+    for (const category of Object.keys(LOG_ANALYZER_CATEGORY_LABEL_KEYS)) {
+      expect(LOG_ANALYZER_CATEGORY_RECOMMENDATION_KEYS[category], category).toBeTruthy();
+      expect(resolveLogAnalyzerRecommendationKey(category), category).toBe(
+        LOG_ANALYZER_CATEGORY_RECOMMENDATION_KEYS[category],
+      );
     }
   });
 

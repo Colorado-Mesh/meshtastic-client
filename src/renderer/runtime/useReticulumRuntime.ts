@@ -7,6 +7,7 @@ import {
   rncpReceiveDestShareSavedToastMessage,
 } from '@/renderer/lib/applyRncpReceiveDestShare';
 import {
+  isReticulumAutoResendOnAnnounceEnabled,
   isReticulumAutostartEnabled,
   isRrcUnreadAllRoomMessagesEnabled,
 } from '@/renderer/lib/appSettingsStorage';
@@ -28,6 +29,7 @@ import {
   MAX_RAW_PACKET_LOG_ENTRIES,
   type ReticulumRawPacketEntry,
 } from '@/renderer/lib/rawPacketLogConstants';
+import { announceDestinationHashes } from '@/renderer/lib/reticulum/announceDestinationHashes';
 import {
   applyReticulumOutboundDeliveryStatus,
   flushPendingReticulumOutboundDeliveryStatus,
@@ -48,6 +50,7 @@ import {
   markStaleReticulumOutboundMessages,
   RETICULUM_STALE_OUTBOUND_MS,
 } from '@/renderer/lib/reticulum/markStaleReticulumOutbound';
+import { resendFailedReticulumForDestination } from '@/renderer/lib/reticulum/resendFailedReticulumForDestination';
 import {
   getHotReticulumPeerInterface,
   recordReticulumPeerInterfaceSamplesFromPeersUpdated,
@@ -169,6 +172,7 @@ import {
   lxmfBodyContainsRncpRequestEnable,
   parseRncpReceiveDestShare,
 } from '@/shared/rncpRequestEnable';
+import { touch } from '@/shared/touch';
 import { parseVoiceAudioRequest } from '@/shared/voice-types';
 
 import { getIdentityIdForProtocol } from '../lib/identityByProtocol';
@@ -294,6 +298,10 @@ export function useReticulumRuntime(): ProtocolRuntime {
   const unsubVoiceAudioRef = useRef<(() => void) | null>(null);
   const connectRef = useRef<((opts?: { reuseIfRunning?: boolean }) => Promise<void>) | null>(null);
   const restartStackRef = useRef<(() => Promise<void>) | null>(null);
+  /** sendMessage is defined below the event handler; announce auto-resend calls it via ref. */
+  const sendMessageRef = useRef<
+    ((text: string, to: number | string, replyToHash?: string, pendingId?: string) => void) | null
+  >(null);
   const connectInFlightRef = useRef(false);
   const connectInFlightDoneRef = useRef<Promise<void> | null>(null);
   const suppressReconnectRef = useRef(false);
@@ -965,6 +973,7 @@ export function useReticulumRuntime(): ProtocolRuntime {
           last_seen?: number | null;
           node_state?: boolean;
           peering_cost?: number;
+          medium?: string | null;
         };
         if (typeof p.destination_hash === 'string') {
           useReticulumPropagationStore.getState().upsertDiscovered({
@@ -976,6 +985,7 @@ export function useReticulumRuntime(): ProtocolRuntime {
             last_seen: p.last_seen,
             node_state: p.node_state !== false,
             peering_cost: typeof p.peering_cost === 'number' ? p.peering_cost : 0,
+            medium: p.medium === 'rf' || p.medium === 'network' ? p.medium : null,
           });
         }
       }
@@ -1132,6 +1142,32 @@ export function useReticulumRuntime(): ProtocolRuntime {
           useRrcSessionStore.getState().roomJoined(p.room, p.members, p.hub_dest_hash ?? undefined);
         }
       }
+      if (evt.type === 'rrc.room.peer_parted' && evt.payload && typeof evt.payload === 'object') {
+        const p = evt.payload as {
+          room?: string;
+          members?: { identity_hash: string; nickname?: string | null }[];
+          hub_dest_hash?: string | null;
+        };
+        if (typeof p.room === 'string' && Array.isArray(p.members)) {
+          const validMembers = p.members.flatMap((m) => {
+            if (m == null || typeof m !== 'object') return [];
+            const identity_hash = (m as { identity_hash?: unknown }).identity_hash;
+            if (typeof identity_hash !== 'string' || identity_hash.length === 0) return [];
+            const nickname = (m as { nickname?: unknown }).nickname;
+            return [
+              {
+                identity_hash,
+                nickname: typeof nickname === 'string' ? nickname : null,
+              },
+            ];
+          });
+          if (validMembers.length > 0) {
+            useRrcSessionStore
+              .getState()
+              .removeRoomMembers(p.room, validMembers, p.hub_dest_hash ?? undefined);
+          }
+        }
+      }
       if (evt.type === 'rrc.room.parted' && evt.payload && typeof evt.payload === 'object') {
         const p = evt.payload as { room?: string; hub_dest_hash?: string | null };
         if (typeof p.room === 'string') {
@@ -1214,18 +1250,18 @@ export function useReticulumRuntime(): ProtocolRuntime {
             if (listed) session.setListedRooms(listed, hubDestHash);
             const hubKey = hubDestHash?.toLowerCase();
             const hubSession = hubKey ? session.sessionsByHub.get(hubKey) : undefined;
-            const whoResult = applyRrcWhoInboundNotice(
-              p.body,
-              hubDestHash ? (hubSession?.rooms.keys() ?? []) : session.rooms.keys(),
-              {
-                hubDestHash,
-                mergeRoomMembers: (whoRoom, members, mode, hub) => {
-                  session.mergeRoomMembers(whoRoom, members, mode, hub);
-                },
-                consumeWhoTranscriptSlot: (whoRoom, hub) =>
-                  session.consumeWhoTranscriptSlot(whoRoom, hub),
+            // Materialize Map.keys() — one-shot iterators must not be re-walked.
+            const joinedRooms = hubDestHash
+              ? [...(hubSession?.rooms.keys() ?? [])]
+              : [...session.rooms.keys()];
+            const whoResult = applyRrcWhoInboundNotice(p.body, joinedRooms, {
+              hubDestHash,
+              mergeRoomMembers: (whoRoom, members, mode, hub) => {
+                session.mergeRoomMembers(whoRoom, members, mode, hub);
               },
-            );
+              consumeWhoTranscriptSlot: (whoRoom, hub) =>
+                session.consumeWhoTranscriptSlot(whoRoom, hub),
+            });
             const topic = parseRrcTopicNotice(p.body);
             if (topic) session.setRoomTopic(topic.room, topic.topic || null, hubDestHash);
             // rrcd may emit join-info NOTICE without a usable JOINED member list —
@@ -1238,6 +1274,17 @@ export function useReticulumRuntime(): ProtocolRuntime {
               !topic.room.startsWith('@')
             ) {
               session.roomJoined(topic.room, undefined, hubDestHash);
+              // When actor JOINED with full roster is dropped (oversize MDU), join-info
+              // still means we are in-room — seed ourselves so the nicklist is not blank.
+              const selfHash = session.localIdentityHash;
+              if (selfHash && selfHash.length >= 8) {
+                session.mergeRoomMembers(
+                  topic.room,
+                  [{ identity_hash: selfHash, nickname: session.nickname || null }],
+                  'merge',
+                  hubDestHash,
+                );
+              }
             }
             if (isRrcModerationLanguage(p.body)) {
               // Reserve kick/ban banner copy for moderation notices; transcript keeps hub text.
@@ -1527,6 +1574,20 @@ export function useReticulumRuntime(): ProtocolRuntime {
         applyReticulumAnnounceReceivedOptimistic(evt.payload);
         recordAnnounceActivity(evt.payload);
         requestChatOutboxDrain('reticulum');
+        // Opt-in: a fresh announce means failed sends to that peer are worth one retry.
+        const autoResendEnabled = isReticulumAutoResendOnAnnounceEnabled();
+        if (autoResendEnabled) {
+          for (const destinationHash of announceDestinationHashes(evt.payload)) {
+            resendFailedReticulumForDestination({
+              identityId,
+              destinationHash,
+              enabled: autoResendEnabled,
+              send: (text, destination, retryOfStoreId) => {
+                sendMessageRef.current?.(text, destination, undefined, retryOfStoreId);
+              },
+            });
+          }
+        }
       }
       if (evt.type === 'peers_updated' && refreshActions.peerPatches) {
         recordReticulumPeerInterfaceSamplesFromPeersUpdated(evt.payload);
@@ -2120,7 +2181,8 @@ export function useReticulumRuntime(): ProtocolRuntime {
         }
         localInterfacesRef.current = interfaces;
         logReticulumLocalInterfaceHealthChanges(interfaces, osSerialPorts);
-        setQueueStatus(aggregateReticulumLocalRfTxQueue(interfaces));
+        const queueAgg = aggregateReticulumLocalRfTxQueue(interfaces);
+        setQueueStatus(queueAgg);
         const health = { interfaces, osSerialPorts };
         const peerCount = useReticulumPeerStore.getState().peers.size;
         // Large meshes: rely on WS-debounced diagnostics; avoid pairing a heavy
@@ -2273,9 +2335,17 @@ export function useReticulumRuntime(): ProtocolRuntime {
     [identityId, selfLxmfHash],
   );
 
+  useEffect(() => {
+    sendMessageRef.current = (text, to, replyToHash, pendingId) => {
+      void sendMessage(text, to, replyToHash, pendingId).catch((e: unknown) => {
+        console.warn('[useReticulumRuntime] auto-resend send failed ' + errLikeToLogString(e));
+      });
+    };
+  }, [sendMessage]);
+
   const sendReaction = useCallback(
     async (glyph: string, replyId: number, channel: number) => {
-      void channel;
+      touch(channel);
       if (!identityId) return;
       const storeMessages = Object.values(useMessageStore.getState().messages[identityId] ?? {});
       const targetMsg = storeMessages.find(

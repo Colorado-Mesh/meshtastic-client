@@ -390,7 +390,32 @@
     "themeResetFailed": "色をリセットできませんでした。",
     "messageActionsBarBgVisible": "背景を表示",
     "rrcUnreadAllRoomMessages": "すべてのルームメッセージのRRC未読",
-    "rrcUnreadAllRoomMessagesHint": "オンにすると、新しいRRCルームメッセージは未読になり、チャンネルサウンドを再生できます。IRCスタイルのアラートをオフにする：ダイレクトメッセージと@メンションのみ。"
+    "rrcUnreadAllRoomMessagesHint": "オンにすると、新しいRRCルームメッセージは未読になり、チャンネルサウンドを再生できます。IRCスタイルのアラートをオフにする：ダイレクトメッセージと@メンションのみ。",
+    "shareMyLocation": "現在位置を共有",
+    "shareMyLocationOffInfo": "位置情報の共有がオフになっています。ホストのGPSリフレッシュとメッシュ送信は無効になっています。自動更新を使用するか、ポジションを送信するには、上の「現在地を共有」を有効にします。",
+    "shareMyLocationHint": "有効にすると、このアプリはこのコンピューター上の現在地を検索し、Meshtastic、MeshCore、またはReticulum （チャット共有、ラジオプッシュ、RMAP ）を介して送信する場合があります。無効にすると、ホストのGPSルックアップとアプリの送信がオフになります。静的座標はローカルマップでのみ機能します。独自のGPSを備えたラジオは、依然としてあなたの位置をローカルに表示している可能性があります。ラジオまたはモジュールの設定を調整するまで、デバイスファームウェアがブロードキャストされることがあります。",
+    "reticulumBlocklist": {
+      "description": "ブロックされた送信者は、LXMFメッセージが受信トレイに届く前にドロップされます。リストをエクスポートして別のインストールに移動するか、リストをインポートして一度に多くの送信者をブロックします。",
+      "exportButton": "ブロックリストをエクスポート",
+      "exportAria": "ブロックされた連絡先をエクスポート",
+      "importButton": "ブロックリストをインポート",
+      "importAria": "ブロックされた連絡先をインポート",
+      "exportOk": "エクスポートされた{{count}}ブロックされた連絡先",
+      "exportEmpty": "エクスポートするブロックされた連絡先はありません。",
+      "exportFailed": "ブロックリストをエクスポートできませんでした。",
+      "importOk": "インポートされた{{imported}}ブロックされた連絡先（ {{skipped}}はスキップされました）",
+      "importFailed": "ブロックリストをインポートできませんでした。",
+      "unblockAria": "{{hash}}のブロックを解除",
+      "unblockFailed": "その連絡先のブロックを解除できませんでした。",
+      "empty": "ブロックされた連絡先",
+      "title": "ブロックした連絡先"
+    },
+    "fontSize": "フォントサイズ",
+    "fontSizeDesc": "アプリ全体でテキストのサイズを調整します。地図、チャート、ターミナルは影響を受けません。",
+    "decreaseFontSize": "フォントサイズを小さく",
+    "increaseFontSize": "フォントサイズを大きく",
+    "resetFontSize": "リセット",
+    "resetFontSizeAria": "フォントサイズをリセット"
   },
   "aria": {
     "closeDialog": "ダイアログを閉じる",
@@ -711,7 +736,21 @@
       "startFailed": "ボイスメモの録音を開始できませんでした。もう一度やり直してください。",
       "sendAriaWithElapsed": "ボイスメモを送信（ {{seconds}}秒録音）",
       "unavailable": "音声メモは利用できません—添付ファイルはこのデバイスにキャッシュされていません。"
-    }
+    },
+    "heardByRepeaters_one": "{{count}}件で受信",
+    "heardByRepeaters_other": "{{count}}件で受信",
+    "heardByNetwork": "ネットワークで聞いた",
+    "notHeardTimeout": "未聴取（タイムアウト）",
+    "routeRelaysPredicted": "経路：〜{{count}}リレー経由{{hop}}",
+    "routeViaPredicted": "経路： {{hop}}経由",
+    "routeRelaysPredictedHopsOnly": "経路：〜{{count}}リレー",
+    "heardByRepeatersDetail_one": "{{count}}件で受信: {{names}}",
+    "heardByRepeatersDetail_other": "{{count}}件で受信: {{names}}",
+    "heardByRepeaterNodeFallback": "ノード{{nodeId}}",
+    "heardByRepeatersAdditional_one": "{{count}}追加の未確認フォワーダー（ハッシュ： {{hashes}} ）",
+    "heardByRepeatersAdditional_other": "{{count}}追加の未確認フォワーダー（ハッシュ： {{hashes}} ）",
+    "reticulumSendAwaitingPeerReceipt": "送信済み（ピアレシート待ち）",
+    "reticulumChatNeedsLxmfDelivery": "このピアにはまだLXMF配信アドレスがありません（チャットは音声のみの宛先を使用できません）。LXMFの発表を待つか、32文字のLXMFハッシュを貼り付けます。"
   },
   "chatPayload": {
     "mention": "{{label}} について言及してください",
@@ -1036,7 +1075,9 @@
       "importBackupAria": "貼り付けられたJSONからRatspeak .rsiバックアップをインポートする",
       "importBackupFromFileAria": "インポートするRatspeak .rsiバックアップファイルを選択してください",
       "exportAria": "PIN暗号化されたRatspeak .rsi IDバックアップをエクスポート",
-      "exportRawAria": "暗号化されていないRAW Reticulum IDファイルをエクスポート"
+      "exportRawAria": "暗号化されていないRAW Reticulum IDファイルをエクスポート",
+      "identityHashLabel": "IDハッシュ：",
+      "copyIdentityHash": "IDハッシュをコピー"
     },
     "reticulumInterfaces": {
       "title": "インターフェース",
@@ -1117,7 +1158,10 @@
         "blePeer": "シード ピア アドレスを使用する BLE ピア メッシュ。",
         "generic": "Reticulumネットワークインターフェース。",
         "sharedInstanceClient": "Attached as a client of another app’s shared Reticulum instance — local TCP hubs from this config are not started here.",
-        "i2p": "このマシン上のルーター経由の I2P バックボーン。SAM アプリケーションブリッジ（127.0.0.1:7656）を有効にしてください — HTTP/HTTPS の I2PTunnel プロキシ（4444/4445）ではありません。SAM を有効にしたあと I2P を再起動してブリッジが待ち受けるようにし、このインターフェースがダウンのままなら Reticulum スタックも再起動してください。"
+        "i2p": "このマシン上のルーター経由の I2P バックボーン。SAM アプリケーションブリッジ（127.0.0.1:7656）を有効にしてください — HTTP/HTTPS の I2PTunnel プロキシ（4444/4445）ではありません。SAM を有効にしたあと I2P を再起動してブリッジが待ち受けるようにし、このインターフェースがダウンのままなら Reticulum スタックも再起動してください。",
+        "serial": "TNC、モデム、または他のホストへの一般的なシリアルリンク。遠端に一致するようにラインパラメータを設定します。",
+        "ax25kiss": "KISS TNCを介したAX.25パケットラジオ。このステーションを識別するコールサインとSSID （ 0 -15 ）が必要です。",
+        "local": "このマシン上の共有インスタンスソケット。他のローカルツール（ rnsd、Nomad Network、rnsh ）は、このスタックを介してこのスタックに接続できます。ソケットパスはこのインターフェイスの名前から派生しているため、名前を変更すると、他のツールが使用しなければならないアドレスが変更されます。"
       },
       "rfProfile": {
         "coordinated": "地域連携",
@@ -1240,10 +1284,38 @@
       "rmapFullModeHint": "RMAP発行のフルモードは、IGNORE_CONFIG_WARNINGSを介してフルを維持します。LXMF配信アナウンスは、スタックアナウンス間隔（デフォルトは1時間）でこの無線を出力します。",
       "effectiveModeBadge": "有効期限： {{mode}}",
       "effectiveModeAria": "有効なランタイムモード{{mode}}。設定モードは、Reticulumが実行しているモードとは異なります。",
-      "effectiveModeTooltip": "Reticulumは、ignore_config_warningsが設定されていない限り、DISCOVERABLEにはゲートウェイ、内部、またはアクセスポイントが必要なため、この検出可能なインターフェイスをアクセスポイント（または別の許可されたモード）に書き換えました。フル（または設定モード）が有効になるようにオプトアウトするmesh-clientスタンプの後、スタックを再起動します。"
+      "effectiveModeTooltip": "Reticulumは、ignore_config_warningsが設定されていない限り、DISCOVERABLEにはゲートウェイ、内部、またはアクセスポイントが必要なため、この検出可能なインターフェイスをアクセスポイント（または別の許可されたモード）に書き換えました。フル（または設定モード）が有効になるようにオプトアウトするmesh-clientスタンプの後、スタックを再起動します。",
+      "flowControlBleHint": "Bluetoothでは、ラジオはCMD_READYを送信しないことがよくあります。Mesh-Clientは依然としてTXをペーシングします（READYを短時間待ってから続行します）。そのため、フロー制御はキューをフリーズさせることなく過負荷を軽減します。",
+      "advancedFields": "詳細設定",
+      "field": {
+        "port": "ポート",
+        "speed": "速度（ボー）",
+        "databits": "データビット",
+        "parity": "パリティ",
+        "stopbits": "ストップビット",
+        "callsign": "識別信号",
+        "ssid": "SSID",
+        "flow_control": "フロー制御",
+        "preamble": "プリアンブル（ミリ秒）",
+        "txtail": "TXテール（ミリ秒）",
+        "persistence": "永続 化",
+        "slottime": "スロットタイム（ミリ秒）"
+      },
+      "fieldOption": {
+        "parity": {
+          "N": "0",
+          "E": "Even",
+          "O": "奇数"
+        }
+      },
+      "fieldRequired": "これは必須欄です.",
+      "fieldNotANumber": "整数（数字のみ）を入力してください。",
+      "fieldOutOfRange": "値が許容範囲外です。",
+      "fieldTooLong": "値が長すぎます。",
+      "fieldInvalidOption": "サポートされていない値です。"
     },
     "reticulumPeers": {
-      "hops": "Hops",
+      "hops": "ホップ",
       "actions": "アクション",
       "path": "パス",
       "probe": "プローブ"
@@ -1433,7 +1505,8 @@
     "pickerDeviceAria": "{{name}} {{address}}",
     "pickerDeviceAriaWithRssi": "{{name}} {{address}}、{{rssi}} dBm",
     "bluetoothMac": "Bluetooth MAC",
-    "bluetoothId": "Bluetooth ID"
+    "bluetoothId": "Bluetooth ID",
+    "reticulumAutoResendOnAnnounce": "ピアがアナウンスしたときに失敗したメッセージを再試行する"
   },
   "contactGroupsModal": {
     "failedLoadMembers": "メンバーのロードに失敗しました: {{message}}",
@@ -1456,7 +1529,9 @@
     "confirmDeleteButton": "削除しますか？",
     "manageMembersOf": "{{name}}のメンバーを管理する",
     "renameGroupNamed": "{{name}}の名前を変更",
-    "deleteGroupNamed": "{{name}}を削除"
+    "deleteGroupNamed": "{{name}}を削除",
+    "needSelfNode": "連絡先グループを作成する前にノードIDがわかるように、まず無線を接続します。",
+    "failedCreateGroup": "グループを作成できませんでした: {{message}}"
   },
   "diagnosticsPanel": {
     "dropRoutingRows": "{{hours}} 時間より古いルーティング行を削除 (1 ～ 168)",
@@ -1980,7 +2055,14 @@
     "recommendationsHeading": "推奨事項",
     "lastMessagePrefix": "最後：",
     "appliesToCategories": "適用対象: {{labels}}",
-    "severityInfo": "情報"
+    "severityInfo": "情報",
+    "historyNote": "調査結果は、このログ内のイベントを説明しますが、必ずしもアクティブな問題ではありません。",
+    "copyReport": "トラブルシューティングレポートをコピー",
+    "copyHint": "サンプルログメッセージが含まれます。共有する前に、レポートの非公開情報を確認してください。",
+    "copySuccess": "レポートをコピーしました!",
+    "copyFailure": "レポートをコピーできませんでした。再度お試しいただくか、ログをエクスポートしてください。",
+    "evidence": "{{category}}の証拠を表示",
+    "evidenceShown": "{{shown}}/{{total}}の一致するエントリを表示しています。最新のものが最初です。"
   },
   "logAnalyzer": {
     "categories": {
@@ -2065,11 +2147,44 @@
         "recommendation": "Store & Forwardチャット履歴をルーターから要求できませんでした（多くの場合、他の無線トラフィックとの短いレース）。チャットバックログが空のままの場合は、再接続するか、次のルーターのハートビートを待ちます。"
       },
       "serial-reconnect": {
-        "label": "USBシリアル再接続"
+        "label": "USBシリアル再接続",
+        "recommendation": "USBシリアルポートを再度開くことができなかったか、以前のストリームがロックされています。ラジオを使用して他のアプリを閉じ、ケーブルを再接続し、アプリで再接続します。それが繰り返される場合は、バグレポートにシリアルログ行を含めます。"
       },
       "reticulum-nomad-hosting": {
         "label": "Nomadページのホスティングに関する問題",
         "recommendation": "Nomad My Pages のホスティングに失敗したか、コンテンツフォルダーを利用できません。Nomad Network → My Pages を開き、移動した場合は pages フォルダーを選び直してから Start serving してください。詳細はログに [nomad-serving] / [NomadHosting] と表示されます。"
+      },
+      "renderer-unresponsive": {
+        "label": "アプリが応答を停止しました",
+        "recommendation": "アプリはUIハートビートの送信を停止しました。回復した場合は、表示された時間の近くで何をしていたかを記録してください。フリーズしたままの場合は、アプリを再起動し、定期的なハングアップを報告する際にこのレポートを含めます。"
+      },
+      "database-persistence": {
+        "label": "保存されていない変更",
+        "recommendation": "データベースの書き込みが再試行を使い果たしたか、ドロップされました。このセッションで表示される変更は、再起動後も有効ではない可能性があります。終了する前に重要なデータをエクスポートし、空きディスク領域とアプリデータフォルダへのアクセスを確認します。データベースを削除しないでください。"
+      },
+      "meshtastic-tcp": {
+        "label": "Meshtastic TCP接続に失敗しました",
+        "recommendation": "Meshtastic無線へのTCP接続に失敗しました。再接続する前に、無線アドレスとポート、ローカルネットワークの到達可能性、および他のクライアントが接続を使用しているかどうかを確認します。"
+      },
+      "reticulum-sidecar": {
+        "label": "Reticulumサービスが中断されました",
+        "recommendation": "ローカルReticulumサービスは、イベント接続の開始、応答、または維持に失敗しました。Connectionと以下のログ行でステータスを確認してください。回復していない場合は、Reticulum接続を再起動します。パッケージ化されたサイドカーが見つからない場合は、アプリの再インストールが必要な場合があります。"
+      },
+      "reticulum-delivery": {
+        "label": "Reticulumの配信または同期に失敗しました",
+        "recommendation": "メッセージの配信または伝播の同期に失敗しました。再試行する前に現在のメッセージステータスを確認し、宛先を調べ、有効なインターフェイスを確認します。伝播については、[ネットワーク]で選択したノードと同期ステータスを確認します。保存されたメッセージは、受信者の配信の証明ではありません。"
+      },
+      "reticulum-backpressure": {
+        "label": "Reticulumイベントまたはパケットがドロップされました",
+        "recommendation": "ローカルReticulumサービスは、キューがいっぱいになった、加入者が遅れた、またはペイロードが制限を超えたため、イベントまたはパケットをドロップしました。同時一括転送を減らし、再試行する前にメッセージのステータスを確認してください。アイドリング中に繰り返される落下は、これらのログサンプルで報告する価値があります。"
+      },
+      "firmware-flash": {
+        "label": "ファームウェア転送が停止しました",
+        "recommendation": "ファームウェア転送が進行を停止し、そのシリアルポートが閉じられました。正しいファームウェアとデバイスを確認し、USBケーブルを確認し、再試行する前にデバイスの回復またはブートローダーの指示に従ってください。"
+      },
+      "unclassified": {
+        "label": "その他の警告とエラー",
+        "recommendation": "これらのログ行は、既知の診断と一致せず、予想される回復メッセージを含み得る。タイムスタンプと周囲のコンテキストを確認します。問題が解決しない場合は、このレポートで完全なログをエクスポートします。"
       }
     },
     "recommendationGroups": {
@@ -2232,7 +2347,10 @@
     "clearAllIntro": "Remove every contact from the radio and clear the app's contact database.これを元に戻すことはできません。",
     "clearAllContactsConfirm": "無線からすべての連絡先を削除し、ローカルの連絡先データをクリアしますか?",
     "clearingContacts": "クリア中…",
-    "clearAllContactsButton": "すべての連絡先をクリアする"
+    "clearAllContactsButton": "すべての連絡先をクリアする",
+    "autoOffloadWhenFull": "ラジオがいっぱいになると自動オフロード",
+    "autoOffloadWhenFullLabel": "いっぱいになると自動オフロード",
+    "autoOffloadWhenFullDesc": "コンパニオンが連絡先のストレージがいっぱいであると報告すると、連絡先をアプリデータベースに自動的にオフロードします（オフロードと同じ）。"
   },
   "meshcoreTelemetryPrivacy": {
     "summary": "テレメトリーのプライバシー",
@@ -2769,6 +2887,18 @@
     "reticulumScanImport": {
       "title": "スキャン/インポート",
       "hint": "連絡先、Columba lxma:// カード、または暗号化された LXMF 紙メッセージの QR をスキャンまたは貼り付けます。"
+    },
+    "reticulumPathTable": {
+      "title": "パステーブル",
+      "description": "パステーブルをクリアすると、キャッシュされたすべてのルートが廃棄されます。ルートは新しいアナウンスが到着すると再学習されるため、ピアへの最初のメッセージに時間がかかる場合があります。",
+      "clear": "パステーブルをクリア",
+      "clearing": "消去中...",
+      "confirmTitle": "パステーブルをクリアしますか？",
+      "confirmBody": "キャッシュされたルートはすべて廃棄されます。ルートは新しいアナウンスから再構築されます。",
+      "clearOk": "パステーブルがクリアされました（ {{count}}ルートが削除されました）",
+      "clearFailed": "パステーブルをクリアできませんでした。",
+      "clearAria": "パステーブルをクリア",
+      "confirmAction": "クリア"
     }
   },
   "nodeDetailModal": {
@@ -2950,7 +3080,11 @@
     "shareContactQrAria": "公式アプリインポートのためにMeshCore連絡先QRコードを表示する",
     "publicKeyCopied": "公開鍵をクリップボードにコピーしました。",
     "hasPublicKeyNoDm": "公開鍵があります（ダイレクトメッセージはありません）",
-    "copyPublicKey": "公開鍵をコピー"
+    "copyPublicKey": "公開鍵をコピー",
+    "xeddsaSigned": "XEdDSA署名済み",
+    "xeddsaSignedHint": "無線はこのノードからのXEdDSA署名を検証しているため、その公開鍵は暗号化されています。",
+    "keyManuallyVerified": "キーが確認されました",
+    "keyManuallyVerifiedHint": "このノードの公開鍵は、オペレータによって手動で確認されました。"
   },
   "nodeInfoBody": {
     "longName": "長い名前",
@@ -3207,7 +3341,50 @@
       "noPages": "ページはまだありません。選択したフォルダー（ index.muなど）に.muファイルを追加します。",
       "contentSourceNotFromPicker": "適用する前に、[フォルダーの選択]でフォルダーを選択します。",
       "contentSourceNone": "フォルダーが選択されていません",
-      "contentSourceRequired": "Nomadホスティングを開始する前に、ページフォルダを選択します。"
+      "contentSourceRequired": "Nomadホスティングを開始する前に、ページフォルダを選択します。",
+      "newPage": "新規固定ページ",
+      "newPageName": "ページファイル名（.muで終わる必要があります）",
+      "invalidPageName": "..または絶対パスなしで、.muで終わるファイル名を入力します。",
+      "edit": "編集",
+      "editPage": "{{path}}を編集",
+      "delete": "削除",
+      "deletePage": "{{path}}を削除",
+      "deleteConfirm": "このページを削除しますか？これにより、提供されたフォルダからファイルが削除されます。",
+      "deleteConfirmAria": "このページの削除を確認する",
+      "deleteError": "ページを削除できませんでした。",
+      "openError": "編集用のページを開けませんでした。",
+      "editorTitle": "Micronページの編集",
+      "editorAria": "Micronページソース",
+      "editorPreview": "プレビュー",
+      "toolbarAria": "Micron書式設定アクション",
+      "toolbar": {
+        "bold": "太字",
+        "italic": "イタリック",
+        "underline": "アンダーライン",
+        "h1": "見出し1",
+        "h2": "見出し2",
+        "h3": "見出し3",
+        "alignLeft": "左寄せ",
+        "alignCenter": "センター",
+        "alignRight": "右寄せ",
+        "divider": "分割機",
+        "link": "リンク"
+      },
+      "linkTargetPrompt": "リンクターゲット（ページパスまたは宛先ハッシュ）",
+      "save": "保存",
+      "saveError": "ページを保存できませんでした。",
+      "unsaved": "未保存の変更",
+      "discard": "変更を破棄",
+      "discardConfirm": "このページには保存されていない変更があります。",
+      "discardConfirmAria": "保存されていない変更を破棄して閉じる",
+      "close": "エディターを閉じる",
+      "closeBackdropAria": "Micronページエディターを閉じる",
+      "pageTooLarge": "そのページは大きすぎてホストできません（ 512 KBまで）。",
+      "pageNotFound": "そのページは、提供されたフォルダにはもう存在しません。",
+      "invalidPagePath": "そのページパスは許可されていません。",
+      "pageIoError": "ディスク上のページを読み書きできませんでした。",
+      "pageNotUtf8": "そのページは有効なUTF -8テキストではありません。",
+      "pageWriteFailed": "ページを書き込めませんでした。"
     },
     "sortLastHeard": "最後に聞いた",
     "sortHops": "ホップ",
@@ -3262,7 +3439,6 @@
   },
   "peerDetailModal": {
     "networkSection": "ネットワーク",
-    "copyHash": "コピー先ハッシュ",
     "editNameAria": "手動インストール",
     "sendMessage": "メッセージを送信",
     "pathOk": "パスリクエストが送信されました。",
@@ -3288,7 +3464,20 @@
     "verifiedRowAria": "連絡先が認証されました",
     "renameFailed": "表示名を保存できませんでした。",
     "removeContactConfirmBody": "これにより、保存したリストから連絡先が削除されます。チャットメッセージは残ります。メッセージを送信した場合は履歴に残ります。",
-    "backupPaths": "バックアップパス"
+    "backupPaths": "バックアップパス",
+    "announcedDestinations": "Announced destinations",
+    "openedDestinationBadge": "Opened",
+    "copyAnnouncedHashAria": "Copy {{aspect}} destination hash {{hash}}",
+    "hashCopied": "Destination hash copied.",
+    "hashCopyFailed": "Could not copy destination hash.",
+    "aspect": {
+      "chat": "Chat",
+      "voice": "Voice",
+      "nomad": "Nomad",
+      "rrc": "RRC",
+      "propagation": "Propagation",
+      "unknown": "Unknown"
+    }
   },
   "peerGraph": {
     "title": "ピアコミュニケーショングラフ",
@@ -3365,7 +3554,11 @@
     "pathsPinFailed": "このピアのメディア設定を更新できませんでした。",
     "tabHistory": "履歴",
     "emptyHistory": "メッセージ履歴はまだありません—ここでピアを見るためにLXMFメッセージを送受信します。",
-    "emptyContacts": "保存された連絡先はまだありません。ピアを開き、[連絡先として保存]を選択します。"
+    "emptyContacts": "保存された連絡先はまだありません。ピアを開き、[連絡先として保存]を選択します。",
+    "pathMediumTitle": "アクティブパスメディア： {{medium}}",
+    "chatNeedsLxmfDelivery": "このピアのLXMF配信アドレスはまだありません。LXMFの発表を待つか、32文字のLXMFハッシュを持つチャットを開きます—音声（ lxst.telephony ）の宛先はチャットを受信できません。",
+    "voiceAspectBadge": "音声",
+    "voiceAspectTitle": "このパステーブル行は、LXSTテレフォニーの宛先です。知られている場合、チャットはピアのLXMF配信ハッシュにリマップします。"
   },
   "radioPanel": {
     "offloadedContacts": "{{count}} 連絡先をデータベースにオフロードしました。",
@@ -3427,57 +3620,65 @@
     "importConfigJson": "構成 JSON をインポートする",
     "offloadContacts": "オフロード",
     "displayUnits": {
-      "0": {
-        "label": "メトリック"
+      "METRIC": {
+        "label": "Metric"
       },
-      "1": {
-        "label": "インペリアル"
+      "IMPERIAL": {
+        "label": "Imperial"
       }
     },
     "deviceRoles": {
-      "0": {
-        "label": "クライアント",
+      "CLIENT": {
+        "label": "Client",
         "description": "通常のクライアントモード"
       },
-      "1": {
-        "label": "クライアントのミュート",
-        "description": "送信しないクライアント"
+      "CLIENT_MUTE": {
+        "label": "Client Mute",
+        "description": "パケットを転送しないクライアント。この役割を適用すると、デバイス上のGPSブロードキャストと地図レポートも無効になります。"
       },
-      "2": {
-        "label": "ルーター",
-        "description": "専用ルーター/中継器"
+      "ROUTER": {
+        "label": "Router",
+        "description": "専用ルーター/リピーター"
       },
-      "3": {
-        "label": "ルータークライアント",
-        "description": "ルーター+クライアントモード"
+      "ROUTER_CLIENT": {
+        "label": "Router Client",
+        "description": "ルーター+クライアントモード。ファームウェア2.3.15で非推奨—ルーターまたはクライアントを使用してください。"
       },
-      "4": {
-        "label": "顧客ベース",
-        "description": "クライアントデバイス用のベースステーション"
+      "REPEATER": {
+        "label": "Repeater",
+        "description": "パケットを発信せずに再ブロードキャストします。ファームウェア2.7.11で非推奨—再放送チェーンにホールを作成します。"
       },
-      "5": {
-        "label": "トラッカー",
+      "TRACKER": {
+        "label": "Tracker",
         "description": "GPSトラッカーのみ"
       },
-      "6": {
-        "label": "センサー",
-        "description": "テレメトリーセンサーノード"
+      "SENSOR": {
+        "label": "Sensor",
+        "description": "テレメトリセンサノード"
       },
-      "7": {
+      "TAK": {
         "label": "TAK",
-        "description": "TAK対応デバイス"
+        "description": "TAK-enabled device"
       },
-      "8": {
-        "label": "クライアント非表示",
+      "CLIENT_HIDDEN": {
+        "label": "Client Hidden",
         "description": "クライアント、ノードリストから非表示"
       },
-      "9": {
-        "label": "忘れ物",
-        "description": "回復に向けた位置をブロードキャストする"
+      "LOST_AND_FOUND": {
+        "label": "Lost and Found",
+        "description": "リカバリのためのブロードキャスト位置"
       },
-      "10": {
-        "label": "TAKトラッカー",
-        "description": "TAKトラッカーモード"
+      "TAK_TRACKER": {
+        "label": "TAK Tracker",
+        "description": "TAK tracker mode"
+      },
+      "ROUTER_LATE": {
+        "label": "Router Late",
+        "description": "高密度メッシュコアの場合、他のノードがチャンスを得た後にのみ再ブロードキャストするルーター。"
+      },
+      "CLIENT_BASE": {
+        "label": "Client Base",
+        "description": "クライアントデバイス用基地局"
       }
     },
     "contactsOnRadioBadgeTitle": "{{part}} が無線で連絡を取る",
@@ -3712,29 +3913,29 @@
     "tzdefLabel": "Timezone (POSIX)",
     "tzdefDesc": "POSIX timezone string e.g. EST5EDT,M3.2.0,M11.1.0. See https://github.com/nayarsystems/posix_tz_db for a reference list.",
     "rebroadcastModes": {
-      "0": {
-        "label": "All",
-        "description": "Rebroadcast all packets (default)."
+      "ALL": {
+        "label": "すべて",
+        "description": "すべてのパケットを再ブロードキャストします（デフォルト）。"
       },
-      "1": {
-        "label": "All Skip Decoding",
-        "description": "Rebroadcast all without decoding. Reduces CPU on dedicated routers."
+      "ALL_SKIP_DECODING": {
+        "label": "すべてのスキップデコード",
+        "description": "解読せずにすべてを再ブロードキャストします。専用ルーターのCPUを削減します。"
       },
-      "2": {
-        "label": "Local Only",
-        "description": "Only rebroadcast packets from nodes heard directly on RF."
+      "LOCAL_ONLY": {
+        "label": "ローカルのみ",
+        "description": "RFで直接聞こえたノードからのパケットのみを再ブロードキャストします。"
       },
-      "3": {
-        "label": "Known Only",
-        "description": "Only rebroadcast from nodes in the local node database."
+      "KNOWN_ONLY": {
+        "label": "既知のもののみ",
+        "description": "ローカルノードデータベースのノードからのみ再ブロードキャストします。"
       },
-      "4": {
-        "label": "None",
-        "description": "Do not rebroadcast any packets."
+      "NONE": {
+        "label": "0",
+        "description": "パケットを再ブロードキャストしないでください。"
       },
-      "5": {
-        "label": "Core Portnums Only",
-        "description": "Only rebroadcast essential portnums (text, nodeinfo, position, telemetry)."
+      "CORE_PORTNUMS_ONLY": {
+        "label": "コアポート番号のみ",
+        "description": "必須ポート番号（テキスト、nodeinfo、位置、テレメトリ）のみを再ブロードキャストします。"
       }
     },
     "autoScreenCarouselSecsLabel": "Screen Carousel Interval",
@@ -3752,22 +3953,22 @@
     "enableMessageBubblesLabel": "Message Bubbles",
     "enableMessageBubblesDesc": "Show incoming messages in a bubble on the display.",
     "oledTypes": {
-      "0": {
+      "OLED_AUTO": {
         "label": "Auto"
       },
-      "1": {
+      "OLED_SSD1306": {
         "label": "SSD1306"
       },
-      "2": {
+      "OLED_SH1106": {
         "label": "SH1106"
       },
-      "3": {
+      "OLED_SH1107": {
         "label": "SH1107 (128x64)"
       },
-      "4": {
+      "OLED_SH1107_128_128": {
         "label": "SH1107 (128x128)"
       },
-      "5": {
+      "OLED_SH1107_ROTATED": {
         "label": "SH1107 Rotated"
       }
     },
@@ -3852,88 +4053,177 @@
       "addButton": "+ チャンネルを追加",
       "footerHelp": "キーは 128 ビット (16 バイト) で、32 個の 16 進文字として表示されます。チャネル名は最大 {{nameMax}} 文字です。最大 {{channelCount}} チャネル (インデックス 0 ～ {{indexMax}})。 #channels の場合は、「名前から派生」(先頭に # が付いている名前の SHA-256) を使用します。",
       "shareQr": "QR",
-      "shareQrAria": "{{name}}のMeshCoreチャンネルQRを表示"
+      "shareQrAria": "{{name}}のMeshCoreチャンネルQRを表示",
+      "privateChannel": "プライベートチャンネル（キーを入力）",
+      "privateKeyHint": "共有チャネル キーを入力します。すべて 0 ではなく、正確に 32 個の 16 進数文字 (16 バイト) を入力します。"
     },
     "regions": {
-      "0": {
-        "label": "設定を解除する"
+      "UNSET": {
+        "label": "Unset"
       },
-      "1": {
-        "label": "私たち"
+      "US": {
+        "label": "US"
       },
-      "2": {
+      "EU_433": {
         "label": "EU_433"
       },
-      "3": {
+      "EU_868": {
         "label": "EU_868"
       },
-      "4": {
+      "CN": {
         "label": "CN"
       },
-      "5": {
-        "label": "日本"
+      "JP": {
+        "label": "JP"
       },
-      "6": {
-        "label": "ニュージーランド"
+      "ANZ": {
+        "label": "ANZ"
       },
-      "7": {
+      "KR": {
         "label": "KR"
       },
-      "8": {
+      "TW": {
         "label": "TW"
       },
-      "9": {
+      "RU": {
         "label": "RU"
       },
-      "10": {
-        "label": "で"
+      "IN": {
+        "label": "IN"
       },
-      "11": {
+      "NZ_865": {
         "label": "NZ_865"
       },
-      "12": {
+      "TH": {
         "label": "TH"
       },
-      "13": {
+      "LORA_24": {
+        "label": "LORA_24"
+      },
+      "UA_433": {
         "label": "UA_433"
       },
-      "14": {
+      "UA_868": {
         "label": "UA_868"
       },
-      "15": {
+      "MY_433": {
         "label": "MY_433"
       },
-      "16": {
+      "MY_919": {
         "label": "MY_919"
       },
-      "17": {
+      "SG_923": {
         "label": "SG_923"
       },
-      "18": {
-        "label": "ロラ_24"
+      "PH_433": {
+        "label": "PH_433"
+      },
+      "PH_868": {
+        "label": "PH_868"
+      },
+      "PH_915": {
+        "label": "PH_915"
+      },
+      "ANZ_433": {
+        "label": "ANZ_433"
+      },
+      "KZ_433": {
+        "label": "KZ_433"
+      },
+      "KZ_863": {
+        "label": "KZ_863"
+      },
+      "NP_865": {
+        "label": "NP_865"
+      },
+      "BR_902": {
+        "label": "BR_902"
+      },
+      "ITU1_2M": {
+        "label": "ITU1_2M"
+      },
+      "ITU2_2M": {
+        "label": "ITU2_2M"
+      },
+      "EU_866": {
+        "label": "EU_866"
+      },
+      "EU_874": {
+        "label": "EU_874"
+      },
+      "EU_917": {
+        "label": "EU_917"
+      },
+      "EU_N_868": {
+        "label": "EU_N_868"
+      },
+      "ITU3_2M": {
+        "label": "ITU3_2M"
+      },
+      "ITU1_70CM": {
+        "label": "ITU1_70CM"
+      },
+      "ITU2_70CM": {
+        "label": "ITU2_70CM"
+      },
+      "ITU3_70CM": {
+        "label": "ITU3_70CM"
+      },
+      "ITU2_125CM": {
+        "label": "ITU2_125CM"
       }
     },
     "modemPresets": {
-      "0": {
-        "label": "長くて速い"
+      "LONG_FAST": {
+        "label": "Long Fast"
       },
-      "1": {
-        "label": "ロングスロー"
+      "LONG_SLOW": {
+        "label": "Long Slow"
       },
-      "2": {
-        "label": "長い中程度"
+      "VERY_LONG_SLOW": {
+        "label": "Very Long Slow"
       },
-      "3": {
-        "label": "ショートファスト"
+      "MEDIUM_SLOW": {
+        "label": "Medium Slow"
       },
-      "4": {
-        "label": "ショートスロー"
+      "MEDIUM_FAST": {
+        "label": "Medium Fast"
       },
-      "5": {
-        "label": "中速"
+      "SHORT_SLOW": {
+        "label": "Short Slow"
       },
-      "6": {
-        "label": "中低速"
+      "SHORT_FAST": {
+        "label": "Short Fast"
+      },
+      "LONG_MODERATE": {
+        "label": "Long Moderate"
+      },
+      "SHORT_TURBO": {
+        "label": "Short Turbo"
+      },
+      "LONG_TURBO": {
+        "label": "Long Turbo"
+      },
+      "LITE_FAST": {
+        "label": "Lite Fast"
+      },
+      "LITE_SLOW": {
+        "label": "Lite Slow"
+      },
+      "NARROW_FAST": {
+        "label": "Narrow Fast"
+      },
+      "NARROW_SLOW": {
+        "label": "Narrow Slow"
+      },
+      "TINY_FAST": {
+        "label": "Tiny Fast"
+      },
+      "TINY_SLOW": {
+        "label": "Tiny Slow"
+      },
+      "MEDIUM_TURBO": {
+        "label": "Medium Turbo"
       }
     },
     "floodScopeSaved": "保存されたスコープ",
@@ -3941,7 +4231,42 @@
     "floodScopeSavedEmpty": "保存されたスコープはまだありません。カスタム ハッシュタグを適用するか、チャットからカスタム スコープを使用してハッシュタグを追加します。",
     "floodScopeRemoveSaved": "保存されたスコープから削除する",
     "floodScopeRemoveSavedAria": "保存されたスコープから {{hashtag}} を削除します",
-    "floodScopeInvalidHashtag": "有効な地域ハッシュタグ (#myregion など) を入力します。"
+    "floodScopeInvalidHashtag": "有効な地域ハッシュタグ (#myregion など) を入力します。",
+    "sendPositionDisabledShareOff": "[アプリの→GPS/位置情報で位置情報を共有]を有効にして、位置情報をデバイスに送信します。",
+    "clientMuteGpsSuppressed": "クライアントミュートが適用されました— GPSブロードキャストとMQTTマップレポートがデバイスで無効になりました。",
+    "validationShortNameTooLong": "ショートネームは4 UTF -8バイト以内でなければなりません",
+    "validationShortNameEmojiTooLarge": "この文字はショートネームには大きすぎます（名前ごとに最大4つのUTF -8バイト）",
+    "enumDeprecatedSuffix": "(廃止予定)",
+    "lockdown": {
+      "title": "ファームウェアロックダウン",
+      "description": "ロックされた無線は、パスフレーズでロック解除されるまで、設定の変更を拒否します。ステータスはファームウェアによって報告されます。ロックダウンサポートのない無線では、ステータスは報告されません。",
+      "stateLabel": "都道府県",
+      "stateNotReported": "このラジオでは報告されていません",
+      "reasonLabel": "理由",
+      "bootsRemainingLabel": "リブートは残ります",
+      "validUntilLabel": "までロック解除されました",
+      "backoffLabel": "リトライバックオフ",
+      "backoffValue": "{{seconds}} s",
+      "passphraseLabel": "パスフレーズ",
+      "provision": "食糧トークン",
+      "unlock": "ロック解除",
+      "unlockAria": "ファームウェアロックのロック解除またはプロビジョニング",
+      "lockNow": "今すぐロック",
+      "lockNowAria": "すぐにラジオをロックしてください",
+      "disable": "ロックダウンを無効にする",
+      "disableAria": "ファームウェアロックダウンを無効にする",
+      "states": {
+        "STATE_UNSPECIFIED": "未指定",
+        "NEEDS_PROVISION": "プロビジョニングが必要",
+        "LOCKED": "ロック",
+        "UNLOCKED": "ロック解除",
+        "UNLOCK_FAILED": "ロック解除に失敗しました",
+        "DISABLED": "無効"
+      }
+    },
+    "contactsFullAlarm": "無線コンタクトストレージがいっぱいです。スロットを空けるために、連絡先をアプリデータベースにオフロードします。",
+    "contactsFullAlarmAction": "オフロード",
+    "contactsFullAutoOffloadStarted": "無線連絡先がいっぱいです—自動オフロードを開始しています…"
   },
   "rawPacketLog": {
     "filterPackets": "パケットをフィルタリングする",
@@ -4430,7 +4755,8 @@
     "openGlobalMapAria": "Rmap.worldでRMAP v 4グローバルマップを開く",
     "applyPartialSuccess": "RMAP設定は、{{total}}インターフェイスの{{applied}}に適用されます。",
     "disablePartialSuccess": "RMAPの公開は、{{total}}インターフェイスの{{applied}}で無効になっています。",
-    "hint": "すべての有効な RMAP 対応インターフェイス (RNode/Multi、KISS、BLE ピア、I2P、UDP、パイプ) で RMAP 公開とアプリ GPS 座標を有効にします。このチェックボックスは、対象となるすべてのインターフェイスが公開されている場合にのみオンになります。部分的な状態は不定です。残りを同期するにはもう一度確認してください。細かく制御するには、インターフェイスごとの RMAP の [接続] 切り替えを使用します。 LoRa パスにより、トランスポートと rmap.world ハブも有効になります。"
+    "hint": "すべての有効な RMAP 対応インターフェイス (RNode/Multi、KISS、BLE ピア、I2P、UDP、パイプ) で RMAP 公開とアプリ GPS 座標を有効にします。このチェックボックスは、対象となるすべてのインターフェイスが公開されている場合にのみオンになります。部分的な状態は不定です。残りを同期するにはもう一度確認してください。細かく制御するには、インターフェイスごとの RMAP の [接続] 切り替えを使用します。 LoRa パスにより、トランスポートと rmap.world ハブも有効になります。",
+    "disabledShareOff": "[アプリの→GPS/位置情報で位置情報を共有]を有効にして、RMAPで公開します。"
   },
   "reticulumTopology": {
     "title": "ネットワーク・トポロジー",
@@ -4783,7 +5109,8 @@
     "regenerateWarning": "再生成すると既存の ATAK データ パッケージが無効になります。再インポートする必要があります。",
     "durationSec": "{{s}}s",
     "durationMin": "{{m}}分",
-    "durationHourMin": "{{h}}h {{m}}m"
+    "durationHourMin": "{{h}}h {{m}}m",
+    "atakUndecodable": "TAKパケットとして認識されないペイロード"
   },
   "telemetryPanel": {
     "title": "テレメトリー",
@@ -4824,14 +5151,20 @@
     "tempUnitC": "°C",
     "exportCsvButton": "CSV をエクスポート",
     "emptyWaitingConnected": "テレメトリデータはまだありません。デバイスからのデータを待っています…",
-    "emptyWaitingDisconnected": "テレメトリデータはまだありません。リアルタイムのメトリクスを表示するにはデバイスに接続してください。"
+    "emptyWaitingDisconnected": "テレメトリデータはまだありません。リアルタイムのメトリクスを表示するにはデバイスに接続してください。",
+    "sectionParticulates": "微粒子、二酸化炭素、雷",
+    "chartAriaParticulates": "微粒子チャート：最新のPM2.5 {{pm25}}、CO ₂ {{co2}}、{{count}}ポイント",
+    "axisParticulates": "μ g/m ³・ストライク",
+    "axisCo2": "ppm",
+    "seriesPm25": "PM2.5 (µ g/m ³)",
+    "seriesCo2": "CO ₂ (ppm)",
+    "seriesLightningStrikes": "落雷（ 1時間）"
   },
   "toasts": {
     "firmwareAvailable": "利用可能なファームウェアアップデート: v{{version}}",
     "newMessages_one": "{{protocol}}: {{count}} 新しいメッセージ",
     "newMessages_other": "{{protocol}}: {{count}} 件の新しいメッセージ",
-    "meshcoreDistanceFilterHint": "地図上にGPS付きの連絡先が{{count}}件あります。アプリ → 外観で距離フィルターを有効にして、近くのノードに集中できます。",
-    "longSessionRestartNudge": "mesh-clientは4日間稼働しています。長時間のMeshCore BLEセッションでのクラッシュのリスクを減らすため、アプリを再起動してください。"
+    "meshcoreDistanceFilterHint": "地図上にGPS付きの連絡先が{{count}}件あります。アプリ → 外観で距離フィルターを有効にして、近くのノードに集中できます。"
   },
   "updateStatus": {
     "checking": "チェック中…",
@@ -5019,7 +5352,15 @@
     "whisperReplyPlaceholder": "{{name}}または/msgに返信…",
     "jumpToLatest": "最新へジャンプ",
     "stackNotReady": "Reticulum スタックはまだ準備ができていません。接続されるまで待ってから再試行してください。",
-    "sidecarNotRunning": "Reticulum サイドカーが実行されていません。接続でスタックを開始してから、もう一度お試しください。"
+    "sidecarNotRunning": "Reticulum サイドカーが実行されていません。接続でスタックを開始してから、もう一度お試しください。",
+    "whoReplyMissing": "{{room}}のハブからのメンバーリストがありません（返信はリンクサイズを超える場合があります）。名前は、参加者またはチャットとして表示されます。",
+    "openNomadPage": "Nomad ページ {{address}} を開く",
+    "openDm": "{{address}}とのダイレクトメッセージを開く",
+    "openReticulumAddress": "Reticulum アドレス {{address}} を開く",
+    "addressChoiceTitle": "Reticulum アドレスを開く",
+    "addressChoiceMessage": "{{address}} は Nomad ページかピアの可能性があります。どちらを開きますか？",
+    "addressChoiceNomad": "Nomad ページ",
+    "addressChoiceDm": "ダイレクトメッセージ"
   },
   "signalMeter": {
     "rssi": "RSSI",
@@ -5364,7 +5705,8 @@
     "sessionRowAria": "{{peer}}との{{app}}ゲーム",
     "apps": {
       "ttt": "三目並べ",
-      "chess": "チェス"
+      "chess": "チェス",
+      "four_in_a_row": "四目並べ"
     },
     "status": {
       "pending": "保留",
@@ -5416,6 +5758,19 @@
       "boardAria": "Tic - Tac - Toeボード",
       "cellEmptyAria": "Cell {{index}}, empty",
       "cellOccupiedAria": "Cell {{index}}, {{marker}}"
+    },
+    "fourInARow": {
+      "youWon": "勝ったぁ！",
+      "opponentWon": "対戦相手が勝利した。",
+      "draw": "引け",
+      "yourTurn": "あなたのターン",
+      "opponentTurn": "相手のターン！",
+      "yourMarker": "あなたは{{marker}}です",
+      "moveCount": "{{count}}ムーブ",
+      "boardAria": "四目並べのボード",
+      "columnAria": "列 {{column}}、下から上: {{contents}}。ここに落とす",
+      "columnFullAria": "列 {{column}}、下から上: {{contents}}。満杯",
+      "columnEmptyContents": "空"
     },
     "chess": {
       "youWon": "勝ったぁ！",
@@ -5472,5 +5827,102 @@
     },
     "drawOfferWaitingBanner": "抽選オファーが送信されました。対戦相手を待っています…",
     "idleExpiryNotice": "ゲームは非アクティブの後に期限切れになり、削除することしかできません。未回答の課題： 24時間（すべてのゲーム）。アクティブなゲーム： 24時間後のチックタックトー、7日後のチェスと4 - in - a - row。"
+  },
+  "longSession": {
+    "title": "再起動をお勧めします",
+    "body": "mesh-clientは、Bluetooth無線接続で4日間稼働しています。アプリを再起動して、長時間のNoble BLEセッションでクラッシュするリスクを減らしましょう。",
+    "restart": "再始動",
+    "dismiss": "却下"
+  },
+  "reticulumSetup": {
+    "eyebrow": "Reticulum · はじめに",
+    "title": "初めての接続",
+    "hide": "ガイドを隠す",
+    "open": "セットアップガイドを開く",
+    "intro": "Reticulum を初めて使う方へ。接続を設定し、連絡先を探し、各タブの使い方を確認しましょう。",
+    "connectionTitle": "つながりましょう",
+    "stepsLabel": "Reticulumのセットアップ手順",
+    "startTitle": "ここから始めましょう",
+    "identityTitle": "あなたのアイデンティティ",
+    "startAction": "始めましょう",
+    "exploreTitle": "試してみてください",
+    "working": "働く…",
+    "startBody": "Reticulum は、インターネット、ローカル ネットワーク、または互換性のある無線を介して人々とアプリを接続します。このコンピューターとインターネット接続だけで試すことができます。",
+    "startHint": "このガイドでは、アプリ内で Reticulum を起動します。次に、名前と他の人に連絡する方法を選択します。",
+    "nameLabel": "名前またはコールサイン",
+    "nameHint": "この名前はピアと共有されます。ニックネームでも構いません。本名である必要はありません。",
+    "existingIdentity": "あなたはすでにアイデンティティを持っています。このガイドではそれを保持し、表示名のみを更新します。",
+    "identityBody": "あなたのアイデンティティは、このネットワーク上のあなたのアカウントです。このコンピューター上に存在し、サインアップや中央のアカウント プロバイダーはありません。名前を変更してもメッセージアドレスは変わりません。",
+    "saveIdentity": "名前を保存して続行",
+    "importIdentity": "回復すべきアイデンティティがある",
+    "backupTitle": "リカバリーワードを安全に保管してください",
+    "backupBody": "このコンピュータを紛失した場合、これらの言葉であなたのアイデンティティが回復されます。今すぐプライベートな場所に保存してください。メッセージアドレスを尋ねてくる人には絶対に渡さないでください。保護されたバックアップを後でネットワークからエクスポートすることもできます。",
+    "continue": "続く",
+    "back": "戻る",
+    "routes": {
+      "internet": {
+        "title": "インターネット",
+        "body": "パブリック ハブは、他の人々とつながります。ラジオは必要ありません。始めるのに良い場所です。"
+      },
+      "existing": {
+        "body": "現在のインターフェイスを保持し、準備ができているかどうかを確認します。",
+        "title": "既存のセットアップ"
+      },
+      "radio": {
+        "body": "互換性のある無線ハードウェアとローカル無線ネットワークの設定を使用します。",
+        "title": "RNode無線"
+      }
+    },
+    "routeLabel": "接続方法",
+    "savedWords": "回復言葉を保存しました",
+    "connectionBody": "インターフェイスは単に Reticulum への接続です。ネットワークに接続する方法を選択します。後で他の接続を追加できます。",
+    "hubSaved": "接続が保存されました。再起動後に確認すると…",
+    "hubHint": "1 つのハブから始めます。アプリはこの接続を追加または有効にし、Reticulum を再起動して適用します。パブリック ハブは IP アドレスを認識できますが、場合によっては利用できない場合があります。",
+    "connectHub": "このハブに接続します",
+    "hubLabel": "パブリックインターネットハブ",
+    "radioSettings": "以下の接続設定を開き、RNode インターフェイスを追加し、USB または Bluetooth を選択し、ローカル グループによって提供される周波数、帯域幅、拡散率、およびコーディング レートを使用します。",
+    "radioCheck": "インターフェイスを有効にして再起動プロンプトを適用してから、このガイドに戻ります。無線接続が機能するには、範囲内に互換性のある別のステーションが必要です。",
+    "openInterfaces": "以下の接続設定を開きます",
+    "radioDevice": "RNode ファームウェアを実行しているデバイスを使用します。 Meshtastic または MeshCore 無線は、自動的には RNode にはなりません。デバイスの指示を確認せずにファームウェアをフラッシュしたり変更したりしないでください。",
+    "checkTitle": "接続を確認しています",
+    "checkStack": "Reticulum ネットワーク",
+    "existingHint": "このガイドでは、既存のインターフェイスを変更せずにチェックします。ローカル ネットワーク インターフェイスは、そのネットワーク上の近くの Reticulum デバイスに到達します。それ自体ではパブリック インターネット ピアに接続しません。",
+    "ready": "接続が利用可能です",
+    "available": "準備ができて",
+    "waiting": "待っている",
+    "readyHint": "これにより、ローカル サービスと接続が確立されていることを確認できます。特定の人に連絡できることを保証するものではありません。",
+    "checkMessaging": "メッセージングサービス",
+    "checkConnection": "選択された接続",
+    "restartHint": "再起動を短時間行うと、アクティブな Reticulum 接続が中断されます。保存した設定は、ガイドを閉じても引き続き使用できます。",
+    "checkFailed": "アプリは現在のステータスを読み取ることができませんでした。 Reticulum が実行されていることを確認してから、再試行してください。",
+    "waitHint": "起動には少し時間がかかる場合があります。ハブが引き続き使用できない場合は、インターネット接続を確認するか、別のハブを選択してください。無線の場合は、ケーブル、ペアリング、ローカル設定を確認してください。",
+    "addressTitle": "あなたのメッセージアドレス",
+    "checkAgain": "もう一度確認してください",
+    "addressBody": "このアドレスを友達と共有すると、友達があなたにメッセージを送信できるようになります。 LXMF は Reticulum アプリで使用されるメッセージング システムです。これはあなたの LXMF アドレスであり、回復ワードではありません。",
+    "copyAddress": "メッセージアドレスをコピーしてください",
+    "connectionLost": "接続の準備ができていません。送信する前に戻って確認してください。",
+    "exploreBody": "必需品は揃っています。 1 つのダイレクト メッセージまたはグループ チャットから始めます。必要に応じていつでも他のツールを探索できます。",
+    "addressCopied": "メッセージアドレスがコピーされました",
+    "firstMessage": "友人に LXMF アドレスを尋ねてください。 Peers では、アドレス フィールドを使用してピアを検索し、チャットを開いて短いメッセージを送信します。",
+    "discoveryHint": "アプリがアナウンスを聞くと、ピアも入力されます。人々やサービスからの小さな紹介です。時間を与えてください。一部のエントリはサービスであり、メッセージを送信できる人ではありません。",
+    "deliveryHint": "ダイレクトメッセージで「配信済み」を探します。伝播ノードに保存されているということは、仲介者がメッセージを持っていることを意味します。友達が読んだり受け取ったりしたという意味ではありません。",
+    "peersBody": "Peers はダイレクト メッセージの出発点です。連絡先として人々を保存すると、再び見つけられるようになります。",
+    "roomsTitle": "会話に参加する",
+    "peersTitle": "人を探す",
+    "openPeers": "オープンピア",
+    "openRooms": "グループチャットを開く",
+    "roomsBody": "RRCはグループチャットです。それを開いてハブを選択し、接続してルームに参加します。これはダイレクトメッセージとは別のものです。",
+    "openNetwork": "ID とバックアップ設定を開く",
+    "networkHint": "ネットワークには、ユーザーの ID、バックアップ、およびオプションのオフライン メッセージ設定が保存されます。接続では、接続方法を管理します。Nomadはページを閲覧します。リモートと管理者は、必要になるまで待つことができます。",
+    "stopped": "Reticulumが停止しているか、まだ起動中です。セットアップを続けるには起動してください。",
+    "actionFailed": "そのステップはまだ終わっていません。保存した設定は保持されています。詳細を確認して、再試行してください。",
+    "errorDetails": "エラーの詳細を表示する",
+    "restartService": "スタートReticulum",
+    "privateConnection": "このハブにはすでにプライベート ネットワーク設定があります。以下の接続設定で編集するか、別のパブリック ハブを選択してください。",
+    "tabUnavailable": "このタブは非表示になっています。 [アプリ] タブの設定で有効にしてから、ガイドに戻ります。",
+    "identityUnavailable": "あなたの身元を読み取れませんでした。 Reticulum が実行されていることを確認してから、再試行してください。",
+    "identitySaveFailed": "ID 設定を保存できませんでした。もう一度やり直してください。",
+    "interfaceSaveFailed": "この接続を保存できませんでした。接続設定を確認して、もう一度試してください。",
+    "interfacesUnavailable": "接続を読み取れませんでした。 Reticulum が実行されていることを確認してから、再試行してください。"
   }
 }

@@ -85,6 +85,27 @@ describe('release.sh full-suite gate', () => {
     expect(finishBody).not.toMatch(/pnpm run test:run/);
   });
 
+  it('rebases onto origin/main before push when main advanced during preflight', () => {
+    // Cut release can take ~20m; concurrent main merges (e.g. licenses bot) reject a
+    // naive `git push origin main`. Rebase+retry, retagging the tip each attempt.
+    expect(script).toMatch(/push_release_main_with_rebase/);
+    expect(script).toMatch(/git fetch origin main/);
+    expect(script).toMatch(/git merge-base --is-ancestor origin\/main HEAD/);
+    expect(script).toMatch(/git rebase origin\/main/);
+    const helperFn = script.slice(script.indexOf('push_release_main_with_rebase()'));
+    const helperBody = helperFn.slice(0, helperFn.indexOf('\n}\n\n'));
+    const rebaseIdx = helperBody.indexOf('git rebase origin/main');
+    const tagIdx = helperBody.indexOf('git tag -a');
+    const pushIdx = helperBody.indexOf('git push origin main');
+    expect(rebaseIdx).toBeGreaterThanOrEqual(0);
+    expect(tagIdx).toBeGreaterThan(rebaseIdx);
+    expect(pushIdx).toBeGreaterThan(tagIdx);
+    // Failed abort must surface Git stderr and use a distinct status (not `2>/dev/null || true`).
+    expect(helperBody).toMatch(/if ! git rebase --abort; then/);
+    expect(helperBody).toMatch(/return 2/);
+    expect(helperBody).not.toMatch(/git rebase --abort 2>\s*\/dev\/null/);
+  });
+
   it('supports --yes / MESH_CLIENT_RELEASE_YES to skip confirmation prompts', () => {
     expect(script).toMatch(/confirm_or_yes/);
     expect(script).toMatch(/--yes \| -y\)/);
@@ -275,21 +296,35 @@ exit 1
 `,
         { mode: 0o755 },
       );
+      // After --skip-dep-update, release.sh still runs sync-flatpak-electron via real
+      // `node` (network / archives). Stub node so the subprocess exits immediately
+      // instead of hanging past Vitest's default 5s timeout under CI load.
+      fs.writeFileSync(
+        path.join(bin, 'node'),
+        `#!/usr/bin/env bash
+printf '%s\\n' "$*" >> ${JSON.stringify(pnpmLog)}
+exit 1
+`,
+        { mode: 0o755 },
+      );
 
       const r = spawnSync('bash', [RELEASE_SH, '--yes', '--skip-dep-update', 'patch'], {
         cwd: ROOT,
         encoding: 'utf8',
+        timeout: 15_000,
         env: {
           ...process.env,
           PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}`,
           MESH_CLIENT_RELEASE_YES: '1',
         },
       });
+      expect(r.error).toBeUndefined();
       expect(r.status).not.toBe(0);
       const log = fs.existsSync(pnpmLog) ? fs.readFileSync(pnpmLog, 'utf8') : '';
       expect(log).not.toMatch(/(^|\n)update(\s|$)/);
       expect(log).not.toMatch(/(^|\n)dedupe(\s|$)/);
       expect(`${r.stdout}${r.stderr}`).toMatch(/Skipping pnpm update\/dedupe/);
+      expect(log).toMatch(/sync-flatpak-electron/);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }

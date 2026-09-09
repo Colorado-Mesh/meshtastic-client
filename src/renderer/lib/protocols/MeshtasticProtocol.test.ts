@@ -431,3 +431,237 @@ describe('MeshtasticProtocol position outbound guards', () => {
     await expect(meshtasticProtocol.requestPosition(device, Number.NaN)).rejects.toThrow(TypeError);
   });
 });
+
+/**
+ * SDK `@meshtastic/core` PacketMetadata.rxTime is a Date (already ms).
+ * Naive `rxTime * 1000` double-converts to ~1e15 and poisons last_heard / export.
+ */
+describe('MeshtasticProtocol Date-shaped rxTime', () => {
+  const RADIO_SEC = 1_787_340_581;
+  const EXPECTED_MS = RADIO_SEC * 1000;
+  const DOUBLE_CONVERTED = RADIO_SEC * 1_000_000;
+
+  it('maps text_message rxTime Date to epoch ms (not Date×1000)', () => {
+    const { device, emit } = mockMeshDevice();
+    const events: DomainEvent[] = [];
+    const teardown = meshtasticProtocol.subscribe(device, (e) => events.push(e));
+    emit('onMeshPacket', {
+      payloadVariant: {
+        case: 'decoded',
+        value: {
+          portnum: Portnums.PortNum.TEXT_MESSAGE_APP,
+          payload: new TextEncoder().encode('ping'),
+        },
+      },
+      from: 0xabcd,
+      to: 0xffffffff,
+      id: 77,
+      channel: 0,
+      rxTime: new Date(EXPECTED_MS),
+    });
+    const text = events.find((e) => e.type === 'text_message');
+    expect(text?.type === 'text_message' && text.payload.timestamp).toBe(EXPECTED_MS);
+    expect(text?.type === 'text_message' && text.payload.timestamp).not.toBe(DOUBLE_CONVERTED);
+    teardown();
+  });
+
+  it('maps UserPacket rxTime Date to lastHeardAt epoch ms', () => {
+    const { device, emit } = mockMeshDevice();
+    const events: DomainEvent[] = [];
+    const teardown = meshtasticProtocol.subscribe(device, (e) => events.push(e));
+    emit('onUserPacket', {
+      from: 0x1234,
+      rxTime: new Date(EXPECTED_MS),
+      data: { longName: 'Live', shortName: 'LV' },
+    });
+    const info = events.find((e) => e.type === 'node_info');
+    expect(info?.type === 'node_info' && info.payload.lastHeardAt).toBe(EXPECTED_MS);
+    expect(info?.type === 'node_info' && info.payload.lastHeardAt).not.toBe(DOUBLE_CONVERTED);
+    teardown();
+  });
+
+  it('maps position and telemetry rxTime Date to epoch ms', () => {
+    const { device, emit } = mockMeshDevice();
+    const events: DomainEvent[] = [];
+    const teardown = meshtasticProtocol.subscribe(device, (e) => events.push(e));
+    emit('onPositionPacket', {
+      from: 42,
+      rxTime: new Date(EXPECTED_MS),
+      data: { latitudeI: 400_000_000, longitudeI: -1_050_000_000 },
+    });
+    emit('onTelemetryPacket', {
+      from: 42,
+      rxTime: new Date(EXPECTED_MS),
+      data: { deviceMetrics: { batteryLevel: 80 } },
+    });
+    const position = events.find((e) => e.type === 'position');
+    const telemetry = events.find((e) => e.type === 'telemetry');
+    expect(position?.type === 'position' && position.payload.timestamp).toBe(EXPECTED_MS);
+    expect(telemetry?.type === 'telemetry' && telemetry.payload.timestamp).toBe(EXPECTED_MS);
+    teardown();
+  });
+
+  it('labels portnums the SDK has no typed event for', () => {
+    const { device, emit } = mockMeshDevice();
+    const events: DomainEvent[] = [];
+    const teardown = meshtasticProtocol.subscribe(device, (e) => events.push(e));
+    const payload = new Uint8Array([1, 2, 3]);
+    emit('onMeshPacket', {
+      from: 7,
+      channel: 2,
+      payloadVariant: { case: 'decoded', value: { portnum: 78, payload } },
+    });
+    const modulePort = events.find((e) => e.type === 'meshtastic_module_port');
+    expect(modulePort?.type === 'meshtastic_module_port' && modulePort.payload).toMatchObject({
+      portLabel: 'atakPluginV2',
+      from: 7,
+      channel: 2,
+      data: payload,
+    });
+    teardown();
+  });
+
+  it('ignores portnums that already have a typed SDK event', () => {
+    const { device, emit } = mockMeshDevice();
+    const events: DomainEvent[] = [];
+    const teardown = meshtasticProtocol.subscribe(device, (e) => events.push(e));
+    emit('onMeshPacket', {
+      from: 7,
+      payloadVariant: { case: 'decoded', value: { portnum: 67, payload: new Uint8Array() } },
+    });
+    expect(events.some((e) => e.type === 'meshtastic_module_port')).toBe(false);
+    teardown();
+  });
+
+  it('collapses ADC and one-wire channel fields into sparse arrays', () => {
+    const { device, emit } = mockMeshDevice();
+    const events: DomainEvent[] = [];
+    const teardown = meshtasticProtocol.subscribe(device, (e) => events.push(e));
+    emit('onTelemetryPacket', {
+      from: 42,
+      data: {
+        variant: {
+          case: 'environmentMetrics',
+          value: {
+            adcVoltageCh0: 3.3,
+            adcVoltageCh3: 1.1,
+            oneWireTemperatureCh1: 21.5,
+            lightningStrikeCount1h: 4,
+            lightningDistanceKm: 12,
+          },
+        },
+      },
+    });
+    const telemetry = events.find((e) => e.type === 'telemetry');
+    expect(telemetry?.type === 'telemetry' && telemetry.payload).toMatchObject({
+      variantCase: 'environmentMetrics',
+      adcVoltages: [3.3, undefined, undefined, 1.1, undefined, undefined, undefined, undefined],
+      oneWireTemperatures: [
+        undefined,
+        21.5,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      ],
+      lightningStrikeCount1h: 4,
+      lightningDistanceKm: 12,
+    });
+    teardown();
+  });
+
+  it('leaves channel arrays undefined when no channel reported a value', () => {
+    const { device, emit } = mockMeshDevice();
+    const events: DomainEvent[] = [];
+    const teardown = meshtasticProtocol.subscribe(device, (e) => events.push(e));
+    emit('onTelemetryPacket', {
+      from: 42,
+      data: { variant: { case: 'environmentMetrics', value: { temperature: 20 } } },
+    });
+    const telemetry = events.find((e) => e.type === 'telemetry');
+    expect(telemetry?.type === 'telemetry' && telemetry.payload.adcVoltages).toBeUndefined();
+    expect(
+      telemetry?.type === 'telemetry' && telemetry.payload.oneWireTemperatures,
+    ).toBeUndefined();
+    teardown();
+  });
+
+  it('decodes air-quality particulates and CO2', () => {
+    const { device, emit } = mockMeshDevice();
+    const events: DomainEvent[] = [];
+    const teardown = meshtasticProtocol.subscribe(device, (e) => events.push(e));
+    emit('onTelemetryPacket', {
+      from: 42,
+      data: {
+        variant: {
+          case: 'airQualityMetrics',
+          value: { pm25Standard: 12, pm100Standard: 30, co2: 640, pmVocIdx: 110, pmNoxIdx: 3 },
+        },
+      },
+    });
+    const telemetry = events.find((e) => e.type === 'telemetry');
+    expect(telemetry?.type === 'telemetry' && telemetry.payload).toMatchObject({
+      variantCase: 'airQualityMetrics',
+      pm25Standard: 12,
+      pm100Standard: 30,
+      co2: 640,
+      pmVocIdx: 110,
+      pmNoxIdx: 3,
+    });
+    teardown();
+  });
+
+  it('maps traceroute rxTime Date to epoch ms', () => {
+    const { device, emit } = mockMeshDevice();
+    const events: DomainEvent[] = [];
+    const teardown = meshtasticProtocol.subscribe(device, (e) => events.push(e));
+    emit('onTraceRoutePacket', {
+      id: 99,
+      from: 1,
+      to: 2,
+      rxTime: new Date(EXPECTED_MS),
+      data: { route: [11, 22] },
+    });
+    const tr = events.find((e) => e.type === 'trace_route');
+    expect(tr?.type === 'trace_route' && tr.payload.timestamp).toBe(EXPECTED_MS);
+    expect(tr?.type === 'trace_route' && tr.payload.timestamp).not.toBe(DOUBLE_CONVERTED);
+    teardown();
+  });
+
+  it('maps waypoint rxTime Date to epoch ms', () => {
+    const { device, emit } = mockMeshDevice();
+    const events: DomainEvent[] = [];
+    const teardown = meshtasticProtocol.subscribe(device, (e) => events.push(e));
+    emit('onWaypointPacket', {
+      from: 7,
+      to: 0xffffffff,
+      rxTime: new Date(EXPECTED_MS),
+      data: {
+        id: 1001,
+        name: 'WP',
+        latitudeI: 400_000_000,
+        longitudeI: -1_050_000_000,
+      },
+    });
+    const wp = events.find((e) => e.type === 'waypoint');
+    expect(wp?.type === 'waypoint' && wp.payload.timestamp).toBe(EXPECTED_MS);
+    expect(wp?.type === 'waypoint' && wp.payload.timestamp).not.toBe(DOUBLE_CONVERTED);
+    teardown();
+  });
+
+  it('still converts numeric unix-second rxTime to epoch ms', () => {
+    const { device, emit } = mockMeshDevice();
+    const events: DomainEvent[] = [];
+    const teardown = meshtasticProtocol.subscribe(device, (e) => events.push(e));
+    emit('onUserPacket', {
+      from: 0x55,
+      rxTime: RADIO_SEC,
+      data: { longName: 'Sec', shortName: 'SC' },
+    });
+    const info = events.find((e) => e.type === 'node_info');
+    expect(info?.type === 'node_info' && info.payload.lastHeardAt).toBe(EXPECTED_MS);
+    teardown();
+  });
+});

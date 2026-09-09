@@ -390,7 +390,32 @@
     "themeResetFailed": "无法重置颜色。",
     "messageActionsBarBgVisible": "显示背景",
     "rrcUnreadAllRoomMessages": "所有房间消息的RRC未读",
-    "rrcUnreadAllRoomMessagesHint": "开启时，任何新的RRC房间消息都会标记为未读，并且可以播放频道声音。关闭IRC样式警报：仅限直接消息和@提及。"
+    "rrcUnreadAllRoomMessagesHint": "开启时，任何新的RRC房间消息都会标记为未读，并且可以播放频道声音。关闭IRC样式警报：仅限直接消息和@提及。",
+    "shareMyLocation": "分享我的位置",
+    "shareMyLocationOffInfo": "位置共享已关闭—主机GPS刷新和网格发送已禁用。启用在上方分享我的位置，以使用自动刷新或发送您的位置。",
+    "shareMyLocationHint": "启用后，此应用可能会在此计算机上查找您的位置，并通过Meshtastic、MeshCore或Reticulum （聊天共享、无线电推送、RMAP ）发送。禁用后，主机GPS查找和应用程序发送将关闭；静态坐标仍然仅适用于您的本地地图。带有GPS的收音机可能仍会在本地显示您的位置。在您调整收音机或模块设置之前，设备固件仍可能进行广播。",
+    "reticulumBlocklist": {
+      "description": "被阻止的发件人将在其LXMF消息到达您的收件箱之前被删除。导出列表以将其移动到另一个安装，或导入列表以一次阻止多个发件人。",
+      "exportButton": "导出阻止列表",
+      "exportAria": "导出被阻止的联系人",
+      "importButton": "导入阻止列表",
+      "importAria": "导入被阻止的联系人",
+      "exportOk": "已导出{{count}}个被阻止的联系人",
+      "exportEmpty": "没有要导出的被阻止的联系人。",
+      "exportFailed": "无法导出阻止列表。",
+      "importOk": "已导入{{imported}}封锁的联系人（已跳过{{skipped}} ）",
+      "importFailed": "无法导入阻止列表。",
+      "unblockAria": "取消屏蔽{{hash}}",
+      "unblockFailed": "无法取消阻止该联系人。",
+      "empty": "已阻止的联系人",
+      "title": "已屏蔽的联系人"
+    },
+    "fontSize": "字体大小",
+    "fontSizeDesc": "在应用中调整文字大小。地图、海图和航站楼不受影响。",
+    "decreaseFontSize": "减小字体大小",
+    "increaseFontSize": "增加字体大小",
+    "resetFontSize": "一键复原",
+    "resetFontSizeAria": "重置字体大小"
   },
   "aria": {
     "closeDialog": "关闭对话框",
@@ -711,7 +736,21 @@
       "startFailed": "无法开始语音备忘录录制。请重试。",
       "sendAriaWithElapsed": "发送语音备忘录（记录{{seconds}}秒）",
       "unavailable": "语音备忘录不可用—附件未缓存在此设备上。"
-    }
+    },
+    "heardByRepeaters_one": "{{count}}个节点听到",
+    "heardByRepeaters_other": "{{count}}个节点听到",
+    "heardByNetwork": "被网络听到",
+    "notHeardTimeout": "未听到（超时）",
+    "routeRelaysPredicted": "路线： ~ {{count}}通过{{hop}}继电器",
+    "routeViaPredicted": "路线：通过{{hop}}",
+    "routeRelaysPredictedHopsOnly": "路线： ~ {{count}}个继电器",
+    "heardByRepeatersDetail_one": "{{count}}个节点听到：{{names}}",
+    "heardByRepeatersDetail_other": "{{count}}个节点听到：{{names}}",
+    "heardByRepeaterNodeFallback": "节点{{nodeId}}",
+    "heardByRepeatersAdditional_one": "{{count}}其他身份不明的货运代理（哈希值： {{hashes}} ）",
+    "heardByRepeatersAdditional_other": "{{count}}其他身份不明的转发商（哈希： {{hashes}} ）",
+    "reticulumSendAwaitingPeerReceipt": "已发送（等待同行回执）",
+    "reticulumChatNeedsLxmfDelivery": "此对等方还没有LXMF交付地址（聊天不能使用仅语音目的地）。等待LXMF公告，或粘贴其32个字符的LXMF哈希。"
   },
   "chatPayload": {
     "mention": "提及{{label}}",
@@ -1036,7 +1075,9 @@
       "importBackupAria": "从粘贴的JSON导入Ratspeak .rsi备份",
       "importBackupFromFileAria": "选择要导入的Ratspeak .rsi备份文件",
       "exportAria": "导出PIN加密的Ratspeak .rsi身份备份",
-      "exportRawAria": "导出未加密的原始 Reticulum 身份文件"
+      "exportRawAria": "导出未加密的原始 Reticulum 身份文件",
+      "identityHashLabel": "标识哈希：",
+      "copyIdentityHash": "复制标识哈希"
     },
     "reticulumInterfaces": {
       "title": "接口",
@@ -1117,7 +1158,10 @@
         "blePeer": "使用种子对等地址的 BLE 对等网格。",
         "generic": "Reticulum 网络接口。",
         "sharedInstanceClient": "Attached as a client of another app’s shared Reticulum instance — local TCP hubs from this config are not started here.",
-        "i2p": "通过此机器上的路由器的I2P骨干网。启用SAM应用程序桥(127.0.0.1: 7656) —而不是HTTP/HTTPS I2P隧道代理(4444/4445)。在启用SAM后重新启动I2P ，以便桥接器侦听，然后如果此接口保持关闭状态，则重新启动Reticulum堆栈。"
+        "i2p": "通过此机器上的路由器的I2P骨干网。启用SAM应用程序桥(127.0.0.1: 7656) —而不是HTTP/HTTPS I2P隧道代理(4444/4445)。在启用SAM后重新启动I2P ，以便桥接器侦听，然后如果此接口保持关闭状态，则重新启动Reticulum堆栈。",
+        "serial": "通过有线连接到TNC、调制解调器或其他主机的通用串行链路。设置线路参数以匹配远端。",
+        "ax25kiss": "通过KISS TNC的AX.25分组无线电。需要您的呼号以及标识此电台的SSID (0-15)。",
+        "local": "此机器上的共享实例套接字。其他本地工具（ rnsd、Nomad Network、rnsh ）可以通过它连接到此堆栈。套接字路径派生自此接口的名称，因此重命名它会更改其他工具必须使用的地址。"
       },
       "rfProfile": {
         "coordinated": "区域协调",
@@ -1240,10 +1284,38 @@
       "rmapFullModeHint": "RMAP发布的完整模式通过IGNORE_CONFIG_WARNINGS保持完整。LXMF传递公告将在堆栈公告间隔（默认为1小时）上退出此无线电。",
       "effectiveModeBadge": "有效期： {{mode}}",
       "effectiveModeAria": "有效运行时模式{{mode}}。配置的模式与Reticulum正在运行的模式不同。",
-      "effectiveModeTooltip": "Reticulum将此可发现接口重写到接入点（或其他允许的模式） ，因为除非设置了ignore_config_warnings ，否则DISCOVERABLE需要网关、内部或接入点。在选择退出的mesh-client戳后重新启动堆栈，以便完整（或您配置的模式）生效。"
+      "effectiveModeTooltip": "Reticulum将此可发现接口重写到接入点（或其他允许的模式） ，因为除非设置了ignore_config_warnings ，否则DISCOVERABLE需要网关、内部或接入点。在选择退出的mesh-client戳后重新启动堆栈，以便完整（或您配置的模式）生效。",
+      "flowControlBleHint": "在蓝牙上，收音机通常不会发送CMD_READY。Mesh-Client仍然步进TX （短暂等待就绪，然后继续） ，因此流量控制可以在不冻结队列的情况下减少过载。",
+      "advancedFields": "高级设置",
+      "field": {
+        "port": "端口",
+        "speed": "速度（波特率）",
+        "databits": "数据位",
+        "parity": "奇偶性",
+        "stopbits": "停止位",
+        "callsign": "呼号",
+        "ssid": "SSID",
+        "flow_control": "流量控制",
+        "preamble": "前言（毫秒）",
+        "txtail": "TX尾部(ms)",
+        "persistence": "一致性",
+        "slottime": "时隙时间（毫秒）"
+      },
+      "fieldOption": {
+        "parity": {
+          "N": "无",
+          "E": "偶數",
+          "O": "奇数"
+        }
+      },
+      "fieldRequired": "此字段为必填项。",
+      "fieldNotANumber": "输入整数（仅限数字）。",
+      "fieldOutOfRange": "值超出允许的范围。",
+      "fieldTooLong": "此值太长。",
+      "fieldInvalidOption": "不支持的V值。"
     },
     "reticulumPeers": {
-      "hops": "Hops",
+      "hops": "跳数",
       "actions": "动作",
       "path": "路径",
       "probe": "探头"
@@ -1433,7 +1505,8 @@
     "pickerDeviceAria": "{{name}} {{address}}",
     "pickerDeviceAriaWithRssi": "{{name}} {{address}} ， {{rssi}} dBm",
     "bluetoothMac": "蓝牙MAC",
-    "bluetoothId": "蓝牙编号："
+    "bluetoothId": "蓝牙编号：",
+    "reticulumAutoResendOnAnnounce": "当对等体宣布时重试失败的消息"
   },
   "contactGroupsModal": {
     "failedLoadMembers": "无法加载会员： {{message}}",
@@ -1456,7 +1529,9 @@
     "confirmDeleteButton": "删除？",
     "manageMembersOf": "管理{{name}}的成员",
     "renameGroupNamed": "重命名{{name}}",
-    "deleteGroupNamed": "删除{{name}}"
+    "deleteGroupNamed": "删除{{name}}",
+    "needSelfNode": "首先连接无线电，以便在创建联系人组之前知道您的节点ID。",
+    "failedCreateGroup": "创建群组失败: {{message}}"
   },
   "diagnosticsPanel": {
     "dropRoutingRows": "删除早于{{hours}}小时的路由行(1–168)",
@@ -1980,7 +2055,14 @@
     "recommendationsHeading": "建议",
     "lastMessagePrefix": "最后的：",
     "appliesToCategories": "适用于：{{labels}}",
-    "severityInfo": "信息"
+    "severityInfo": "信息",
+    "historyNote": "调查结果描述了此日志中的事件，而不一定是仍处于活动状态的问题。",
+    "copyReport": "复制故障排除报告",
+    "copyHint": "包括示例日志消息。分享前，请查看举报中的私密信息。",
+    "copySuccess": "已复制报告",
+    "copyFailure": "无法复制报告。请重试或导出日志。",
+    "evidence": "查看{{category}}的证据",
+    "evidenceShown": "显示{{shown}}/{{total}}条匹配条目，最新在前。"
   },
   "logAnalyzer": {
     "categories": {
@@ -2065,11 +2147,44 @@
         "recommendation": "无法从路由器请求存储和转发聊天历史记录（通常是与其他无线电流量的短暂比赛）。如果聊天积压保持为空，请重新连接或等待下一个路由器心跳。"
       },
       "serial-reconnect": {
-        "label": "USB串行重新连接"
+        "label": "USB串行重新连接",
+        "recommendation": "USB串行端口无法重新打开，或者其以前的流仍被锁定。使用收音机关闭其他应用，重新连接电缆，然后在应用中重新连接。如果重复，请在错误报告中包含序列日志行。"
       },
       "reticulum-nomad-hosting": {
         "label": "Nomad 页面托管问题",
         "recommendation": "Nomad My Pages 托管失败或内容文件夹不可用。打开 Nomad Network → My Pages，如果页面文件夹已移动请重新选择，然后开始提供服务。详细信息在日志中显示为 [nomad-serving] / [NomadHosting]。"
+      },
+      "renderer-unresponsive": {
+        "label": "应用停止响应",
+        "recommendation": "应用停止发送UI检测信号。如果它已经恢复，请记下您在列出的时间附近做了什么。如果仍然处于冻结状态，请重新启动应用，并在报告重复挂起时包含此报告。"
+      },
+      "database-persistence": {
+        "label": "修改无法保存",
+        "recommendation": "数据库写入已耗尽重试次数或已丢弃。此会话中可见的更改可能无法在重新启动后存活。退出前导出重要数据，然后检查可用磁盘空间并访问应用数据文件夹。请勿删除数据库。"
+      },
+      "meshtastic-tcp": {
+        "label": "Meshtastic TCP连接失败",
+        "recommendation": "与Meshtastic无线电的TCP连接失败。在重新连接之前，请检查无线电地址和端口、本地网络可达性，以及其他客户端是否正在使用该连接。"
+      },
+      "reticulum-sidecar": {
+        "label": "Reticulum 服务中断",
+        "recommendation": "本地Reticulum服务无法启动、响应或维护其事件连接。在连接和下面的日志行中检查其状态。如果尚未恢复，请重新启动Reticulum 连接。丢失的打包Sidecar可能需要重新安装应用。"
+      },
+      "reticulum-delivery": {
+        "label": "Reticulum 递送或同步失败",
+        "recommendation": "消息传递或传播同步尝试失败。在重试之前检查当前消息状态，探测目标，并检查启用的接口。对于传播，请检查网络下的选定节点和同步状态；存储的消息不是收件人送达的证据。"
+      },
+      "reticulum-backpressure": {
+        "label": "Reticulum 事件或数据包被丢弃",
+        "recommendation": "本地Reticulum服务丢弃事件或数据包，因为队列已填充、订阅服务器落后或负载超出限制。减少并发批量传输，然后在重试前检查消息状态。这些日志样本值得报告空闲时重复掉落的情况。"
+      },
+      "firmware-flash": {
+        "label": "固件传输已停止",
+        "recommendation": "固件传输停止，其串行端口已关闭。确认正确的固件和设备，检查USB电缆，并按照设备恢复或引导加载程序的说明进行操作，然后重试。"
+      },
+      "unclassified": {
+        "label": "其他警告和错误",
+        "recommendation": "这些日志行与已知诊断不匹配，可能包括预期的恢复消息。查看他们的时间戳和周围环境。如果问题仍然存在，请导出包含此报告的完整日志。"
       }
     },
     "recommendationGroups": {
@@ -2232,7 +2347,10 @@
     "clearAllIntro": "从收音机中删除所有联系人并清除应用程序的联系人数据库。此操作无法撤消。",
     "clearAllContactsConfirm": "从对讲机中删除所有联系人并清除本地联系人数据？",
     "clearingContacts": "清算…",
-    "clearAllContactsButton": "清除所有联系人"
+    "clearAllContactsButton": "清除所有联系人",
+    "autoOffloadWhenFull": "收音机已满时自动卸载",
+    "autoOffloadWhenFullLabel": "满时自动卸载",
+    "autoOffloadWhenFullDesc": "当伴侣报告联系人存储空间已满时，自动将联系人卸载到应用程序数据库（与卸载相同）。"
   },
   "meshcoreTelemetryPrivacy": {
     "summary": "遥测隐私",
@@ -2769,6 +2887,18 @@
     "reticulumScanImport": {
       "title": "扫描/导入",
       "hint": "扫描或粘贴 QR 码以查找联系人、Columba lxma:// 卡或加密的 LXMF 纸质消息。"
+    },
+    "reticulumPathTable": {
+      "title": "路径表",
+      "description": "清除路径表将丢弃每个缓存路由。路由会在新公告到达时重新学习，因此发送给同行的第一条消息可能需要更长时间。",
+      "clear": "清除路径表",
+      "clearing": "清理中...",
+      "confirmTitle": "清除路径表？",
+      "confirmBody": "每个缓存的路由都会被丢弃。根据新公告重建路由。",
+      "clearOk": "路径表已清除（ {{count}}路由已丢弃）",
+      "clearFailed": "无法清除路径表。",
+      "clearAria": "清除路径表",
+      "confirmAction": "清除"
     }
   },
   "nodeDetailModal": {
@@ -2950,7 +3080,11 @@
     "shareContactQrAria": "显示MeshCore联系人二维码以进行官方应用导入",
     "publicKeyCopied": "公钥已复制到剪贴板。",
     "hasPublicKeyNoDm": "有公钥（无直接消息）",
-    "copyPublicKey": "复制公钥"
+    "copyPublicKey": "复制公钥",
+    "xeddsaSigned": "XEdDSA已签名",
+    "xeddsaSignedHint": "无线电已验证来自此节点的XEdDSA签名，因此其公钥经过加密证明。",
+    "keyManuallyVerified": "密钥已验证",
+    "keyManuallyVerifiedHint": "此节点的公钥已由操作员手动确认。"
   },
   "nodeInfoBody": {
     "longName": "长名称",
@@ -3207,7 +3341,50 @@
       "noPages": "还没有页面。将.mu文件添加到所选文件夹（例如index.mu ）。",
       "contentSourceNotFromPicker": "在应用文件夹之前，选择带有“选择文件夹”的文件夹。",
       "contentSourceNone": "没有选择文件夹",
-      "contentSourceRequired": "在开始Nomad托管之前，请选择一个页面文件夹。"
+      "contentSourceRequired": "在开始Nomad托管之前，请选择一个页面文件夹。",
+      "newPage": "新页",
+      "newPageName": "页面文件名（必须以.mu结尾）",
+      "invalidPageName": "输入以.mu结尾的文件名，不带..或绝对路径。",
+      "edit": "编辑",
+      "editPage": "编辑{{path}}",
+      "delete": "删除",
+      "deletePage": "删除{{path}}",
+      "deleteConfirm": "删除此页面？这将从提供的文件夹中删除文件。",
+      "deleteConfirmAria": "确认删除此页面",
+      "deleteError": "无法删除页面。",
+      "openError": "无法打开页面进行编辑。",
+      "editorTitle": "编辑Micron页面",
+      "editorAria": "Micron页面来源",
+      "editorPreview": "制作预览",
+      "toolbarAria": "Micron格式化操作",
+      "toolbar": {
+        "bold": "加粗",
+        "italic": "斜体",
+        "underline": "下划线",
+        "h1": "标题 1",
+        "h2": "标题 2",
+        "h3": "标题 3",
+        "alignLeft": "左对齐",
+        "alignCenter": "居中",
+        "alignRight": "右对齐",
+        "divider": "分隔线",
+        "link": "链接"
+      },
+      "linkTargetPrompt": "链接目标（页面路径或目标哈希）",
+      "save": "保存",
+      "saveError": "无法保存页面。",
+      "unsaved": "未保存的更改",
+      "discard": "放弃更改",
+      "discardConfirm": "此页面有未保存的更改。",
+      "discardConfirmAria": "丢弃修改并关闭",
+      "close": "关闭编辑器",
+      "closeBackdropAria": "关闭 Micron 页面编辑器",
+      "pageTooLarge": "该页面太大，无法出租（限制为512 KiB ）。",
+      "pageNotFound": "该页面不再存在于提供的文件夹中。",
+      "invalidPagePath": "不允许使用该页面路径。",
+      "pageIoError": "无法读取或写入磁盘上的页面。",
+      "pageNotUtf8": "该页面不是有效的UTF-8文本。",
+      "pageWriteFailed": "无法写入页面。"
     },
     "sortLastHeard": "上次听到",
     "sortHops": "跳数",
@@ -3262,7 +3439,6 @@
   },
   "peerDetailModal": {
     "networkSection": "网络",
-    "copyHash": "复制目标哈希",
     "editNameAria": "自定义显示名称",
     "sendMessage": "发讯",
     "pathOk": "请求已发送。",
@@ -3288,7 +3464,20 @@
     "verifiedRowAria": "已验证联系人48",
     "renameFailed": "无法保存显示名称。",
     "removeContactConfirmBody": "此操作会将联系人从保存的列表中删除。聊天消息会保留；如果您向其发送消息，它们将保留在历史记录中。",
-    "backupPaths": "设置备份路径"
+    "backupPaths": "设置备份路径",
+    "announcedDestinations": "Announced destinations",
+    "openedDestinationBadge": "Opened",
+    "copyAnnouncedHashAria": "Copy {{aspect}} destination hash {{hash}}",
+    "hashCopied": "Destination hash copied.",
+    "hashCopyFailed": "Could not copy destination hash.",
+    "aspect": {
+      "chat": "Chat",
+      "voice": "Voice",
+      "nomad": "Nomad",
+      "rrc": "RRC",
+      "propagation": "Propagation",
+      "unknown": "Unknown"
+    }
   },
   "peerGraph": {
     "title": "同行沟通图表",
@@ -3365,7 +3554,11 @@
     "pathsPinFailed": "无法更新此对等方的媒体首选项。",
     "tabHistory": "历史",
     "emptyHistory": "尚无消息历史记录—发送或接收 LXMF 消息以在此处查看对等节点。",
-    "emptyContacts": "还没有保存的联系人—打开对等点并选择“另存为联系人”。"
+    "emptyContacts": "还没有保存的联系人—打开对等点并选择“另存为联系人”。",
+    "pathMediumTitle": "活动路径介质： {{medium}}",
+    "chatNeedsLxmfDelivery": "此同行尚无LXMF交货地址。等待LXMF公告，或使用32个字符的LXMF哈希打开聊天—语音（ lxst.telephony ）目的地无法接收聊天。",
+    "voiceAspectBadge": "语音",
+    "voiceAspectTitle": "此路径表行是LXST电话目标。在已知的情况下，聊天会重新映射到对方的LXMF交付哈希。"
   },
   "radioPanel": {
     "offloadedContacts": "已将{{count}}个联系人卸载到数据库。",
@@ -3427,57 +3620,65 @@
     "importConfigJson": "导入配置 JSON",
     "offloadContacts": "卸载",
     "displayUnits": {
-      "0": {
-        "label": "指标"
+      "METRIC": {
+        "label": "Metric"
       },
-      "1": {
-        "label": "英制"
+      "IMPERIAL": {
+        "label": "Imperial"
       }
     },
     "deviceRoles": {
-      "0": {
-        "description": "普通客户端模式",
-        "label": "客户端"
+      "CLIENT": {
+        "label": "Client",
+        "description": "正常客户端模式"
       },
-      "1": {
-        "description": "不传输的客户端",
-        "label": "客户端静音"
+      "CLIENT_MUTE": {
+        "label": "Client Mute",
+        "description": "不转发数据包的客户端。应用此角色还会禁用设备上的GPS广播和地图报告。"
       },
-      "2": {
-        "description": "专用路由器/中继器",
-        "label": "路由器"
+      "ROUTER": {
+        "label": "Router",
+        "description": "专用路由器/中继器"
       },
-      "3": {
-        "description": "路由器+客户端模式",
-        "label": "路由器客户端"
+      "ROUTER_CLIENT": {
+        "label": "Router Client",
+        "description": "路由器+客户端模式。固件2.3.15中已弃用—请使用路由器或客户端。"
       },
-      "4": {
-        "description": "客户端设备的基站",
-        "label": "客户群"
+      "REPEATER": {
+        "label": "Repeater",
+        "description": "重播数据包而不发送任何数据包。固件2.7.11中已弃用—在转播链中创建漏洞。"
       },
-      "5": {
-        "description": "仅 GPS 追踪器",
-        "label": "Tracker"
+      "TRACKER": {
+        "label": "Tracker",
+        "description": "GPS追踪器"
       },
-      "6": {
-        "description": "遥测传感器节点",
-        "label": "测传"
+      "SENSOR": {
+        "label": "Sensor",
+        "description": "遥测传感器节点"
       },
-      "7": {
-        "description": "支持 TAK 的设备",
-        "label": "TAK"
+      "TAK": {
+        "label": "TAK",
+        "description": "TAK-enabled device"
       },
-      "8": {
-        "description": "客户端，从节点列表中隐藏",
-        "label": "客户端已隐藏"
+      "CLIENT_HIDDEN": {
+        "label": "Client Hidden",
+        "description": "客户端，从节点列表中隐藏"
       },
-      "9": {
-        "description": "广播恢复位置",
-        "label": "失物认领"
+      "LOST_AND_FOUND": {
+        "label": "Lost and Found",
+        "description": "用于恢复的广播位置"
       },
-      "10": {
-        "description": "TAK跟踪模式",
-        "label": "TAK跟踪器"
+      "TAK_TRACKER": {
+        "label": "TAK Tracker",
+        "description": "TAK tracker mode"
+      },
+      "ROUTER_LATE": {
+        "label": "Router Late",
+        "description": "仅在其他节点有机会后重新广播的路由器，用于密集的网格核心。"
+      },
+      "CLIENT_BASE": {
+        "label": "Client Base",
+        "description": "客户端设备的基站"
       }
     },
     "contactsOnRadioBadgeTitle": "{{part}} 无线电联系人",
@@ -3712,29 +3913,29 @@
     "tzdefLabel": "时区 (POSIX)",
     "tzdefDesc": "POSIX 时区字符串，例如 EST5EDT,M3.2.0,M11.1.0。参考列表见 https://github.com/nayarsystems/posix_tz_db。",
     "rebroadcastModes": {
-      "0": {
-        "label": "All",
-        "description": "Rebroadcast all packets (default)."
+      "ALL": {
+        "label": "所有食谱",
+        "description": "重新广播所有数据包（默认）。"
       },
-      "1": {
-        "label": "All Skip Decoding",
-        "description": "Rebroadcast all without decoding. Reduces CPU on dedicated routers."
+      "ALL_SKIP_DECODING": {
+        "label": "全部跳过解码",
+        "description": "全部重播，无需解码。降低专用路由器上的CPU。"
       },
-      "2": {
+      "LOCAL_ONLY": {
         "label": "仅本地",
-        "description": "仅重播直接通过 RF 听到的节点发出的数据包。"
+        "description": "仅从直接在射频上听到的节点重新广播数据包。"
       },
-      "3": {
+      "KNOWN_ONLY": {
         "label": "仅已知",
-        "description": "仅重播本地节点数据库中的节点发出的数据包。"
+        "description": "仅从本地节点数据库中的节点转播。"
       },
-      "4": {
+      "NONE": {
         "label": "无",
-        "description": "不重播任何数据包。"
+        "description": "请勿转播任何数据包。"
       },
-      "5": {
-        "label": "Core Portnums Only",
-        "description": "Only rebroadcast essential portnums (text, nodeinfo, position, telemetry)."
+      "CORE_PORTNUMS_ONLY": {
+        "label": "仅核心端口号",
+        "description": "仅重新广播基本端口号（文本、节点信息、位置、遥测）。"
       }
     },
     "autoScreenCarouselSecsLabel": "Screen Carousel Interval",
@@ -3752,22 +3953,22 @@
     "enableMessageBubblesLabel": "消息气泡",
     "enableMessageBubblesDesc": "在显示屏上以气泡形式显示收到的消息。",
     "oledTypes": {
-      "0": {
+      "OLED_AUTO": {
         "label": "Auto"
       },
-      "1": {
+      "OLED_SSD1306": {
         "label": "SSD1306"
       },
-      "2": {
+      "OLED_SH1106": {
         "label": "SH1106"
       },
-      "3": {
+      "OLED_SH1107": {
         "label": "SH1107 (128x64)"
       },
-      "4": {
+      "OLED_SH1107_128_128": {
         "label": "SH1107 (128x128)"
       },
-      "5": {
+      "OLED_SH1107_ROTATED": {
         "label": "SH1107 Rotated"
       }
     },
@@ -3852,88 +4053,177 @@
       "addButton": "+ 添加频道",
       "footerHelp": "密钥为 128 位（16 字节），显示为 32 个十六进制字符。通道名称最多 {{nameMax}} 个字符。最多 {{channelCount}} 通道（索引 0–{{indexMax}}）。对于#channels，请使用“从名称派生”（带有前导 # 的名称的 SHA-256）。",
       "shareQr": "QR",
-      "shareQrAria": "显示{{name}}的MeshCore频道二维码"
+      "shareQrAria": "显示{{name}}的MeshCore频道二维码",
+      "privateChannel": "私人频道（输入密钥）",
+      "privateKeyHint": "输入共享通道密钥：正好 32 个十六进制字符（16 个字节），不能全为零。"
     },
     "regions": {
-      "0": {
-        "label": "取消设置"
+      "UNSET": {
+        "label": "Unset"
       },
-      "1": {
-        "label": "我们"
+      "US": {
+        "label": "US"
       },
-      "2": {
+      "EU_433": {
         "label": "EU_433"
       },
-      "3": {
+      "EU_868": {
         "label": "EU_868"
       },
-      "4": {
-        "label": "中国"
+      "CN": {
+        "label": "CN"
       },
-      "5": {
-        "label": "太平绅士"
+      "JP": {
+        "label": "JP"
       },
-      "6": {
-        "label": "澳新银行"
+      "ANZ": {
+        "label": "ANZ"
       },
-      "7": {
-        "label": "韩国"
+      "KR": {
+        "label": "KR"
       },
-      "8": {
-        "label": "台湾"
+      "TW": {
+        "label": "TW"
       },
-      "9": {
-        "label": "鲁"
+      "RU": {
+        "label": "RU"
       },
-      "10": {
-        "label": "在"
+      "IN": {
+        "label": "IN"
       },
-      "11": {
+      "NZ_865": {
         "label": "NZ_865"
       },
-      "12": {
+      "TH": {
         "label": "TH"
       },
-      "13": {
+      "LORA_24": {
+        "label": "LORA_24"
+      },
+      "UA_433": {
         "label": "UA_433"
       },
-      "14": {
+      "UA_868": {
         "label": "UA_868"
       },
-      "15": {
+      "MY_433": {
         "label": "MY_433"
       },
-      "16": {
+      "MY_919": {
         "label": "MY_919"
       },
-      "17": {
+      "SG_923": {
         "label": "SG_923"
       },
-      "18": {
-        "label": "洛拉_24"
+      "PH_433": {
+        "label": "PH_433"
+      },
+      "PH_868": {
+        "label": "PH_868"
+      },
+      "PH_915": {
+        "label": "PH_915"
+      },
+      "ANZ_433": {
+        "label": "ANZ_433"
+      },
+      "KZ_433": {
+        "label": "KZ_433"
+      },
+      "KZ_863": {
+        "label": "KZ_863"
+      },
+      "NP_865": {
+        "label": "NP_865"
+      },
+      "BR_902": {
+        "label": "BR_902"
+      },
+      "ITU1_2M": {
+        "label": "ITU1_2M"
+      },
+      "ITU2_2M": {
+        "label": "ITU2_2M"
+      },
+      "EU_866": {
+        "label": "EU_866"
+      },
+      "EU_874": {
+        "label": "EU_874"
+      },
+      "EU_917": {
+        "label": "EU_917"
+      },
+      "EU_N_868": {
+        "label": "EU_N_868"
+      },
+      "ITU3_2M": {
+        "label": "ITU3_2M"
+      },
+      "ITU1_70CM": {
+        "label": "ITU1_70CM"
+      },
+      "ITU2_70CM": {
+        "label": "ITU2_70CM"
+      },
+      "ITU3_70CM": {
+        "label": "ITU3_70CM"
+      },
+      "ITU2_125CM": {
+        "label": "ITU2_125CM"
       }
     },
     "modemPresets": {
-      "0": {
-        "label": "长快"
+      "LONG_FAST": {
+        "label": "Long Fast"
       },
-      "1": {
-        "label": "长慢"
+      "LONG_SLOW": {
+        "label": "Long Slow"
       },
-      "2": {
-        "label": "长 中等"
+      "VERY_LONG_SLOW": {
+        "label": "Very Long Slow"
       },
-      "3": {
-        "label": "短快"
+      "MEDIUM_SLOW": {
+        "label": "Medium Slow"
       },
-      "4": {
-        "label": "短慢速"
+      "MEDIUM_FAST": {
+        "label": "Medium Fast"
       },
-      "5": {
-        "label": "中快"
+      "SHORT_SLOW": {
+        "label": "Short Slow"
       },
-      "6": {
-        "label": "中慢速"
+      "SHORT_FAST": {
+        "label": "Short Fast"
+      },
+      "LONG_MODERATE": {
+        "label": "Long Moderate"
+      },
+      "SHORT_TURBO": {
+        "label": "Short Turbo"
+      },
+      "LONG_TURBO": {
+        "label": "Long Turbo"
+      },
+      "LITE_FAST": {
+        "label": "Lite Fast"
+      },
+      "LITE_SLOW": {
+        "label": "Lite Slow"
+      },
+      "NARROW_FAST": {
+        "label": "Narrow Fast"
+      },
+      "NARROW_SLOW": {
+        "label": "Narrow Slow"
+      },
+      "TINY_FAST": {
+        "label": "Tiny Fast"
+      },
+      "TINY_SLOW": {
+        "label": "Tiny Slow"
+      },
+      "MEDIUM_TURBO": {
+        "label": "Medium Turbo"
       }
     },
     "floodScopeSaved": "已保存范围",
@@ -3941,7 +4231,42 @@
     "floodScopeSavedEmpty": "尚未保存范围。应用自定义主题标签或使用聊天中的自定义范围来添加标签。",
     "floodScopeRemoveSaved": "从保存的范围中删除",
     "floodScopeRemoveSavedAria": "从保存的范围中删除 {{hashtag}}",
-    "floodScopeInvalidHashtag": "输入有效的区域标签（例如#myregion）。"
+    "floodScopeInvalidHashtag": "输入有效的区域标签（例如#myregion）。",
+    "sendPositionDisabledShareOff": "启用在应用程序→GPS/位置中共享我的位置，以便将您的位置发送到设备。",
+    "clientMuteGpsSuppressed": "已应用客户端静音—在设备上禁用GPS广播和MQTT地图报告。",
+    "validationShortNameTooLong": "短名称必须在4个UTF-8字节以内",
+    "validationShortNameEmojiTooLarge": "此字符对于短名称太大（每个名称最多4个UTF-8字节）",
+    "enumDeprecatedSuffix": "（废弃）",
+    "lockdown": {
+      "title": "固件锁定",
+      "description": "锁定的无线电拒绝配置更改，直到使用其密码短语解锁。固件报告状态；没有锁定支持的无线电从不报告状态。",
+      "stateLabel": "州",
+      "stateNotReported": "此收音机未报告",
+      "reasonLabel": "原因",
+      "bootsRemainingLabel": "剩余重启次数",
+      "validUntilLabel": "解锁至",
+      "backoffLabel": "重试回退",
+      "backoffValue": "{{seconds}} s",
+      "passphraseLabel": "密码短语",
+      "provision": "计提",
+      "unlock": "解锁",
+      "unlockAria": "解锁或设置固件锁定",
+      "lockNow": "立即锁定",
+      "lockNowAria": "立即锁定收音机",
+      "disable": "禁用锁定",
+      "disableAria": "禁用固件锁定",
+      "states": {
+        "STATE_UNSPECIFIED": "未指定",
+        "NEEDS_PROVISION": "需要配置",
+        "LOCKED": "已锁定",
+        "UNLOCKED": "已经解锁",
+        "UNLOCK_FAILED": "解锁失败",
+        "DISABLED": "已禁用"
+      }
+    },
+    "contactsFullAlarm": "无线电触点存储已满。将联系人卸载到应用程序数据库以释放插槽。",
+    "contactsFullAlarmAction": "卸掉",
+    "contactsFullAutoOffloadStarted": "无线电联系人已满—开始自动卸载…"
   },
   "rawPacketLog": {
     "filterPackets": "过滤数据包",
@@ -4430,7 +4755,8 @@
     "openGlobalMapAria": "在rmap.world上打开RMAP v4全球地图",
     "applyPartialSuccess": "RMAP设置已应用于{{applied}}/{{total}}接口。",
     "disablePartialSuccess": "在{{applied}}/{{total}}接口上禁用RMAP发布。",
-    "hint": "在所有启用的支持 RMAP 的接口（RNode/Multi、KISS、BLE 对等、I2P、UDP、管道）上启用 RMAP 发布和应用程序 GPS 坐标。仅当每个符合条件的接口都在发布时，该复选框才会打开；部分状态是不确定的——再次检查以同步其余部分。使用连接上的每个接口 RMAP 切换进行精细控制。 LoRa 路径还支持传输和 rmap.world 中心。"
+    "hint": "在所有启用的支持 RMAP 的接口（RNode/Multi、KISS、BLE 对等、I2P、UDP、管道）上启用 RMAP 发布和应用程序 GPS 坐标。仅当每个符合条件的接口都在发布时，该复选框才会打开；部分状态是不确定的——再次检查以同步其余部分。使用连接上的每个接口 RMAP 切换进行精细控制。 LoRa 路径还支持传输和 rmap.world 中心。",
+    "disabledShareOff": "启用在应用程序→GPS/位置中共享我的位置以在RMAP上发布。"
   },
   "reticulumTopology": {
     "title": "网络拓扑图",
@@ -4474,7 +4800,7 @@
     "rssiTitle": "RSSI分发",
     "rssiAxis": "RSSI (dBm)",
     "hopTitle": "跳数分布",
-    "hopAxis": "链路数目"
+    "hopAxis": "跳数"
   },
   "roleInfo": {
     "placeholderDash": "-",
@@ -4783,7 +5109,8 @@
     "regenerateWarning": "重新生成会使现有 ATAK 数据包失效 - 您将需要重新导入。",
     "durationSec": "{{s}}s",
     "durationMin": "{{m}}米",
-    "durationHourMin": "{{h}}h {{m}}m"
+    "durationHourMin": "{{h}}h {{m}}m",
+    "atakUndecodable": "有效负载未识别为TAK数据包"
   },
   "telemetryPanel": {
     "title": "遥测",
@@ -4824,14 +5151,20 @@
     "tempUnitC": "°C",
     "exportCsvButton": "导出 CSV",
     "emptyWaitingConnected": "尚无遥测数据。正在等待来自设备的数据……",
-    "emptyWaitingDisconnected": "尚无遥测数据。连接到设备以查看实时指标。"
+    "emptyWaitingDisconnected": "尚无遥测数据。连接到设备以查看实时指标。",
+    "sectionParticulates": "颗粒物、二氧化碳和闪电",
+    "chartAriaParticulates": "颗粒图：最新PM2.5 {{pm25}} ， CO ₂ {{co2}} ， {{count}}点",
+    "axisParticulates": "µg/m ³ ·撞击",
+    "axisCo2": "ppm",
+    "seriesPm25": "PM2.5 (µg/m ³)",
+    "seriesCo2": "CO ₂ (ppm)",
+    "seriesLightningStrikes": "雷击（ 1小时）"
   },
   "toasts": {
     "firmwareAvailable": "固件更新可用： v {{version}}",
     "newMessages_one": "{{protocol}} ： {{count}}条新消息",
     "newMessages_other": "{{protocol}} ： {{count}}条新消息",
-    "meshcoreDistanceFilterHint": "地图上有 {{count}} 个带 GPS 的联系人。在应用 → 外貌中启用距离过滤器，以关注附近的节点。",
-    "longSessionRestartNudge": "Mesh-client已经运行了四天。重新启动应用程序，以降低长时间MeshCore BLE会话崩溃的风险。"
+    "meshcoreDistanceFilterHint": "地图上有 {{count}} 个带 GPS 的联系人。在应用 → 外貌中启用距离过滤器，以关注附近的节点。"
   },
   "updateStatus": {
     "checking": "正在检查...",
@@ -5019,7 +5352,15 @@
     "whisperReplyPlaceholder": "回复{{name}}或/msg…",
     "jumpToLatest": "跳到最新",
     "stackNotReady": "Reticulum 堆栈尚未就绪。请等到已连接后再重试。",
-    "sidecarNotRunning": "Reticulum sidecar 未运行。请在 Connection 启动协议栈，然后重试。"
+    "sidecarNotRunning": "Reticulum sidecar 未运行。请在 Connection 启动协议栈，然后重试。",
+    "whoReplyMissing": "中心没有{{room}}的成员列表（回复可能超过链接大小）。姓名将显示为人员加入或聊天。",
+    "openNomadPage": "打开 Nomad 页面 {{address}}",
+    "openDm": "打开与{{address}}的直接消息",
+    "openReticulumAddress": "打开 Reticulum 地址 {{address}}",
+    "addressChoiceTitle": "打开 Reticulum 地址",
+    "addressChoiceMessage": "{{address}} 可能是 Nomad 页面，也可能是一个节点。要打开哪一个？",
+    "addressChoiceNomad": "Nomad 页面",
+    "addressChoiceDm": "私信"
   },
   "signalMeter": {
     "rssi": "RSSI",
@@ -5364,7 +5705,8 @@
     "sessionRowAria": "{{app}}游戏与{{peer}}",
     "apps": {
       "ttt": "井字游戏",
-      "chess": "棋格"
+      "chess": "棋格",
+      "four_in_a_row": "四子棋"
     },
     "status": {
       "pending": "待定",
@@ -5416,6 +5758,19 @@
       "boardAria": "Tic-Tac-Toe板",
       "cellEmptyAria": "Cell {{index}}, empty",
       "cellOccupiedAria": "Cell {{index}}, {{marker}}"
+    },
+    "fourInARow": {
+      "youWon": "您赢了 ！",
+      "opponentWon": "对手获胜。",
+      "draw": "单次抽奖",
+      "yourTurn": "轮到你了",
+      "opponentTurn": "对手的回合",
+      "yourMarker": "您是{{marker}}",
+      "moveCount": "{{count}}步",
+      "boardAria": "四子棋棋盘",
+      "columnAria": "第 {{column}} 列，从下到上：{{contents}}。落子于此",
+      "columnFullAria": "第 {{column}} 列，从下到上：{{contents}}。已满",
+      "columnEmptyContents": "空"
     },
     "chess": {
       "youWon": "您赢了 ！",
@@ -5472,5 +5827,102 @@
     },
     "drawOfferWaitingBanner": "抽奖活动已发送。正在等待对手……",
     "idleExpiryNotice": "游戏在不活动后过期，然后只能删除。未回答的挑战： 24小时（所有游戏）。活跃游戏： 24小时后抽搐， 7天后下棋和一排四棋。"
+  },
+  "longSession": {
+    "title": "建议重新启动",
+    "body": "在蓝牙无线电连接的情况下，mesh-client 已经运行了四天。重新启动应用程序，以降低长时间 Noble BLE 会话中崩溃的风险。",
+    "restart": "重启",
+    "dismiss": "解散"
+  },
+  "reticulumSetup": {
+    "eyebrow": "Reticulum·入门",
+    "title": "您的第一次连接",
+    "open": "打开设置指南",
+    "intro": "第一次使用 Reticulum？设置连接、寻找联系人，并了解各个标签页的用途。",
+    "hide": "隐藏指南",
+    "startTitle": "从这里开始",
+    "identityTitle": "您的身份",
+    "stepsLabel": "Reticulum设置步骤",
+    "connectionTitle": "建立联系",
+    "startBody": "Reticulum 通过互联网、本地网络或兼容无线电连接人员和应用程序。您可以仅使用这台计算机和互联网连接进行尝试。",
+    "exploreTitle": "尝试一下",
+    "startHint": "本指南在应用程序内启动 Reticulum。然后您将选择一个名称和联系其他人的方式。",
+    "working": "在职的…",
+    "startAction": "让我们开始吧",
+    "identityBody": "您的身份是您在此网络上的帐户。它位于这台计算机上，没有注册或中央帐户提供商。当您更改姓名时，您的消息地址保持不变。",
+    "existingIdentity": "你已经有身份了。本指南保留它并仅更新您的显示名称。",
+    "nameLabel": "姓名或呼号",
+    "nameHint": "此名称与同行共享。昵称就好；它不需要是您的真实姓名。",
+    "importIdentity": "我有一个身份需要恢复",
+    "saveIdentity": "保存名称并继续",
+    "backupTitle": "确保您的恢复词安全",
+    "savedWords": "我已经保存了我的恢复词",
+    "backupBody": "如果您丢失了这台计算机，这些词可以恢复您的身份。现在就把它们保存在私人的地方。切勿将它们交给询问您的消息地址的人。您还可以稍后从网络导出受保护的备份。",
+    "continue": "继续",
+    "back": "后退",
+    "routeLabel": "如何连接",
+    "routes": {
+      "internet": {
+        "title": "互联网",
+        "body": "公共中心将您与其他人连接起来。无需收音机；一个好的起点。"
+      },
+      "radio": {
+        "title": "RNode无线电",
+        "body": "使用兼容的无线电硬件和本地无线电网络的设置。"
+      },
+      "existing": {
+        "title": "现有设置",
+        "body": "保留当前的接口并检查它们是否准备就绪。"
+      }
+    },
+    "connectionBody": "接口只是与 Reticulum 的连接。选择您想要访问网络的方式。您可以稍后添加其他连接。",
+    "hubLabel": "公共互联网中心",
+    "hubHint": "从一个集线器开始。应用程序将添加或启用此连接并重新启动 Reticulum 以应用它。公共中心可以看到您的 IP 地址，但有时可能不可用。",
+    "connectHub": "连接到此集线器",
+    "radioDevice": "使用运行 RNode 固件的设备。 Meshtastic 或 MeshCore 无线电并不自动成为 RNode；在未检查设备说明的情况下，请勿刷新或更改固件。",
+    "hubSaved": "连接已保存。重启后检查...",
+    "radioSettings": "打开下面的连接设置，添加 RNode 接口，选择 USB 或蓝牙，并使用本地组提供的频率、带宽、扩频因子和编码率。",
+    "radioCheck": "启用该接口并应用其重新启动提示，然后返回到本指南。正常工作的无线电连接仍需要范围内的另一个兼容电台。",
+    "openInterfaces": "打开下面的连接设置",
+    "existingHint": "该指南将检查您现有的界面而不更改它们。本地网络接口可到达该网络上附近的 Reticulum 设备；它本身并不会将您连接到公共互联网同行。",
+    "checkTitle": "检查您的连接",
+    "ready": "您的连接可用",
+    "available": "准备好",
+    "waiting": "等待",
+    "readyHint": "这确认本地服务和连接已启动。它不保证可以联系到特定的人。",
+    "checkStack": "Reticulum网络",
+    "checkMessaging": "消息服务",
+    "checkConnection": "选择的连接",
+    "checkAgain": "再次检查",
+    "restartHint": "重新启动会短暂中断活动的Reticulum连接。如果关闭指南，保存的设置仍然可用。",
+    "checkFailed": "该应用程序无法读取当前状态。检查 Reticulum 是否正在运行，然后重试。",
+    "exploreBody": "你已经具备了必需品。从一条私信或群聊开始；您可以在需要时探索其他工具。",
+    "waitHint": "启动可能需要一些时间。如果某个集线器仍然不可用，请检查您的互联网连接或选择另一个集线器。对于收音机，请检查其电缆、配对和本地设置。",
+    "addressTitle": "您的消息地址",
+    "addressBody": "与朋友分享此地址，以便他们可以向您发送消息。 LXMF 是 Reticulum 应用程序使用的消息传递系统；这是您的 LXMF 地址，而不是您的恢复字。",
+    "copyAddress": "复制我的消息地址",
+    "connectionLost": "连接不再准备就绪。发送前回去检查一下。",
+    "addressCopied": "已复制消息地址",
+    "firstMessage": "向朋友询问他们的 LXMF 地址。在“同行”中，使用地址字段查找他们，然后打开聊天并发送短信。",
+    "discoveryHint": "当应用程序听到公告时，同行也会填满：来自人员和服务的简短介绍。给它时间。有些条目是服务，而不是您可以发送消息的人。",
+    "deliveryHint": "查看私信是否标记为“已送达”。“已存储在传播节点”表示中间节点保存了消息，并不意味着朋友已经收到或阅读。",
+    "openPeers": "开放同行",
+    "roomsTitle": "加入对话",
+    "peersTitle": "找人",
+    "peersBody": "Peers 是您直接消息的起点。将人员保存为联系人，以便您可以再次找到他们。",
+    "roomsBody": "RRC是群聊。打开它，选择一个中心，连接并加入一个房间。它与您的直接消息是分开的。",
+    "openRooms": "打开群聊",
+    "networkHint": "网络保存您的身份、备份和可选的离线消息设置。连接是您管理连接方式的地方。 Nomad 浏览页面；远程和管理员可以等到您需要它们时再使用。",
+    "openNetwork": "打开身份和备份设置",
+    "restartService": "开始Reticulum",
+    "stopped": "Reticulum已停止或仍在启动。启动它以继续设置。",
+    "actionFailed": "这一步还没有完成。您保存的设置已被保留。检查详细信息并重试。",
+    "errorDetails": "显示错误详细信息",
+    "tabUnavailable": "该选项卡是隐藏的。在“应用程序”选项卡设置中启用它，然后返回到指南。",
+    "privateConnection": "该中心已具有专用网络设置。在下面的连接设置中进行编辑，或选择其他公共中心。",
+    "identityUnavailable": "无法读取您的身份。检查 Reticulum 是否正在运行，然后重试。",
+    "identitySaveFailed": "无法保存您的身份设置。再试一次。",
+    "interfacesUnavailable": "无法读取您的连接。检查 Reticulum 是否正在运行，然后重试。",
+    "interfaceSaveFailed": "无法保存此连接。检查您的连接设置并重试。"
   }
 }

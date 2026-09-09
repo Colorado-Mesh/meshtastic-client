@@ -390,7 +390,32 @@
     "themeResetFailed": "Impossible de réinitialiser les couleurs.",
     "messageActionsBarBgVisible": "Afficher l'arrière-plan",
     "rrcUnreadAllRoomMessages": "RRC non lu pour tous les messages de la pièce",
-    "rrcUnreadAllRoomMessagesHint": "Lorsque cette option est activée, tout nouveau message de la salle RRC est non lu et peut lire un son de chaîne. Désactiver pour les alertes de type IRC : uniquement les messages directs et les @mentions."
+    "rrcUnreadAllRoomMessagesHint": "Lorsque cette option est activée, tout nouveau message de la salle RRC est non lu et peut lire un son de chaîne. Désactiver pour les alertes de type IRC : uniquement les messages directs et les @mentions.",
+    "shareMyLocation": "Partager mon emplacement",
+    "shareMyLocationOffInfo": "Le partage de localisation est désactivé — l'actualisation du GPS de l'hôte et l'envoi de maillage sont désactivés. Activez Partager ma position ci-dessus pour utiliser l'actualisation automatique ou envoyer votre position.",
+    "shareMyLocationHint": "Lorsqu'elle est activée, cette application peut rechercher votre position sur cet ordinateur et l'envoyer via Meshtastic, MeshCore ou Reticulum (partage de chat, push radio, RMAP). Lorsqu'elles sont désactivées, les recherches GPS de l'hôte et l'envoi d'applications sont désactivés ; les coordonnées statiques ne fonctionnent toujours que pour votre carte locale. Une radio avec son propre GPS peut toujours afficher votre position localement. Le micrologiciel de l'appareil peut continuer à diffuser jusqu'à ce que vous régliez les paramètres Radio ou Modules.",
+    "reticulumBlocklist": {
+      "description": "Les expéditeurs bloqués sont déposés avant que leurs messages LXMF n'atteignent votre boîte de réception. Exportez la liste pour la déplacer vers une autre installation, ou importez une liste pour bloquer plusieurs expéditeurs à la fois.",
+      "exportButton": "Exporter la blocklist",
+      "exportAria": "Exporter les contacts bloqués",
+      "importButton": "Importer une liste de blocage",
+      "importAria": "Importer les contacts bloqués",
+      "exportOk": "Contacts bloqués {{count}} exportés",
+      "exportEmpty": "Il n'y a pas de contacts bloqués à exporter.",
+      "exportFailed": "Impossible d'exporter la liste de blocage.",
+      "importOk": "Contacts bloqués {{imported}} importés ({{skipped}} ignorés)",
+      "importFailed": "Impossible d'importer la liste de blocage.",
+      "unblockAria": "Débloquer {{hash}}",
+      "unblockFailed": "Impossible de débloquer ce contact.",
+      "empty": "Pas de contacts bloqués",
+      "title": "Contacts bloqués"
+    },
+    "fontSize": "Taille de police",
+    "fontSizeDesc": "Ajustez la taille du texte dans l'application. Les cartes, les graphiques et le terminal ne sont pas affectés.",
+    "decreaseFontSize": "Réduire la taille de la police",
+    "increaseFontSize": "Augmenter la taille de la police",
+    "resetFontSize": "Réinitialiser",
+    "resetFontSizeAria": "Réinitialiser la police"
   },
   "aria": {
     "closeDialog": "Fermer la boîte de dialogue",
@@ -711,7 +736,21 @@
       "startFailed": "Impossible de démarrer l'enregistrement des notes vocales. Réessayez.",
       "sendAriaWithElapsed": "Envoyer un mémo vocal ({{seconds}} secondes enregistrées)",
       "unavailable": "Mémo vocal indisponible — pièce jointe non mise en cache sur cet appareil."
-    }
+    },
+    "heardByRepeaters_one": "Entendu par {{count}}",
+    "heardByRepeaters_other": "Entendu par {{count}}",
+    "heardByNetwork": "Entendu par réseau",
+    "notHeardTimeout": "Pas entendu (délai d'attente)",
+    "routeRelaysPredicted": "Itinéraire : ~{{count}} relais via {{hop}}",
+    "routeViaPredicted": "Itinéraire : via {{hop}}",
+    "routeRelaysPredictedHopsOnly": "Itinéraire : ~{{count}} relais",
+    "heardByRepeatersDetail_one": "Entendu par {{count}} : {{names}}",
+    "heardByRepeatersDetail_other": "Entendu par {{count}} : {{names}}",
+    "heardByRepeaterNodeFallback": "Nœud {{nodeId}}",
+    "heardByRepeatersAdditional_one": "{{count}} expéditeur supplémentaire non identifié (hachages : {{hashes}})",
+    "heardByRepeatersAdditional_other": "{{count}} expéditeurs supplémentaires non identifiés (hachages : {{hashes}})",
+    "reticulumSendAwaitingPeerReceipt": "Envoyé (en attente de réception par les pairs)",
+    "reticulumChatNeedsLxmfDelivery": "Ce pair n'a pas encore d'adresse de livraison LXMF (le chat ne peut pas utiliser une destination vocale uniquement). Attendez une annonce LXMF ou collez leur hachage LXMF de 32 caractères."
   },
   "chatPayload": {
     "mention": "Mention {{label}}",
@@ -1035,7 +1074,9 @@
       "importBackupAria": "Importer la sauvegarde Ratspeak .rsi à partir de JSON collé",
       "importBackupFromFileAria": "Choisissez un fichier de sauvegarde Ratspeak .rsi à importer",
       "exportAria": "Exporter la sauvegarde d'identité Ratspeak .rsi chiffrée par code PIN",
-      "exportRawAria": "Exporter le fichier d'identité RAW Reticulum non chiffré"
+      "exportRawAria": "Exporter le fichier d'identité RAW Reticulum non chiffré",
+      "identityHashLabel": "Hachage d'identité :",
+      "copyIdentityHash": "Copier le hachage d'identité"
     },
     "reticulumInterfaces": {
       "title": "Interfaces",
@@ -1116,7 +1157,10 @@
         "blePeer": "Maillage d’homologues BLE utilisant des adresses d’homologues de départ.",
         "generic": "Interface réseau Reticulum.",
         "sharedInstanceClient": "Attached as a client of another app’s shared Reticulum instance — local TCP hubs from this config are not started here.",
-        "i2p": "Backbone I2P via un routeur sur cette machine. Activez le pont d'application SAM (127.0.0.1:7656) — pas les proxys HTTP/HTTPS I2PTunnel (4444/4445). Redémarrez I2P après avoir activé SAM pour que le pont écoute, puis redémarrez la pile Reticulum si cette interface reste en panne."
+        "i2p": "Backbone I2P via un routeur sur cette machine. Activez le pont d'application SAM (127.0.0.1:7656) — pas les proxys HTTP/HTTPS I2PTunnel (4444/4445). Redémarrez I2P après avoir activé SAM pour que le pont écoute, puis redémarrez la pile Reticulum si cette interface reste en panne.",
+        "serial": "Lien série générique vers un TNC, un modem ou un autre hôte via un fil. Définissez les paramètres de ligne pour qu'ils correspondent à l'extrémité éloignée.",
+        "ax25kiss": "Radio par paquets AX.25 via un TNC KISS. Nécessite votre indicatif d'appel et un SSID (0-15) identifiant cette station.",
+        "local": "Prise en instance partagée sur cette machine. D'autres outils locaux (rnsd, Nomad Network, rnsh) peuvent s'attacher à cette pile à travers elle. Le chemin du socket est dérivé du nom de cette interface, donc le renommer change l'adresse que les autres outils doivent utiliser."
       },
       "rfProfile": {
         "coordinated": "Coordination régionale",
@@ -1239,10 +1283,38 @@
       "rmapFullModeHint": "Le mode complet avec RMAP publish conserve Full via ignore_config_warnings. Les annonces de livraison LXMF quitteront cette radio sur l'intervalle d'annonce de pile (par défaut 1 heure).",
       "effectiveModeBadge": "En vigueur le : {{mode}}",
       "effectiveModeAria": "Mode d'exécution effectif {{mode}}. Le mode configuré diffère de ce que Reticulum exécute.",
-      "effectiveModeTooltip": "Reticulum a réécrit cette interface découvrable au point d'accès (ou à un autre mode autorisé) car découvrable nécessite Gateway, Internal ou Access Point sauf si ignore_config_warnings est défini. Redémarrez la pile après que les tampons maillés-clients qui se désengagent de sorte que Full (ou votre mode configuré) prennent effet (mesh-client)."
+      "effectiveModeTooltip": "Reticulum a réécrit cette interface découvrable au point d'accès (ou à un autre mode autorisé) car découvrable nécessite Gateway, Internal ou Access Point sauf si ignore_config_warnings est défini. Redémarrez la pile après que les tampons maillés-clients qui se désengagent de sorte que Full (ou votre mode configuré) prennent effet (mesh-client).",
+      "flowControlBleHint": "Sur Bluetooth, la radio n'envoie souvent jamais CMD_READY. Mesh-Client suit toujours TX (attend brièvement d'ÊTRE PRÊT, puis continue) afin que le contrôle de flux réduise la surcharge sans geler la file d'attente.",
+      "advancedFields": "Paramètres avancé",
+      "field": {
+        "port": "Port",
+        "speed": "Vitesse [Bauds]",
+        "databits": "Bits de donnÃ©es",
+        "parity": "Parité",
+        "stopbits": "Bits d'arrêt",
+        "callsign": "Indicatif d’appel",
+        "ssid": "SSID",
+        "flow_control": "Régulation du débit",
+        "preamble": "Préambule (ms)",
+        "txtail": "TX queue (ms)",
+        "persistence": "Persistance",
+        "slottime": "Temps de créneau (ms)"
+      },
+      "fieldOption": {
+        "parity": {
+          "N": "Aucune",
+          "E": "Normale",
+          "O": "Impair"
+        }
+      },
+      "fieldRequired": "Ce champ est obligatoire.",
+      "fieldNotANumber": "Entrez un nombre entier (chiffres seulement).",
+      "fieldOutOfRange": "La valeur est hors de la plage autorisée.",
+      "fieldTooLong": "La valeur est trop longue",
+      "fieldInvalidOption": "Valeur enum non prise en charge"
     },
     "reticulumPeers": {
-      "hops": "Hops",
+      "hops": "Sauts",
       "actions": "Opérations",
       "path": "Chemin",
       "probe": "Sonde"
@@ -1433,7 +1505,8 @@
     "pickerDeviceAria": "{{name}} {{address}}",
     "pickerDeviceAriaWithRssi": "{{name}} {{address}}, {{rssi}} dBm",
     "bluetoothMac": "Bluetooth MAC",
-    "bluetoothId": "Bluetooth ID"
+    "bluetoothId": "Bluetooth ID",
+    "reticulumAutoResendOnAnnounce": "Réessayer les messages ayant échoué lorsqu'un pair annonce"
   },
   "contactGroupsModal": {
     "failedLoadMembers": "Échec du chargement des membres : {{message}}",
@@ -1456,7 +1529,9 @@
     "confirmDeleteButton": "Supprimer ?",
     "manageMembersOf": "Gérer les membres de {{name}}",
     "renameGroupNamed": "Renommer {{name}}",
-    "deleteGroupNamed": "Supprimer {{name}}"
+    "deleteGroupNamed": "Supprimer {{name}}",
+    "needSelfNode": "Connectez d'abord une radio pour connaître votre ID de nœud avant de créer un groupe de contacts.",
+    "failedCreateGroup": "Échec de la création du groupe : {{message}}"
   },
   "diagnosticsPanel": {
     "dropRoutingRows": "Collectez lignes de routage de plus de {{hours}} heures (1–168)",
@@ -1980,7 +2055,14 @@
     "recommendationsHeading": "Recommandations",
     "lastMessagePrefix": "Dernier:",
     "appliesToCategories": "S'applique à : {{labels}}",
-    "severityInfo": "Informations"
+    "severityInfo": "Informations",
+    "historyNote": "Les résultats décrivent les événements dans ce journal, pas nécessairement les problèmes qui sont toujours actifs.",
+    "copyReport": "Copier le rapport de dépannage",
+    "copyHint": "Comprend des exemples de messages de journal. Consultez le rapport pour obtenir des informations privées avant de le partager.",
+    "copySuccess": "Rapport copié",
+    "copyFailure": "Impossible de copier le rapport. Réessayez ou exportez le journal.",
+    "evidence": "Afficher les preuves pour {{category}}",
+    "evidenceShown": "Affichage de {{shown}} entrées correspondantes sur {{total}}, les plus récentes en premier."
   },
   "logAnalyzer": {
     "categories": {
@@ -2065,11 +2147,44 @@
         "recommendation": "L'historique du chat Store & Forward n'a pas pu être demandé à un routeur (souvent une brève course avec d'autres trafics radio). Si le backlog de discussion reste vide, reconnectez-vous ou attendez le prochain battement de cœur du routeur."
       },
       "serial-reconnect": {
-        "label": "USB Serial Reconnect"
+        "label": "USB Serial Reconnect",
+        "recommendation": "Le port série USB n'a pas pu être rouvert ou son flux précédent est toujours verrouillé. Fermez les autres applications à l'aide de la radio, reconnectez le câble et reconnectez-vous dans l'application. S'il se répète, incluez les lignes de journal série dans un rapport de bogue."
       },
       "reticulum-nomad-hosting": {
         "label": "Problèmes d'hébergement de la page Nomad",
         "recommendation": "L'hébergement de Nomad My Pages a échoué ou le dossier de contenu n'est pas disponible. Ouvrez Nomad Network → My Pages, choisissez à nouveau le dossier des pages s'il a été déplacé, puis commencez à servir. Les détails apparaissent sous la forme [nomad-serving] / [NomadHosting] dans le journal."
+      },
+      "renderer-unresponsive": {
+        "label": "L'application a cessé de répondre",
+        "recommendation": "L'application a cessé d'envoyer les battements de cœur de l'interface utilisateur. S'il s'est rétabli, notez ce que vous faisiez près de l'heure indiquée. S'il reste gelé, redémarrez l'application et incluez ce rapport lorsque vous signalez un blocage récurrent."
+      },
+      "database-persistence": {
+        "label": "Les modifications n’ont pas pu être enregistrées.",
+        "recommendation": "Les écritures de base de données ont épuisé leurs tentatives ou ont été abandonnées. Les modifications visibles dans cette session peuvent ne pas survivre à un redémarrage. Exportez les données importantes avant de quitter, puis vérifiez l'espace disque disponible et l'accès au dossier de données de l'application. Ne supprimez pas la base de données."
+      },
+      "meshtastic-tcp": {
+        "label": "Échec de la connexion TCP Meshtastic",
+        "recommendation": "La connexion TCP à la radio Meshtastic a échoué. Vérifiez l'adresse et le port radio, l'accessibilité du réseau local et si un autre client utilise la connexion avant de se reconnecter."
+      },
+      "reticulum-sidecar": {
+        "label": "Service Reticulum interrompu",
+        "recommendation": "Le service Reticulum local n'a pas pu démarrer, répondre ou maintenir sa connexion à l'événement. Vérifiez son état dans Connexion et les lignes de journal ci-dessous. S'il n'a pas récupéré, redémarrez la connexion Reticulum. Un composant de service fourni manquant peut nécessiter la réinstallation de l'application."
+      },
+      "reticulum-delivery": {
+        "label": "Échec de livraison ou de synchronisation Reticulum",
+        "recommendation": "Une tentative de transmission de message ou de synchronisation de propagation a échoué. Vérifiez l'état actuel du message avant de réessayer, sondez la destination et vérifiez les interfaces activées. Pour la propagation, vérifiez le nœud sélectionné et l'état de synchronisation sous Réseau ; un message stocké n'est pas une preuve de livraison du destinataire."
+      },
+      "reticulum-backpressure": {
+        "label": "Événements ou paquets Reticulum perdus",
+        "recommendation": "Le service Reticulum local a laissé tomber des événements ou des paquets parce qu'une file d'attente était remplie, qu'un abonné était en retard ou qu'une charge utile dépassait une limite. Réduisez les transferts groupés simultanés, puis vérifiez l'état du message avant de réessayer. Les gouttes répétées pendant l'inactivité méritent d'être signalées avec ces échantillons de journal."
+      },
+      "firmware-flash": {
+        "label": "Transfert de micrologiciel bloqué",
+        "recommendation": "Le transfert du micrologiciel a cessé de progresser et son port série a été fermé. Confirmez le micrologiciel et le périphérique corrects, vérifiez le câble USB et suivez les instructions de récupération du périphérique ou du chargeur d'amorçage avant de réessayer."
+      },
+      "unclassified": {
+        "label": "Autres avertissements et erreurs",
+        "recommendation": "Ces lignes de journal ne correspondent pas à un diagnostic connu et peuvent inclure des messages de récupération attendus. Passez en revue leurs horodatages et le contexte environnant. Si un problème persiste, exportez le journal complet avec ce rapport."
       }
     },
     "recommendationGroups": {
@@ -2232,7 +2347,10 @@
     "clearAllIntro": "Supprimez tous les contacts de la radio et effacez la base de données de contacts de l'application. Cela ne peut pas être annulé.",
     "clearAllContactsConfirm": "Supprimer tous les contacts de la radio et effacer les données des contacts locaux ?",
     "clearingContacts": "Clairière…",
-    "clearAllContactsButton": "Effacer tous les contacts"
+    "clearAllContactsButton": "Effacer tous les contacts",
+    "autoOffloadWhenFull": "Déchargement automatique lorsque la radio est pleine",
+    "autoOffloadWhenFullLabel": "Déchargement automatique lorsqu'il est plein",
+    "autoOffloadWhenFullDesc": "Lorsque le compagnon signale que le stockage des contacts est plein, déchargez automatiquement les contacts dans la base de données de l'application (identique au déchargement)."
   },
   "meshcoreTelemetryPrivacy": {
     "summary": "Confidentialité de la télémétrie",
@@ -2769,6 +2887,18 @@
     "reticulumScanImport": {
       "title": "Numériser/importer",
       "hint": "Numérisez ou collez un QR pour les contacts, les cartes Columba lxma:// ou les messages papier chiffrés LXMF."
+    },
+    "reticulumPathTable": {
+      "title": "Tableau des chemins",
+      "description": "L'effacement de la table Path supprime chaque itinéraire mis en cache. Les itinéraires sont réappris à mesure que de nouvelles annonces arrivent, de sorte que le premier message à un pair peut prendre plus de temps.",
+      "clear": "Effacer la table des chemins",
+      "clearing": "Suppression…",
+      "confirmTitle": "Effacer la table des chemins ?",
+      "confirmBody": "Chaque itinéraire mis en cache est supprimé. Les itinéraires sont reconstruits à partir de nouvelles annonces.",
+      "clearOk": "Chemin d'accès effacé ({{count}} itinéraires abandonnés)",
+      "clearFailed": "Impossible d'effacer la table des chemins.",
+      "clearAria": "Effacer la table de routage",
+      "confirmAction": "Effacer"
     }
   },
   "nodeDetailModal": {
@@ -2950,7 +3080,11 @@
     "shareContactQrAria": "Afficher le code QR du contact MeshCore pour l'importation officielle de l'application",
     "publicKeyCopied": "Clé publique copiée dans le presse-papiers.",
     "hasPublicKeyNoDm": "Possède une clé publique (pas de messages directs)",
-    "copyPublicKey": "Copier la clé publique"
+    "copyPublicKey": "Copier la clé publique",
+    "xeddsaSigned": "XEdDSA signé",
+    "xeddsaSignedHint": "La radio a vérifié une signature XEdDSA à partir de ce nœud, de sorte que sa clé publique est attestée cryptographiquement.",
+    "keyManuallyVerified": "Clé vérifiée",
+    "keyManuallyVerifiedHint": "La clé publique de ce nœud a été confirmée manuellement par un opérateur."
   },
   "nodeInfoBody": {
     "longName": "Nom long",
@@ -3207,7 +3341,50 @@
       "noPages": "Pas encore de pages. Ajoutez des fichiers .mu au dossier choisi (par exemple index.mu).",
       "contentSourceNotFromPicker": "Choisissez le dossier avec Choisir un dossier avant de l'appliquer.",
       "contentSourceNone": "Aucun dossier choisi",
-      "contentSourceRequired": "Choisissez un dossier de pages avant de commencer l'hébergement Nomad."
+      "contentSourceRequired": "Choisissez un dossier de pages avant de commencer l'hébergement Nomad.",
+      "newPage": "Nouvelle page",
+      "newPageName": "Nom de fichier de la page (doit se terminer par .mu)",
+      "invalidPageName": "Entrez un nom de fichier se terminant par .mu, sans .. ou chemins absolus.",
+      "edit": "editer",
+      "editPage": "Modifier {{path}}",
+      "delete": "Effacer",
+      "deletePage": "Supprimer {{path}}",
+      "deleteConfirm": "Supprimer cette page ? Cela supprime le fichier du dossier servi.",
+      "deleteConfirmAria": "Confirmez la suppression de cette page",
+      "deleteError": "Impossible de supprimer le fichier.",
+      "openError": "Impossible d'ouvrir la page pour modification.",
+      "editorTitle": "Modifier la page Micron",
+      "editorAria": "Source de la page Micron",
+      "editorPreview": "Aperçu",
+      "toolbarAria": "Actions de formatage des Micron",
+      "toolbar": {
+        "bold": "Gras",
+        "italic": "Italique",
+        "underline": "Souligner",
+        "h1": "Titre 1",
+        "h2": "Entête n°2",
+        "h3": "Entête n°3",
+        "alignLeft": "Aligner à gauche",
+        "alignCenter": "Centre",
+        "alignRight": "Aligner à droite",
+        "divider": "Divider",
+        "link": "Lien"
+      },
+      "linkTargetPrompt": "Cible du lien (chemin de la page ou hachage de destination)",
+      "save": "Sauvegarder",
+      "saveError": "Impossible d'enregistrer la page.",
+      "unsaved": "Modifications non enregistrées",
+      "discard": "Annuler les modifications",
+      "discardConfirm": "Cette page contient des modifications non enregistrées.",
+      "discardConfirmAria": "Abandonner les modifications non enregistrées et fermer",
+      "close": "Fermer l'éditeur",
+      "closeBackdropAria": "Fermer l'éditeur de page Micron",
+      "pageTooLarge": "Cette page est trop grande pour être hébergée (limite de 512 Ko).",
+      "pageNotFound": "Cette page n'existe plus dans le dossier servi.",
+      "invalidPagePath": "Ce chemin de page n'est pas autorisé.",
+      "pageIoError": "Impossible de lire ou d'écrire la page sur le disque.",
+      "pageNotUtf8": "Cette page n'est pas un texte UTF-8 valide.",
+      "pageWriteFailed": "Impossible d'écrire la page."
     },
     "sortLastHeard": "Dernière écoute",
     "sortHops": "Sauts",
@@ -3262,7 +3439,6 @@
   },
   "peerDetailModal": {
     "networkSection": "Réseau",
-    "copyHash": "Hash de Destination",
     "editNameAria": "Affichage Personnalisé",
     "sendMessage": "Envoyer un message",
     "pathOk": "Demande envoyée.",
@@ -3288,7 +3464,20 @@
     "verifiedRowAria": "Contact vérifié",
     "renameFailed": "Impossible d'enregistrer le nom d'affichage.",
     "removeContactConfirmBody": "Cela supprime le contact de votre liste enregistrée. Les messages de chat restent ; ils restent dans l'historique si vous leur avez envoyé un message.",
-    "backupPaths": "Chemins de sauvegarde"
+    "backupPaths": "Chemins de sauvegarde",
+    "announcedDestinations": "Announced destinations",
+    "openedDestinationBadge": "Opened",
+    "copyAnnouncedHashAria": "Copy {{aspect}} destination hash {{hash}}",
+    "hashCopied": "Destination hash copied.",
+    "hashCopyFailed": "Could not copy destination hash.",
+    "aspect": {
+      "chat": "Chat",
+      "voice": "Voice",
+      "nomad": "Nomad",
+      "rrc": "RRC",
+      "propagation": "Propagation",
+      "unknown": "Unknown"
+    }
   },
   "peerGraph": {
     "title": "Graphique de communication par les pairs",
@@ -3365,7 +3554,11 @@
     "pathsPinFailed": "Échec de la mise à jour de la préférence moyenne pour cet homologue.",
     "tabHistory": "Historique",
     "emptyHistory": "Pas encore d'historique des messages — envoyez ou recevez un message LXMF pour voir les pairs ici.",
-    "emptyContacts": "Aucun contact enregistré pour le moment — ouvrez un pair et choisissez Enregistrer en tant que contact."
+    "emptyContacts": "Aucun contact enregistré pour le moment — ouvrez un pair et choisissez Enregistrer en tant que contact.",
+    "pathMediumTitle": "Milieu du chemin actif : {{medium}}",
+    "chatNeedsLxmfDelivery": "Aucune adresse de livraison LXMF pour ce pair pour le moment. Attendez une annonce LXMF ou ouvrez Chat avec leur hachage LXMF à 32 caractères - Les destinations vocales (lxst.telephony) ne peuvent pas recevoir de chat.",
+    "voiceAspectBadge": "Vocal",
+    "voiceAspectTitle": "Cette ligne de table de chemin est une destination de téléphonie LXST. Le chat remappe le hachage de livraison LXMF de l'homologue lorsqu'il est connu."
   },
   "radioPanel": {
     "offloadedContacts": "Déchargement des contacts {{count}} dans la base de données.",
@@ -3427,57 +3620,65 @@
     "importConfigJson": "Importer la configuration JSON",
     "offloadContacts": "Décharger",
     "displayUnits": {
-      "0": {
-        "label": "Métrique"
+      "METRIC": {
+        "label": "Metric"
       },
-      "1": {
-        "label": "Impérial"
+      "IMPERIAL": {
+        "label": "Imperial"
       }
     },
     "deviceRoles": {
-      "0": {
-        "description": "Mode client normal",
-        "label": "Maître d'Ouvrage"
+      "CLIENT": {
+        "label": "Client",
+        "description": "Mode client normal"
       },
-      "1": {
-        "description": "Client qui ne transmet pas",
-        "label": "Mise en sourdine du client"
+      "CLIENT_MUTE": {
+        "label": "Client Mute",
+        "description": "Client qui ne transfère pas de paquets. L'application de ce rôle désactive également les diffusions GPS et les rapports cartographiques sur l'appareil."
       },
-      "2": {
-        "description": "Routeur/répéteur dédié",
-        "label": "Routeur"
+      "ROUTER": {
+        "label": "Router",
+        "description": "Routeur/répéteur dédié"
       },
-      "3": {
-        "description": "Mode routeur + client",
-        "label": "Routeur client"
+      "ROUTER_CLIENT": {
+        "label": "Router Client",
+        "description": "Mode routeur + client. Obsolète dans le firmware 2.3.15 — utiliser le routeur ou le client."
       },
-      "4": {
-        "description": "Station de base pour les appareils clients",
-        "label": "La base de données clients"
+      "REPEATER": {
+        "label": "Repeater",
+        "description": "Rediffuse les paquets sans en être à l'origine. Obsolète dans le micrologiciel 2.7.11 — crée des trous dans la chaîne de rediffusion."
       },
-      "5": {
-        "description": "Traceur GPS uniquement",
-        "label": "Tracker"
+      "TRACKER": {
+        "label": "Tracker",
+        "description": "Tracker GPS"
       },
-      "6": {
-        "description": "Nœud de capteur de télémétrie",
-        "label": "Capteur"
+      "SENSOR": {
+        "label": "Sensor",
+        "description": "Nœud du capteur de télémétrie"
       },
-      "7": {
-        "description": "Appareil compatible TAK",
-        "label": "TAK"
+      "TAK": {
+        "label": "TAK",
+        "description": "TAK-enabled device"
       },
-      "8": {
-        "description": "Client, masqué dans la liste des nœuds",
-        "label": "Client masqué"
+      "CLIENT_HIDDEN": {
+        "label": "Client Hidden",
+        "description": "Client, masqué de la liste des nœuds"
       },
-      "9": {
-        "description": "Annonce la position pour la récupération",
-        "label": "Objets trouvés"
+      "LOST_AND_FOUND": {
+        "label": "Lost and Found",
+        "description": "Diffuse la position pour la reprise"
       },
-      "10": {
-        "description": "Mode suivi TAK",
-        "label": "TAK TRACKER"
+      "TAK_TRACKER": {
+        "label": "TAK Tracker",
+        "description": "TAK tracker mode"
+      },
+      "ROUTER_LATE": {
+        "label": "Router Late",
+        "description": "Routeur qui ne rediffuse qu'après que d'autres nœuds aient eu une chance, pour des cœurs de mailles denses."
+      },
+      "CLIENT_BASE": {
+        "label": "Client Base",
+        "description": "Station de base pour les appareils clients"
       }
     },
     "contactsOnRadioBadgeTitle": "Contacts {{part}} à la radio",
@@ -3712,29 +3913,29 @@
     "tzdefLabel": "Timezone (POSIX)",
     "tzdefDesc": "POSIX timezone string e.g. EST5EDT,M3.2.0,M11.1.0. See https://github.com/nayarsystems/posix_tz_db for a reference list.",
     "rebroadcastModes": {
-      "0": {
-        "label": "All",
-        "description": "Rebroadcast all packets (default)."
+      "ALL": {
+        "label": "Tous",
+        "description": "Rediffuser tous les paquets (par défaut)."
       },
-      "1": {
-        "label": "All Skip Decoding",
-        "description": "Rebroadcast all without decoding. Reduces CPU on dedicated routers."
+      "ALL_SKIP_DECODING": {
+        "label": "Tout ignorer le décodage",
+        "description": "Rediffuser le tout sans décodage. Réduit le CPU sur les routeurs dédiés."
       },
-      "2": {
-        "label": "Local Only",
-        "description": "Only rebroadcast packets from nodes heard directly on RF."
+      "LOCAL_ONLY": {
+        "label": "Local seulement",
+        "description": "Seuls les paquets rediffusés à partir de nœuds entendus directement sur RF."
       },
-      "3": {
-        "label": "Known Only",
-        "description": "Only rebroadcast from nodes in the local node database."
+      "KNOWN_ONLY": {
+        "label": "Connu uniquement",
+        "description": "Rediffusion uniquement à partir des nœuds de la base de données des nœuds locaux."
       },
-      "4": {
-        "label": "None",
-        "description": "Do not rebroadcast any packets."
+      "NONE": {
+        "label": "Aucune",
+        "description": "Ne rediffusez aucun paquet."
       },
-      "5": {
-        "label": "Core Portnums Only",
-        "description": "Only rebroadcast essential portnums (text, nodeinfo, position, telemetry)."
+      "CORE_PORTNUMS_ONLY": {
+        "label": "Uniquement les portnums de base",
+        "description": "Ne rediffusez que les portnums essentiels (texte, nodeinfo, position, télémétrie)."
       }
     },
     "autoScreenCarouselSecsLabel": "Screen Carousel Interval",
@@ -3752,22 +3953,22 @@
     "enableMessageBubblesLabel": "Message Bubbles",
     "enableMessageBubblesDesc": "Show incoming messages in a bubble on the display.",
     "oledTypes": {
-      "0": {
+      "OLED_AUTO": {
         "label": "Auto"
       },
-      "1": {
+      "OLED_SSD1306": {
         "label": "SSD1306"
       },
-      "2": {
+      "OLED_SH1106": {
         "label": "SH1106"
       },
-      "3": {
+      "OLED_SH1107": {
         "label": "SH1107 (128x64)"
       },
-      "4": {
+      "OLED_SH1107_128_128": {
         "label": "SH1107 (128x128)"
       },
-      "5": {
+      "OLED_SH1107_ROTATED": {
         "label": "SH1107 Rotated"
       }
     },
@@ -3852,88 +4053,177 @@
       "addButton": "+ Ajouter une chaîne",
       "footerHelp": "Les clés sont de 128 bits (16 octets), affichées sous forme de 32 caractères hexadécimaux. Noms de chaînes jusqu'à {{nameMax}} caractères. Jusqu'à {{channelCount}} canaux (indices 0 à {{indexMax}}). Pour #channels, utilisez « Derive from name » (SHA-256 du nom avec un # en tête).",
       "shareQr": "QR",
-      "shareQrAria": "Afficher la chaîne QR MeshCore pour {{name}}"
+      "shareQrAria": "Afficher la chaîne QR MeshCore pour {{name}}",
+      "privateChannel": "Canal privé (saisir la clé)",
+      "privateKeyHint": "Saisissez la clé du canal partagé : exactement 32 caractères hexadécimaux (16 octets), pas tous des zéros."
     },
     "regions": {
-      "0": {
-        "label": "Désarmé"
+      "UNSET": {
+        "label": "Unset"
       },
-      "1": {
-        "label": "NOUS"
+      "US": {
+        "label": "US"
       },
-      "2": {
+      "EU_433": {
         "label": "EU_433"
       },
-      "3": {
+      "EU_868": {
         "label": "EU_868"
       },
-      "4": {
+      "CN": {
         "label": "CN"
       },
-      "5": {
+      "JP": {
         "label": "JP"
       },
-      "6": {
+      "ANZ": {
         "label": "ANZ"
       },
-      "7": {
+      "KR": {
         "label": "KR"
       },
-      "8": {
+      "TW": {
         "label": "TW"
       },
-      "9": {
+      "RU": {
         "label": "RU"
       },
-      "10": {
-        "label": "DANS"
+      "IN": {
+        "label": "IN"
       },
-      "11": {
+      "NZ_865": {
         "label": "NZ_865"
       },
-      "12": {
-        "label": "ÈME"
+      "TH": {
+        "label": "TH"
       },
-      "13": {
+      "LORA_24": {
+        "label": "LORA_24"
+      },
+      "UA_433": {
         "label": "UA_433"
       },
-      "14": {
+      "UA_868": {
         "label": "UA_868"
       },
-      "15": {
-        "label": "MON_433"
+      "MY_433": {
+        "label": "MY_433"
       },
-      "16": {
-        "label": "MON_919"
+      "MY_919": {
+        "label": "MY_919"
       },
-      "17": {
+      "SG_923": {
         "label": "SG_923"
       },
-      "18": {
-        "label": "LORA_24"
+      "PH_433": {
+        "label": "PH_433"
+      },
+      "PH_868": {
+        "label": "PH_868"
+      },
+      "PH_915": {
+        "label": "PH_915"
+      },
+      "ANZ_433": {
+        "label": "ANZ_433"
+      },
+      "KZ_433": {
+        "label": "KZ_433"
+      },
+      "KZ_863": {
+        "label": "KZ_863"
+      },
+      "NP_865": {
+        "label": "NP_865"
+      },
+      "BR_902": {
+        "label": "BR_902"
+      },
+      "ITU1_2M": {
+        "label": "ITU1_2M"
+      },
+      "ITU2_2M": {
+        "label": "ITU2_2M"
+      },
+      "EU_866": {
+        "label": "EU_866"
+      },
+      "EU_874": {
+        "label": "EU_874"
+      },
+      "EU_917": {
+        "label": "EU_917"
+      },
+      "EU_N_868": {
+        "label": "EU_N_868"
+      },
+      "ITU3_2M": {
+        "label": "ITU3_2M"
+      },
+      "ITU1_70CM": {
+        "label": "ITU1_70CM"
+      },
+      "ITU2_70CM": {
+        "label": "ITU2_70CM"
+      },
+      "ITU3_70CM": {
+        "label": "ITU3_70CM"
+      },
+      "ITU2_125CM": {
+        "label": "ITU2_125CM"
       }
     },
     "modemPresets": {
-      "0": {
-        "label": "Longtemps rapide"
+      "LONG_FAST": {
+        "label": "Long Fast"
       },
-      "1": {
-        "label": "Longue et lente"
+      "LONG_SLOW": {
+        "label": "Long Slow"
       },
-      "2": {
-        "label": "Longue Modérée"
+      "VERY_LONG_SLOW": {
+        "label": "Very Long Slow"
       },
-      "3": {
-        "label": "Court Rapide"
+      "MEDIUM_SLOW": {
+        "label": "Medium Slow"
       },
-      "4": {
-        "label": "Court lent"
+      "MEDIUM_FAST": {
+        "label": "Medium Fast"
       },
-      "5": {
-        "label": "Moyen rapide"
+      "SHORT_SLOW": {
+        "label": "Short Slow"
       },
-      "6": {
-        "label": "Moyen lent"
+      "SHORT_FAST": {
+        "label": "Short Fast"
+      },
+      "LONG_MODERATE": {
+        "label": "Long Moderate"
+      },
+      "SHORT_TURBO": {
+        "label": "Short Turbo"
+      },
+      "LONG_TURBO": {
+        "label": "Long Turbo"
+      },
+      "LITE_FAST": {
+        "label": "Lite Fast"
+      },
+      "LITE_SLOW": {
+        "label": "Lite Slow"
+      },
+      "NARROW_FAST": {
+        "label": "Narrow Fast"
+      },
+      "NARROW_SLOW": {
+        "label": "Narrow Slow"
+      },
+      "TINY_FAST": {
+        "label": "Tiny Fast"
+      },
+      "TINY_SLOW": {
+        "label": "Tiny Slow"
+      },
+      "MEDIUM_TURBO": {
+        "label": "Medium Turbo"
       }
     },
     "floodScopeSaved": "Portée enregistrée",
@@ -3941,7 +4231,42 @@
     "floodScopeSavedEmpty": "Aucune étendue enregistrée pour le moment. Appliquez un hashtag personnalisé ou utilisez la portée personnalisée de Chat pour en ajouter un.",
     "floodScopeRemoveSaved": "Supprimer des étendues enregistrées",
     "floodScopeRemoveSavedAria": "Supprimer {{hashtag}} des étendues enregistrées",
-    "floodScopeInvalidHashtag": "Saisissez un hashtag de région valide (par exemple #myregion)."
+    "floodScopeInvalidHashtag": "Saisissez un hashtag de région valide (par exemple #myregion).",
+    "sendPositionDisabledShareOff": "Activez Partager ma position dans l'application → GPS / Localisation pour envoyer votre position à l'appareil.",
+    "clientMuteGpsSuppressed": "Mise en sourdine du client appliquée — Diffusions GPS et rapports de carte MQTT désactivés sur l'appareil.",
+    "validationShortNameTooLong": "Le nom abrégé doit correspondre à 4 octets UTF-8",
+    "validationShortNameEmojiTooLarge": "Ce caractère est trop grand pour le nom court (max 4 UTF-8 octets par nom)",
+    "enumDeprecatedSuffix": "(obsolète)",
+    "lockdown": {
+      "title": "Verrouillage du micrologiciel",
+      "description": "Une radio verrouillée rejette les modifications de configuration jusqu'à ce qu'elle soit déverrouillée avec sa phrase de passe. L'état est signalé par le micrologiciel ; les radios sans support de verrouillage n'en signalent jamais un.",
+      "stateLabel": "État",
+      "stateNotReported": "Non signalé par cette radio",
+      "reasonLabel": "Raison",
+      "bootsRemainingLabel": "Redémarrages restants",
+      "validUntilLabel": "Déverrouillé jusqu'au",
+      "backoffLabel": "Réessayer le backoff",
+      "backoffValue": "{{seconds}}s",
+      "passphraseLabel": "Phrase secrète",
+      "provision": "Disposition",
+      "unlock": "Déverrouiller",
+      "unlockAria": "Déverrouiller ou provisionner le verrouillage du micrologiciel",
+      "lockNow": "Verrouiller maintenant",
+      "lockNowAria": "Verrouillez immédiatement la radio",
+      "disable": "Désactiver le confinement",
+      "disableAria": "Désactiver le verrouillage du micrologiciel",
+      "states": {
+        "STATE_UNSPECIFIED": "Non précisé",
+        "NEEDS_PROVISION": "Nécessite un provisionnement",
+        "LOCKED": "Verrouillé",
+        "UNLOCKED": "Déverrouillé",
+        "UNLOCK_FAILED": "Échec du déverrouillage",
+        "DISABLED": "Handicapé"
+      }
+    },
+    "contactsFullAlarm": "Le stockage des contacts radio est plein. Déchargez les contacts vers la base de données de l'application pour libérer des emplacements.",
+    "contactsFullAlarmAction": "Décharger",
+    "contactsFullAutoOffloadStarted": "• s’occupent de 1 127 communications radio,"
   },
   "rawPacketLog": {
     "filterPackets": "Filtrer les paquets",
@@ -4430,7 +4755,8 @@
     "openGlobalMapAria": "Ouvrez la carte globale RMAP v4 sur rmap.world",
     "applyPartialSuccess": "Paramètres RMAP appliqués à {{applied}} des interfaces {{total}}.",
     "disablePartialSuccess": "Publication RMAP désactivée sur {{applied}} des interfaces {{total}}.",
-    "hint": "Permet la publication RMAP et les coordonnées GPS de l'application sur toutes les interfaces compatibles RMAP activées (RNode/Multi, KISS, BLE peer, I2P, UDP, pipe). La case à cocher est activée uniquement lorsque chaque interface éligible publie ; un état partiel est indéterminé – vérifiez à nouveau pour synchroniser le reste. Utilisez les bascules RMAP par interface sur Connexion pour un contrôle précis. Les chemins LoRa permettent également le transport et le hub rmap.world."
+    "hint": "Permet la publication RMAP et les coordonnées GPS de l'application sur toutes les interfaces compatibles RMAP activées (RNode/Multi, KISS, BLE peer, I2P, UDP, pipe). La case à cocher est activée uniquement lorsque chaque interface éligible publie ; un état partiel est indéterminé – vérifiez à nouveau pour synchroniser le reste. Utilisez les bascules RMAP par interface sur Connexion pour un contrôle précis. Les chemins LoRa permettent également le transport et le hub rmap.world.",
+    "disabledShareOff": "Activez Partager ma position dans l'application → GPS / Localisation pour publier sur RMAP."
   },
   "reticulumTopology": {
     "title": "Topologie de réseau",
@@ -4783,7 +5109,8 @@
     "regenerateWarning": "La régénération invalide les paquets de données ATAK existants : vous devrez les réimporter.",
     "durationSec": "{{s}}s",
     "durationMin": "{{m}}m",
-    "durationHourMin": "{{h}}h {{m}}m"
+    "durationHourMin": "{{h}}h {{m}}m",
+    "atakUndecodable": "Charge utile non reconnue comme un paquet TAK"
   },
   "telemetryPanel": {
     "title": "Télémétrie",
@@ -4824,14 +5151,20 @@
     "tempUnitC": "°C",
     "exportCsvButton": "Exporter CSV",
     "emptyWaitingConnected": "Pas encore de données de télémétrie. En attente des données de l'appareil…",
-    "emptyWaitingDisconnected": "Pas encore de données de télémétrie. Connectez-vous à un appareil pour voir les mesures en temps réel."
+    "emptyWaitingDisconnected": "Pas encore de données de télémétrie. Connectez-vous à un appareil pour voir les mesures en temps réel.",
+    "sectionParticulates": "Particules, CO₂ et Foudre",
+    "chartAriaParticulates": "Diagramme de particules : derniers points PM2.5 {{pm25}}, CO₂ {{co2}}, {{count}}",
+    "axisParticulates": "µg/m³ · grèves",
+    "axisCo2": "ppm",
+    "seriesPm25": "PM2,5 (µg/m³)",
+    "seriesCo2": "CO₂ (ppm)",
+    "seriesLightningStrikes": "Frappes de foudre (1h)"
   },
   "toasts": {
     "firmwareAvailable": "Mise à jour du micrologiciel disponible : v{{version}}",
     "newMessages_one": "{{protocol}} : {{count}} nouveau message",
     "newMessages_other": "{{protocol}} : {{count}} nouveaux messages",
-    "meshcoreDistanceFilterHint": "Vous avez {{count}} contacts avec GPS sur la carte. Activez le filtre de distance dans Application → Apparence pour vous concentrer sur les nœuds à proximité.",
-    "longSessionRestartNudge": "mesh-client fonctionne depuis quatre jours. Redémarrez l'application pour réduire le risque de plantage lors de longues sessions MeshCore BLE."
+    "meshcoreDistanceFilterHint": "Vous avez {{count}} contacts avec GPS sur la carte. Activez le filtre de distance dans Application → Apparence pour vous concentrer sur les nœuds à proximité."
   },
   "updateStatus": {
     "checking": "Vérification…",
@@ -5019,7 +5352,15 @@
     "whisperReplyPlaceholder": "Répondre à {{name}} ou /msg…",
     "jumpToLatest": "Aller au dernier",
     "stackNotReady": "La pile Reticulum n'est pas encore prête. Attendez d'être connecté, puis réessayez.",
-    "sidecarNotRunning": "Le sidecar Reticulum n'est pas en cours d'exécution. Démarrez la pile sur Connexion, puis réessayez."
+    "sidecarNotRunning": "Le sidecar Reticulum n'est pas en cours d'exécution. Démarrez la pile sur Connexion, puis réessayez.",
+    "whoReplyMissing": "Aucune liste de membres du hub pour {{room}} (la réponse peut dépasser la taille du lien). Les noms apparaîtront lorsque les gens rejoindront ou discuteront.",
+    "openNomadPage": "Ouvrir la page Nomad {{address}}",
+    "openDm": "Ouvrir un message direct avec {{address}}",
+    "openReticulumAddress": "Ouvrir l'adresse Reticulum {{address}}",
+    "addressChoiceTitle": "Ouvrir l'adresse Reticulum",
+    "addressChoiceMessage": "{{address}} peut être une page Nomad ou un pair. Que voulez-vous ouvrir ?",
+    "addressChoiceNomad": "Page Nomad",
+    "addressChoiceDm": "Message direct"
   },
   "signalMeter": {
     "rssi": "RSSI",
@@ -5364,7 +5705,8 @@
     "sessionRowAria": "{{app}} jeu avec {{peer}}",
     "apps": {
       "ttt": "Tictacto",
-      "chess": "Échecs"
+      "chess": "Échecs",
+      "four_in_a_row": "Puissance 4"
     },
     "status": {
       "pending": "En attente",
@@ -5416,6 +5758,19 @@
       "boardAria": "Carte Tic-Tac-Toe",
       "cellEmptyAria": "Cell {{index}}, empty",
       "cellOccupiedAria": "Cell {{index}}, {{marker}}"
+    },
+    "fourInARow": {
+      "youWon": "Vous avez gagné !",
+      "opponentWon": "L'adversaire a gagné.",
+      "draw": "Dessin.",
+      "yourTurn": "À votre tour",
+      "opponentTurn": "Au tour de l'adversaire",
+      "yourMarker": "Vous êtes {{marker}}",
+      "moveCount": "{{count}} se déplace",
+      "boardAria": "Plateau de Puissance 4",
+      "columnAria": "Colonne {{column}}, de bas en haut : {{contents}}. Jouer ici",
+      "columnFullAria": "Colonne {{column}}, de bas en haut : {{contents}}. Pleine",
+      "columnEmptyContents": "vide"
     },
     "chess": {
       "youWon": "Vous avez gagné !",
@@ -5472,5 +5827,102 @@
     },
     "drawOfferWaitingBanner": "Offre de tirage envoyée. En attente de l'adversaire…",
     "idleExpiryNotice": "Les jeux expirent après l'inactivité et ne peuvent alors être supprimés. Défis sans réponse : 24 heures (tous les jeux). Jeux actifs : tic-tac-toe après 24 heures, échecs et quatre dans une rangée après 7 jours."
+  },
+  "longSession": {
+    "title": "Redémarrage recommandé",
+    "body": "mesh-client fonctionne depuis quatre jours avec la radio Bluetooth connectée. Redémarrez l'application pour réduire le risque de crash sur les longues sessions Noble BLE.",
+    "restart": "Recommencer",
+    "dismiss": "Ignorer"
+  },
+  "reticulumSetup": {
+    "open": "Ouvrir le guide de configuration",
+    "title": "Votre première connexion",
+    "intro": "Vous débutez avec Reticulum ? Configurez une connexion, trouvez des contacts et découvrez les onglets.",
+    "eyebrow": "Reticulum · MISE EN ROUTE",
+    "hide": "Masquer le guide",
+    "stepsLabel": "Étapes de configuration du Reticulum",
+    "startTitle": "Commencez ici",
+    "startBody": "Reticulum connecte les personnes et les applications via Internet, les réseaux locaux ou les radios compatibles. Vous pouvez l'essayer avec uniquement cet ordinateur et une connexion Internet.",
+    "connectionTitle": "Connectez-vous",
+    "exploreTitle": "Essayez-le",
+    "identityTitle": "Votre identité",
+    "working": "Fonctionnement…",
+    "startHint": "Ce guide démarre Reticulum dans l'application. Ensuite, vous choisirez un nom et un moyen de toucher d’autres personnes.",
+    "existingIdentity": "Vous avez déjà une identité. Ce guide le conserve et met à jour uniquement votre nom d'affichage.",
+    "startAction": "Commençons",
+    "nameLabel": "Nom ou indicatif",
+    "saveIdentity": "Enregistrer le nom et continuer",
+    "identityBody": "Votre identité est votre compte sur ce réseau. Il vit sur cet ordinateur, sans inscription ni fournisseur de compte central. Votre adresse de messagerie reste la même lorsque vous changez de nom.",
+    "nameHint": "Ce nom est partagé avec les pairs. Un surnom, c'est bien ; il n'est pas nécessaire que ce soit votre vrai nom.",
+    "backupBody": "Ces mots restaurent votre identité si vous perdez cet ordinateur. Enregistrez-les dans un endroit privé maintenant. Ne les donnez jamais à quelqu'un qui vous demande votre adresse de messagerie. Vous pouvez également exporter ultérieurement une sauvegarde protégée depuis le réseau.",
+    "savedWords": "J'ai sauvegardé mes mots de récupération",
+    "backupTitle": "Gardez vos mots de récupération en sécurité",
+    "importIdentity": "J'ai une identité à restaurer",
+    "back": "Dos",
+    "continue": "Continuer",
+    "routes": {
+      "internet": {
+        "title": "Internet",
+        "body": "Un hub public vous connecte à d’autres personnes. Aucune radio nécessaire ; un bon point de départ."
+      },
+      "radio": {
+        "title": "Radio RNode",
+        "body": "Utilisez du matériel radio compatible et les paramètres de votre réseau radio local."
+      },
+      "existing": {
+        "body": "Conservez vos interfaces actuelles et vérifiez si elles sont prêtes.",
+        "title": "Configuration existante"
+      }
+    },
+    "routeLabel": "Comment se connecter",
+    "connectionBody": "Une interface est simplement une connexion à Reticulum. Choisissez comment vous souhaitez accéder au réseau. Vous pourrez ajouter d'autres connexions ultérieurement.",
+    "hubLabel": "Plateforme Internet publique",
+    "hubSaved": "Connexion enregistrée. Vérification après le redémarrage…",
+    "connectHub": "Connectez-vous à ce hub",
+    "hubHint": "Commencez avec un seul hub. L'application ajoutera ou activera cette connexion et redémarrera Reticulum pour l'appliquer. Les hubs publics peuvent voir votre adresse IP et peuvent parfois être indisponibles.",
+    "radioDevice": "Utilisez un appareil exécutant le micrologiciel RNode. Une radio Meshtastic ou MeshCore n'est pas automatiquement un RNode ; ne flashez pas et ne modifiez pas le firmware sans vérifier les instructions de votre appareil.",
+    "radioCheck": "Activez l'interface et appliquez son invite de redémarrage, puis revenez à ce guide. Une connexion radio fonctionnelle nécessite toujours une autre station compatible à portée.",
+    "radioSettings": "Ouvrez les paramètres de connexion ci-dessous, ajoutez une interface RNode, choisissez USB ou Bluetooth et utilisez la fréquence, la bande passante, le facteur d'étalement et le taux de codage fournis par votre groupe local.",
+    "openInterfaces": "Ouvrez les paramètres de connexion ci-dessous",
+    "ready": "Votre connexion est disponible",
+    "checkTitle": "Vérifier votre connexion",
+    "existingHint": "Le guide vérifiera vos interfaces existantes sans les modifier. Une interface de réseau local atteint les appareils Reticulum à proximité sur ce réseau ; il ne vous connecte pas en soi à des pairs Internet publics.",
+    "available": "Prêt",
+    "waiting": "En attendant",
+    "checkStack": "Réseau de Reticulum",
+    "checkConnection": "Connexion choisie",
+    "checkMessaging": "Service de messagerie",
+    "checkAgain": "Revérifier",
+    "readyHint": "Cela confirme que les services locaux et la connexion sont opérationnels. Cela ne garantit pas qu’une personne en particulier soit joignable.",
+    "restartHint": "Le redémarrage interrompt brièvement les connexions actives du Reticulum. Les paramètres enregistrés restent disponibles si vous fermez le guide.",
+    "checkFailed": "L'application n'a pas pu lire l'état actuel. Vérifiez que Reticulum est en cours d'exécution, puis réessayez.",
+    "waitHint": "Le démarrage peut prendre un moment. Si un hub reste indisponible, vérifiez votre connexion Internet ou choisissez un autre hub. Pour une radio, vérifiez son câble, son couplage et ses paramètres locaux.",
+    "connectionLost": "La connexion n'est plus prête. Revenez le vérifier avant de l'envoyer.",
+    "addressTitle": "Votre adresse de messagerie",
+    "exploreBody": "Vous avez l'essentiel. Commencez par un message direct ou une discussion de groupe ; vous pouvez explorer les autres outils chaque fois que vous en avez besoin.",
+    "addressBody": "Partagez cette adresse avec un ami afin qu'il puisse vous envoyer un message. LXMF est le système de messagerie utilisé par les applications Reticulum ; il s'agit de votre adresse LXMF, pas de vos mots de récupération.",
+    "discoveryHint": "Les pairs se remplissent également au fur et à mesure que l'application entend les annonces : petites présentations de personnes et de services. Donnez-lui du temps. Certaines entrées sont des services et non des personnes à qui vous pouvez envoyer des messages.",
+    "addressCopied": "Adresse de messagerie copiée",
+    "copyAddress": "Copier mon adresse de messagerie",
+    "firstMessage": "Demandez à un ami son adresse LXMF. Dans Peers, utilisez le champ d’adresse pour les rechercher, puis ouvrez une discussion et envoyez un court message.",
+    "deliveryHint": "Recherchez Livré dans un message direct. Stocké sur un nœud de propagation signifie qu'un intermédiaire possède le message ; cela ne signifie pas que votre ami l'a lu ou reçu.",
+    "peersBody": "Peers est votre point de départ pour les messages directs. Enregistrez les personnes en tant que contacts afin de pouvoir les retrouver.",
+    "openPeers": "Pairs ouverts",
+    "peersTitle": "Trouver des personnes",
+    "openRooms": "Ouvrir le chat de groupe",
+    "roomsBody": "RRC est une discussion de groupe. Ouvrez-le, choisissez un hub, connectez-vous et rejoignez une salle. Il est distinct de vos messages directs.",
+    "roomsTitle": "Rejoignez une conversation",
+    "networkHint": "Le réseau contient votre identité, vos sauvegardes et les paramètres facultatifs de messages hors ligne. La connexion est l'endroit où vous gérez la façon dont vous vous connectez. Nomad parcourt les pages ; Le distant et l'administrateur peuvent attendre que vous en ayez besoin.",
+    "restartService": "Démarrer le Reticulum",
+    "actionFailed": "Cette étape n'est pas terminée. Vos paramètres enregistrés ont été conservés. Vérifiez les détails et réessayez.",
+    "stopped": "Le Reticulum est arrêté ou démarre toujours. Démarrez-le pour continuer l'installation.",
+    "openNetwork": "Ouvrir les paramètres d'identité et de sauvegarde",
+    "errorDetails": "Afficher les détails de l'erreur",
+    "tabUnavailable": "Cet onglet est masqué. Activez-le dans les paramètres de l'onglet Application, puis revenez au guide.",
+    "privateConnection": "Ce hub dispose déjà de paramètres de réseau privé. Modifiez-le dans les paramètres de connexion ci-dessous ou choisissez un autre hub public.",
+    "identityUnavailable": "Impossible de lire votre identité. Vérifiez que Reticulum est en cours d'exécution, puis réessayez.",
+    "interfacesUnavailable": "Impossible de lire vos connexions. Vérifiez que Reticulum est en cours d'exécution, puis réessayez.",
+    "identitySaveFailed": "Impossible d'enregistrer vos paramètres d'identité. Essayer à nouveau.",
+    "interfaceSaveFailed": "Impossible d'enregistrer cette connexion. Vérifiez vos paramètres de connexion et réessayez."
   }
 }

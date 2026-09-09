@@ -45,7 +45,10 @@ import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
 import { ICON_MD } from '@/renderer/lib/icons/iconClass';
 import { useParentIconTrigger } from '@/renderer/lib/icons/iconMotionContext';
 import { translateMeshcoreUserMessage } from '@/renderer/lib/meshcore/meshcoreMessageI18n';
-import { repairMeshcoreHydrationStaleRoomSends } from '@/renderer/lib/meshcoreDbCacheHydration';
+import {
+  repairMeshcoreHydrationStaleRoomSends,
+  repairMeshcoreRoomUnknownSenderNames,
+} from '@/renderer/lib/meshcoreDbCacheHydration';
 import {
   type MeshcoreRoomAclEntry,
   meshcoreRoomAclLevelLabel,
@@ -92,6 +95,7 @@ import { clampReadWatermarkMs, effectiveMessageTimestampMs } from '@/renderer/li
 import type { ChatMessage, MeshNode } from '@/renderer/lib/types';
 import { writeClipboardText } from '@/renderer/lib/writeClipboardText';
 import { formatIsoDate, formatIsoDateTime } from '@/shared/formatIsoDate';
+import { touch } from '@/shared/touch';
 
 import {
   CHAT_SCROLL_END_THRESHOLD,
@@ -386,8 +390,16 @@ export default function RoomsPanel({
     const posts = messages
       .filter((m) => m.roomServerId === selectedRoomId)
       .sort((a, b) => a.timestamp - b.timestamp);
-    return repairMeshcoreHydrationStaleRoomSends(mergeDisplayedRoomPostChunks(posts));
-  }, [messages, selectedRoomId]);
+    const nameByNodeId = new Map<number, string>();
+    for (const [id, node] of nodes) {
+      const name = node.long_name?.trim();
+      if (name) nameByNodeId.set(id, name);
+    }
+    return repairMeshcoreRoomUnknownSenderNames(
+      repairMeshcoreHydrationStaleRoomSends(mergeDisplayedRoomPostChunks(posts)),
+      nameByNodeId,
+    );
+  }, [messages, nodes, selectedRoomId]);
 
   const filteredRoomPosts = useMemo(() => {
     let posts = roomPosts;
@@ -833,7 +845,7 @@ export default function RoomsPanel({
   }, [initialRoomTarget, onInitialRoomConsumed, handleSelectRoom]);
 
   const loginQueueSnapshot = useMemo(() => {
-    void loginQueueRevision;
+    touch(loginQueueRevision);
     return getMeshcoreRoomLoginQueueSnapshot();
   }, [loginQueueRevision]);
   const loginQueueCount = meshcoreRoomLoginQueueSize();
@@ -879,7 +891,7 @@ export default function RoomsPanel({
 
   const isRoomLoginInProgress = useCallback(
     (nodeId: number): boolean => {
-      void loginQueueRevision;
+      touch(loginQueueRevision);
       return meshcoreIsRoomLoginQueued(nodeId) || localLoginRoomIds.has(nodeId);
     },
     [localLoginRoomIds, loginQueueRevision],
@@ -1244,7 +1256,7 @@ export default function RoomsPanel({
   }, [onOpenRepeaterOps, selectedRoomId]);
 
   const loggedIn = useMemo(() => {
-    void roomSessionRevision;
+    touch(roomSessionRevision);
     return selectedRoomId != null && meshcoreIsRoomLoggedIn(selectedRoomId);
   }, [selectedRoomId, roomSessionRevision]);
   const guestFieldEmpty = loginPassword.trim().length === 0;
@@ -1259,7 +1271,7 @@ export default function RoomsPanel({
       ? (nodes.get(activeLoginRoomId)?.long_name ?? String(activeLoginRoomId))
       : '';
   const savedRoomsNotLoggedInCount = useMemo(() => {
-    void roomSessionRevision;
+    touch(roomSessionRevision);
     return roomServers.filter(
       (r) => storedRoomIds.has(r.node_id) && !meshcoreIsRoomLoggedIn(r.node_id),
     ).length;

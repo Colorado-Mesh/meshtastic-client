@@ -1092,6 +1092,9 @@ export class NobleBleManager extends EventEmitter {
    * Last-chance teardown for app exit. Must call noble._bindings.stop() to release the native
    * BLEManager (CFRelease), which frees the CBCentralManager and its CBqueue GCD dispatch queue.
    * Without this, the active GCD thread keeps the macOS process alive indefinitely.
+   *
+   * These native lifetime hazards are cited in https://github.com/stoprocent/noble/issues/140
+   * (multi-day sessions abort the main process); the day-4 restart nudge is the mitigation.
    */
   releaseNobleProcessHandles(): void {
     this.releaseHandlesCallCount += 1; // Mark all sessions closing FIRST so any in-flight readAsync loop exits without issuing
@@ -1213,7 +1216,15 @@ export class NobleBleManager extends EventEmitter {
     this.connectQueue = new Promise<void>((r) => {
       releaseQueue = r;
     });
-    await withTimeout(prevQueue, BLE_CONNECT_QUEUE_WAIT_MS, 'BLE connect queue wait');
+    try {
+      await withTimeout(prevQueue, BLE_CONNECT_QUEUE_WAIT_MS, 'BLE connect queue wait');
+    } catch (err) {
+      // The queue slot installed above is released only by the finally below, which this
+      // throw skips. Release it here or every later connect() awaits a promise that can
+      // never settle, wedging BLE connect for the rest of the process lifetime.
+      releaseQueue();
+      throw err;
+    }
 
     const session = this.getSession(sessionId);
     let peripheral: NoblePeripheral | null = null;

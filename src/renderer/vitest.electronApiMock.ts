@@ -46,6 +46,8 @@ export function createElectronAPIMock(): ElectronAPI {
       pruneReticulumMessagesByCount: vi.fn().mockResolvedValue({ changes: 0 }),
       listRrcMessages: vi.fn().mockResolvedValue([]),
       insertRrcMessage: vi.fn().mockResolvedValue({ changes: 1 }),
+      listRrcNicks: vi.fn().mockResolvedValue([]),
+      upsertRrcNick: vi.fn().mockResolvedValue({ changes: 1 }),
       deleteRrcMessagesByRoom: vi.fn().mockResolvedValue({ changes: 0 }),
       pruneRrcMessagesByCount: vi.fn().mockResolvedValue({ changes: 0 }),
       pruneRrcMessagesByAge: vi.fn().mockResolvedValue({ changes: 0 }),
@@ -83,7 +85,10 @@ export function createElectronAPIMock(): ElectronAPI {
       getBlockedContacts: vi.fn().mockResolvedValue([]),
       blockContact: vi.fn().mockResolvedValue({ changes: 1 }),
       unblockContact: vi.fn().mockResolvedValue({ changes: 1 }),
+      exportBlockedContacts: vi.fn().mockResolvedValue([]),
+      importBlockedContacts: vi.fn().mockResolvedValue({ imported: 0, skipped: 0 }),
       getReticulumIdentityActivity: vi.fn().mockResolvedValue([]),
+      getReticulumIdentityActivityByIdentity: vi.fn().mockResolvedValue([]),
       upsertReticulumIdentityActivity: vi.fn().mockResolvedValue({ changes: 1 }),
       upsertReticulumIdentityActivityBatch: vi.fn().mockResolvedValue({ changes: 1 }),
       listReticulumRemoteAddresses: vi.fn().mockResolvedValue([]),
@@ -120,6 +125,7 @@ export function createElectronAPIMock(): ElectronAPI {
         .fn()
         .mockResolvedValue({ deleted: 0, excludedStubCount: 0 }),
       offloadAllMeshcoreContacts: vi.fn().mockResolvedValue(0),
+      markMeshcoreContactOffRadio: vi.fn().mockResolvedValue({ changes: 0 }),
       getMeshcoreContactById: vi.fn().mockResolvedValue(null),
       updateMeshcoreContactNickname: vi.fn().mockResolvedValue(undefined),
       updateMeshcoreContactFavorited: vi.fn().mockResolvedValue(undefined),
@@ -224,6 +230,12 @@ export function createElectronAPIMock(): ElectronAPI {
     notifyDeviceDisconnected: vi.fn(),
     setTrayUnread: vi.fn(),
     quitApp: vi.fn().mockResolvedValue(undefined),
+    restartApp: vi.fn().mockResolvedValue(undefined),
+    notify: {
+      show: vi.fn().mockResolvedValue(undefined),
+      longSessionRestart: vi.fn().mockResolvedValue(undefined),
+      clearLongSessionNudge: vi.fn().mockResolvedValue(undefined),
+    },
     getPlatform: vi.fn().mockReturnValue('linux'),
     showEmojiPanel: vi.fn().mockResolvedValue(undefined),
     media: {
@@ -232,9 +244,6 @@ export function createElectronAPIMock(): ElectronAPI {
     },
     clipboard: {
       writeText: vi.fn().mockResolvedValue(undefined),
-    },
-    notify: {
-      show: vi.fn().mockResolvedValue(undefined),
     },
     safeStorage: {
       encrypt: vi.fn().mockResolvedValue(null),
@@ -428,6 +437,8 @@ export function createElectronAPIMock(): ElectronAPI {
         .fn()
         .mockResolvedValue({ path: null, contentText: null, error: null }),
       saveIdentityExportDialog: vi.fn().mockResolvedValue({ path: null, error: null }),
+      saveBlocklistDialog: vi.fn().mockResolvedValue({ path: null, error: null }),
+      openBlocklistDialog: vi.fn().mockResolvedValue({ hashes: null, skipped: 0, error: null }),
       showNomadContentSourceDialog: vi.fn().mockResolvedValue({ canceled: true, path: null }),
       setNomadContentSource: vi.fn().mockResolvedValue({ ok: true }),
       validateConfig: vi.fn().mockResolvedValue({ ok: true, issues: [] }),

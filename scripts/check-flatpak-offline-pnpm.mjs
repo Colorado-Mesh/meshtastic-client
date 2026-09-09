@@ -4,8 +4,12 @@
  * matching package.json packageManager, and cover lockfile tarballs.
  *
  * Failure point: flatpak-node-generator defaults to store v10 for lockfile 9 while
- * pnpm 11 reads v11 → ERR_PNPM_NO_OFFLINE_TARBALL (@bufbuild/protobuf, etc.).
+ * pnpm N reads vN → ERR_PNPM_NO_OFFLINE_TARBALL (@bufbuild/protobuf, etc.).
  * Fallback: require --pnpm-store-version vN, regenerate, assert coverage.
+ *
+ * Failure point: pnpm 12 lockfiles may be two YAML documents (packageManagerDependencies
+ * then project). flatpak-node-generator uses yaml.safe_load and rejects the second
+ * document. Fallback: extractProjectPnpmLockfile before invoking the generator.
  *
  * Not run in pre-commit (needs flatpak-node-generator). Used by CI / act:pr / release.
  */
@@ -23,10 +27,12 @@ import {
   missingOfflineTarballs,
   parseGeneratedPnpmManifest,
   listLockfilePackageIds,
-  applyGeneratorSkipPlaywrightSpecialSources,
+  applyGeneratorFlatpakNodeGeneratorPatches,
   resolveFlatpakNodeGeneratorBin,
+  resolveGeneratorElectronPyPath,
   resolveGeneratorSpecialPyPath,
   storeVersionFromPackageManager,
+  extractProjectPnpmLockfile,
 } from './flatpakPnpmStoreVersion.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -76,6 +82,7 @@ function generateOfflineSources(expectedStoreVersion) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-flatpak-offline-'));
   const outPath = path.join(tmpDir, 'generated-sources.json');
   const specialPy = resolveGeneratorSpecialPyPath(bin);
+  const electronPy = resolveGeneratorElectronPyPath(bin);
   if (!specialPy) {
     fs.rmSync(tmpDir, { recursive: true, force: true });
     return {
@@ -83,14 +90,28 @@ function generateOfflineSources(expectedStoreVersion) {
       message: `could not find special.py next to ${bin} (needed to skip Playwright browser vendoring)`,
     };
   }
-  const patched = applyGeneratorSkipPlaywrightSpecialSources(specialPy);
+  if (!electronPy) {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    return {
+      ok: false,
+      message: `could not find electron.py next to ${bin} (needed to skip Electron >=44 linux-armv7l)`,
+    };
+  }
+  const patched = applyGeneratorFlatpakNodeGeneratorPatches(specialPy, electronPy);
   if (!patched.ok) {
     fs.rmSync(tmpDir, { recursive: true, force: true });
     return { ok: false, message: patched.message };
   }
+  // pnpm 12 multi-doc lockfile: generator yaml.safe_load needs the project document only.
+  const projectLockPath = path.join(tmpDir, 'pnpm-lock.project.yaml');
+  fs.writeFileSync(
+    projectLockPath,
+    extractProjectPnpmLockfile(fs.readFileSync(LOCKFILE, 'utf8')),
+    'utf8',
+  );
   const result = spawnSync(
     bin,
-    ['pnpm', LOCKFILE, '--pnpm-store-version', expectedStoreVersion, '-o', outPath],
+    ['pnpm', projectLockPath, '--pnpm-store-version', expectedStoreVersion, '-o', outPath],
     {
       cwd: ROOT,
       encoding: 'utf8',

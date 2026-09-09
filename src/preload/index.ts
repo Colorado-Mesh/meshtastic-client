@@ -4,6 +4,7 @@ import type {
   BlePeripheralOwner,
   BleScanOwner,
   ElectronAPI,
+  LongSessionRestartPayload,
   MeshNode,
   MeshProtocol,
   MQTTSettings,
@@ -94,6 +95,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       body: string;
       timestamp: number;
     }) => ipcRenderer.invoke('db:insertRrcMessage', message),
+    listRrcNicks: (hubHash: string, limit?: number) =>
+      ipcRenderer.invoke('db:listRrcNicks', hubHash, limit),
+    upsertRrcNick: (nick: {
+      hub_hash: string;
+      identity_hash: string;
+      nickname: string;
+      last_seen: number;
+    }) => ipcRenderer.invoke('db:upsertRrcNick', nick),
     deleteRrcMessagesByRoom: (hubHash: string, room: string) =>
       ipcRenderer.invoke('db:deleteRrcMessagesByRoom', hubHash, room),
     pruneRrcMessagesByCount: (maxCount: number) =>
@@ -211,8 +220,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('db:blockContact', protocol, identityId, blockedHash),
     unblockContact: (protocol: string, identityId: string, blockedHash: string) =>
       ipcRenderer.invoke('db:unblockContact', protocol, identityId, blockedHash),
+    exportBlockedContacts: (protocol: string, identityId: string) =>
+      ipcRenderer.invoke('db:exportBlockedContacts', protocol, identityId),
+    importBlockedContacts: (protocol: string, identityId: string, hashes: string[]) =>
+      ipcRenderer.invoke('db:importBlockedContacts', protocol, identityId, hashes),
     getReticulumIdentityActivity: (destinationHash: string) =>
       ipcRenderer.invoke('db:getReticulumIdentityActivity', destinationHash),
+    getReticulumIdentityActivityByIdentity: (identityHash: string) =>
+      ipcRenderer.invoke('db:getReticulumIdentityActivityByIdentity', identityHash),
     upsertReticulumIdentityActivity: (row: {
       destination_hash: string;
       aspect: string;
@@ -363,6 +378,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     deleteMeshcoreContactsWithoutPubkey: () =>
       ipcRenderer.invoke('db:deleteMeshcoreContactsWithoutPubkey'),
     offloadAllMeshcoreContacts: () => ipcRenderer.invoke('db:offloadAllMeshcoreContacts'),
+    markMeshcoreContactOffRadio: (publicKeyHex: string) =>
+      ipcRenderer.invoke('db:markMeshcoreContactOffRadio', publicKeyHex),
     getMeshcoreContactById: (nodeId: number) =>
       ipcRenderer.invoke('db:getMeshcoreContactById', nodeId),
     updateMeshcoreContactNickname: (nodeId: number, nickname: string | null) =>
@@ -899,6 +916,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send('set-tray-unread', count);
   },
   quitApp: () => ipcRenderer.invoke('app:quit'),
+  restartApp: () => ipcRenderer.invoke('app:relaunch'),
 
   // ─── OS emoji panel ──────────────────────────────────────────────────────────
   getPlatform: () => process.platform,
@@ -921,6 +939,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   notify: {
     show: (title: string, body: string): Promise<void> =>
       ipcRenderer.invoke('notify:message', title, body),
+    longSessionRestart: (opts: LongSessionRestartPayload): Promise<void> =>
+      ipcRenderer.invoke('notify:longSessionRestart', opts),
+    clearLongSessionNudge: (): Promise<void> => ipcRenderer.invoke('notify:clearLongSessionNudge'),
   },
 
   // ─── Safe storage (OS-keychain-backed encryption) ──────────────
@@ -1123,6 +1144,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
       contentBase64: string;
     }): Promise<ReticulumIdentityExportSaveResult> =>
       ipcRenderer.invoke('reticulum:saveIdentityExportDialog', opts),
+    saveBlocklistDialog: (
+      hashes: string[],
+    ): Promise<{ path: string | null; error: string | null }> =>
+      ipcRenderer.invoke('reticulum:saveBlocklistDialog', hashes),
+    openBlocklistDialog: (): Promise<{
+      hashes: string[] | null;
+      skipped: number;
+      error: string | null;
+    }> => ipcRenderer.invoke('reticulum:openBlocklistDialog'),
     showNomadContentSourceDialog: (): Promise<{ canceled: boolean; path: string | null }> =>
       ipcRenderer.invoke('reticulum:showNomadContentSourceDialog'),
     setNomadContentSource: (path: string): Promise<unknown> =>

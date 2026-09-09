@@ -19,6 +19,7 @@ import {
 } from '../lib/bleReconnectExhaustLatch';
 import {
   assertPowerResumeSkipsOnExplicitDisconnect,
+  extractBalancedBlock,
   extractUseCallbackBody,
   loadRendererLibSource,
   loadRuntimeSource,
@@ -335,13 +336,50 @@ describe('useMeshtasticRuntime reconnect hardening (regression)', () => {
     );
     expect(wireSource).toContain('!isBleReconnectAttemptActive()');
     expect(wireSource).toMatch(
-      /configure stall timeout \(BLE [\s\S]*?handleConnectionLostRef\.current\(\)/,
+      /configure stall timeout \(\$\{type\} [\s\S]*?handleConnectionLostRef\.current\(\)/,
+    );
+    expect(wireSource).toMatch(
+      /status === DeviceStatusEnum\.DeviceConfiguring &&\s*\(type === 'ble' \|\| type === 'serial'\)/,
     );
   });
 
   it('guards attachRfSession configure against reconnect generation supersession', () => {
     expect(SOURCE).toMatch(
       /attachRfSession[\s\S]{0,3500}reconnectGenerationRef\.current !== generation[\s\S]{0,200}Attach superseded during configure/,
+    );
+  });
+
+  it('attachRfSession configures outside the node-hydrate IIFE (#895)', () => {
+    const attachBody = extractUseCallbackBody(SOURCE, 'attachRfSession');
+    const voidMarker = 'void (async () => {';
+    let hydrateIifeEnd = -1;
+    for (let searchFrom = 0; searchFrom < attachBody.length;) {
+      const voidIdx = attachBody.indexOf(voidMarker, searchFrom);
+      if (voidIdx === -1) break;
+      const braceIdx = attachBody.indexOf('{', voidIdx);
+      expect(braceIdx).toBeGreaterThan(voidIdx);
+      const body = extractBalancedBlock(attachBody, braceIdx);
+      if (body.includes('loadMeshtasticNodeMapFromDb')) {
+        // Closing `}` of the IIFE body, then `)();`
+        const afterBrace = braceIdx + 1 + body.length;
+        expect(attachBody.slice(afterBrace, afterBrace + 5)).toMatch(/^\}\)\(\);/);
+        hydrateIifeEnd = attachBody.indexOf(';', afterBrace) + 1;
+        break;
+      }
+      searchFrom = voidIdx + 1;
+    }
+    expect(hydrateIifeEnd).toBeGreaterThan(0);
+    const configureIdx = attachBody.indexOf(
+      'await configureMeshtasticDeviceWithRetry',
+      hydrateIifeEnd,
+    );
+    expect(configureIdx).toBeGreaterThan(hydrateIifeEnd);
+  });
+
+  it('attachRfSession drops delayed node hydrate after reconnect generation bump (#895)', () => {
+    const attachBody = extractUseCallbackBody(SOURCE, 'attachRfSession');
+    expect(attachBody).toMatch(
+      /loadMeshtasticNodeMapFromDb\(\)[\s\S]*?reconnectGenerationRef\.current !== generation[\s\S]*?applyMeshtasticNodesToUi/,
     );
   });
 
@@ -352,6 +390,18 @@ describe('useMeshtasticRuntime reconnect hardening (regression)', () => {
     expect(SOURCE).not.toMatch(
       /useEffect\(\(\) => \{[\s\S]{0,250}syncNodesMapToIdentityStore\(storeId, nodes\)/,
     );
+  });
+
+  it('refreshNodesFromDb guards identity and reconnect generation before applying', () => {
+    const refreshBody = extractUseCallbackBody(SOURCE, 'refreshNodesFromDb');
+    expect(refreshBody).toContain('storeIdAtStart');
+    expect(refreshBody).toContain('generationAtStart');
+    expect(refreshBody).toContain('sameIdentityRefreshSession');
+    expect(refreshBody).toContain('replaceNodesMapInIdentityStore');
+    const loadIdx = refreshBody.indexOf('loadMeshtasticNodeMapFromDb');
+    const guardIdx = refreshBody.indexOf('sameIdentityRefreshSession');
+    expect(loadIdx).toBeGreaterThanOrEqual(0);
+    expect(guardIdx).toBeGreaterThan(loadIdx);
   });
 });
 

@@ -50,7 +50,7 @@ jobs:
           - os: macos-latest
             build_script: pnpm run dist:mac
             sidecar_platform: darwin
-            rust_targets: aarch64-apple-darwin
+            rust_targets: x86_64-apple-darwin,aarch64-apple-darwin
           - os: ubuntu-latest
             build_script: pnpm run dist:linux
             sidecar_platform: linux
@@ -65,13 +65,21 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+
+      # pnpm 12 native bootstrap: PowerShell prefers broken .bin/pnpm.ps1 (silent exit 0).
+      - name: Prefer native pnpm.exe on Windows PATH
+        if: runner.os == 'Windows'
+        run: node scripts/ci-prefer-windows-pnpm-exe.mjs
 
       - name: Install Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: 'pnpm'
+
+      - name: Verify pnpm
+        run: node scripts/ci-verify-pnpm.mjs
 
       - name: Install Linux build dependencies
         if: matrix.os == 'ubuntu-latest'
@@ -157,6 +165,11 @@ jobs:
       - name: Rename test-build installers with run number
         run: node scripts/rename-test-build-artifacts.mjs --root release
 
+      # Fail closed before upload: README alone must not satisfy a green Windows job.
+      - name: Assert Windows NSIS installers present
+        if: matrix.os == 'windows-latest'
+        run: node scripts/assert-win-setup-installers.mjs --root release
+
       # Stage under release/ so upload-artifact@v7's least-common-ancestor stays
       # release/ (paths outside release/ nest installers as release/release/*.exe and
       # break packaging-smoke, which downloads to path: release).
@@ -177,6 +190,8 @@ jobs:
           path: |
             release/mac/**/*.dmg
             release/mac/**/*.zip
+            release/mac-x64/**/*.dmg
+            release/mac-x64/**/*.zip
             release/mac-arm64/**/*.dmg
             release/mac-arm64/**/*.zip
             release/mac-universal/**/*.dmg
@@ -207,6 +222,7 @@ jobs:
             # Per-arch NSIS installers (test builds: …-run{N}.exe / …-run{N}-arm64.exe)
             release/*.exe
             release/READ-ME-FIRST-test-build.md
+          if-no-files-found: error
           retention-days: 30
 
   packaging-smoke:

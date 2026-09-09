@@ -53,6 +53,11 @@ import { ConnectIcon } from '@/renderer/lib/icons/connectIcon';
 import { MqttGlobeIcon } from '@/renderer/lib/icons/connectionIcons';
 import { ICON_MD } from '@/renderer/lib/icons/iconClass';
 import { useIconTrigger } from '@/renderer/lib/icons/iconMotionContext';
+import { canTransmitLocation } from '@/renderer/lib/locationTransmit';
+import {
+  readMeshcoreAutoOffloadWhenFull,
+  writeMeshcoreAutoOffloadWhenFull,
+} from '@/renderer/lib/meshcore/meshcoreContactCapacityPush';
 import { isMeshcoreTcpOpenHopDeadAccepted } from '@/renderer/lib/meshcore/meshcoreTcpInitBurst';
 import {
   meshcoreConfiguredChannelIndexSet,
@@ -60,7 +65,9 @@ import {
 } from '@/renderer/lib/meshcoreConfiguredChatChannels';
 import { persistMeshcoreSelfNodeId } from '@/renderer/lib/meshcoreLastSelfNodeId';
 import { resolveMeshcoreOwnNodeIdSet } from '@/renderer/lib/meshcoreOwnNodeIds';
+import { getMeshcoreCompanionRepeaterRfBusySnapshot } from '@/renderer/lib/meshcoreRepeaterRpcInFlight';
 import { totalRoomsUnreadCount } from '@/renderer/lib/meshcoreRoomsUnread';
+import { getMeshcoreSilentBulkDrainSnapshot } from '@/renderer/lib/meshcoreWaitingMessagesDrain';
 import { meshcoreWaitingMessagesVisibleForProtocol } from '@/renderer/lib/meshcoreWaitingMessagesStatusText';
 import { meshtasticMqttOwnNodeIds } from '@/renderer/lib/meshtasticMqttIdentity';
 import { remoteConfigChannelRetryRoute } from '@/renderer/lib/meshtasticRemoteAdminSnapshot';
@@ -71,9 +78,15 @@ import { resolveReticulumOwnNodeIdSet } from '@/renderer/lib/reticulumOwnNodeIds
 import { resolveInactiveRrcNotificationType } from '@/renderer/lib/rrcInactiveNotifications';
 import { shouldPlayRrcNotification } from '@/renderer/lib/rrcNotificationGate';
 import { rrcRoomsMatch } from '@/renderer/lib/rrcRoomName';
+import { runUpdateAction } from '@/renderer/lib/runUpdateAction';
 import { createUpdateMenuNotifyController } from '@/renderer/lib/updateMenuNotifyController';
 import type { UpdateCheckingPayload } from '@/shared/electron-api.types';
+import {
+  meshtasticDeviceRoleFromConfigSlice,
+  resolveAppliedMeshtasticDeviceRole,
+} from '@/shared/meshtasticAppliedDeviceRole';
 import type { RrcChatMessage } from '@/shared/rrc-types';
+import { touch } from '@/shared/touch';
 
 import BootSequence from './components/BootSequence';
 import ConfigureNodeSelector from './components/ConfigureNodeSelector';
@@ -83,6 +96,8 @@ import { GlobalInstantTooltip } from './components/GlobalInstantTooltip';
 import { HelpTooltip } from './components/HelpTooltip';
 import { InactiveProtocolNotifier } from './components/InactiveProtocolNotifier';
 import LanguageSelector from './components/LanguageSelector';
+import { LongSessionRestartBanner } from './components/LongSessionRestartBanner';
+import { MeshcoreFloodAdvertHeaderButton } from './components/MeshcoreFloodAdvertHeaderButton';
 import { MeshcoreWaitingMessagesHeaderIndicator } from './components/MeshcoreWaitingMessagesHeaderIndicator';
 import { ProtocolAutoConnectCoordinator } from './components/ProtocolAutoConnectCoordinator';
 import { ProtocolSwitcher } from './components/ProtocolSwitcher';
@@ -204,6 +219,7 @@ import {
   MESHCORE_FIRMWARE_RELEASES_URL,
   MESHTASTIC_FIRMWARE_RELEASES_URL,
 } from './lib/firmwareCheck';
+import { applyFontScale, loadFontScale } from './lib/fontScale';
 import { loadLastConnection } from './lib/lastConnectionStorage';
 import { generateLetsMeshAuthToken, readMeshcoreIdentityAsync } from './lib/letsMeshJwt';
 import { meshcoreChatMessagesForDisplay } from './lib/meshcoreChannelText';
@@ -226,6 +242,7 @@ import {
 } from './lib/meshtasticMqttLiveIngest';
 import { shouldAutoLaunchMeshcoreMqttAtStartup, tryAutoLaunchMqtt } from './lib/mqttAutoLaunch';
 import { nodeLabelForRawPacket } from './lib/nodeLongNameOrHex';
+import { OPEN_NOMAD_PAGE_EVENT, type OpenNomadPageDetail } from './lib/nomad/openNomadPageFromLink';
 import { ensureOfflineProtocolIdentities } from './lib/offlineProtocolIdentities';
 import { parseStoredJson } from './lib/parseStoredJson';
 import { protocolHeaderBorderClass } from './lib/protocolTheme';
@@ -233,8 +250,12 @@ import { queueBadgeColorClass } from './lib/queueBadgeColors';
 import { useRadioProvider } from './lib/radio/providerFactory';
 import type { ReticulumRawPacketEntry } from './lib/rawPacketLogConstants';
 import { repairMeshtasticReplyPreviews } from './lib/replyPreview';
+import { buildResendArgs } from './lib/reticulum/buildResendArgs';
 import { reticulumHashToNodeId } from './lib/reticulum/destHash';
-import { openReticulumDmFromHash } from './lib/reticulum/reticulumDestinationInput';
+import {
+  openReticulumDmFromHash,
+  ReticulumChatMissingLxmfError,
+} from './lib/reticulum/reticulumDestinationInput';
 import {
   setReticulumGamesTabFocused,
   totalGamesUnread,
@@ -277,11 +298,13 @@ import { useIdentityStore } from './stores/identityStore';
 import { useMapLayerStore } from './stores/mapLayerStore';
 import { useMapViewportStore } from './stores/mapViewportStore';
 import { useNodeStore } from './stores/nodeStore';
+import { useNomadPageViewerStore } from './stores/nomadPageViewerStore';
 import { usePathHistoryStore } from './stores/pathHistoryStore';
 import { usePositionHistoryStore } from './stores/positionHistoryStore';
 import { useReticulumGamesStore } from './stores/reticulumGamesStore';
 import { useReticulumIdentityStore } from './stores/reticulumIdentityStore';
 import { useReticulumPeerStore } from './stores/reticulumPeerStore';
+import { useReticulumSetupGuideStore } from './stores/reticulumSetupGuideStore';
 import { useReticulumVoiceMemoStore } from './stores/reticulumVoiceMemoStore';
 import { useRncpTransferStore } from './stores/rncpTransferStore';
 import { useRrcSessionStore } from './stores/rrcSessionStore';
@@ -327,6 +350,7 @@ export interface UpdateState {
   isPackaged?: boolean;
   isMac?: boolean;
   percent?: number;
+  errorMessage?: string;
 }
 
 const LOG_PANEL_VISIBLE_KEY = 'mesh-client:logPanelVisible';
@@ -719,6 +743,9 @@ function AppContent() {
       }
     },
   );
+  const [meshcoreAutoOffloadWhenFull, setMeshcoreAutoOffloadWhenFullState] = useState(() =>
+    readMeshcoreAutoOffloadWhenFull(),
+  );
   const onMeshcoreContactsShowPublicKeysChange = useCallback((value: boolean) => {
     setMeshcoreContactsShowPublicKeysState(value);
     try {
@@ -734,6 +761,10 @@ function AppContent() {
     } catch {
       // catch-no-log-ok localStorage
     }
+  }, []);
+  const onMeshcoreAutoOffloadWhenFullChange = useCallback((value: boolean) => {
+    setMeshcoreAutoOffloadWhenFullState(value);
+    writeMeshcoreAutoOffloadWhenFull(value);
   }, []);
 
   // ─── Auto flood advert interval (MeshCore) ───────────────────────
@@ -773,6 +804,7 @@ function AppContent() {
   // ─── Theme colors (localStorage overrides for @theme tokens) ─────
   useLayoutEffect(() => {
     applyThemeColors(loadThemeColors());
+    applyFontScale(loadFontScale());
   }, []);
 
   useEffect(() => {
@@ -840,7 +872,7 @@ function AppContent() {
       },
     },
   });
-  useLongSessionMaintenance();
+  const longSessionMaintenance = useLongSessionMaintenance();
   useRendererHeartbeat();
   useSerialServiceListeners();
   useSpellcheckReplaceSync();
@@ -1133,7 +1165,7 @@ function AppContent() {
     (text: string, channel: number, destination?: number, replyRef?: number | string) => {
       const replyTo =
         replyRef == null ? undefined : typeof replyRef === 'string' ? replyRef : String(replyRef);
-      sendMessage(text, channel, destination, replyTo);
+      return sendMessage(text, channel, destination, replyTo);
     },
     [sendMessage],
   );
@@ -1261,7 +1293,7 @@ function AppContent() {
   );
 
   const meshtasticChatUnread = useMemo(() => {
-    void lastReadRevision.meshtastic;
+    touch(lastReadRevision.meshtastic);
     const lastRead = getSanitizedMeshtasticChatLastRead(
       meshtasticUiMessages,
       meshtasticOwnNodeIdSet,
@@ -1282,7 +1314,7 @@ function AppContent() {
   ]);
 
   const meshcoreChatLastRead = useMemo(() => {
-    void lastReadRevision.meshcore;
+    touch(lastReadRevision.meshcore);
     return getSanitizedMeshcoreChatLastRead(meshcoreUiMessages);
   }, [lastReadRevision.meshcore, meshcoreUiMessages]);
 
@@ -1319,7 +1351,7 @@ function AppContent() {
   ]);
 
   const reticulumChatUnread = useMemo(() => {
-    void lastReadRevision.reticulum;
+    touch(lastReadRevision.reticulum);
     const lastRead = getSanitizedReticulumChatLastRead(reticulumUiMessages, reticulumOwnNodeIdSet);
     return computeReticulumChatUnread(
       reticulumUiMessages,
@@ -1342,10 +1374,10 @@ function AppContent() {
   const rrcHubDestHash = useRrcSessionStore((s) => s.hubDestHash);
   const rrcLocalIdentityHash = useRrcSessionStore((s) => s.localIdentityHash);
   const rrcUnread = useMemo(() => {
-    void rrcUnreadByRoom;
-    void rrcUnreadByHub;
+    touch(rrcUnreadByRoom);
+    touch(rrcUnreadByHub);
     // Non-focused hubs only touch `sessionsByHub`, not the focused-hub mirror fields above.
-    void rrcSessionsByHub;
+    touch(rrcSessionsByHub);
     return useRrcSessionStore.getState().totalUnread();
   }, [rrcUnreadByRoom, rrcUnreadByHub, rrcSessionsByHub]);
   const remotePendingOffers = useRncpTransferStore((s) => s.pendingOffers.size);
@@ -1358,8 +1390,8 @@ function AppContent() {
   }, [rrcMessages]);
 
   const meshcoreRoomsUnread = useMemo(() => {
-    void roomsLastReadRevision;
-    void meshcoreMutedViewsRevision;
+    touch(roomsLastReadRevision);
+    touch(meshcoreMutedViewsRevision);
     const roomsLastRead = getSanitizedMeshcoreRoomsLastRead(meshcoreUiMessages);
     const knownRoomServerIds = meshcoreRoomServerIdsFromNodes(meshcoreUiNodes.values());
     const rawCount = totalRoomsUnreadCount(
@@ -1721,6 +1753,39 @@ function AppContent() {
   const isConnectedOrOperational =
     isOperational || activeConnectionView.state.status === 'connected';
 
+  const meshtasticSelfRole =
+    protocol === 'meshtastic'
+      ? resolveAppliedMeshtasticDeviceRole(
+          meshtasticDeviceRoleFromConfigSlice(meshtasticRuntime.meshtasticConfigSlices?.device),
+          nodesForUi.get(meshtasticConnectionView.state.myNodeNum)?.role ?? null,
+        )
+      : null;
+
+  let chatShareLocationResolver: (() => Promise<{ lat: number; lon: number } | null>) | undefined;
+  if (protocol === 'meshtastic') {
+    if (canTransmitLocation({ protocol: 'meshtastic', meshtasticRole: meshtasticSelfRole })) {
+      chatShareLocationResolver = async () => {
+        const pos = await meshtasticPanelActions.refreshOurPosition();
+        return pos ? { lat: pos.lat, lon: pos.lon } : null;
+      };
+    }
+  } else if (protocol === 'meshcore') {
+    if (canTransmitLocation({ protocol: 'meshcore' })) {
+      chatShareLocationResolver = async () => {
+        const pos = await meshcorePanelActions.refreshOurPosition();
+        return pos ? { lat: pos.lat, lon: pos.lon } : null;
+      };
+    }
+  } else if (protocol === 'reticulum') {
+    if (canTransmitLocation({ protocol: 'reticulum' })) {
+      chatShareLocationResolver = async () => {
+        const stored = readStoredStaticGps();
+        const pos = await resolveOurPosition(undefined, undefined, stored?.lat, stored?.lon);
+        return pos ? { lat: pos.lat, lon: pos.lon } : null;
+      };
+    }
+  }
+
   const hasLocalMeshtasticRadio =
     capabilities.hasRemoteAdmin &&
     meshtasticConnectionView.state.myNodeNum > 0 &&
@@ -1752,6 +1817,35 @@ function AppContent() {
   const effectiveChannelConfigs = isRemoteConfigureTarget
     ? (meshtasticRuntime.remoteConfigSnapshot?.channelConfigs ?? [])
     : meshtasticRuntime.channelConfigs;
+  // Stable identity: RadioPanel syncs MeshCore LoRa form fields from this object, so a fresh
+  // object per render would overwrite in-progress user edits.
+  const meshcoreRadioFreq = meshcoreRuntime.selfInfo?.radioFreq;
+  const meshcoreRadioBw = meshcoreRuntime.selfInfo?.radioBw;
+  const meshcoreRadioSf = meshcoreRuntime.selfInfo?.radioSf;
+  const meshcoreRadioCr = meshcoreRuntime.selfInfo?.radioCr;
+  const meshcoreTxPower = meshcoreRuntime.selfInfo?.txPower;
+  const hasMeshcoreSelfInfo = meshcoreRuntime.selfInfo != null;
+  const meshcoreLoraConfig = useMemo(
+    () =>
+      capabilities.hasCompanionContactManagementConfig && hasMeshcoreSelfInfo
+        ? {
+            freq: meshcoreRadioFreq,
+            bw: meshcoreRadioBw,
+            sf: meshcoreRadioSf,
+            cr: meshcoreRadioCr,
+            txPower: meshcoreTxPower,
+          }
+        : undefined,
+    [
+      capabilities.hasCompanionContactManagementConfig,
+      hasMeshcoreSelfInfo,
+      meshcoreRadioFreq,
+      meshcoreRadioBw,
+      meshcoreRadioSf,
+      meshcoreRadioCr,
+      meshcoreTxPower,
+    ],
+  );
   const effectiveLoraConfig = isRemoteConfigureTarget
     ? (meshtasticRuntime.remoteConfigSnapshot?.loraConfig ?? null)
     : meshtasticRuntime.loraConfig;
@@ -1895,10 +1989,14 @@ function AppContent() {
 
   const handleResend = useCallback(
     (msg: ChatMessage) => {
-      const replyTo =
-        msg.reticulum_reply_to_hash ?? (msg.replyId != null ? String(msg.replyId) : undefined);
-      const retryOfStoreId = msg.reticulum_message_hash ?? msg.storeId;
-      sendMessage(msg.payload, msg.channel, msg.to ?? undefined, replyTo, retryOfStoreId);
+      const args = buildResendArgs(msg);
+      sendMessage(
+        args.text,
+        args.channelIndex,
+        args.destination,
+        args.replyTo,
+        args.retryOfStoreId,
+      );
     },
     [sendMessage],
   );
@@ -2014,6 +2112,48 @@ function AppContent() {
     };
   }, [handleOpenGamesSession]);
 
+  const handleOpenNomadPage = useCallback(
+    (destinationHash: string, path: string) => {
+      // Gate on Reticulum capabilities — links must work while another protocol is active.
+      if (!reticulumCapabilities.hasNomadNetworkPanel) return;
+      if (protocol !== 'reticulum') {
+        lastTabByProtocol.current.set(protocol, activeTab);
+        lastPanelByProtocol.current.set(protocol, activePanelIndex);
+        localStorage.setItem(MESH_PROTOCOL_STORAGE_KEY, 'reticulum');
+        setProtocol('reticulum');
+      }
+      const nomadTabIndex = findFilteredTabIndexForPanel(
+        selectByProtocol(tabsByProtocol, 'reticulum'),
+        NOMAD_NETWORK_PANEL_INDEX,
+      );
+      if (nomadTabIndex >= 0) {
+        setActiveTab(nomadTabIndex);
+        setNomadTabVisited(true);
+      }
+      void useNomadPageViewerStore.getState().loadPage(destinationHash, path);
+    },
+    [
+      activePanelIndex,
+      activeTab,
+      protocol,
+      reticulumCapabilities.hasNomadNetworkPanel,
+      tabsByProtocol,
+    ],
+  );
+
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const detail = (event as CustomEvent<OpenNomadPageDetail>).detail;
+      if (detail?.destinationHash) {
+        handleOpenNomadPage(detail.destinationHash, detail.path);
+      }
+    };
+    window.addEventListener(OPEN_NOMAD_PAGE_EVENT, onOpen);
+    return () => {
+      window.removeEventListener(OPEN_NOMAD_PAGE_EVENT, onOpen);
+    };
+  }, [handleOpenNomadPage]);
+
   useEffect(() => {
     setReticulumGamesTabFocused(
       protocol === 'reticulum' &&
@@ -2066,6 +2206,8 @@ function AppContent() {
 
   useEffect(() => {
     const liveResolvedMessageCount = selectByProtocol(storeMessageCountByProtocol, protocol);
+    const rfBusy = getMeshcoreCompanionRepeaterRfBusySnapshot();
+    const silentBulk = getMeshcoreSilentBulkDrainSnapshot();
     setDebugSnapshotUiContext({
       activePanelIndex,
       chatTabVisited,
@@ -2075,6 +2217,15 @@ function AppContent() {
       activeProtocol: protocol,
       waitingMessagesSilentDrainActive: meshcoreRuntime.waitingMessagesSilentDrainActive,
       waitingMessagesDrainDeferred: meshcoreRuntime.waitingMessagesDrainDeferred,
+      meshcoreDrain: {
+        meshcoreCompanionRepeaterRfBusy: rfBusy.repeaterRfBusy,
+        meshcoreCliReplyHoldCount: rfBusy.cliReplyHoldCount,
+        meshcoreAdminRpcInFlightCount: rfBusy.adminRpcInFlightCount,
+        meshcoreTraceRpcInFlightCount: rfBusy.traceRpcInFlightCount,
+        meshcoreTraceResponsesInFlightCount: rfBusy.traceResponsesInFlightCount,
+        meshcoreSilentBulkSkipped: silentBulk.silentBulkSkipped,
+        meshcoreSilentBulkTimeoutStreak: silentBulk.silentBulkTimeoutStreak,
+      },
     });
   }, [
     activePanelIndex,
@@ -2136,10 +2287,7 @@ function AppContent() {
     setPendingDmTarget(null);
   }, []);
 
-  const {
-    refreshNodesFromDb: refreshMeshtasticNodesInStore,
-    refreshMessagesFromDb: refreshMeshtasticMessagesInStore,
-  } = meshtasticDbRefresh;
+  const { refreshMessagesFromDb: refreshMeshtasticMessagesInStore } = meshtasticDbRefresh;
   const {
     refreshNodesFromDb: refreshMeshcoreNodesInStore,
     refreshMessagesFromDb: refreshMeshcoreMessagesInStore,
@@ -2148,19 +2296,13 @@ function AppContent() {
   const refreshNodesFromDb = useCallback(() => {
     const actions = selectByProtocol(panelActionsByProtocol, protocol);
     if (capabilities.hasRemoteAdmin) {
+      // Meshtastic runtime refresh already replace-syncs the identity node store.
       void actions.refreshNodesFromDb();
-      void refreshMeshtasticNodesInStore();
     } else {
       void actions.refreshNodesFromDb();
-      void refreshMeshcoreNodesInStore();
+      void refreshMeshcoreNodesInStore({ nodesMode: 'replace' });
     }
-  }, [
-    protocol,
-    capabilities.hasRemoteAdmin,
-    panelActionsByProtocol,
-    refreshMeshtasticNodesInStore,
-    refreshMeshcoreNodesInStore,
-  ]);
+  }, [protocol, capabilities.hasRemoteAdmin, panelActionsByProtocol, refreshMeshcoreNodesInStore]);
 
   const refreshMessagesFromDb = useCallback(
     (opts?: MessageClearRefreshOptions) => {
@@ -2307,7 +2449,7 @@ function AppContent() {
       setUpdateState((s) => ({ ...s, phase: 'ready' }));
     });
     const offError = window.electronAPI.update.onError((info) => {
-      setUpdateState((s) => ({ ...s, phase: 'error' }));
+      setUpdateState((s) => ({ ...s, phase: 'error', errorMessage: info.message }));
       menuUpdateNotifyCtrl.flushSettled('error', { message: info.message });
     });
     return () => {
@@ -2621,10 +2763,20 @@ function AppContent() {
 
   const handleOpenReticulumDmByHash = useCallback(
     (hash: string) => {
-      const nodeId = openReticulumDmFromHash(hash);
-      handleMessageNode(nodeId);
+      try {
+        const nodeId = openReticulumDmFromHash(hash);
+        handleMessageNode(nodeId);
+      } catch (e) {
+        if (e instanceof ReticulumChatMissingLxmfError) {
+          // catch-no-log-ok expected missing-lxmf; surface via toast
+          addToast(t('chatPanel.reticulumChatNeedsLxmfDelivery'), 'error');
+          return;
+        }
+        console.warn('[App] open Reticulum DM by hash failed ' + errLikeToLogString(e));
+        addToast(t('chatPanel.dmAddressInvalid'), 'error');
+      }
     },
-    [handleMessageNode],
+    [addToast, handleMessageNode, t],
   );
 
   const handleOpenRoom = useCallback(
@@ -2713,7 +2865,12 @@ function AppContent() {
       : capabilities.modulesTabUsesRepeatersLabel
         ? t('app.meshcoreQueueTooltip')
         : t('app.meshtasticQueueTooltip');
-  const reticulumTxBuffering = protocol === 'reticulum' && queueShowBadge && queueUsed > 0;
+  const reticulumQueueBuffering =
+    protocol === 'reticulum' &&
+    legacyQueue != null &&
+    'buffering' in legacyQueue &&
+    legacyQueue.buffering === true;
+  const reticulumTxBuffering = reticulumQueueBuffering;
   const takStatusLabel =
     takClientLoss && takStatus.running
       ? t('app.takClientLost')
@@ -2908,6 +3065,12 @@ function AppContent() {
                     })}
                   </span>
                 )}
+              {capabilities.hasRoomServersPanel ? (
+                <MeshcoreFloodAdvertHeaderButton
+                  disabled={!isOperational}
+                  onSend={meshcorePanelActions.sendAdvert}
+                />
+              ) : null}
               {showMeshcoreWaitingMessagesIndicator && (
                 <MeshcoreWaitingMessagesHeaderIndicator
                   waitingMessagesCount={meshcoreWaitingMessagesInput.waitingMessagesCount}
@@ -2961,6 +3124,13 @@ function AppContent() {
           reconnectAttempt={activeConnectionView.state.reconnectAttempt}
           onReconnect={handleReconnect}
         />
+
+        {longSessionMaintenance.visible ? (
+          <LongSessionRestartBanner
+            onRestart={longSessionMaintenance.onRestart}
+            onDismiss={longSessionMaintenance.onDismiss}
+          />
+        ) : null}
 
         {/* Telemetry disabled notice */}
         {isOperational && activeRuntime.telemetryEnabled === false && !telemetryNoticeDismissed && (
@@ -3132,6 +3302,11 @@ function AppContent() {
                                 setActiveTab(networkTabIdx);
                               }
                             }}
+                            onOpenReticulumSetupDestination={(destination) => {
+                              const target = tabSlotIds.indexOf(destination);
+                              if (target >= 0) setActiveTab(target);
+                              return target >= 0;
+                            }}
                             onOpenAppGpsSettings={() => {
                               const appTabIdx = tabSlotIds.indexOf('App');
                               if (appTabIdx >= 0) {
@@ -3171,6 +3346,12 @@ function AppContent() {
                                 ? meshcoreRuntime.channels
                                 : undefined
                             }
+                            onSetMeshcoreChannel={
+                              capabilities.hasCompanionContactManagementConfig
+                                ? meshcorePanelActions.meshcoreSetChannel
+                                : undefined
+                            }
+                            meshcoreChannelManagementDisabled={!isOperational}
                             myNodeNum={
                               typeof activeRuntime.selfNodeId === 'number'
                                 ? activeRuntime.selfNodeId
@@ -3200,6 +3381,7 @@ function AppContent() {
                             onDmTargetConsumed={handleDmTargetConsumed}
                             isActive={activePanelIndex === 1}
                             protocol={protocol}
+                            identityId={focusedIdentityId}
                             dmOnlyChat={capabilities.hasReticulumInterfaceConfig}
                             hasRncpTransfer={capabilities.hasRncpTransfer}
                             hasLxstVoice={capabilities.hasLxstVoice}
@@ -3235,6 +3417,12 @@ function AppContent() {
                                           addToast(
                                             t('chatPanel.voiceMemo.tooLargeForPropagation'),
                                             'info',
+                                          );
+                                        },
+                                        onMissingLxmfDelivery: () => {
+                                          addToast(
+                                            t('chatPanel.reticulumChatNeedsLxmfDelivery'),
+                                            'error',
                                           );
                                         },
                                       });
@@ -3323,27 +3511,9 @@ function AppContent() {
                                 reticulumConnectionView.state.status === 'connected' ||
                                 reticulumConnectionView.state.status === 'stale')
                             }
-                            resolveShareLocation={async () => {
-                              if (protocol === 'meshtastic') {
-                                const pos = await meshtasticPanelActions.refreshOurPosition();
-                                return pos ? { lat: pos.lat, lon: pos.lon } : null;
-                              }
-                              if (protocol === 'meshcore') {
-                                const pos = await meshcorePanelActions.refreshOurPosition();
-                                return pos ? { lat: pos.lat, lon: pos.lon } : null;
-                              }
-                              // Reticulum: no RF self-node GPS — use static / OS / IP waterfall.
-                              const stored = readStoredStaticGps();
-                              const pos = await resolveOurPosition(
-                                undefined,
-                                undefined,
-                                stored?.lat,
-                                stored?.lon,
-                              );
-                              return pos ? { lat: pos.lat, lon: pos.lon } : null;
-                            }}
+                            resolveShareLocation={chatShareLocationResolver}
                             onSendLocationWaypoint={
-                              protocol === 'meshtastic'
+                              protocol === 'meshtastic' && chatShareLocationResolver
                                 ? async (lat, lon, channel) => {
                                     const id =
                                       crypto.getRandomValues(new Uint32Array(1))[0] >>> 0 || 1;
@@ -3415,6 +3585,7 @@ function AppContent() {
                                   activePanelIndex === RRC_PANEL_INDEX && capabilities.hasRrcPanel
                                 }
                                 alwaysShowMessageActions={alwaysShowMessageActions}
+                                onOpenDm={handleOpenReticulumDmByHash}
                               />
                             </div>
                           </Suspense>
@@ -3660,6 +3831,16 @@ function AppContent() {
                                 onStartStack={startReticulumStackManual}
                                 propagationSectionOpenKey={reticulumPropagationNavKey}
                                 onOpenInterfaces={handleNavigateToReticulumConnection}
+                                onOpenSetupGuide={() => {
+                                  const target = findFilteredTabIndexForPanel(
+                                    selectByProtocol(tabsByProtocol, 'reticulum'),
+                                    0,
+                                  );
+                                  if (target < 0) return false;
+                                  useReticulumSetupGuideStore.getState().setOpen(true);
+                                  setActiveTab(target);
+                                  return true;
+                                }}
                                 onOpenAppGpsSettings={() => {
                                   const appTabIdx = tabSlotIds.indexOf('App');
                                   if (appTabIdx >= 0) {
@@ -3697,6 +3878,16 @@ function AppContent() {
                                       ? effectiveMeshtasticConfigSlices
                                       : undefined
                                   }
+                                  moduleConfigs={
+                                    capabilities.hasChannelConfig
+                                      ? effectiveModuleConfigs
+                                      : undefined
+                                  }
+                                  onSetModuleConfig={
+                                    capabilities.hasChannelConfig
+                                      ? meshtasticPanelActions.setModuleConfig
+                                      : undefined
+                                  }
                                   onApplyChannelSet={
                                     capabilities.hasChannelConfig
                                       ? meshtasticPanelActions.applyChannelSet
@@ -3717,6 +3908,14 @@ function AppContent() {
                                     meshcorePanelActions.setOwner,
                                   )}
                                   capabilities={capabilities}
+                                  onSendLockdownAuth={
+                                    // Lockdown auth always addresses 'self', so offering it
+                                    // while the panel targets a remote node would silently
+                                    // act on the local radio instead.
+                                    capabilities.hasLockdown && !isRemoteConfigureTarget
+                                      ? meshtasticPanelActions.sendLockdownAuth
+                                      : undefined
+                                  }
                                   meshcoreChannels={
                                     capabilities.hasCompanionContactManagementConfig
                                       ? meshcoreRuntime.channels
@@ -3737,18 +3936,7 @@ function AppContent() {
                                       ? meshcorePanelActions.setRadioParams
                                       : undefined
                                   }
-                                  loraConfig={
-                                    capabilities.hasCompanionContactManagementConfig &&
-                                    meshcoreRuntime.selfInfo
-                                      ? {
-                                          freq: meshcoreRuntime.selfInfo.radioFreq,
-                                          bw: meshcoreRuntime.selfInfo.radioBw,
-                                          sf: meshcoreRuntime.selfInfo.radioSf,
-                                          cr: meshcoreRuntime.selfInfo.radioCr,
-                                          txPower: meshcoreRuntime.selfInfo.txPower,
-                                        }
-                                      : undefined
-                                  }
+                                  loraConfig={meshcoreLoraConfig}
                                   meshcoreSelfInfo={
                                     capabilities.hasCompanionContactManagementConfig
                                       ? meshcoreRuntime.selfInfo
@@ -3797,6 +3985,16 @@ function AppContent() {
                                   onMeshcoreContactsShowRefreshControlChange={
                                     capabilities.hasContactImportExport
                                       ? onMeshcoreContactsShowRefreshControlChange
+                                      : undefined
+                                  }
+                                  meshcoreAutoOffloadWhenFull={
+                                    capabilities.hasContactImportExport
+                                      ? meshcoreAutoOffloadWhenFull
+                                      : undefined
+                                  }
+                                  onMeshcoreAutoOffloadWhenFullChange={
+                                    capabilities.hasContactImportExport
+                                      ? onMeshcoreAutoOffloadWhenFullChange
                                       : undefined
                                   }
                                   onClearAllMeshcoreContacts={
@@ -4524,11 +4722,35 @@ function AppContent() {
                       setUpdateState((s) => ({ ...s, phase: 'error' }));
                     });
                   }}
-                  onDownload={() => window.electronAPI.update.download()}
-                  onInstall={() => window.electronAPI.update.install()}
-                  onViewRelease={() =>
-                    window.electronAPI.update.openReleases(updateState.releaseUrl)
-                  }
+                  onDownload={() => {
+                    void window.electronAPI.update.download().catch((e: unknown) => {
+                      console.warn('[App] update download failed ' + errLikeToLogString(e));
+                      setUpdateState((s) => ({
+                        ...s,
+                        phase: 'error',
+                        errorMessage: errLikeToLogString(e),
+                      }));
+                    });
+                  }}
+                  onInstall={() => {
+                    runUpdateAction(
+                      () => window.electronAPI.update.install(),
+                      setUpdateState,
+                      'update install',
+                    );
+                  }}
+                  onViewRelease={() => {
+                    void window.electronAPI.update
+                      .openReleases(updateState.releaseUrl)
+                      .catch((e: unknown) => {
+                        console.warn('[App] open release failed ' + errLikeToLogString(e));
+                        setUpdateState((s) => ({
+                          ...s,
+                          phase: 'error',
+                          errorMessage: errLikeToLogString(e),
+                        }));
+                      });
+                  }}
                 />
               </span>
             </footer>

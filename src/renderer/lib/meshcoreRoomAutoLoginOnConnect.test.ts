@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import {
+  clearAllMeshcoreRoomAutoLoginFailures,
+  getMeshcoreRoomAutoLoginFailure,
+  setMeshcoreRoomAutoLoginFailure,
+  shouldSkipMeshcoreRoomAutoLogin,
+} from './meshcoreRoomAutoLoginFailure';
 import type { MeshcoreRoomAutoLoginTargetProbe } from './meshcoreRoomAutoLoginOnConnect';
 import {
   isMeshcoreRoomAutoLoginInFlight,
@@ -175,5 +181,17 @@ describe('runMeshcoreRoomAutoLoginSingleFlight', () => {
     await Promise.all([first, second]);
     expect(maxOverlap).toBe(1);
     expect(started).toBe(2);
+  });
+
+  it('clears transient auto-login failures on reset so reconnect can retry', () => {
+    clearAllMeshcoreRoomAutoLoginFailures();
+    setMeshcoreRoomAutoLoginFailure(9, 'timeout');
+    setMeshcoreRoomAutoLoginFailure(10, 'rejected', { stickySkip: true });
+    resetMeshcoreRoomAutoLoginSingleFlight();
+    expect(getMeshcoreRoomAutoLoginFailure(9)).toBeUndefined();
+    expect(shouldSkipMeshcoreRoomAutoLogin(9)).toBe(false);
+    expect(getMeshcoreRoomAutoLoginFailure(10)).toBe('rejected');
+    expect(shouldSkipMeshcoreRoomAutoLogin(10)).toBe(true);
+    clearAllMeshcoreRoomAutoLoginFailures();
   });
 });

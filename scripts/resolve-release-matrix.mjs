@@ -10,9 +10,9 @@ const ROWS = [
     // Build only — GitHub upload is ci-upload-release-assets.mjs (never POST /releases).
     build_script: 'pnpm run dist:mac',
     upload_globs:
-      'release/*.dmg release/*.zip release/*.blockmap release/latest-mac.yml release/mac*/*.dmg release/mac*/*.zip release/mac*/*.blockmap',
+      'release/*.dmg release/*.zip release/*.blockmap release/latest-mac.yml release/mac*/*.dmg release/mac*/*.zip release/mac*/*.blockmap release/00-READ-ME-BEFORE-EXTRACTING-macOS-ZIP.txt',
     sidecar_platform: 'darwin',
-    rust_targets: 'aarch64-apple-darwin',
+    rust_targets: 'x86_64-apple-darwin,aarch64-apple-darwin',
   },
   {
     os: 'ubuntu-latest',

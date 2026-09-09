@@ -11,12 +11,21 @@ import {
 } from '@meshtastic/protobufs';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import { getStoreForwardHistoryProfile } from '@/renderer/lib/appSettingsStorage';
+import {
+  getStoreForwardHistoryProfile,
+  isShareMyLocationEnabled,
+} from '@/renderer/lib/appSettingsStorage';
 import { requestChatOutboxDrain } from '@/renderer/lib/chatOutboxDrain';
 import { getConnectedMeshcoreBleMac } from '@/renderer/lib/connectedMeshcoreBleMac';
 import { setDebugSnapshotMeshtasticContext } from '@/renderer/lib/debugSnapshotMeshtasticContext';
 import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
+import { canTransmitLocation } from '@/renderer/lib/locationTransmit';
 import { shouldSuppressMeshtasticNodeHear } from '@/renderer/lib/meshcoreBleMacMeshtasticNodeId';
+import {
+  clearMeshtasticLockdownStatus,
+  encodeMeshtasticLockdownAuth,
+  type MeshtasticLockdownAuthRequest,
+} from '@/renderer/lib/meshtastic/meshtasticLockdown';
 import {
   buildStoreForwardHistoryToRadioBytes,
   getLastSfHistoryFetchMs,
@@ -50,12 +59,17 @@ import {
 import { readMeshtasticMqttSettingsFromStorage } from '@/renderer/lib/meshtasticMqttSettingsStorage';
 import { NOBLE_BLE_YIELD_RELEASED_EVENT } from '@/renderer/lib/nobleBleYieldReleased';
 import {
+  meshtasticDeviceRoleFromConfigSlice,
+  resolveAppliedMeshtasticDeviceRole,
+} from '@/shared/meshtasticAppliedDeviceRole';
+import {
   type ApplyChannelSetResult,
   channelNameExists,
   countFreeChannelSlots,
   findNextFreeChannelSlot,
 } from '@/shared/meshtasticChannelApply';
 import { markDeleteActiveMqttIdentityError } from '@/shared/meshtasticDeleteNodeError';
+import { assertMeshtasticShortNameValid } from '@/shared/meshtasticShortNameLimits';
 import {
   MESHTASTIC_CHANNEL_ROLE,
   type MeshtasticLoraConfig,
@@ -105,9 +119,11 @@ import {
 } from '../lib/gpsSource';
 import {
   hydrateMeshtasticMessagesFromDb,
+  replaceNodesMapInIdentityStore,
   syncNodesMapToIdentityStore,
 } from '../lib/hydrateIdentityStoresFromDb';
 import { getIdentityIdForProtocol } from '../lib/identityByProtocol';
+import { sameIdentityRefreshSession } from '../lib/identityHydrationCoordinator';
 import {
   getIdentityChatMessages,
   getIdentityNode,
@@ -124,6 +140,11 @@ import { meshtasticTransportParams } from '../lib/meshIdentityBridge';
 import { setMeshtasticRemoteConfigTarget } from '../lib/meshtastic/meshtasticConfigIngressGuard';
 import { setMeshtasticConfigurePhase } from '../lib/meshtastic/meshtasticConfigurePhase';
 import { configureMeshtasticDeviceWithRetry } from '../lib/meshtastic/meshtasticConfigureRetry';
+import {
+  applyMeshtasticBroadcastTransportStatus,
+  isMeshtasticBroadcastDestination,
+  markMeshtasticBroadcastPending,
+} from '../lib/meshtastic/meshtasticHeardRepeat';
 import type { ModulePortEvent, PaxCounterPoint } from '../lib/meshtastic/meshtasticModuleEvents';
 import { normalizeMeshtasticMqttChatMessage } from '../lib/meshtastic/meshtasticMqttChatNormalize';
 import { MeshtasticMqttClientProxyBridge } from '../lib/meshtastic/meshtasticMqttClientProxy';
@@ -196,6 +217,7 @@ import { parseStoredJson } from '../lib/parseStoredJson';
 import { MESHTASTIC_CAPABILITIES } from '../lib/radio/BaseRadioProvider';
 import type { MeshtasticRawPacketEntry } from '../lib/rawPacketLogConstants';
 import { reactionGlyphFromPicker } from '../lib/reactions';
+import { useRelayCoverageStore } from '../lib/relayCoverage/relayCoverageStore';
 import { enrichMeshtasticReplyPreviews, resolveMeshtasticWireReplyId } from '../lib/replyPreview';
 import { rfConnectionTransportOpts } from '../lib/rfConnectionTypes';
 import { createRfReconnectController } from '../lib/rfReconnectController';
@@ -364,7 +386,16 @@ export type RequestStoreForwardHistoryResult =
 
 const MQTT_ONLY_VIRTUAL_LONG_NAME = 'MQTT-only Virtual Address';
 const ROLE_CLIENT = 0;
-const ROLE_CLIENT_MUTE = 1;
+
+function readAppliedMeshtasticRole(identityId: string | null, nodeNum: number): number | null {
+  const nodeRole =
+    identityId && nodeNum > 0 ? (getIdentityNode(identityId, nodeNum)?.role ?? null) : null;
+  const deviceRecord = identityId ? useDeviceStore.getState().devices[identityId] : undefined;
+  const configRole = meshtasticDeviceRoleFromConfigSlice(
+    deviceRecord?.meshtasticConfigSlices?.device,
+  );
+  return resolveAppliedMeshtasticDeviceRole(configRole, nodeRole);
+}
 
 function meshtasticMqttPublishOpts(
   mqttOnly: boolean,
@@ -887,6 +918,7 @@ export function useMeshtasticRuntime() {
       }
       meshtasticIngressDetachRef.current = null;
     }
+    const clearedIdentity = meshtasticIdentityIdRef.current;
     meshtasticIdentityIdRef.current = null;
     meshtasticDriverConnectedRef.current = false;
     setMeshtasticIdentityId(null);
@@ -908,6 +940,13 @@ export function useMeshtasticRuntime() {
     unsubscribesRef.current = [];
     ackMeshPacketIdByTempIdRef.current.clear();
     outboundSendByTempIdRef.current.clear();
+    // Lockdown state is per-radio module state. Cleared here rather than on the
+    // DeviceDisconnected event because radio replacement tears down subscriptions
+    // before disconnecting, so that event never reaches the removed listener.
+    clearMeshtasticLockdownStatus();
+    if (clearedIdentity) {
+      useRelayCoverageStore.getState().clearIdentity(clearedIdentity);
+    }
   }, []);
 
   const clearConfigureTimeout = useCallback(() => {
@@ -1217,7 +1256,7 @@ export function useMeshtasticRuntime() {
         myNodeNumRef.current = mqttOnlyId;
         setState((prev) => ({ ...prev, myNodeNum: mqttOnlyId }));
         console.debug(
-          `[useMeshtasticRuntime] MQTT-only identity: from=!${mqttOnlyId.toString(16).padStart(8, '0')} source=${mqttOnlyIdentitySource(lastRfSelfNodeIdRef.current)}`,
+          `[useMeshtasticRuntime] MQTT-only identity: from=${formatMeshtasticNodeId(mqttOnlyId)} source=${mqttOnlyIdentitySource(lastRfSelfNodeIdRef.current)}`,
         );
         let mqttSelfNodeToPersist: MeshNode | undefined;
         updateNodes((prev) => {
@@ -2606,21 +2645,38 @@ export function useMeshtasticRuntime() {
       }
       wireSubscriptions(activeDevice, type, { driverIdentityId });
 
-      // Show persisted nodes immediately while NodeDB configure replays over BLE/serial.
-      const dbCacheStart = performance.now();
-      let dbCacheNodeCount = 0;
-      try {
-        const cachedNodes = await loadMeshtasticNodeMapFromDb();
-        dbCacheNodeCount = cachedNodes.size;
-        applyMeshtasticNodesToUi(driverIdentityId, cachedNodes);
-      } catch (e) {
-        console.warn(
-          '[useMeshtasticRuntime] attachRfSession db cache hydrate failed ' + errLikeToLogString(e),
+      // Configure immediately (same as reconnect). Do not await SQLite hydrate first —
+      // a multi-hundred-ms gap before wantConfigId lets an orphaned PhoneAPI dump
+      // (nodeInfo/fileInfo) overlap a late configure and drop serial on some RAK4631s (#895).
+      isConfiguringRef.current = true;
+      setMeshtasticConfigurePhase(true);
+      meshtasticIngestSessionRef.current?.setConfiguring(true);
+
+      // Show persisted nodes/messages in parallel while NodeDB configure replays.
+      void (async () => {
+        const dbCacheStart = performance.now();
+        let dbCacheNodeCount = 0;
+        try {
+          const cachedNodes = await loadMeshtasticNodeMapFromDb();
+          // Superseded attach must not stamp a stale snapshot onto a newer session (#895).
+          if (reconnectGenerationRef.current !== generation) {
+            return;
+          }
+          dbCacheNodeCount = cachedNodes.size;
+          applyMeshtasticNodesToUi(driverIdentityId, cachedNodes);
+        } catch (e) {
+          console.warn(
+            '[useMeshtasticRuntime] attachRfSession db cache hydrate failed ' +
+              errLikeToLogString(e),
+          );
+        }
+        if (reconnectGenerationRef.current !== generation) {
+          return;
+        }
+        console.debug(
+          `[useMeshtasticRuntime] attachRfSession dbCache→UI ${Math.round(performance.now() - dbCacheStart)}ms (${dbCacheNodeCount} nodes)`,
         );
-      }
-      console.debug(
-        `[useMeshtasticRuntime] attachRfSession dbCache→UI ${Math.round(performance.now() - dbCacheStart)}ms (${dbCacheNodeCount} nodes)`,
-      );
+      })();
 
       void (async () => {
         try {
@@ -2640,9 +2696,6 @@ export function useMeshtasticRuntime() {
         }
       })();
 
-      isConfiguringRef.current = true;
-      setMeshtasticConfigurePhase(true);
-      meshtasticIngestSessionRef.current?.setConfiguring(true);
       await configureMeshtasticDeviceWithRetry(activeDevice, {
         logTag: 'useMeshtasticRuntime attachRfSession',
       });
@@ -2921,6 +2974,13 @@ export function useMeshtasticRuntime() {
             }
             trackMeshtasticOutboundTempId(tempId, resolvedIdStr);
             updateMessageStatus(identityId, resolvedIdStr, 'acked');
+            applyMeshtasticBroadcastTransportStatus({
+              identityId,
+              transport: 'device',
+              status: 'acked',
+              messageIdBefore: storeKeyBeforeAck,
+              messageIdAfter: resolvedIdStr,
+            });
           }
           const ackSenderId = outboundSendByTempIdRef.current.get(tempId)?.sender_id;
           outboundSendByTempIdRef.current.delete(tempId);
@@ -2949,6 +3009,13 @@ export function useMeshtasticRuntime() {
             const storeKey = resolveMeshtasticOutboundStoreKey(tempId, tempIdStr);
             updateMessageStatus(identityId, storeKey, 'failed', error);
             clearMeshtasticOutboundTempId(tempId);
+            applyMeshtasticBroadcastTransportStatus({
+              identityId,
+              transport: 'device',
+              status: 'failed',
+              messageIdBefore: storeKey,
+              messageIdAfter: storeKey,
+            });
           }
           outboundSendByTempIdRef.current.delete(tempId);
           void window.electronAPI.db
@@ -3055,6 +3122,9 @@ export function useMeshtasticRuntime() {
       if (identityId) {
         trackMeshtasticOutboundTempId(tempId, String(tempId));
         addMessage(identityId, chatMessageToMessageRecord(msg));
+        if (deviceRef.current && isMeshtasticBroadcastDestination(destination)) {
+          markMeshtasticBroadcastPending(identityId, String(tempId));
+        }
       }
 
       // For device path: track this tempId so the RF echo can be suppressed (avoids duplicate)
@@ -3629,6 +3699,7 @@ export function useMeshtasticRuntime() {
 
   const setOwner = useCallback(
     async (owner: { longName: string; shortName: string; isLicensed: boolean }) => {
+      assertMeshtasticShortNameValid(owner.shortName);
       const dest = configureTargetNodeNumRef.current;
       const client = remoteAdminClientRef.current;
       const user: unknown = createMeshtasticMessage(meshtasticMeshProtobuf.UserSchema, {
@@ -3920,6 +3991,19 @@ export function useMeshtasticRuntime() {
     [runRemoteAdminOp],
   );
 
+  /**
+   * `AdminMessage.lockdown_auth` (104) to the local radio. Lockdown is a property of the
+   * attached device, so this never goes through the remote-admin client.
+   */
+  const sendLockdownAuth = useCallback(async (auth: MeshtasticLockdownAuthRequest) => {
+    if (!deviceRef.current) return;
+    await deviceRef.current.sendPacket(
+      encodeMeshtasticLockdownAuth(auth),
+      meshtasticPortnums.PortNum.ADMIN_APP,
+      'self',
+    );
+  }, []);
+
   const getRemoteAdminSessionStatus = useCallback((nodeNum: number): RemoteAdminSessionStatus => {
     return remoteAdminClientRef.current?.sessionStore.getStatus(nodeNum) ?? 'none';
   }, []);
@@ -3964,15 +4048,25 @@ export function useMeshtasticRuntime() {
   }, []);
 
   const refreshNodesFromDb = useCallback(() => {
+    const storeIdAtStart =
+      meshtasticIdentityIdRef.current ?? meshtasticPendingDriverIdentityRef.current;
+    const generationAtStart = reconnectGenerationRef.current;
     void loadMeshtasticNodeMapFromDb()
       .then((nodeMap) => {
-        console.debug(`[useMeshtasticRuntime] refreshNodesFromDb: loaded ${nodeMap.size} nodes`);
-        const storeId =
+        const storeIdNow =
           meshtasticIdentityIdRef.current ?? meshtasticPendingDriverIdentityRef.current;
-        if (storeId) {
-          syncNodesMapToIdentityStore(storeId, nodeMap);
-        } else {
-          setNodes(nodeMap);
+        if (
+          !sameIdentityRefreshSession(
+            { identityId: storeIdAtStart, generation: generationAtStart },
+            { identityId: storeIdNow, generation: reconnectGenerationRef.current },
+          )
+        ) {
+          return;
+        }
+        console.debug(`[useMeshtasticRuntime] refreshNodesFromDb: loaded ${nodeMap.size} nodes`);
+        setNodes(nodeMap);
+        if (storeIdNow) {
+          replaceNodesMapInIdentityStore(storeIdNow, nodeMap);
         }
       })
       .catch((err: unknown) => {
@@ -4085,13 +4179,15 @@ export function useMeshtasticRuntime() {
           if (selfNodeToPersist) persistMeshtasticNode(selfNodeToPersist);
         }
 
-        const isClientMute =
-          getIdentityNode(meshtasticIdentityIdRef.current, myNodeNumRef.current)?.role ===
-          ROLE_CLIENT_MUTE;
+        const meshtasticRole = readAppliedMeshtasticRole(
+          meshtasticIdentityIdRef.current,
+          myNodeNumRef.current,
+        );
         const wouldSendWithoutMute =
           deviceRef.current &&
           (pos.source === 'static' || (pos.source === 'browser' && deviceGpsModeRef.current === 2));
-        const shouldSendToDevice = !isClientMute && wouldSendWithoutMute;
+        const shouldSendToDevice =
+          canTransmitLocation({ protocol: 'meshtastic', meshtasticRole }) && wouldSendWithoutMute;
 
         if (shouldSendToDevice && deviceRef.current) {
           deviceRef.current
@@ -4129,11 +4225,11 @@ export function useMeshtasticRuntime() {
 
   const sendPositionToDevice = useCallback(async (lat: number, lon: number, alt?: number) => {
     if (!deviceRef.current) return;
-    if (
-      getIdentityNode(meshtasticIdentityIdRef.current, myNodeNumRef.current)?.role ===
-      ROLE_CLIENT_MUTE
-    )
-      return;
+    const meshtasticRole = readAppliedMeshtasticRole(
+      meshtasticIdentityIdRef.current,
+      myNodeNumRef.current,
+    );
+    if (!canTransmitLocation({ protocol: 'meshtastic', meshtasticRole })) return;
     await deviceRef.current.setPosition(
       createMeshtasticMessage(meshtasticMeshProtobuf.PositionSchema, {
         latitudeI: Math.round(lat * 1e7),
@@ -4147,7 +4243,7 @@ export function useMeshtasticRuntime() {
   const updateGpsInterval = useCallback(
     (secs: number) => {
       stopGpsInterval();
-      if (secs > 0) {
+      if (secs > 0 && isShareMyLocationEnabled()) {
         gpsIntervalRef.current = setInterval(() => {
           refreshOurPositionRef.current().catch((err: unknown) => {
             console.error(
@@ -4596,6 +4692,7 @@ export function useMeshtasticRuntime() {
       setCannedMessages,
       ringtone,
       setRingtone,
+      sendLockdownAuth,
       securityConfig,
       remoteAdminKeysByNode,
       getRemoteAdminKeyForNode,
@@ -4703,6 +4800,7 @@ export function useMeshtasticRuntime() {
       setCannedMessages,
       ringtone,
       setRingtone,
+      sendLockdownAuth,
       securityConfig,
       remoteAdminKeysByNode,
       getRemoteAdminKeyForNode,

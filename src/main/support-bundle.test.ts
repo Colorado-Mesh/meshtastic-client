@@ -111,6 +111,7 @@ describe('extractLxmfOutboundLogSlice', () => {
         'info target=propagation-retrieve sync transfer progress',
         'info target=propagation-sync propagation sync aborted — no path to PN',
         'warn propagation establish failed: NoLinkProof',
+        'warn propagation establish failed: LrproofIdentityMissing',
         'error PROPAGATION_PATH_UNKNOWN',
       ].join('\n'),
       'utf8',
@@ -122,9 +123,27 @@ describe('extractLxmfOutboundLogSlice', () => {
     expect(slice).toContain('propagation-retrieve');
     expect(slice).toContain('propagation-sync');
     expect(slice).toContain('propagation establish');
+    expect(slice).toContain('LrproofIdentityMissing');
     expect(slice).toContain('PROPAGATION_PATH_UNKNOWN');
     expect(slice).not.toContain('hello world');
     expect(slice).not.toContain('peer refresh ok');
+  });
+
+  it('keeps Direct Completes and delivery Failed/Rejected lines', () => {
+    const chunk = Buffer.from(
+      [
+        'info target=lxmf-outbound message_hash=abcd outbound Direct Completes',
+        'warn target=lxmf-outbound dest=deadbeef LXMF delivery Failed',
+        'warn target=lxmf-outbound dest=cafebabe LXMF delivery Rejected',
+        'debug unrelated',
+      ].join('\n'),
+      'utf8',
+    );
+    const slice = extractLxmfOutboundLogSlice(chunk).toString('utf8');
+    expect(slice).toContain('outbound Direct Completes');
+    expect(slice).toContain('LXMF delivery Failed');
+    expect(slice).toContain('LXMF delivery Rejected');
+    expect(slice).not.toContain('unrelated');
   });
 
   it('truncates long hex ids in kept lines', () => {

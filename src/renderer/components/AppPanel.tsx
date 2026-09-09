@@ -18,6 +18,17 @@ import {
 } from '../lib/appSettingsStorage';
 import { formatCoordPair } from '../lib/coordUtils';
 import { DEFAULT_APP_SETTINGS_SHARED } from '../lib/defaultAppSettings';
+import {
+  applyFontScale,
+  clampFontScale,
+  DEFAULT_FONT_SCALE,
+  FONT_SCALE_MAX,
+  FONT_SCALE_MIN,
+  FONT_SCALE_STEP,
+  loadFontScale,
+  persistFontScale,
+  resetFontScale,
+} from '../lib/fontScale';
 import type { OurPosition } from '../lib/gpsSource';
 import { getIdentityIdForProtocol } from '../lib/identityByProtocol';
 import { appPanelSettingsPersistPayload } from '../lib/meshcorePathHashMode';
@@ -101,24 +112,6 @@ function readNodesMapForProtocol(protocol: MeshProtocol): Map<number, MeshNode> 
   return nodeRecordsToMeshNodeMap(Object.values(byId));
 }
 
-const DANGER_ACTION_LABEL_KEY: Record<DangerActionId, string> = {
-  resetDiagnostics: 'appPanel.resetDiagnostics',
-  clearGpsData: 'appPanel.clearGpsData',
-  clearPositionHistory: 'appPanel.clearPositionHistory',
-  deleteOldNodes: 'appPanel.deleteOldNodes',
-  pruneMqttOnlyNodes: 'appPanel.pruneMqttOnlyNodes',
-  pruneUnnamedNodes: 'appPanel.pruneUnnamedNodes',
-  pruneNoFixNodes: 'appPanel.pruneNoFixNodes',
-  pruneDistantNodes: 'appPanel.pruneDistantNodesTitle',
-  pruneOfflineNodes: 'appPanel.pruneOfflineNodesTitle',
-  clearNodes: 'appPanel.clearAllNodesButton',
-  deleteContactsNoPubkeys: 'appPanel.deleteContactsNoPubkeysTitle',
-  clearReticulumContacts: 'appPanel.clearReticulumContactsTitle',
-  clearMessages: 'appPanel.clearMessagesTitle',
-  clearAllRepeaters: 'appPanel.clearAllRepeaters',
-  clearAllData: 'appPanel.clearAllLocalData',
-};
-
 function gpsIntervalLabel(t: (key: string) => string, secs: number): string {
   switch (secs) {
     case 0:
@@ -170,6 +163,7 @@ interface AppSettings {
   storeForwardAutoFetchHistory: boolean;
   storeForwardHistoryProfile: 'conservative' | 'aggressive';
   shareLocationSendWaypoint: boolean;
+  shareMyLocation: boolean;
   reduceMotion: boolean;
   use24HourTime: boolean;
   meshcoreOpenWireCompatEnabled: boolean;
@@ -308,6 +302,19 @@ export default function AppPanel({
     isMessageActionsBarBgVisible(),
   );
   const [deleteAgeDays, setDeleteAgeDays] = useState(90);
+  const [fontScale, setFontScale] = useState<number>(loadFontScale);
+
+  const updateFontScale = useCallback((next: number) => {
+    const clamped = clampFontScale(next);
+    setFontScale(clamped);
+    applyFontScale(clamped);
+    persistFontScale(clamped);
+  }, []);
+
+  const handleResetFontScale = useCallback(() => {
+    resetFontScale();
+    setFontScale(DEFAULT_FONT_SCALE);
+  }, []);
 
   const commitThemeColor = useCallback((key: ThemeColorKey, hex: string) => {
     setThemeColors((prev) => {
@@ -694,7 +701,7 @@ export default function AppPanel({
 
   const handleConfirm = useCallback(async () => {
     if (!pendingAction) return;
-    const { actionId, action, messageClearMeta } = pendingAction;
+    const { actionId, action, messageClearMeta, title } = pendingAction;
     setPendingAction(null);
     try {
       await action();
@@ -705,7 +712,7 @@ export default function AppPanel({
       }
       addToast(
         t('appPanel.actionCompleted', {
-          name: t(DANGER_ACTION_LABEL_KEY[actionId]),
+          name: title,
         }),
         'success',
       );
@@ -799,6 +806,29 @@ export default function AppPanel({
       <div className="space-y-3">
         <h3 className="text-muted text-sm font-medium">{t('appPanel.gpsSection')}</h3>
         <div className="bg-secondary-dark space-y-4 rounded-lg p-4">
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="shareMyLocation"
+              checked={settings.shareMyLocation}
+              onChange={(e) => {
+                const enabled = e.target.checked;
+                updateSetting('shareMyLocation', enabled);
+                if (!enabled) {
+                  handleGpsIntervalChange(0);
+                }
+              }}
+              aria-label={t('appPanel.shareMyLocation')}
+              className="accent-brand-green"
+            />
+            <label htmlFor="shareMyLocation" className="cursor-pointer text-sm text-gray-300">
+              {t('appPanel.shareMyLocation')}
+            </label>
+            <HelpTooltip text={t('appPanel.shareMyLocationHint')} />
+          </div>
+          {!settings.shareMyLocation && (
+            <p className="text-muted text-xs">{t('appPanel.shareMyLocationOffInfo')}</p>
+          )}
           {ourPosition && (
             <p className="text-brand-green text-xs">
               {ourPosition.source === 'device'
@@ -891,9 +921,9 @@ export default function AppPanel({
               onChange={(e) => {
                 handleGpsIntervalChange(Number(e.target.value));
               }}
-              disabled={hasStaticPosition}
+              disabled={hasStaticPosition || !settings.shareMyLocation}
               aria-label={`${t('appPanel.autoRefreshInterval')} ${gpsIntervalLabel(t, gpsRefreshInterval)}`}
-              className={`bg-deep-black focus:border-brand-green rounded border border-gray-600 px-2 py-1 text-sm text-gray-200 focus:outline-none ${hasStaticPosition ? 'cursor-not-allowed opacity-40' : ''}`}
+              className={`bg-deep-black focus:border-brand-green rounded border border-gray-600 px-2 py-1 text-sm text-gray-200 focus:outline-none ${hasStaticPosition || !settings.shareMyLocation ? 'cursor-not-allowed opacity-40' : ''}`}
             >
               <option value={0}>{t('appPanel.gpsIntervalManual')}</option>
               <option value={900}>{t('appPanel.gpsInterval15min')}</option>
@@ -927,9 +957,10 @@ export default function AppPanel({
           <button
             type="button"
             onClick={() => onRefreshGps?.()}
-            disabled={gpsLoading}
+            disabled={gpsLoading || !settings.shareMyLocation}
+            title={!settings.shareMyLocation ? t('appPanel.shareMyLocationOffInfo') : undefined}
             aria-label={gpsLoading ? t('appPanel.gpsRefreshing') : t('appPanel.gpsRefreshNow')}
-            className={`bg-secondary-dark rounded-lg px-4 py-2 text-sm font-medium text-gray-300 transition-colors ${gpsLoading ? 'cursor-not-allowed opacity-50' : 'hover:bg-gray-600'}`}
+            className={`bg-secondary-dark rounded-lg px-4 py-2 text-sm font-medium text-gray-300 transition-colors ${gpsLoading || !settings.shareMyLocation ? 'cursor-not-allowed opacity-50' : 'hover:bg-gray-600'}`}
           >
             {gpsLoading ? t('appPanel.gpsRefreshing') : t('appPanel.gpsRefreshNow')}
           </button>
@@ -1895,6 +1926,62 @@ export default function AppPanel({
             {t('appPanel.use24HourTime')}
           </label>
           <HelpTooltip text={t('appPanel.use24HourTimeDesc')} />
+        </div>
+        <div className="bg-secondary-dark flex flex-col gap-2 rounded-lg border border-gray-700 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <label htmlFor="fontScale" className="cursor-pointer text-sm text-gray-300">
+              {t('appPanel.fontSize')}
+            </label>
+            <HelpTooltip text={t('appPanel.fontSizeDesc')} />
+            <span className="text-muted ml-auto text-xs" aria-live="polite">
+              {Math.round(fontScale * 100)}%
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              aria-label={t('appPanel.decreaseFontSize')}
+              onClick={() => {
+                updateFontScale(fontScale - FONT_SCALE_STEP);
+              }}
+              disabled={fontScale <= FONT_SCALE_MIN}
+              className="rounded border border-gray-600 px-2 py-1 text-sm text-gray-300 transition-colors hover:bg-gray-600 disabled:opacity-40"
+            >
+              −
+            </button>
+            <input
+              id="fontScale"
+              type="range"
+              min={FONT_SCALE_MIN}
+              max={FONT_SCALE_MAX}
+              step={FONT_SCALE_STEP}
+              value={fontScale}
+              aria-label={t('appPanel.fontSize')}
+              onChange={(e) => {
+                updateFontScale(Number.parseFloat(e.target.value));
+              }}
+              className="accent-brand-green flex-1"
+            />
+            <button
+              type="button"
+              aria-label={t('appPanel.increaseFontSize')}
+              onClick={() => {
+                updateFontScale(fontScale + FONT_SCALE_STEP);
+              }}
+              disabled={fontScale >= FONT_SCALE_MAX}
+              className="rounded border border-gray-600 px-2 py-1 text-sm text-gray-300 transition-colors hover:bg-gray-600 disabled:opacity-40"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              aria-label={t('appPanel.resetFontSizeAria')}
+              onClick={handleResetFontScale}
+              className="text-muted text-xs underline transition-colors hover:text-gray-300"
+            >
+              {t('appPanel.resetFontSize')}
+            </button>
+          </div>
         </div>
         <details className="group bg-secondary-dark rounded-lg border border-gray-700">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-4 py-3 text-sm font-medium text-gray-200 hover:bg-gray-800/40 [&::-webkit-details-marker]:hidden">

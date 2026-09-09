@@ -390,7 +390,32 @@
     "themeResetFailed": "Gagal mengatur ulang warna.",
     "messageActionsBarBgVisible": "Tampilkan latar belakang",
     "rrcUnreadAllRoomMessages": "RRC belum dibaca untuk semua pesan kamar",
-    "rrcUnreadAllRoomMessagesHint": "Saat aktif, setiap pesan ruang RRC baru menandai belum dibaca dan dapat memutar suara saluran. Nonaktifkan untuk peringatan bergaya IRC: hanya pesan langsung dan @mention."
+    "rrcUnreadAllRoomMessagesHint": "Saat aktif, setiap pesan ruang RRC baru menandai belum dibaca dan dapat memutar suara saluran. Nonaktifkan untuk peringatan bergaya IRC: hanya pesan langsung dan @mention.",
+    "shareMyLocation": "Bagikan lokasi saya",
+    "shareMyLocationOffInfo": "Berbagi lokasi tidak aktif — penyegaran GPS host dan pengiriman jala dinonaktifkan. Aktifkan Bagikan lokasi saya di atas untuk menggunakan penyegaran otomatis atau kirim posisi Anda.",
+    "shareMyLocationHint": "Saat diaktifkan, aplikasi ini dapat mencari lokasi Anda di komputer ini dan mengirimkannya melalui Meshtastic, MeshCore, atau Reticulum (berbagi obrolan, push radio, RMAP). Saat dinonaktifkan, pencarian GPS tuan rumah dan pengiriman aplikasi tidak aktif; koordinat statis masih berfungsi untuk peta lokal Anda saja. Radio dengan GPS sendiri mungkin masih menunjukkan posisi Anda secara lokal. Firmware perangkat mungkin masih disiarkan sampai Anda menyesuaikan pengaturan Radio atau Modul.",
+    "reticulumBlocklist": {
+      "description": "Pengirim yang diblokir dijatuhkan sebelum pesan LXMF mereka mencapai kotak masuk Anda. Ekspor daftar untuk memindahkannya ke instalasi lain, atau impor daftar untuk memblokir banyak pengirim sekaligus.",
+      "exportButton": "Ekspor daftar blokir",
+      "exportAria": "Ekspor kontak yang diblokir",
+      "importButton": "Impor daftar blokir",
+      "importAria": "Impor kontak yang diblokir",
+      "exportOk": "Mengekspor {{count}} kontak yang diblokir",
+      "exportEmpty": "Tidak ada kontak yang diblokir untuk diekspor.",
+      "exportFailed": "Tidak dapat mengekspor daftar blokir.",
+      "importOk": "Mengimpor {{imported}} kontak yang diblokir ({{skipped}} dilewati)",
+      "importFailed": "Tidak dapat mengimpor daftar blokir.",
+      "unblockAria": "Buka blokiran {{hash}}",
+      "unblockFailed": "Tidak dapat membuka blokir kontak itu.",
+      "empty": "Tidak ada kontak yang diblokir.",
+      "title": "Kontak yang diblokir"
+    },
+    "fontSize": "Ukuran fonta",
+    "fontSizeDesc": "Sesuaikan ukuran teks di seluruh aplikasi. Peta, grafik, dan terminal tidak terpengaruh.",
+    "decreaseFontSize": "Perkecil Ukuran Font",
+    "increaseFontSize": "Perbesarl Ukuran Font",
+    "resetFontSize": "Atur ulang",
+    "resetFontSizeAria": "Atur ulang ukuran font"
   },
   "aria": {
     "closeDialog": "Tutup dialog",
@@ -711,7 +736,21 @@
       "startFailed": "Tidak dapat memulai perekaman memo suara. Coba lagi.",
       "sendAriaWithElapsed": "Kirim memo suara ({{seconds}} detik direkam)",
       "unavailable": "Memo suara tidak tersedia — lampiran tidak di - cache pada perangkat ini."
-    }
+    },
+    "heardByRepeaters_one": "Didengar oleh {{count}}",
+    "heardByRepeaters_other": "Didengar oleh {{count}}",
+    "heardByNetwork": "Didengar oleh jaringan",
+    "notHeardTimeout": "Tidak terdengar (timeout)",
+    "routeRelaysPredicted": "Rute: ~{{count}} relai melalui {{hop}}",
+    "routeViaPredicted": "Rute: via {{hop}}",
+    "routeRelaysPredictedHopsOnly": "Rute: ~{{count}} relai",
+    "heardByRepeatersDetail_one": "Didengar oleh {{count}}: {{names}}",
+    "heardByRepeatersDetail_other": "Didengar oleh {{count}}: {{names}}",
+    "heardByRepeaterNodeFallback": "Node {{nodeId}}",
+    "heardByRepeatersAdditional_one": "{{count}} forwarder tak dikenal tambahan (hash: {{hashes}})",
+    "heardByRepeatersAdditional_other": "{{count}} forwarder tak dikenal tambahan (hash: {{hashes}})",
+    "reticulumSendAwaitingPeerReceipt": "Terkirim (menunggu tanda terima sejawat)",
+    "reticulumChatNeedsLxmfDelivery": "Rekan ini belum memiliki alamat pengiriman LXMF (Obrolan tidak dapat menggunakan tujuan khusus Suara). Tunggu pengumuman LXMF, atau tempelkan hash LXMF 32 karakternya."
   },
   "chatPayload": {
     "mention": "Sebutkan {{label}}",
@@ -1036,7 +1075,9 @@
       "importBackupAria": "Impor cadangan Ratspeak .rsi dari JSON yang ditempelkan",
       "importBackupFromFileAria": "Pilih file cadangan Ratspeak .rsi untuk diimpor",
       "exportAria": "Ekspor cadangan identitas Ratspeak .rsi terenkripsi PIN",
-      "exportRawAria": "Ekspor file identitas Reticulum mentah yang tidak terenkripsi"
+      "exportRawAria": "Ekspor file identitas Reticulum mentah yang tidak terenkripsi",
+      "identityHashLabel": "Hash identitas:",
+      "copyIdentityHash": "Salin hash identitas"
     },
     "reticulumInterfaces": {
       "title": "Interface",
@@ -1117,7 +1158,10 @@
         "blePeer": "Mesh rekan BLE menggunakan alamat rekan benih.",
         "generic": "Antarmuka jaringan Reticulum.",
         "sharedInstanceClient": "Attached as a client of another app’s shared Reticulum instance — local TCP hubs from this config are not started here.",
-        "i2p": "Backbone I2P melalui router pada mesin ini. Aktifkan jembatan aplikasi SAM (127.0.0.1:7656) — bukan proxy HTTP/https I2PTunnel (4444/4445). Mulai ulang I2P setelah mengaktifkan SAM sehingga bridge mendengarkan, lalu mulai ulang tumpukan Reticulum jika antarmuka ini tetap down."
+        "i2p": "Backbone I2P melalui router pada mesin ini. Aktifkan jembatan aplikasi SAM (127.0.0.1:7656) — bukan proxy HTTP/https I2PTunnel (4444/4445). Mulai ulang I2P setelah mengaktifkan SAM sehingga bridge mendengarkan, lalu mulai ulang tumpukan Reticulum jika antarmuka ini tetap down.",
+        "serial": "Tautan serial umum ke TNC, modem, atau host lain melalui kabel. Atur parameter garis agar sesuai dengan ujung.",
+        "ax25kiss": "Radio paket AX.25 melalui TNC KISS. Memerlukan tanda panggil Anda dan SSID (0 -15) yang mengidentifikasi stasiun ini.",
+        "local": "Soket instansi bersama pada mesin ini. Alat lokal lainnya (rnsd, Nomad Network, rnsh) dapat dilampirkan ke tumpukan ini melaluinya. Jalur soket berasal dari nama antarmuka ini, jadi mengganti namanya mengubah alamat yang harus digunakan alat lain."
       },
       "rfProfile": {
         "coordinated": "Daerah yang terkoordinasi",
@@ -1240,10 +1284,38 @@
       "rmapFullModeHint": "Mode penuh dengan RMAP publikasikan tetap Penuh melalui ignore_config_warnings. Pengiriman LXMF mengumumkan akan keluar dari radio ini pada interval pengumuman stack (default 1 jam).",
       "effectiveModeBadge": "Berlaku: {{mode}}",
       "effectiveModeAria": "Mode runtime efektif {{mode}}. Mode yang dikonfigurasi berbeda dari yang dijalankan Reticulum.",
-      "effectiveModeTooltip": "Reticulum menulis ulang antarmuka yang dapat ditemukan ini ke Access Point (atau mode lain yang diizinkan) karena dapat ditemukan memerlukan Gateway, Internal, atau Access Point kecuali jika ignore_config_warnings ditetapkan. Mulai ulang tumpukan setelah stempel mesh-client yang menyisih sehingga Full (atau mode terkonfigurasi Anda) berlaku."
+      "effectiveModeTooltip": "Reticulum menulis ulang antarmuka yang dapat ditemukan ini ke Access Point (atau mode lain yang diizinkan) karena dapat ditemukan memerlukan Gateway, Internal, atau Access Point kecuali jika ignore_config_warnings ditetapkan. Mulai ulang tumpukan setelah stempel mesh-client yang menyisih sehingga Full (atau mode terkonfigurasi Anda) berlaku.",
+      "flowControlBleHint": "Di Bluetooth, radio sering tidak pernah mengirimkan CMD_READY. Mesh-Client masih melangkah TX (menunggu sebentar untuk READY, lalu melanjutkan) sehingga kontrol aliran mengurangi kelebihan beban tanpa membekukan antrian.",
+      "advancedFields": "Pengaturan tingkat lanjut",
+      "field": {
+        "port": "Port",
+        "speed": "Kecepatan (baud)",
+        "databits": "Data Bit",
+        "parity": "Paritas",
+        "stopbits": "Bit penghenti",
+        "callsign": "Callsign",
+        "ssid": "SSID",
+        "flow_control": "Kontrol Aliran",
+        "preamble": "Pembukaan",
+        "txtail": "TX tail (ms)",
+        "persistence": "Pantang menyerah",
+        "slottime": "Waktu slot (ms)"
+      },
+      "fieldOption": {
+        "parity": {
+          "N": "Tidak Ada",
+          "E": "Even",
+          "O": "Ganjil"
+        }
+      },
+      "fieldRequired": "Bidang ini wajib diisi.",
+      "fieldNotANumber": "Masukkan bilangan bulat (digit saja).",
+      "fieldOutOfRange": "Nilai berada di luar rentang yang diizinkan.",
+      "fieldTooLong": "Nilai terlalu panjang.",
+      "fieldInvalidOption": "Nilai tidak didukung."
     },
     "reticulumPeers": {
-      "hops": "Hops",
+      "hops": "Hop",
       "actions": "Aksi",
       "path": "Jalur",
       "probe": "Sonda"
@@ -1433,7 +1505,8 @@
     "pickerDeviceAria": "{{name}} {{address}}",
     "pickerDeviceAriaWithRssi": "{{name}} {{address}}, {{rssi}} dBm",
     "bluetoothMac": "Bluetooth MAC",
-    "bluetoothId": "ID Bluetooth"
+    "bluetoothId": "ID Bluetooth",
+    "reticulumAutoResendOnAnnounce": "Coba lagi pesan yang gagal saat rekan mengumumkan"
   },
   "contactGroupsModal": {
     "failedLoadMembers": "Gagal memuat anggota: {{message}}",
@@ -1456,7 +1529,9 @@
     "confirmDeleteButton": "Hapus?",
     "manageMembersOf": "Kelola anggota {{name}}",
     "renameGroupNamed": "Ganti nama {{name}}",
-    "deleteGroupNamed": "Hapus {{name}}"
+    "deleteGroupNamed": "Hapus {{name}}",
+    "needSelfNode": "Hubungkan radio terlebih dahulu sehingga ID node Anda diketahui sebelum membuat grup kontak.",
+    "failedCreateGroup": "Gagal membuat grup: {{message}}"
   },
   "diagnosticsPanel": {
     "dropRoutingRows": "Hapus baris perutean yang lebih lama dari {{hours}} jam (1–168)",
@@ -1980,7 +2055,14 @@
     "recommendationsHeading": "Rekomendasi",
     "lastMessagePrefix": "Terakhir:",
     "appliesToCategories": "Berlaku untuk: {{labels}}",
-    "severityInfo": "Informasi"
+    "severityInfo": "Informasi",
+    "historyNote": "Temuan menggambarkan peristiwa dalam log ini, belum tentu masalah yang masih aktif.",
+    "copyReport": "Salin laporan pemecahan masalah",
+    "copyHint": "Termasuk pesan log sampel. Tinjau laporan untuk detail pribadi sebelum membagikan.",
+    "copySuccess": "Laporan disalin",
+    "copyFailure": "Tidak dapat menyalin laporan. Coba lagi atau ekspor log.",
+    "evidence": "Lihat bukti untuk {{category}}",
+    "evidenceShown": "Menampilkan {{shown}} dari {{total}} entri yang cocok, terbaru terlebih dahulu."
   },
   "logAnalyzer": {
     "categories": {
@@ -2065,11 +2147,44 @@
         "recommendation": "Riwayat obrolan Simpan & Teruskan tidak dapat diminta dari router (sering kali perlombaan singkat dengan lalu lintas radio lainnya). Jika backlog obrolan tetap kosong, sambungkan kembali atau tunggu detak jantung router berikutnya."
       },
       "serial-reconnect": {
-        "label": "Sambungkan Ulang Serial USB"
+        "label": "Sambungkan Ulang Serial USB",
+        "recommendation": "Port serial USB tidak dapat dibuka kembali atau aliran sebelumnya masih terkunci. Tutup aplikasi lain menggunakan radio, sambungkan kembali kabel, dan sambungkan kembali di aplikasi. Jika berulang, sertakan baris log serial dalam laporan bug."
       },
       "reticulum-nomad-hosting": {
         "label": "Masalah Hosting Halaman Nomad",
         "recommendation": "Hosting Nomad My Pages gagal atau folder konten tidak tersedia. Buka Nomad Network → My Pages, pilih kembali folder pages jika dipindahkan, lalu Start serving. Detail muncul sebagai [nomad-serving] / [NomadHosting] di log."
+      },
+      "renderer-unresponsive": {
+        "label": "Aplikasi berhenti merespons",
+        "recommendation": "Aplikasi berhenti mengirim detak jantung UI. Jika sudah pulih, perhatikan apa yang Anda lakukan di dekat waktu yang tercantum. Jika tetap beku, mulai ulang aplikasi dan sertakan laporan ini saat melaporkan hang berulang."
+      },
+      "database-persistence": {
+        "label": "Perubahan tidak dapat disimpan",
+        "recommendation": "Penulisan basis data kehabisan percobaan ulang atau dijatuhkan. Perubahan yang terlihat dalam sesi ini mungkin tidak bertahan saat restart. Ekspor data penting sebelum keluar, lalu periksa ruang disk kosong dan akses ke folder data aplikasi. Jangan hapus database."
+      },
+      "meshtastic-tcp": {
+        "label": "Koneksi TCP Meshtastic gagal",
+        "recommendation": "Sambungan TCP ke radio Meshtastic gagal. Periksa alamat radio dan port, jangkauan jaringan lokal, dan apakah klien lain menggunakan koneksi sebelum menyambung kembali."
+      },
+      "reticulum-sidecar": {
+        "label": "Layanan Reticulum terganggu",
+        "recommendation": "Layanan Reticulum lokal gagal memulai, merespons, atau mempertahankan koneksi acaranya. Periksa statusnya di Koneksi dan baris log di bawah ini. Jika belum pulih, nyalakan kembali koneksi Reticulum. Komponen layanan bawaan yang hilang mungkin memerlukan pemasangan ulang aplikasi."
+      },
+      "reticulum-delivery": {
+        "label": "Pengiriman atau sinkronisasi Reticulum gagal",
+        "recommendation": "Upaya pengiriman pesan atau sinkronisasi propagasi gagal. Periksa status pesan saat ini sebelum mencoba lagi, selidiki tujuan, dan periksa antarmuka yang diaktifkan. Untuk propagasi, periksa node yang dipilih dan status sinkronisasi di bawah Jaringan; pesan yang disimpan bukan bukti pengiriman penerima."
+      },
+      "reticulum-backpressure": {
+        "label": "Peristiwa atau paket Reticulum dibuang",
+        "recommendation": "Layanan Reticulum setempat menghentikan acara atau paket karena antrian terisi, pelanggan tertinggal, atau muatan melebihi batas. Kurangi transfer massal bersamaan, lalu periksa status pesan sebelum mencoba lagi. Paket yang berulang kali dibuang saat menganggur layak dilaporkan dengan sampel log ini."
+      },
+      "firmware-flash": {
+        "label": "Transfer firmware terhenti",
+        "recommendation": "Transfer firmware berhenti membuat kemajuan dan port serial - nya ditutup. Konfirmasikan firmware dan perangkat yang benar, periksa kabel USB, dan ikuti instruksi pemulihan perangkat atau bootloader sebelum mencoba lagi."
+      },
+      "unclassified": {
+        "label": "Peringatan dan kesalahan lainnya",
+        "recommendation": "Garis log ini tidak cocok dengan diagnosis yang diketahui dan mungkin mencakup pesan pemulihan yang diharapkan. Tinjau stempel waktu dan konteks sekitarnya. Jika masalah berlanjut, ekspor log lengkap dengan laporan ini."
       }
     },
     "recommendationGroups": {
@@ -2232,7 +2347,10 @@
     "clearAllIntro": "Hapus setiap kontak dari radio dan hapus database kontak aplikasi. Hal ini tidak dapat dibatalkan.",
     "clearAllContactsConfirm": "Hapus semua kontak dari radio dan hapus data kontak lokal?",
     "clearingContacts": "Membersihkan…",
-    "clearAllContactsButton": "Hapus semua kontak"
+    "clearAllContactsButton": "Hapus semua kontak",
+    "autoOffloadWhenFull": "Auto - offload saat radio penuh",
+    "autoOffloadWhenFullLabel": "Auto - offload saat penuh",
+    "autoOffloadWhenFullDesc": "Ketika pendamping melaporkan penyimpanan kontak penuh, secara otomatis offload kontak ke database aplikasi (sama seperti Offload)."
   },
   "meshcoreTelemetryPrivacy": {
     "summary": "Privasi telemetri",
@@ -2769,6 +2887,18 @@
     "reticulumScanImport": {
       "title": "Pindai / impor",
       "hint": "Pindai atau tempel QR untuk kontak, kartu Columba lxma://, atau pesan kertas LXMF terenkripsi."
+    },
+    "reticulumPathTable": {
+      "title": "Tabel jalur",
+      "description": "Menghapus tabel jalur akan menghapus setiap rute yang di-cache. Rute dipelajari kembali saat pengumuman baru tiba, sehingga pesan pertama ke rekan mungkin memerlukan waktu lebih lama.",
+      "clear": "Hapus tabel jalur",
+      "clearing": "Membersihkan...",
+      "confirmTitle": "Hapus tabel jalur?",
+      "confirmBody": "Setiap rute yang di-cache akan dihapus. Rute dibangun kembali dari pengumuman baru.",
+      "clearOk": "Tabel jalur dibersihkan (rute {{count}} dibatalkan)",
+      "clearFailed": "Tidak dapat menghapus tabel jalur.",
+      "clearAria": "Hapus tabel jalur",
+      "confirmAction": "Hapus"
     }
   },
   "nodeDetailModal": {
@@ -2950,7 +3080,11 @@
     "shareContactQrAria": "Tampilkan kode QR kontak MeshCore untuk impor aplikasi resmi",
     "publicKeyCopied": "Kunci publik disalin ke clipboard.",
     "hasPublicKeyNoDm": "Memiliki kunci publik (tidak ada pesan langsung)",
-    "copyPublicKey": "Kunci Publik"
+    "copyPublicKey": "Kunci Publik",
+    "xeddsaSigned": "XEdDSA ditandatangani",
+    "xeddsaSignedHint": "Radio telah memverifikasi tanda tangan XEdDSA dari simpul ini, sehingga kunci publiknya dibuktikan secara kriptografi.",
+    "keyManuallyVerified": "Kunci terverifikasi",
+    "keyManuallyVerifiedHint": "Kunci publik simpul ini dikonfirmasi secara manual oleh operator."
   },
   "nodeInfoBody": {
     "longName": "Nama Panjang",
@@ -3207,7 +3341,50 @@
       "noPages": "Belum ada halaman. Tambahkan file .mu ke folder yang dipilih (misalnya index.mu).",
       "contentSourceNotFromPicker": "Pilih folder dengan Pilih folder sebelum menerapkannya.",
       "contentSourceNone": "Tidak ada folder yang dipilih",
-      "contentSourceRequired": "Pilih folder halaman sebelum memulai Nomad hosting."
+      "contentSourceRequired": "Pilih folder halaman sebelum memulai Nomad hosting.",
+      "newPage": "New page",
+      "newPageName": "Nama file halaman (harus diakhiri dengan .mu)",
+      "invalidPageName": "Masukkan nama file yang berakhiran .mu, tanpa .. atau jalur absolut.",
+      "edit": "Edit",
+      "editPage": "Edit {{path}}",
+      "delete": "Hapus",
+      "deletePage": "Hapus {{path}}",
+      "deleteConfirm": "Hapus halaman ini? Ini menghapus file dari folder yang disajikan.",
+      "deleteConfirmAria": "Konfirmasikan penghapusan halaman ini",
+      "deleteError": "Tidak dapat menghapus file.",
+      "openError": "Tidak dapat membuka halaman untuk diedit.",
+      "editorTitle": "Edit halaman Micron",
+      "editorAria": "Sumber halaman Micron",
+      "editorPreview": "Lihat preview",
+      "toolbarAria": "Micron formatting actions",
+      "toolbar": {
+        "bold": "Tebal",
+        "italic": "Miring",
+        "underline": "Garis Bawah",
+        "h1": "[Heading 1]",
+        "h2": "Judul 2",
+        "h3": "Judul 3",
+        "alignLeft": "Rata kiri",
+        "alignCenter": "Tengah",
+        "alignRight": "Rata kanan",
+        "divider": "Divider",
+        "link": "Link"
+      },
+      "linkTargetPrompt": "Target tautan (jalur halaman atau hash tujuan)",
+      "save": "Simpan",
+      "saveError": "Tidak dapat menyimpan halaman.",
+      "unsaved": "Perubahan Belum Tersimpan",
+      "discard": "Buang perubahan",
+      "discardConfirm": "Halaman ini memiliki perubahan yang belum disimpan.",
+      "discardConfirmAria": "Buang perubahan yang belum disimpan dan tutup",
+      "close": "Editor",
+      "closeBackdropAria": "Tutup editor halaman Micron",
+      "pageTooLarge": "Halaman itu terlalu besar untuk dihosting (batas 512 KiB).",
+      "pageNotFound": "Halaman itu tidak ada lagi di folder yang dilayani.",
+      "invalidPagePath": "Jalur halaman itu tidak diizinkan.",
+      "pageIoError": "Tidak dapat membaca atau menulis halaman pada disk.",
+      "pageNotUtf8": "Halaman tersebut bukan teks UTF -8 yang valid.",
+      "pageWriteFailed": "Tidak dapat menulis halaman."
     },
     "sortLastHeard": "Terakhir Didengar",
     "sortHops": "Hop",
@@ -3262,7 +3439,6 @@
   },
   "peerDetailModal": {
     "networkSection": "Jaringan",
-    "copyHash": "Salin hash tujuan",
     "editNameAria": "Nama tampilan khusus",
     "sendMessage": "Kirim pesan",
     "pathOk": "Permintaan jalur terkirim.",
@@ -3288,7 +3464,20 @@
     "verifiedRowAria": "Kontak terverifikasi",
     "renameFailed": "Tidak dapat menyimpan nama tampilan.",
     "removeContactConfirmBody": "Ini akan menghapus kontak dari daftar tersimpan Anda. Pesan obrolan tetap ada; pesan tersebut akan tetap ada di Riwayat jika Anda mengirimkannya melalui pesan.",
-    "backupPaths": "Jalur cadangan"
+    "backupPaths": "Jalur cadangan",
+    "announcedDestinations": "Announced destinations",
+    "openedDestinationBadge": "Opened",
+    "copyAnnouncedHashAria": "Copy {{aspect}} destination hash {{hash}}",
+    "hashCopied": "Destination hash copied.",
+    "hashCopyFailed": "Could not copy destination hash.",
+    "aspect": {
+      "chat": "Chat",
+      "voice": "Voice",
+      "nomad": "Nomad",
+      "rrc": "RRC",
+      "propagation": "Propagation",
+      "unknown": "Unknown"
+    }
   },
   "peerGraph": {
     "title": "Grafik Komunikasi Rekan",
@@ -3365,7 +3554,11 @@
     "pathsPinFailed": "Gagal memperbarui preferensi media untuk peer ini.",
     "tabHistory": "Riwayat",
     "emptyHistory": "Belum ada riwayat pesan — kirim atau terima pesan LXMF untuk melihat peer di sini.",
-    "emptyContacts": "Belum ada kontak tersimpan — buka peer dan pilih Simpan sebagai kontak."
+    "emptyContacts": "Belum ada kontak tersimpan — buka peer dan pilih Simpan sebagai kontak.",
+    "pathMediumTitle": "Media jalur aktif: {{medium}}",
+    "chatNeedsLxmfDelivery": "Belum ada alamat pengiriman LXMF untuk rekan ini. Tunggu pengumuman LXMF, atau buka Obrolan dengan hash LXMF 32 karakter mereka — Destinasi Voice (lxst.telephony) tidak dapat menerima Obrolan.",
+    "voiceAspectBadge": "Suara",
+    "voiceAspectTitle": "Baris tabel jalur ini adalah tujuan telepon LXST. Memetakan ulang obrolan ke hash pengiriman LXMF rekan saat diketahui."
   },
   "radioPanel": {
     "offloadedContacts": "Membongkar {{count}} kontak ke database.",
@@ -3427,57 +3620,65 @@
     "importConfigJson": "Impor Konfigurasi JSON",
     "offloadContacts": "Pembongkaran",
     "displayUnits": {
-      "0": {
-        "label": "Metrik"
+      "METRIC": {
+        "label": "Metric"
       },
-      "1": {
+      "IMPERIAL": {
         "label": "Imperial"
       }
     },
     "deviceRoles": {
-      "0": {
-        "label": "Klien",
+      "CLIENT": {
+        "label": "Client",
         "description": "Mode klien normal"
       },
-      "1": {
-        "label": "Klien Bisu",
-        "description": "Klien yang tidak mengirimkan"
+      "CLIENT_MUTE": {
+        "label": "Client Mute",
+        "description": "Klien yang tidak meneruskan paket. Menerapkan peran ini juga menonaktifkan siaran GPS dan laporan peta pada perangkat."
       },
-      "2": {
+      "ROUTER": {
         "label": "Router",
         "description": "Router/repeater khusus"
       },
-      "3": {
-        "label": "Klien Router",
-        "description": "Mode router + klien"
+      "ROUTER_CLIENT": {
+        "label": "Router Client",
+        "description": "Mode router + klien. Usang dalam firmware 2.3.15 — gunakan Router atau Klien."
       },
-      "4": {
-        "label": "Basis Klien",
-        "description": "Stasiun pangkalan untuk perangkat klien"
+      "REPEATER": {
+        "label": "Repeater",
+        "description": "Menyiarkan ulang paket tanpa memulainya. Usang dalam firmware 2.7.11 — menciptakan lubang di rantai siaran ulang."
       },
-      "5": {
-        "label": "Pelacak",
+      "TRACKER": {
+        "label": "Tracker",
         "description": "Pelacak GPS saja"
       },
-      "6": {
+      "SENSOR": {
         "label": "Sensor",
         "description": "Node sensor telemetri"
       },
-      "7": {
+      "TAK": {
         "label": "TAK",
-        "description": "Perangkat berkemampuan TAK"
+        "description": "TAK-enabled device"
       },
-      "8": {
-        "label": "Klien Tersembunyi",
+      "CLIENT_HIDDEN": {
+        "label": "Client Hidden",
         "description": "Klien, disembunyikan dari daftar node"
       },
-      "9": {
-        "label": "Hilang dan Ditemukan",
-        "description": "Menyiarkan posisi untuk pemulihan"
+      "LOST_AND_FOUND": {
+        "label": "Lost and Found",
+        "description": "Posisi siaran untuk pemulihan"
       },
-      "10": {
-        "label": "Pelacak TAK",
-        "description": "Mode pelacak TAK"
+      "TAK_TRACKER": {
+        "label": "TAK Tracker",
+        "description": "TAK tracker mode"
+      },
+      "ROUTER_LATE": {
+        "label": "Router Late",
+        "description": "Router yang menyiarkan ulang hanya setelah node lain memiliki kesempatan, untuk core mesh yang padat."
+      },
+      "CLIENT_BASE": {
+        "label": "Client Base",
+        "description": "Base station untuk perangkat klien"
       }
     },
     "contactsOnRadioBadgeTitle": "{{part}} kontak di radio",
@@ -3712,29 +3913,29 @@
     "tzdefLabel": "Zona Waktu (POSIX)",
     "tzdefDesc": "String zona waktu POSIX mis. EST5EDT,M3.2.0,M11.1.0. Lihat https://github.com/nayarsystems/posix_tz_db untuk daftar referensi.",
     "rebroadcastModes": {
-      "0": {
-        "label": "All",
+      "ALL": {
+        "label": "Semua",
         "description": "Siarkan ulang semua paket (default)."
       },
-      "1": {
-        "label": "Semua Lewati Decoding",
+      "ALL_SKIP_DECODING": {
+        "label": "Semua Dekode Lewati",
         "description": "Siarkan ulang semua tanpa decoding. Mengurangi CPU pada router khusus."
       },
-      "2": {
-        "label": "Hanya Lokal",
-        "description": "Hanya paket yang disiarkan ulang dari node yang didengar langsung di RF."
+      "LOCAL_ONLY": {
+        "label": "Khusus Lokal",
+        "description": "Hanya paket siaran ulang dari node yang didengar langsung di RF."
       },
-      "3": {
+      "KNOWN_ONLY": {
         "label": "Hanya Diketahui",
-        "description": "Hanya disiarkan ulang dari node di database node lokal."
+        "description": "Hanya siaran ulang dari node di database node lokal."
       },
-      "4": {
-        "label": "Tidak ada",
+      "NONE": {
+        "label": "Tidak Ada",
         "description": "Jangan menyiarkan ulang paket apa pun."
       },
-      "5": {
-        "label": "Hanya Portnum Inti",
-        "description": "Hanya menyiarkan ulang portnum penting (teks, info node, posisi, telemetri)."
+      "CORE_PORTNUMS_ONLY": {
+        "label": "Hanya Portofolio Inti",
+        "description": "Hanya siaran ulang portnum penting (teks, nodeinfo, posisi, telemetri)."
       }
     },
     "autoScreenCarouselSecsLabel": "Interval Korsel Layar",
@@ -3752,23 +3953,23 @@
     "enableMessageBubblesLabel": "Gelembung Pesan",
     "enableMessageBubblesDesc": "Tampilkan pesan masuk dalam gelembung di layar.",
     "oledTypes": {
-      "0": {
-        "label": "Mobil"
+      "OLED_AUTO": {
+        "label": "Auto"
       },
-      "1": {
+      "OLED_SSD1306": {
         "label": "SSD1306"
       },
-      "2": {
+      "OLED_SH1106": {
         "label": "SH1106"
       },
-      "3": {
+      "OLED_SH1107": {
         "label": "SH1107 (128x64)"
       },
-      "4": {
+      "OLED_SH1107_128_128": {
         "label": "SH1107 (128x128)"
       },
-      "5": {
-        "label": "SH1107 Diputar"
+      "OLED_SH1107_ROTATED": {
+        "label": "SH1107 Rotated"
       }
     },
     "displayModes": {
@@ -3852,88 +4053,177 @@
       "addButton": "+ Tambahkan Saluran",
       "footerHelp": "Kunci berukuran 128-bit (16 byte), ditampilkan sebagai 32 karakter hex. Nama saluran maksimal {{nameMax}} karakter. Hingga {{channelCount}} saluran (indeks 0–{{indexMax}}). Untuk #saluran, gunakan \"Berasal dari nama\" (SHA-256 dari nama dengan # di depannya).",
       "shareQr": "QR",
-      "shareQrAria": "Tampilkan QR saluran MeshCore untuk {{name}}"
+      "shareQrAria": "Tampilkan QR saluran MeshCore untuk {{name}}",
+      "privateChannel": "Saluran pribadi (masukkan kunci)",
+      "privateKeyHint": "Masukkan kunci saluran bersama: tepat 32 karakter heksadesimal (16 byte), tidak semuanya nol."
     },
     "regions": {
-      "0": {
-        "label": "Tidak disetel"
+      "UNSET": {
+        "label": "Unset"
       },
-      "1": {
-        "label": "KITA"
+      "US": {
+        "label": "US"
       },
-      "2": {
-        "label": "UE_433"
+      "EU_433": {
+        "label": "EU_433"
       },
-      "3": {
-        "label": "UE_868"
+      "EU_868": {
+        "label": "EU_868"
       },
-      "4": {
+      "CN": {
         "label": "CN"
       },
-      "5": {
+      "JP": {
         "label": "JP"
       },
-      "6": {
+      "ANZ": {
         "label": "ANZ"
       },
-      "7": {
+      "KR": {
         "label": "KR"
       },
-      "8": {
-        "label": "DUA"
+      "TW": {
+        "label": "TW"
       },
-      "9": {
-        "label": "ru"
+      "RU": {
+        "label": "RU"
       },
-      "10": {
-        "label": "DI DALAM"
+      "IN": {
+        "label": "IN"
       },
-      "11": {
+      "NZ_865": {
         "label": "NZ_865"
       },
-      "12": {
+      "TH": {
         "label": "TH"
       },
-      "13": {
+      "LORA_24": {
+        "label": "LORA_24"
+      },
+      "UA_433": {
         "label": "UA_433"
       },
-      "14": {
+      "UA_868": {
         "label": "UA_868"
       },
-      "15": {
-        "label": "SAYA_433"
+      "MY_433": {
+        "label": "MY_433"
       },
-      "16": {
-        "label": "SAYA_919"
+      "MY_919": {
+        "label": "MY_919"
       },
-      "17": {
+      "SG_923": {
         "label": "SG_923"
       },
-      "18": {
-        "label": "LORA_24"
+      "PH_433": {
+        "label": "PH_433"
+      },
+      "PH_868": {
+        "label": "PH_868"
+      },
+      "PH_915": {
+        "label": "PH_915"
+      },
+      "ANZ_433": {
+        "label": "ANZ_433"
+      },
+      "KZ_433": {
+        "label": "KZ_433"
+      },
+      "KZ_863": {
+        "label": "KZ_863"
+      },
+      "NP_865": {
+        "label": "NP_865"
+      },
+      "BR_902": {
+        "label": "BR_902"
+      },
+      "ITU1_2M": {
+        "label": "ITU1_2M"
+      },
+      "ITU2_2M": {
+        "label": "ITU2_2M"
+      },
+      "EU_866": {
+        "label": "EU_866"
+      },
+      "EU_874": {
+        "label": "EU_874"
+      },
+      "EU_917": {
+        "label": "EU_917"
+      },
+      "EU_N_868": {
+        "label": "EU_N_868"
+      },
+      "ITU3_2M": {
+        "label": "ITU3_2M"
+      },
+      "ITU1_70CM": {
+        "label": "ITU1_70CM"
+      },
+      "ITU2_70CM": {
+        "label": "ITU2_70CM"
+      },
+      "ITU3_70CM": {
+        "label": "ITU3_70CM"
+      },
+      "ITU2_125CM": {
+        "label": "ITU2_125CM"
       }
     },
     "modemPresets": {
-      "0": {
-        "label": "Cepat Panjang"
+      "LONG_FAST": {
+        "label": "Long Fast"
       },
-      "1": {
-        "label": "Panjang Lambat"
+      "LONG_SLOW": {
+        "label": "Long Slow"
       },
-      "2": {
-        "label": "Panjang Sedang"
+      "VERY_LONG_SLOW": {
+        "label": "Very Long Slow"
       },
-      "3": {
-        "label": "Singkat Cepat"
+      "MEDIUM_SLOW": {
+        "label": "Medium Slow"
       },
-      "4": {
-        "label": "Pendek Lambat"
+      "MEDIUM_FAST": {
+        "label": "Medium Fast"
       },
-      "5": {
-        "label": "Sedang Cepat"
+      "SHORT_SLOW": {
+        "label": "Short Slow"
       },
-      "6": {
-        "label": "Sedang Lambat"
+      "SHORT_FAST": {
+        "label": "Short Fast"
+      },
+      "LONG_MODERATE": {
+        "label": "Long Moderate"
+      },
+      "SHORT_TURBO": {
+        "label": "Short Turbo"
+      },
+      "LONG_TURBO": {
+        "label": "Long Turbo"
+      },
+      "LITE_FAST": {
+        "label": "Lite Fast"
+      },
+      "LITE_SLOW": {
+        "label": "Lite Slow"
+      },
+      "NARROW_FAST": {
+        "label": "Narrow Fast"
+      },
+      "NARROW_SLOW": {
+        "label": "Narrow Slow"
+      },
+      "TINY_FAST": {
+        "label": "Tiny Fast"
+      },
+      "TINY_SLOW": {
+        "label": "Tiny Slow"
+      },
+      "MEDIUM_TURBO": {
+        "label": "Medium Turbo"
       }
     },
     "floodScopeSaved": "Cakupan yang disimpan",
@@ -3941,7 +4231,42 @@
     "floodScopeSavedEmpty": "Belum ada cakupan yang disimpan. Terapkan hashtag khusus atau gunakan Cakupan khusus dari Obrolan untuk menambahkannya.",
     "floodScopeRemoveSaved": "Hapus dari cakupan yang disimpan",
     "floodScopeRemoveSavedAria": "Hapus {{hashtag}} dari cakupan yang disimpan",
-    "floodScopeInvalidHashtag": "Masukkan hashtag wilayah yang valid (misalnya #wilayahsaya)."
+    "floodScopeInvalidHashtag": "Masukkan hashtag wilayah yang valid (misalnya #wilayahsaya).",
+    "sendPositionDisabledShareOff": "Aktifkan Bagikan lokasi saya di Aplikasi → GPS / Lokasi untuk mengirim posisi Anda ke perangkat.",
+    "clientMuteGpsSuppressed": "Client Mute diterapkan — siaran GPS dan pelaporan peta MQTT dinonaktifkan pada perangkat.",
+    "validationShortNameTooLong": "Nama Pendek harus sesuai dalam 4 UTF -8 byte",
+    "validationShortNameEmojiTooLarge": "Karakter ini terlalu besar untuk Nama Pendek (maks 4 UTF -8 byte per nama)",
+    "enumDeprecatedSuffix": "Tak Dipakai Lagi",
+    "lockdown": {
+      "title": "Penguncian Firmware",
+      "description": "Radio yang terkunci menolak perubahan konfigurasi sampai tidak terkunci dengan kata sandinya. Status dilaporkan oleh firmware; radio tanpa dukungan penguncian tidak pernah melaporkannya.",
+      "stateLabel": "Provinsi",
+      "stateNotReported": "Tidak dilaporkan oleh radio ini",
+      "reasonLabel": "Alasan",
+      "bootsRemainingLabel": "Reboot tersisa",
+      "validUntilLabel": "Dibuka hingga",
+      "backoffLabel": "Coba lagi mundur",
+      "backoffValue": "{{seconds}}s",
+      "passphraseLabel": "Frasa sandi",
+      "provision": "Pengaturan",
+      "unlock": "Buka Kunci",
+      "unlockAria": "Buka kunci atau kuncian firmware provisi",
+      "lockNow": "Kunci sekarang",
+      "lockNowAria": "Segera kunci radio",
+      "disable": "Nonaktifkan penguncian",
+      "disableAria": "Nonaktifkan penguncian firmware",
+      "states": {
+        "STATE_UNSPECIFIED": "Tidak dinyatakan",
+        "NEEDS_PROVISION": "Memerlukan penyediaan",
+        "LOCKED": "Terkunci",
+        "UNLOCKED": "Tidak terkunci",
+        "UNLOCK_FAILED": "Buka Kunci Gagal!",
+        "DISABLED": "Dinonaktifkan"
+      }
+    },
+    "contactsFullAlarm": "Penyimpanan kontak radio penuh. Offload kontak ke database aplikasi ke slot gratis.",
+    "contactsFullAlarmAction": "Offload",
+    "contactsFullAutoOffloadStarted": "Kontak radio penuh — mulai auto - offload…"
   },
   "rawPacketLog": {
     "filterPackets": "Filter paket",
@@ -4430,7 +4755,8 @@
     "openGlobalMapAria": "Buka peta global RMAP v4 di rmap.world",
     "applyPartialSuccess": "Pengaturan RMAP diterapkan ke {{applied}} dari antarmuka {{total}}.",
     "disablePartialSuccess": "Penerbitan RMAP dinonaktifkan pada {{applied}} dari antarmuka {{total}}.",
-    "hint": "Mengaktifkan penerbitan RMAP dan koordinat GPS Aplikasi pada semua antarmuka berkemampuan RMAP yang diaktifkan (RNode/Multi, KISS, BLE peer, I2P, UDP, pipe). Kotak centang hanya aktif ketika setiap antarmuka yang memenuhi syarat dipublikasikan; sebagian keadaan tidak dapat ditentukan — periksa lagi untuk menyinkronkan sisanya. Gunakan tombol RMAP per antarmuka pada Koneksi untuk kontrol yang baik. Jalur LoRa juga mengaktifkan transportasi dan hub rmap.world."
+    "hint": "Mengaktifkan penerbitan RMAP dan koordinat GPS Aplikasi pada semua antarmuka berkemampuan RMAP yang diaktifkan (RNode/Multi, KISS, BLE peer, I2P, UDP, pipe). Kotak centang hanya aktif ketika setiap antarmuka yang memenuhi syarat dipublikasikan; sebagian keadaan tidak dapat ditentukan — periksa lagi untuk menyinkronkan sisanya. Gunakan tombol RMAP per antarmuka pada Koneksi untuk kontrol yang baik. Jalur LoRa juga mengaktifkan transportasi dan hub rmap.world.",
+    "disabledShareOff": "Aktifkan Bagikan lokasi saya di Aplikasi → GPS / Lokasi untuk dipublikasikan di RMAP."
   },
   "reticulumTopology": {
     "title": "Topologi jaringan",
@@ -4783,7 +5109,8 @@
     "regenerateWarning": "Regenerasi akan membuat paket data ATAK yang ada menjadi tidak valid — Anda perlu mengimpor ulang.",
     "durationSec": "{{s}}s",
     "durationMin": "{{m}}m",
-    "durationHourMin": "{{h}}h {{m}}m"
+    "durationHourMin": "{{h}}h {{m}}m",
+    "atakUndecodable": "Muatan tidak dikenali sebagai paket TAK"
   },
   "telemetryPanel": {
     "title": "Telemetri",
@@ -4824,14 +5151,20 @@
     "tempUnitC": "°C",
     "exportCsvButton": "Ekspor CSV",
     "emptyWaitingConnected": "Belum ada data telemetri. Menunggu data dari perangkat…",
-    "emptyWaitingDisconnected": "Belum ada data telemetri. Hubungkan ke perangkat untuk melihat metrik waktu nyata."
+    "emptyWaitingDisconnected": "Belum ada data telemetri. Hubungkan ke perangkat untuk melihat metrik waktu nyata.",
+    "sectionParticulates": "Partikulat, CO₂ dan Petir",
+    "chartAriaParticulates": "Bagan partikulat: PM2.5 {{pm25}} terbaru, CO₂ {{co2}}, {{count}} poin",
+    "axisParticulates": "µg/m³ · pemogokan",
+    "axisCo2": "ppm",
+    "seriesPm25": "PM2.5 (µg/m³)",
+    "seriesCo2": "CO₂ (ppm)",
+    "seriesLightningStrikes": "Sambaran petir (1j)"
   },
   "toasts": {
     "firmwareAvailable": "Pembaruan firmware tersedia: v{{version}}",
     "newMessages_one": "{{protocol}}: {{count}} pesan baru",
     "newMessages_other": "{{protocol}}: {{count}} pesan baru",
-    "meshcoreDistanceFilterHint": "Anda memiliki {{count}} kontak dengan GPS di peta. Aktifkan filter jarak di Aplikasi → Penampilan untuk fokus pada node terdekat.",
-    "longSessionRestartNudge": "mesh-client telah berjalan selama empat hari. Mulai ulang aplikasi untuk mengurangi risiko crash pada sesi MeshCore BLE yang panjang."
+    "meshcoreDistanceFilterHint": "Anda memiliki {{count}} kontak dengan GPS di peta. Aktifkan filter jarak di Aplikasi → Penampilan untuk fokus pada node terdekat."
   },
   "updateStatus": {
     "checking": "Memeriksa…",
@@ -5019,7 +5352,15 @@
     "whisperReplyPlaceholder": "Balas {{name}} atau /msg…",
     "jumpToLatest": "Langsung ke Terbaru",
     "stackNotReady": "Stack Reticulum belum siap. Tunggu hingga terhubung, lalu coba lagi.",
-    "sidecarNotRunning": "Sidecar Reticulum tidak berjalan. Mulai stack di Connection, lalu coba lagi."
+    "sidecarNotRunning": "Sidecar Reticulum tidak berjalan. Mulai stack di Connection, lalu coba lagi.",
+    "whoReplyMissing": "Tidak ada daftar anggota dari hub untuk {{room}} (balasan dapat melebihi ukuran tautan). Nama akan muncul saat orang bergabung atau mengobrol.",
+    "openNomadPage": "Buka halaman Nomad {{address}}",
+    "openDm": "Buka pesan langsung dengan {{address}}",
+    "openReticulumAddress": "Buka alamat Reticulum {{address}}",
+    "addressChoiceTitle": "Buka alamat Reticulum",
+    "addressChoiceMessage": "{{address}} bisa berupa halaman Nomad atau sebuah peer. Mana yang ingin dibuka?",
+    "addressChoiceNomad": "Halaman Nomad",
+    "addressChoiceDm": "Pesan langsung"
   },
   "signalMeter": {
     "rssi": "RSSI",
@@ -5364,7 +5705,8 @@
     "sessionRowAria": "{{app}} permainan dengan {{peer}}",
     "apps": {
       "ttt": "Tic Tac Toe",
-      "chess": "Catur"
+      "chess": "Catur",
+      "four_in_a_row": "Empat Berderet"
     },
     "status": {
       "pending": "Tertunda",
@@ -5416,6 +5758,19 @@
       "boardAria": "Papan Tic - Tac - Toe",
       "cellEmptyAria": "Cell {{index}}, empty",
       "cellOccupiedAria": "Cell {{index}}, {{marker}}"
+    },
+    "fourInARow": {
+      "youWon": "Kamu menang!",
+      "opponentWon": "Lawan menang.",
+      "draw": "Draw",
+      "yourTurn": "Giliran Anda",
+      "opponentTurn": "Giliran Lawan",
+      "yourMarker": "Anda {{marker}}",
+      "moveCount": "{{count}} bergerak",
+      "boardAria": "Papan Empat Sederet",
+      "columnAria": "Kolom {{column}}, dari bawah ke atas: {{contents}}. Jatuhkan di sini",
+      "columnFullAria": "Kolom {{column}}, dari bawah ke atas: {{contents}}. Penuh",
+      "columnEmptyContents": "kosong"
     },
     "chess": {
       "youWon": "Kamu menang!",
@@ -5472,5 +5827,102 @@
     },
     "drawOfferWaitingBanner": "Penawaran undian terkirim. Menunggu lawan…",
     "idleExpiryNotice": "Game kedaluwarsa setelah tidak aktif dan kemudian hanya dapat dihapus. Tantangan yang belum terjawab: 24 jam (semua game). Permainan aktif: tic - tac - toe setelah 24 jam, catur dan four - in - a - row setelah 7 hari."
+  },
+  "longSession": {
+    "title": "Mulai ulang direkomendasikan",
+    "body": "mesh-client telah berjalan selama empat hari dengan radio Bluetooth yang terhubung. Mulai ulang aplikasi untuk mengurangi risiko crash pada sesi Noble BLE yang panjang.",
+    "restart": "Start Ulang",
+    "dismiss": "Tutup"
+  },
+  "reticulumSetup": {
+    "eyebrow": "Reticulum · MEMULAI",
+    "hide": "Sembunyikan panduan",
+    "title": "Koneksi pertama Anda",
+    "open": "Buka panduan pengaturan",
+    "intro": "Baru menggunakan Reticulum? Siapkan koneksi, temukan kontak, dan pelajari fungsi setiap tab.",
+    "stepsLabel": "Langkah-langkah pengaturan Reticulum",
+    "connectionTitle": "Terhubung",
+    "identityTitle": "Identitas Anda",
+    "startTitle": "Mulai di sini",
+    "startBody": "Reticulum menghubungkan orang dan aplikasi melalui internet, jaringan lokal, atau radio yang kompatibel. Anda dapat mencobanya hanya dengan komputer ini dan koneksi internet.",
+    "startHint": "Panduan ini memulai Reticulum di dalam aplikasi. Kemudian Anda akan memilih nama dan cara untuk menjangkau orang lain.",
+    "working": "Bekerja…",
+    "startAction": "Mari kita mulai",
+    "exploreTitle": "Cobalah",
+    "identityBody": "Identitas Anda adalah akun Anda di jaringan ini. Itu ada di komputer ini, tanpa pendaftaran atau penyedia akun pusat. Alamat pesan Anda tetap sama saat Anda mengubah nama.",
+    "existingIdentity": "Anda sudah memiliki identitas. Panduan ini menyimpannya dan hanya memperbarui nama tampilan Anda.",
+    "importIdentity": "Saya memiliki identitas untuk dipulihkan",
+    "nameLabel": "Nama atau tanda panggilan",
+    "saveIdentity": "Simpan nama dan lanjutkan",
+    "nameHint": "Nama ini dibagikan dengan rekan-rekan. Nama panggilan tidak masalah; tidak perlu nama asli Anda.",
+    "continue": "Melanjutkan",
+    "back": "Kembali",
+    "backupTitle": "Simpan kata-kata pemulihan Anda dengan aman",
+    "savedWords": "Saya telah menyimpan kata-kata pemulihan saya",
+    "backupBody": "Kata-kata ini memulihkan identitas Anda jika Anda kehilangan komputer ini. Simpan di tempat pribadi sekarang. Jangan pernah memberikannya kepada seseorang yang meminta alamat pesan Anda. Anda juga dapat mengekspor cadangan yang dilindungi dari Jaringan nanti.",
+    "connectionBody": "Antarmuka hanyalah koneksi ke Reticulum. Pilih bagaimana Anda ingin menjangkau jaringan. Anda dapat menambahkan koneksi lain nanti.",
+    "routes": {
+      "internet": {
+        "title": "Internet",
+        "body": "Hub publik menghubungkan Anda dengan orang lain. Tidak diperlukan radio; tempat yang bagus untuk memulai."
+      },
+      "radio": {
+        "title": "Radio RNode",
+        "body": "Gunakan perangkat keras radio yang kompatibel dan pengaturan jaringan radio lokal Anda."
+      },
+      "existing": {
+        "title": "Pengaturan yang ada",
+        "body": "Pertahankan antarmuka Anda saat ini dan periksa apakah sudah siap."
+      }
+    },
+    "routeLabel": "Bagaimana cara menghubungkan",
+    "hubLabel": "Pusat internet publik",
+    "hubHint": "Mulailah dengan satu hub. Aplikasi akan menambah atau mengaktifkan koneksi ini dan memulai ulang Reticulum untuk menerapkannya. Hub publik dapat melihat alamat IP Anda dan terkadang tidak tersedia.",
+    "connectHub": "Hubungkan ke hub ini",
+    "hubSaved": "Koneksi disimpan. Memeriksanya setelah restart…",
+    "radioSettings": "Buka pengaturan koneksi di bawah, tambahkan antarmuka RNode, pilih USB atau Bluetooth, dan gunakan frekuensi, bandwidth, faktor penyebaran, dan kecepatan pengkodean yang disediakan oleh grup lokal Anda.",
+    "radioDevice": "Gunakan perangkat yang menjalankan firmware RNode. Radio Meshtastic atau MeshCore tidak secara otomatis merupakan RNode; jangan mem-flash atau mengubah firmware tanpa memeriksa instruksi perangkat Anda.",
+    "radioCheck": "Aktifkan antarmuka dan terapkan perintah mulai ulang, lalu kembali ke panduan ini. Sambungan radio yang berfungsi masih memerlukan stasiun lain yang kompatibel dalam jangkauannya.",
+    "openInterfaces": "Buka pengaturan koneksi di bawah",
+    "ready": "Koneksi Anda tersedia",
+    "checkTitle": "Memeriksa koneksi Anda",
+    "existingHint": "Panduan ini akan memeriksa antarmuka Anda yang ada tanpa mengubahnya. Antarmuka jaringan lokal menjangkau perangkat Reticulum terdekat di jaringan itu; itu tidak dengan sendirinya menghubungkan Anda ke rekan-rekan internet publik.",
+    "available": "Siap",
+    "waiting": "Menunggu",
+    "checkConnection": "Koneksi yang dipilih",
+    "checkMessaging": "Layanan pesan",
+    "checkStack": "Jaringan Reticulum",
+    "readyHint": "Ini mengonfirmasi layanan lokal dan koneksi sudah aktif. Ini tidak menjamin orang tertentu dapat dijangkau.",
+    "checkFailed": "Aplikasi tidak dapat membaca status saat ini. Periksa apakah Reticulum sedang berjalan, lalu coba lagi.",
+    "waitHint": "Memulai dapat memakan waktu beberapa saat. Jika hub tetap tidak tersedia, periksa koneksi internet Anda atau pilih hub lain. Untuk radio, periksa kabel, pemasangan, dan pengaturan lokalnya.",
+    "checkAgain": "Periksa lagi",
+    "addressTitle": "Alamat pesan Anda",
+    "connectionLost": "Koneksi sudah tidak siap lagi. Kembali untuk memeriksanya sebelum mengirim.",
+    "restartHint": "Memulai ulang sebentar akan mengganggu koneksi Reticulum yang aktif. Pengaturan yang disimpan tetap tersedia jika Anda menutup panduan ini.",
+    "exploreBody": "Anda memiliki hal-hal penting. Mulailah dengan satu pesan langsung atau obrolan grup; Anda dapat menjelajahi alat lainnya kapan pun Anda membutuhkannya.",
+    "addressBody": "Bagikan alamat ini dengan teman agar mereka dapat mengirimi Anda pesan. LXMF adalah sistem pesan yang digunakan oleh aplikasi Reticulum; ini adalah alamat LXMF Anda, bukan kata-kata pemulihan Anda.",
+    "firstMessage": "Mintalah teman untuk alamat LXMF mereka. Di Rekan, gunakan kolom alamat untuk mencarinya, lalu buka obrolan dan kirim pesan singkat.",
+    "copyAddress": "Salin alamat pesan saya",
+    "addressCopied": "Alamat pesan disalin",
+    "peersTitle": "Temukan orang",
+    "discoveryHint": "Rekan juga mengisi saat aplikasi mendengar pengumuman: perkenalan kecil dari orang dan layanan. Berikan waktu. Beberapa entri adalah layanan, bukan orang yang dapat Anda kirimi pesan.",
+    "peersBody": "Rekan adalah titik awal Anda untuk pesan langsung. Simpan orang sebagai kontak sehingga Anda dapat menemukannya lagi.",
+    "deliveryHint": "Cari Terkirim melalui pesan langsung. Disimpan di node propagasi berarti perantara mempunyai pesan; itu tidak berarti teman Anda telah membaca atau menerimanya.",
+    "roomsTitle": "Bergabunglah dalam percakapan",
+    "openRooms": "Buka obrolan grup",
+    "openPeers": "Buka Rekan",
+    "roomsBody": "RRC adalah obrolan grup. Buka, pilih hub, sambungkan, dan gabung ke ruangan. Ini terpisah dari pesan langsung Anda.",
+    "openNetwork": "Buka pengaturan identitas dan cadangan",
+    "stopped": "Reticulum dihentikan atau masih dimulai. Mulai untuk melanjutkan pengaturan.",
+    "restartService": "Mulai Reticulum",
+    "errorDetails": "Tampilkan detail kesalahan",
+    "networkHint": "Jaringan menyimpan identitas Anda, cadangan, dan pengaturan pesan offline opsional. Koneksi adalah tempat Anda mengatur cara Anda terhubung. Nomad menelusuri halaman; Remote dan Admin dapat menunggu hingga Anda membutuhkannya.",
+    "actionFailed": "Langkah itu belum selesai. Pengaturan Anda yang disimpan telah disimpan. Periksa detailnya dan coba lagi.",
+    "tabUnavailable": "Tab ini disembunyikan. Aktifkan di pengaturan tab Aplikasi, lalu kembali ke panduan.",
+    "privateConnection": "Hub ini sudah memiliki pengaturan jaringan pribadi. Edit di pengaturan koneksi di bawah, atau pilih hub publik lain.",
+    "identitySaveFailed": "Tidak dapat menyimpan setelan identitas Anda. Coba lagi.",
+    "identityUnavailable": "Tidak dapat membaca identitas Anda. Periksa apakah Reticulum sedang berjalan, lalu coba lagi.",
+    "interfacesUnavailable": "Tidak dapat membaca koneksi Anda. Periksa apakah Reticulum sedang berjalan, lalu coba lagi.",
+    "interfaceSaveFailed": "Tidak dapat menyimpan koneksi ini. Periksa pengaturan koneksi Anda dan coba lagi."
   }
 }

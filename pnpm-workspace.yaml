@@ -1,8 +1,19 @@
-# Delay updates by 6 hours (malware is usually caught within 6 hours and dependabot is on a 6 hour delay)
-minimumReleaseAge: 540
+# Delay updates by 1 day (malware is usually caught within hours; matches pnpm default)
+minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - lodash
   - lodash-es
+
+# Reject transitive git/tarball/exotic sources (registry + scoped JSR only)
+blockExoticSubdeps: true
+
+# Refuse installs when a package's trust level drops vs prior releases
+trustPolicy: no-downgrade
+# Known false positives / older lines without trusted-publisher continuity
+trustPolicyExclude:
+  - prettier-plugin-tailwindcss@0.7.4
+  - semver@5.7.2
+  - semver@6.3.1
 
 # Electron breaks without this
 nodeLinker: hoisted
@@ -44,37 +55,61 @@ overrides:
   # GHSA-v3r7-h72x-cjcm / GHSA-jr45-8vmc-qm54 / GHSA-m8rv-5g2x-5cg5 /
   # GHSA-fxqj-rqcc-2cmp / GHSA-mwp4-54f8-5fhr / GHSA-9f4c-93c8-jc8g /
   # GHSA-v93f-fgjr-hjrj / GHSA-4f78-qhmw-8j8m / GHSA-ff2p-hmqr-hxm4 /
-  # GHSA-f2r8-jv7c-xqmp / GHSA-p2rr-rvmm-c5fp).
+  # GHSA-f2r8-jv7c-xqmp / GHSA-p2rr-rvmm-c5fp / GHSA-6gmq-8vp8-gcm6 /
+  # GHSA-2883-xcg3-v3hh / GHSA-w5vr-8v7q-w6rv / GHSA-82fw-gwwq-j7x9 /
+  # GHSA-4w3w-2rp5-g8jm / GHSA-w2rr-34g9-rvrj / GHSA-93r5-fhx6-vmg9 /
+  # GHSA-8344-3jmq-59r6 / GHSA-6h8r-xr42-gp59 / GHSA-27p8-2357-5qqv /
+  # GHSA-c7q8-3ch8-vqpv).
   # brace-expansion: keep a single 5.0.9 floor. GHSA-rgw5-rvv9-x895 is a
   # bypass of the CVE-2026-14257 mitigation and marks >=4.0.0 <5.0.9 vulnerable
   # (only >=5.0.9 counts as patched). CI audit is blocking.
-  # fast-uri: GHSA-7p8r-x3mc-p8w7 (host confusion via backslash authority);
-  # electron-builder → app-builder-lib → ajv still pulls 3.1.4.
-  # undici: GHSA-4cwx-7wf7-3272 (+ sibling undici GHSAs) — floor >=7.29.0.
+  # fast-uri: GHSA-7p8r-x3mc-p8w7 plus GHSA-5jgf-p345-68v8 / GHSA-f65p-4m7j-42xc /
+  # GHSA-fph4-wmhf-6fwf / GHSA-jqff-g426-hqxp — floor >=3.1.6 (electron-builder →
+  # app-builder-lib → ajv still pulls older 3.1.x without an override).
+  # undici: GHSA-4cwx-7wf7-3272 (+ sibling undici GHSAs) — floor >=7.29.0, kept as
+  # a scoped `undici@<7.29.0` override so transitive consumers (jsdom ^7.25.0,
+  # node-gyp ^6.25.0) land on 7.29.0. package.json depends on undici ^8.10.0
+  # directly: main-process link previews need nodejs/undici#5547 (setTypeOfService
+  # EINVAL crash fix), which is 8.x-only, and a global ^8 override would force an
+  # unsupported major on those consumers.
+  # undici-types stays on 7.x to match @types/node.
   # postcss: GHSA-fxqj-rqcc-2cmp — floor >=8.5.23.
   # ip-address: GHSA-mwp4-54f8-5fhr (mqtt → socks) — floor >=10.3.1.
-  # electron: Dependabot #91–#96 (GHSA-9f4c-93c8-jc8g needs >=41.10.3 on the
-  # 41.x line; sibling medium GHSAs need >=41.2.2). GitHub SBOM may lag the
-  # lockfile — keep the floor so alerts cannot regress on resolve.
+  # @xmldom/xmldom: GHSA-6gmq-8vp8-gcm6 (+ GHSA-4w3w-2rp5-g8jm /
+  # GHSA-w2rr-34g9-rvrj / GHSA-93r5-fhx6-vmg9 / GHSA-8344-3jmq-59r6 /
+  # GHSA-6h8r-xr42-gp59 / GHSA-27p8-2357-5qqv / GHSA-c7q8-3ch8-vqpv) —
+  # floor >=0.8.15 (electron-builder → app-builder-lib → plist /
+  # @electron/osx-sign / @electron/universal still resolve older 0.8.x without
+  # an override).
+  # js-yaml: GHSA-2883-xcg3-v3hh — floor >=4.3.2.
+  # baseline-browser-mapping: GHSA-w5vr-8v7q-w6rv — floor >=2.11.0.
+  # vitest / @vitest/mocker: GHSA-82fw-gwwq-j7x9 — package.json pins vitest
+  # ^4.1.11 (no override needed while the direct pin holds the floor).
+  # extract-zip (GHSA-7pqw-9j4j-h8q3): no patched release; Electron replaced it
+  # with hardened @electron-internal/extract-zip (not the vulnerable package).
+  # electron: deliberate major pin — bump with Flatpak sync + native rebuild smoke.
+  '@xmldom/xmldom': ^0.8.15
   app-builder-lib: ^26.15.0
-  brace-expansion: 5.0.9
-  builder-util-runtime: 9.7.0
-  electron: ^41.10.4
-  fast-uri: ^3.1.5
+  baseline-browser-mapping: ^2.11.0
+  brace-expansion: ^5.0.9
+  builder-util-runtime: ^9.7.0
+  electron: ^44.1.0
+  fast-uri: ^3.1.6
   ip-address: ^10.3.1
-  js-yaml: ^4.3.0
+  js-yaml: ^4.3.2
   markdown-it@<=14.1.1: '>=14.2.0 <15'
   postcss: ^8.5.25
   shell-quote: ^1.9.0
   tar: ^7.5.18
   tmp: ^0.2.6
-  undici: ^7.29.0
+  undici@<7.29.0: ^7.29.0
   undici-types: ^7.29.0
   ws: ^8.21.0
 patchedDependencies:
   '@jsr/meshtastic__core@2.6.6': patches/@jsr__meshtastic__core@2.6.6.patch
   '@jsr/meshtastic__transport-web-serial@0.2.5': patches/@jsr__meshtastic__transport-web-serial@0.2.5.patch
   '@liamcottle/meshcore.js@1.15.0': patches/@liamcottle__meshcore.js@1.15.0.patch
+  app-builder-lib@26.15.3: patches/app-builder-lib@26.15.3.patch
   debug@4.4.3: patches/debug@4.4.3.patch
   readable-stream@4.7.0: patches/readable-stream@4.7.0.patch
   usb@2.18.0: patches/usb@2.18.0.patch

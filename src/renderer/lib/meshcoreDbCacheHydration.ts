@@ -5,7 +5,9 @@ import {
 
 import {
   findMeshcoreDmRfDuplicate,
+  findMeshcoreRoomPostDuplicate,
   isMeshcoreRoomChatMessage,
+  meshcoreReconcileRoomSenderIds,
 } from '../hooks/meshcore/meshcoreHookPreamble';
 import { loadPersistedMeshcoreSelfNodeId } from './meshcoreLastSelfNodeId';
 import {
@@ -94,6 +96,38 @@ export function repairMeshcoreRoomStoredPostPayloads(
 }
 
 /**
+ * Fill room posts stored as sender_name "Unknown" when another row (or a name map) knows
+ * that sender_id. Failure point: ingest fell back to self / missed pubkey prefix at sync time.
+ * Fallback: peer-fill from same-batch named posts, then optional external node names.
+ */
+export function repairMeshcoreRoomUnknownSenderNames(
+  messages: ChatMessage[],
+  nameByNodeId?: ReadonlyMap<number, string>,
+): ChatMessage[] {
+  const knownNames = new Map<number, string>();
+  if (nameByNodeId) {
+    for (const [id, name] of nameByNodeId) {
+      const trimmed = name.trim();
+      if (id !== 0 && trimmed && trimmed !== 'Unknown') knownNames.set(id, trimmed);
+    }
+  }
+  for (const m of messages) {
+    if (!isMeshcoreRoomChatMessage(m) || m.sender_id === 0) continue;
+    const name = m.sender_name.trim();
+    if (name && name !== 'Unknown') knownNames.set(m.sender_id, name);
+  }
+  if (knownNames.size === 0) return messages;
+  return messages.map((m) => {
+    if (!isMeshcoreRoomChatMessage(m) || m.sender_id === 0) return m;
+    const name = m.sender_name.trim();
+    if (name && name !== 'Unknown') return m;
+    const known = knownNames.get(m.sender_id);
+    if (!known) return m;
+    return { ...m, sender_name: known };
+  });
+}
+
+/**
  * Strip firmware tail padding from channel/DM rows already stored in SQLite.
  * Failure point: older builds persisted wire text including bytes after NUL.
  * Fallback: re-run sanitizer on hydration so reload fixes historical rows.
@@ -119,6 +153,37 @@ export function repairMeshcoreHydratedDmRfDuplicates(messages: ChatMessage[]): C
 }
 
 /**
+ * Collapse room BBS Unknown + named twins loaded from SQLite (same room/body/time window).
+ * Failure point: older builds stored dual-ingress rows that did not dedup.
+ * Fallback: keep resolved identity when replacing an ambiguous twin; otherwise drop the later row.
+ */
+export function repairMeshcoreHydratedRoomPostDuplicates(messages: ChatMessage[]): ChatMessage[] {
+  const kept: ChatMessage[] = [];
+  for (const msg of messages) {
+    if (!isMeshcoreRoomChatMessage(msg)) {
+      kept.push(msg);
+      continue;
+    }
+    const dup = findMeshcoreRoomPostDuplicate(kept, msg);
+    if (!dup) {
+      kept.push(msg);
+      continue;
+    }
+    const dupIndex = kept.indexOf(dup);
+    if (dupIndex < 0) {
+      kept.push(msg);
+      continue;
+    }
+    const existingAmbiguous = dup.sender_id === 0 || dup.sender_name.trim() === 'Unknown';
+    const incomingAmbiguous = msg.sender_id === 0 || msg.sender_name.trim() === 'Unknown';
+    if (existingAmbiguous && !incomingAmbiguous) {
+      kept[dupIndex] = msg;
+    }
+  }
+  return kept;
+}
+
+/**
  * Reclassify room-server traffic that was stored as DMs (PLAIN bot stats, etc.).
  * Failure point: older builds only treated SignedPlain as room BBS.
  * Fallback: map peer Room node id → roomServerId + channel -2 for Rooms tab display.
@@ -128,18 +193,26 @@ export function repairMeshcoreHydratedMessages(
   roomServerIds: ReadonlySet<number>,
   selfNodeId?: number,
   pubKeyPrefixToNodeId?: Map<string, number>,
+  nameByNodeId?: ReadonlyMap<number, string>,
 ): ChatMessage[] {
-  return repairMeshcoreChatWireTailGarbage(
-    repairMeshcoreRoomStoredPostPayloads(
-      repairMeshcoreMisfiledRoomDmMessages(
-        repairMeshcoreHydratedDmRfDuplicates(
-          repairMeshcoreHydrationStaleRoomSends(
-            repairMeshcoreHydratedDmToNode(messages, selfNodeId),
+  return repairMeshcoreHydratedRoomPostDuplicates(
+    meshcoreReconcileRoomSenderIds(
+      repairMeshcoreRoomUnknownSenderNames(
+        repairMeshcoreChatWireTailGarbage(
+          repairMeshcoreRoomStoredPostPayloads(
+            repairMeshcoreMisfiledRoomDmMessages(
+              repairMeshcoreHydratedDmRfDuplicates(
+                repairMeshcoreHydrationStaleRoomSends(
+                  repairMeshcoreHydratedDmToNode(messages, selfNodeId),
+                ),
+              ),
+              roomServerIds,
+            ),
+            pubKeyPrefixToNodeId,
           ),
         ),
-        roomServerIds,
+        nameByNodeId,
       ),
-      pubKeyPrefixToNodeId,
     ),
   );
 }

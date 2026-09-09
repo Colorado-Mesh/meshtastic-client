@@ -390,7 +390,32 @@
     "themeResetFailed": "Renkler sıfırlanamadı.",
     "messageActionsBarBgVisible": "Arka planı göster",
     "rrcUnreadAllRoomMessages": "Tüm oda mesajları için RRC okunmadı",
-    "rrcUnreadAllRoomMessagesHint": "Açık olduğunda, herhangi bir yeni RRC odası mesajı okunmadı olarak işaretlenir ve bir kanal sesi çalabilir. IRC tarzı uyarılar için kapatın: yalnızca doğrudan mesajlar ve @bahsetmeler."
+    "rrcUnreadAllRoomMessagesHint": "Açık olduğunda, herhangi bir yeni RRC odası mesajı okunmadı olarak işaretlenir ve bir kanal sesi çalabilir. IRC tarzı uyarılar için kapatın: yalnızca doğrudan mesajlar ve @bahsetmeler.",
+    "shareMyLocation": "Bulunduğum yeri paylaş",
+    "shareMyLocationOffInfo": "Konum paylaşımı kapalı — ana bilgisayar GPS yenileme ve mesh gönderme devre dışı. Otomatik yenilemeyi kullanmak veya konumunuzu göndermek için yukarıdaki Konumumu paylaş'ı etkinleştirin.",
+    "shareMyLocationHint": "Etkinleştirildiğinde, bu uygulama bu bilgisayardaki konumunuzu arayabilir ve Meshtastic, MeshCore veya Reticulum (sohbet paylaşımı, radyo iletisi, RMAP) üzerinden gönderebilir. Devre dışı bırakıldığında, ev sahibi GPS aramaları ve uygulama gönderme kapalıdır; statik koordinatlar yalnızca yerel haritanız için çalışmaya devam eder. Kendi GPS'ine sahip bir radyo yine de konumunuzu yerel olarak gösterebilir. Radyo veya Modül ayarlarını yapana kadar cihaz bellenimi yayınlanmaya devam edebilir.",
+    "reticulumBlocklist": {
+      "description": "Engellenen gönderenler, LXMF mesajları gelen kutunuza ulaşmadan önce bırakılır. Başka bir yüklemeye taşımak için listeyi dışa aktarın veya aynı anda birçok göndereni engellemek için bir listeyi içe aktarın.",
+      "exportButton": "Engel listesini dışa aktar",
+      "exportAria": "Engellenen kişileri dışa aktar",
+      "importButton": "Engel listesini içe aktar",
+      "importAria": "Engellenen kişileri içe aktar",
+      "exportOk": "Dışa aktarılan {{count}} engellenen kişi",
+      "exportEmpty": "Dışa aktarılacak engellenmiş kişi yok.",
+      "exportFailed": "Engel listesi dışa aktarılamadı.",
+      "importOk": "İçe aktarılan {{imported}} engellenen kişiler ({{skipped}} atlandı)",
+      "importFailed": "Engel listesi içe aktarılamadı.",
+      "unblockAria": "{{hash}} engelini kaldır",
+      "unblockFailed": "Bu kişinin engeli kaldırılamadı.",
+      "empty": "Engellenmiş Kişiler",
+      "title": "Engellenen kişiler"
+    },
+    "fontSize": "Yazı boyutu",
+    "fontSizeDesc": "Uygulama genelinde metin boyutunu ayarlayın. Haritalar, çizelgeler ve terminal etkilenmez.",
+    "decreaseFontSize": "Yazı tipi boyutunu küçült",
+    "increaseFontSize": "Yazı tipi boyutunu büyüt",
+    "resetFontSize": "Sıfırlayın",
+    "resetFontSizeAria": "Yazı tipi boyutunu sıfırla"
   },
   "aria": {
     "closeDialog": "İletişim kutusunu kapat",
@@ -711,7 +736,21 @@
       "startFailed": "Sesli not kaydı başlatılamadı. Tekrar deneyin.",
       "sendAriaWithElapsed": "Sesli not gönder ({{seconds}} saniye kaydedildi)",
       "unavailable": "Sesli not kullanılamıyor — eklenti bu cihazda önbelleğe alınmadı."
-    }
+    },
+    "heardByRepeaters_one": "{{count}} tarafından duyuldu",
+    "heardByRepeaters_other": "{{count}} tarafından duyuldu",
+    "heardByNetwork": "Ağ tarafından duyuldu",
+    "notHeardTimeout": "Duyulmadı (zaman aşımı)",
+    "routeRelaysPredicted": "Güzergah: ~{{count}} {{hop}} üzerinden röleler",
+    "routeViaPredicted": "Güzergah: {{hop}} üzerinden",
+    "routeRelaysPredictedHopsOnly": "Güzergah: ~{{count}} röleler",
+    "heardByRepeatersDetail_one": "{{count}} tarafından duyuldu: {{names}}",
+    "heardByRepeatersDetail_other": "{{count}} tarafından duyuldu: {{names}}",
+    "heardByRepeaterNodeFallback": "Düğüm {{nodeId}}",
+    "heardByRepeatersAdditional_one": "{{count}} EK tanımlanamayan nakliyeci (hash'ler: {{hashes}})",
+    "heardByRepeatersAdditional_other": "{{count}} kimliği belirsiz ek göndericiler (hash'ler: {{hashes}})",
+    "reticulumSendAwaitingPeerReceipt": "Gönderildi (akran makbuzu bekleniyor)",
+    "reticulumChatNeedsLxmfDelivery": "Bu akranın henüz LXMF teslimat adresi yok (Sohbet yalnızca Sesli bir hedef kullanamaz). Bir LXMF duyurusu bekleyin veya 32 karakterlik LXMF karmasını yapıştırın."
   },
   "chatPayload": {
     "mention": "{{label}}'dan bahsedin",
@@ -1036,7 +1075,9 @@
       "importBackupAria": "Yapıştırılan JSON'dan Ratspeak .rsi yedeklemesini içe aktar",
       "importBackupFromFileAria": "İçe aktarmak için bir Ratspeak .rsi yedek dosyası seçin",
       "exportAria": "PIN şifreli Ratspeak .rsi kimlik yedeklemesini dışa aktarın",
-      "exportRawAria": "Şifrelenmemiş ham Reticulum kimlik dosyasını dışa aktar"
+      "exportRawAria": "Şifrelenmemiş ham Reticulum kimlik dosyasını dışa aktar",
+      "identityHashLabel": "Kimlik hash'i:",
+      "copyIdentityHash": "Kimlik karmasını kopyala"
     },
     "reticulumInterfaces": {
       "title": "Ara birimler",
@@ -1117,7 +1158,10 @@
         "blePeer": "Çekirdek eş adreslerini kullanan BLE eş ağı.",
         "generic": "Reticulum ağ arayüzü.",
         "sharedInstanceClient": "Attached as a client of another app’s shared Reticulum instance — local TCP hubs from this config are not started here.",
-        "i2p": "Bu makinedeki bir yönlendirici aracılığıyla I2P omurgası. HTTP/https I2PTunnel proxy'leri (4444/4445) değil, SAM uygulama köprüsünü (127.0.0.1:7656) etkinleştirin. Köprünün dinlemesi için SAM'İ etkinleştirdikten sonra I2P'yi yeniden başlatın, ardından bu arayüz kapalı kalırsa Reticulum yığınını yeniden başlatın."
+        "i2p": "Bu makinedeki bir yönlendirici aracılığıyla I2P omurgası. HTTP/https I2PTunnel proxy'leri (4444/4445) değil, SAM uygulama köprüsünü (127.0.0.1:7656) etkinleştirin. Köprünün dinlemesi için SAM'İ etkinleştirdikten sonra I2P'yi yeniden başlatın, ardından bu arayüz kapalı kalırsa Reticulum yığınını yeniden başlatın.",
+        "serial": "Bir tel üzerinden bir TNC, modem veya başka bir ana bilgisayara genel seri bağlantı. Hat parametrelerini uzak uca uyacak şekilde ayarlayın.",
+        "ax25kiss": "KİSS TNC aracılığıyla AX.25 paket radyo. Çağrı işaretinizi ve bu istasyonu tanımlayan bir SSID (0 -15) gerektirir.",
+        "local": "Bu makinede paylaşılan örnek soketi. Diğer yerel araçlar (rnsd, Nomad Network, rnsh) bu yığına onun üzerinden bağlanabilir. Soket yolu bu arabirimin adından türetilmiştir, bu nedenle yeniden adlandırılması diğer araçların kullanması gereken adresi değiştirir."
       },
       "rfProfile": {
         "coordinated": "Koordineli bölgesel",
@@ -1240,10 +1284,38 @@
       "rmapFullModeHint": "RMAP yayınlı tam mod, ignore_config_warnings aracılığıyla Tam tutar. LXMF teslimat duyuruları, bu radyoyu yığın duyuru aralığından çıkaracaktır (varsayılan 1 saat).",
       "effectiveModeBadge": "Yürürlük Tarihi: {{mode}}",
       "effectiveModeAria": "Etkin çalışma zamanı modu {{mode}}. Yapılandırılmış mod, Reticulum'un çalıştığından farklıdır.",
-      "effectiveModeTooltip": "Reticulum, bu keşfedilebilir arayüzü Erişim Noktasına (veya izin verilen başka bir moda) yeniden yazdı, çünkü keşfedilebilir, ignore_config_warnings ayarlanmadığı sürece Ağ Geçidi, Dahili veya Erişim Noktası gerektirir. Tam (veya yapılandırılmış modunuzun) etkili olması için devre dışı bırakılan mesh-client damgalarından sonra yığını yeniden başlatın."
+      "effectiveModeTooltip": "Reticulum, bu keşfedilebilir arayüzü Erişim Noktasına (veya izin verilen başka bir moda) yeniden yazdı, çünkü keşfedilebilir, ignore_config_warnings ayarlanmadığı sürece Ağ Geçidi, Dahili veya Erişim Noktası gerektirir. Tam (veya yapılandırılmış modunuzun) etkili olması için devre dışı bırakılan mesh-client damgalarından sonra yığını yeniden başlatın.",
+      "flowControlBleHint": "Bluetooth'ta, radyo genellikle CMD_READY göndermez. Mesh-Client hala TX'i hızlandırır (READY için kısa bir süre bekler, sonra devam eder), böylece akış kontrolü kuyruğu dondurmadan aşırı yükü azaltır.",
+      "advancedFields": "Gelişmiş ayarlar",
+      "field": {
+        "port": "Liman",
+        "speed": "Hız (baud)",
+        "databits": "Veri bitleri",
+        "parity": "Parite",
+        "stopbits": "Bitleri Durdur:",
+        "callsign": "Çağrı kodu",
+        "ssid": "SSID",
+        "flow_control": "Akış kontrolü",
+        "preamble": "Giriş (msn)",
+        "txtail": "TX kuyruk (msn)",
+        "persistence": "Kararlılık",
+        "slottime": "Slot süresi (ms)"
+      },
+      "fieldOption": {
+        "parity": {
+          "N": "Yok",
+          "E": "Şu koku bile,",
+          "O": "Garip"
+        }
+      },
+      "fieldRequired": "Bu alan gereklidir.",
+      "fieldNotANumber": "Bir tam sayı girin (yalnızca rakam).",
+      "fieldOutOfRange": "Değer izin verilen aralığın dışında.",
+      "fieldTooLong": "Değer fazla uzun.",
+      "fieldInvalidOption": "Desteklenmeyen değer."
     },
     "reticulumPeers": {
-      "hops": "Hops",
+      "hops": "Hop",
       "actions": "Eylemler",
       "path": "Yol",
       "probe": "Sonda"
@@ -1433,7 +1505,8 @@
     "pickerDeviceAria": "{{name}} {{address}}",
     "pickerDeviceAriaWithRssi": "{{name}} {{address}}, {{rssi}} dBm",
     "bluetoothMac": "Bluetooth MAC",
-    "bluetoothId": "Bluetooth Kimliği"
+    "bluetoothId": "Bluetooth Kimliği",
+    "reticulumAutoResendOnAnnounce": "Bir akran duyuru yaptığında başarısız mesajları yeniden dene"
   },
   "contactGroupsModal": {
     "failedLoadMembers": "Üyeler yüklenemedi: {{message}}",
@@ -1456,7 +1529,9 @@
     "confirmDeleteButton": "Sil?",
     "manageMembersOf": "{{name}} üyelerini yönet",
     "renameGroupNamed": "{{name}} yeniden adlandır",
-    "deleteGroupNamed": "{{name}} silin"
+    "deleteGroupNamed": "{{name}} silin",
+    "needSelfNode": "Bir kişi grubu oluşturmadan önce düğüm kimliğinizin bilinmesi için önce bir telsiz bağlayın.",
+    "failedCreateGroup": "Grup oluşturulamadı: {{message}}"
   },
   "diagnosticsPanel": {
     "dropRoutingRows": "{{hours}} saatten (1-168) daha eski olan yönlendirme satırlarını bırak",
@@ -1810,7 +1885,7 @@
     "runOnce": "Bir kez ping yap",
     "colSeq": "#",
     "colRtt": "RTT",
-    "colHops": "Atlama",
+    "colHops": "Hop",
     "colStatus": "Durum",
     "rttMs": "{{ms}} ms",
     "statusOk": "Tamam",
@@ -1980,7 +2055,14 @@
     "recommendationsHeading": "Öneriler",
     "lastMessagePrefix": "Son:",
     "appliesToCategories": "Şunlar için geçerlidir: {{labels}}",
-    "severityInfo": "Bilgi"
+    "severityInfo": "Bilgi",
+    "historyNote": "Bulgular, hala aktif olan sorunları değil, bu günlükteki olayları tanımlar.",
+    "copyReport": "Sorun giderme raporunu kopyala",
+    "copyHint": "Örnek günlük mesajları içerir. Paylaşmadan önce özel bilgiler için raporu inceleyin.",
+    "copySuccess": "Rapor kopyalandı!",
+    "copyFailure": "Rapor kopyalanamadı. Tekrar deneyin veya günlüğü dışa aktarın.",
+    "evidence": "{{category}} için kanıtları görüntüleyin",
+    "evidenceShown": "Eşleşen {{shown}}/{{total}} giriş gösteriliyor, önce en yeni."
   },
   "logAnalyzer": {
     "categories": {
@@ -2065,11 +2147,44 @@
         "recommendation": "Sohbet geçmişini sakla ve ilet bir yönlendiriciden talep edilemez (genellikle diğer radyo trafiğiyle kısa bir yarış). Sohbet iş yığını boş kalırsa, yeniden bağlanın veya bir sonraki yönlendiricinin kalp atışını bekleyin."
       },
       "serial-reconnect": {
-        "label": "USB Seri Yeniden Bağlantı"
+        "label": "USB Seri Yeniden Bağlantı",
+        "recommendation": "USB seri bağlantı noktası yeniden açılamadı veya önceki akışı hala kilitli. Radyoyu kullanarak diğer uygulamaları kapatın, kabloyu yeniden bağlayın ve uygulamada yeniden bağlanın. Tekrarlanırsa, seri günlük satırlarını bir hata raporuna ekleyin."
       },
       "reticulum-nomad-hosting": {
         "label": "Nomad Sayfası Barındırma Sorunları",
         "recommendation": "Nomad Sayfalarım barındırma başarısız oldu veya içerik klasörü kullanılamıyor. Nomad Network → Sayfalarım bölümünü açın, taşınmışsa pages klasörünü yeniden seçin ve ardından hizmeti başlatın. Ayrıntılar günlükte [nomad-serving] / [NomadHosting] olarak görünür."
+      },
+      "renderer-unresponsive": {
+        "label": "Uygulama yanıt vermeyi durdurdu",
+        "recommendation": "Uygulama, kullanıcı arayüzü kalp atışı göndermeyi durdurdu. İyileştiyse, listelenen saatin yakınında ne yaptığınızı not edin. Donuk kalırsa uygulamayı yeniden başlatın ve tekrarlanan bir takılmayı bildirirken bu raporu ekleyin."
+      },
+      "database-persistence": {
+        "label": "Değişiklikler kaydedilemedi.",
+        "recommendation": "Veritabanı yazıları yeniden denemelerini tüketti veya düşürüldü. Bu oturumda görünen değişiklikler yeniden başlatılamayabilir. Çıkmadan önce önemli verileri dışa aktarın, ardından boş disk alanını kontrol edin ve uygulama veri klasörüne erişin. Veritabanını silmeyin."
+      },
+      "meshtastic-tcp": {
+        "label": "Meshtastic TCP bağlantısı başarısız oldu",
+        "recommendation": "Meshtastic telsizine TCP bağlantısı başarısız oldu. Yeniden bağlanmadan önce radyo adresini ve bağlantı noktasını, yerel ağ erişilebilirliğini ve başka bir istemcinin bağlantıyı kullanıp kullanmadığını kontrol edin."
+      },
+      "reticulum-sidecar": {
+        "label": "Reticulum hizmeti kesildi",
+        "recommendation": "Yerel Reticulum hizmeti olay bağlantısını başlatamadı, yanıt veremedi veya koruyamadı. Bağlantıdaki durumunu ve aşağıdaki günlük satırlarını kontrol edin. Düzelmediyse, Reticulum bağlantısını yeniden başlatın. Eksik bir paketlenmiş sepet, uygulamanın yeniden yüklenmesini gerektirebilir."
+      },
+      "reticulum-delivery": {
+        "label": "Reticulum iletimi veya senkronizasyonu başarısız oldu",
+        "recommendation": "Bir mesaj iletme veya yayılma eşitleme girişimi başarısız oldu. Yeniden denemeden önce mevcut mesaj durumunu kontrol edin, hedefi tarayın ve etkin arayüzleri kontrol edin. Yayılma için, Ağ altında seçilen düğümü ve senkronizasyon durumunu kontrol edin; depolanan bir mesaj, alıcı teslimatının kanıtı değildir."
+      },
+      "reticulum-backpressure": {
+        "label": "Reticulum olayları veya paketleri düşürüldü",
+        "recommendation": "Yerel Reticulum hizmeti, bir sıranın dolması, bir abonenin geride kalması veya bir veri yükünün bir sınırı aşması nedeniyle olayları veya paketleri bıraktı. Eşzamanlı toplu aktarımları azaltın, ardından yeniden denemeden önce mesaj durumunu kontrol edin. Atıl durumdayken tekrarlanan düşüşler, bu günlük örnekleriyle rapor edilmeye değerdir."
+      },
+      "firmware-flash": {
+        "label": "Aygıt yazılımı aktarımı durdu",
+        "recommendation": "Ürün yazılımı aktarımı ilerleme kaydetmeyi durdurdu ve seri bağlantı noktası kapatıldı. Yeniden denemeden önce doğru ürün yazılımını ve cihazı onaylayın, USB kablosunu kontrol edin ve cihaz kurtarma veya önyükleyici talimatlarını izleyin."
+      },
+      "unclassified": {
+        "label": "Diğer uyarılar ve hatalar",
+        "recommendation": "Bu günlük satırları bilinen bir tanıyla eşleşmez ve beklenen kurtarma mesajlarını içerebilir. Zaman damgalarını ve çevresindeki bağlamı gözden geçirin. Bir sorun devam ederse, günlüğün tamamını bu raporla dışa aktarın."
       }
     },
     "recommendationGroups": {
@@ -2232,7 +2347,10 @@
     "clearAllIntro": "Radyodaki tüm kişileri kaldırın ve uygulamanın kişi veritabanını temizleyin. Bu geri alınamaz.",
     "clearAllContactsConfirm": "Telsizdeki tüm kişiler kaldırılsın ve yerel iletişim verileri temizlensin mi?",
     "clearingContacts": "Temizleniyor…",
-    "clearAllContactsButton": "Tüm kişileri temizle"
+    "clearAllContactsButton": "Tüm kişileri temizle",
+    "autoOffloadWhenFull": "Radyo dolduğunda otomatik boşaltma",
+    "autoOffloadWhenFullLabel": "Dolu olduğunda otomatik boşaltma",
+    "autoOffloadWhenFullDesc": "Refakatçi kişi depolama alanının dolu olduğunu bildirdiğinde, kişileri otomatik olarak uygulama veritabanına boşaltın (Yük Boşaltma ile aynı)."
   },
   "meshcoreTelemetryPrivacy": {
     "summary": "Telemetri gizliliği",
@@ -2769,6 +2887,18 @@
     "reticulumScanImport": {
       "title": "Tara / içe aktar",
       "hint": "Kişiler, Columba lxma:// kartları veya şifreli LXMF kağıt mesajları için bir QR tarayın veya yapıştırın."
+    },
+    "reticulumPathTable": {
+      "title": "Yol tablosu",
+      "description": "Yol tablosunun temizlenmesi, önbelleğe alınan her rotayı bırakır. Güzergâhlar, yeni duyurular geldikçe yeniden öğrenilir, bu nedenle bir iş arkadaşına gönderilecek ilk mesaj daha uzun sürebilir.",
+      "clear": "Yol tablosunu temizle",
+      "clearing": "Clearing",
+      "confirmTitle": "Yol tablosu temizlensin mi?",
+      "confirmBody": "Önbelleğe alınan her yol bırakılır. Güzergâhlar yeni duyurulardan yeniden oluşturulur.",
+      "clearOk": "Yol tablosu temizlendi ({{count}} güzergah bırakıldı)",
+      "clearFailed": "Yol tablosu temizlenemedi.",
+      "clearAria": "Yol tablosunu temizle",
+      "confirmAction": "Temizle"
     }
   },
   "nodeDetailModal": {
@@ -2950,7 +3080,11 @@
     "shareContactQrAria": "Resmi uygulama içe aktarma için MeshCore iletişim QR kodunu göster",
     "publicKeyCopied": "Genel anahtar panoya kopyalandı.",
     "hasPublicKeyNoDm": "Genel anahtarı var (doğrudan mesaj yok)",
-    "copyPublicKey": "genel anahtarı kopyala"
+    "copyPublicKey": "genel anahtarı kopyala",
+    "xeddsaSigned": "XEdDSA imzalandı",
+    "xeddsaSignedHint": "Radyo, bu düğümden bir XEdDSA imzasını doğruladı, bu nedenle genel anahtarı kriptografik olarak onaylandı.",
+    "keyManuallyVerified": "Anahtar doğrulandı",
+    "keyManuallyVerifiedHint": "Bu düğümün genel anahtarı bir operatör tarafından manuel olarak onaylandı."
   },
   "nodeInfoBody": {
     "longName": "Uzun Ad",
@@ -3207,7 +3341,50 @@
       "noPages": "Henüz sayfa yok. Seçilen klasöre .mu dosyaları ekleyin (örneğin index.mu).",
       "contentSourceNotFromPicker": "Uygulamadan önce Klasör seç ile klasörü seçin.",
       "contentSourceNone": "Klasör seçilmedi",
-      "contentSourceRequired": "Nomad ev sahipliğine başlamadan önce bir sayfa klasörü seçin."
+      "contentSourceRequired": "Nomad ev sahipliğine başlamadan önce bir sayfa klasörü seçin.",
+      "newPage": "Yeni sayfa",
+      "newPageName": "Sayfa dosya adı (.mu ile bitmelidir)",
+      "invalidPageName": ".mu ile biten,.. veya mutlak yollar içermeyen bir dosya adı girin.",
+      "edit": "Düzenle",
+      "editPage": "Düzenle {{path}}",
+      "delete": "Sil",
+      "deletePage": "{{path}} silin",
+      "deleteConfirm": "Bu sayfa silinsin mi? Bu işlem, dosyayı sunulan klasörden kaldırır.",
+      "deleteConfirmAria": "Bu sayfayı silmeyi onayla",
+      "deleteError": "Dosya silinemedi.",
+      "openError": "Sayfa düzenlenmek üzere açılamadı.",
+      "editorTitle": "Micron sayfasını düzenle",
+      "editorAria": "Micron sayfa kaynağı",
+      "editorPreview": "Önizleme",
+      "toolbarAria": "Micron biçimlendirme eylemleri",
+      "toolbar": {
+        "bold": "Kalın",
+        "italic": "Eğik",
+        "underline": "Altı Çizili",
+        "h1": "Başlık 1",
+        "h2": "Başlık 2",
+        "h3": "Başlık 3",
+        "alignLeft": "Sola hizala",
+        "alignCenter": "Merkez",
+        "alignRight": "Sağa Hizala",
+        "divider": "Ayraç",
+        "link": "Link"
+      },
+      "linkTargetPrompt": "Bağlantı hedefi (sayfa yolu veya hedef karma)",
+      "save": "Kaydet",
+      "saveError": "Sayfa kaydedilemedi.",
+      "unsaved": "Kaydedilmeyen değişiklikler",
+      "discard": "Değişiklikleri iptal et",
+      "discardConfirm": "Bu sayfada kaydedilmemiş değişiklikler var.",
+      "discardConfirmAria": "Kaydedilmemiş değişiklikleri at ve kapat",
+      "close": "Editörü kapat",
+      "closeBackdropAria": "Micron sayfa düzenleyiciyi kapatın",
+      "pageTooLarge": "Bu sayfa barındırmak için çok büyük (sınır 512 KB).",
+      "pageNotFound": "Bu sayfa artık hizmet verilen klasörde mevcut değil.",
+      "invalidPagePath": "Bu sayfa yoluna izin verilmiyor.",
+      "pageIoError": "Diskteki sayfa okunamadı veya yazılamadı.",
+      "pageNotUtf8": "Bu sayfa geçerli bir UTF -8 metni değil.",
+      "pageWriteFailed": "Sayfaya yazılamadı."
     },
     "sortLastHeard": "Son Duyma",
     "sortHops": "Hop",
@@ -3262,7 +3439,6 @@
   },
   "peerDetailModal": {
     "networkSection": "Ağ",
-    "copyHash": "Hedef karmasını kopyala",
     "editNameAria": "Özel görüntü adı",
     "sendMessage": "Mesaj gönder",
     "pathOk": "Talep gönderildi.",
@@ -3288,7 +3464,20 @@
     "verifiedRowAria": "Kişi doğrulandı",
     "renameFailed": "Görünen ad kaydedilemedi.",
     "removeContactConfirmBody": "Bu, kişiyi kayıtlı listenizden kaldırır. Sohbet mesajları kalır; mesaj gönderdiyseniz Geçmiş'te kalır.",
-    "backupPaths": "Yedekleme yolları"
+    "backupPaths": "Yedekleme yolları",
+    "announcedDestinations": "Announced destinations",
+    "openedDestinationBadge": "Opened",
+    "copyAnnouncedHashAria": "Copy {{aspect}} destination hash {{hash}}",
+    "hashCopied": "Destination hash copied.",
+    "hashCopyFailed": "Could not copy destination hash.",
+    "aspect": {
+      "chat": "Chat",
+      "voice": "Voice",
+      "nomad": "Nomad",
+      "rrc": "RRC",
+      "propagation": "Propagation",
+      "unknown": "Unknown"
+    }
   },
   "peerGraph": {
     "title": "Akran İletişim Grafiği",
@@ -3365,7 +3554,11 @@
     "pathsPinFailed": "Bu eş için ortam tercihi güncellenemedi.",
     "tabHistory": "Geçmiş",
     "emptyHistory": "Henüz mesaj geçmişi yok — eşleri burada görmek için bir LXMF mesajı gönderin veya alın.",
-    "emptyContacts": "Henüz kayıtlı kişi yok — bir eş açın ve Kişi olarak kaydet'i seçin."
+    "emptyContacts": "Henüz kayıtlı kişi yok — bir eş açın ve Kişi olarak kaydet'i seçin.",
+    "pathMediumTitle": "Aktif yol ortamı: {{medium}}",
+    "chatNeedsLxmfDelivery": "Bu iş ortağı için henüz LXMF teslimat adresi yok. Bir LXMF duyurusu bekleyin veya 32 karakterlik LXMF karma — Ses (lxst.telephony) hedefleriyle Sohbet'i açın, Sohbet'i alamaz.",
+    "voiceAspectBadge": "Ses",
+    "voiceAspectTitle": "Bu yol tablosu satırı bir LXST telefon hedefidir. Bilindiğinde, sohbet eşinin LXMF dağıtım karması ile yeniden eşlenir."
   },
   "radioPanel": {
     "offloadedContacts": "{{count}} kişi veritabanına aktarıldı.",
@@ -3427,57 +3620,65 @@
     "importConfigJson": "JSON Yapılandırmasını İçe Aktar",
     "offloadContacts": "Boşaltma",
     "displayUnits": {
-      "0": {
-        "label": "Metrik"
+      "METRIC": {
+        "label": "Metric"
       },
-      "1": {
-        "label": "İmparatorluk"
+      "IMPERIAL": {
+        "label": "Imperial"
       }
     },
     "deviceRoles": {
-      "0": {
-        "label": "Müşteri",
+      "CLIENT": {
+        "label": "Client",
         "description": "Normal istemci modu"
       },
-      "1": {
-        "label": "İstemciyi Sessize Alma",
-        "description": "İletim yapmayan istemci"
+      "CLIENT_MUTE": {
+        "label": "Client Mute",
+        "description": "Paketleri iletmeyen istemci. Bu rolün uygulanması, cihazdaki GPS yayınlarını ve harita raporunu da devre dışı bırakır."
       },
-      "2": {
-        "label": "Yönlendirici",
+      "ROUTER": {
+        "label": "Router",
         "description": "Özel yönlendirici/tekrarlayıcı"
       },
-      "3": {
-        "label": "Yönlendirici İstemcisi",
-        "description": "Yönlendirici + istemci modu"
+      "ROUTER_CLIENT": {
+        "label": "Router Client",
+        "description": "Yönlendirici + istemci modu. Ürün yazılımı 2.3.15 'te kullanımdan kaldırılmıştır — Yönlendirici veya İstemci kullanın."
       },
-      "4": {
-        "label": "Müşteri Tabanı",
-        "description": "İstemci cihazları için baz istasyonu"
+      "REPEATER": {
+        "label": "Repeater",
+        "description": "Paketleri herhangi bir kaynak oluşturmadan yeniden yayınlar. Ürün yazılımı 2.7.11 'de kullanımdan kaldırılmıştır — yeniden yayın zincirinde delikler oluşturur."
       },
-      "5": {
-        "label": "Takipçi",
-        "description": "Yalnızca GPS izleyici"
+      "TRACKER": {
+        "label": "Tracker",
+        "description": "Sadece GPS izleyici"
       },
-      "6": {
-        "label": "Sensör",
+      "SENSOR": {
+        "label": "Sensor",
         "description": "Telemetri sensör düğümü"
       },
-      "7": {
+      "TAK": {
         "label": "TAK",
-        "description": "TAK özellikli cihaz"
+        "description": "TAK-enabled device"
       },
-      "8": {
-        "label": "İstemci Gizli",
+      "CLIENT_HIDDEN": {
+        "label": "Client Hidden",
         "description": "İstemci, düğüm listesinden gizlendi"
       },
-      "9": {
-        "label": "Kayıp Eşya",
-        "description": "Kurtarma için yayın konumu"
+      "LOST_AND_FOUND": {
+        "label": "Lost and Found",
+        "description": "İyileşme için yayın pozisyonu"
       },
-      "10": {
-        "label": "TAK Takipçisi",
-        "description": "TAK takip modu"
+      "TAK_TRACKER": {
+        "label": "TAK Tracker",
+        "description": "TAK tracker mode"
+      },
+      "ROUTER_LATE": {
+        "label": "Router Late",
+        "description": "Yoğun ağ çekirdekleri için yalnızca diğer düğümlerin bir şansı olduktan sonra yeniden yayın yapan yönlendirici."
+      },
+      "CLIENT_BASE": {
+        "label": "Client Base",
+        "description": "İstemci cihazlar için baz istasyonu"
       }
     },
     "contactsOnRadioBadgeTitle": "{{part}} radyodaki kişiler",
@@ -3712,28 +3913,28 @@
     "tzdefLabel": "Saat Dilimi (POSIX)",
     "tzdefDesc": "POSIX saat dilimi dizesi ör. EST5EDT,M3.2.0,M11.1.0. Referans listesi için https://github.com/nayarsystems/posix_tz_db adresine bakın.",
     "rebroadcastModes": {
-      "0": {
-        "label": "All",
+      "ALL": {
+        "label": "Tümü",
         "description": "Tüm paketleri yeniden yayınlayın (varsayılan)."
       },
-      "1": {
-        "label": "Hepsi Kod Çözmeyi Atla",
-        "description": "Tümünü kod çözmeden yeniden yayınlayın. Özel yönlendiricilerdeki CPU'yu azaltır."
+      "ALL_SKIP_DECODING": {
+        "label": "Tüm Kod Çözmeyi Atla",
+        "description": "Tümünü deşifre etmeden yeniden yayınla. Özel yönlendiricilerdeki CPU'yu azaltır."
       },
-      "2": {
-        "label": "Yalnızca Yerel",
-        "description": "Yalnızca doğrudan RF üzerinden duyulan düğümlerden gelen paketleri yeniden yayınlayın."
+      "LOCAL_ONLY": {
+        "label": "Sadece Yerel",
+        "description": "Yalnızca doğrudan RF'de duyulan düğümlerden gelen yeniden yayın paketleri."
       },
-      "3": {
-        "label": "Yalnızca Bilinen",
-        "description": "Yalnızca yerel düğüm veritabanındaki düğümlerden yeniden yayın."
+      "KNOWN_ONLY": {
+        "label": "Sadece Bilinen",
+        "description": "Yalnızca yerel düğüm veritabanındaki düğümlerden yeniden yayın yapın."
       },
-      "4": {
-        "label": "Hiçbiri",
-        "description": "Hiçbir paketi yeniden yayınlamayın."
+      "NONE": {
+        "label": "Yok",
+        "description": "Herhangi bir paketi yeniden yayınlamayın."
       },
-      "5": {
-        "label": "Yalnızca Çekirdek Portnumları",
+      "CORE_PORTNUMS_ONLY": {
+        "label": "Yalnızca Çekirdek Portnum'lar",
         "description": "Yalnızca temel portnumları (metin, düğüm bilgisi, konum, telemetri) yeniden yayınlayın."
       }
     },
@@ -3752,23 +3953,23 @@
     "enableMessageBubblesLabel": "Mesaj Balonları",
     "enableMessageBubblesDesc": "Gelen mesajları ekranda bir baloncuk içinde gösterin.",
     "oledTypes": {
-      "0": {
-        "label": "Otomatik"
+      "OLED_AUTO": {
+        "label": "Auto"
       },
-      "1": {
+      "OLED_SSD1306": {
         "label": "SSD1306"
       },
-      "2": {
+      "OLED_SH1106": {
         "label": "SH1106"
       },
-      "3": {
+      "OLED_SH1107": {
         "label": "SH1107 (128x64)"
       },
-      "4": {
+      "OLED_SH1107_128_128": {
         "label": "SH1107 (128x128)"
       },
-      "5": {
-        "label": "SH1107 Döndürülmüş"
+      "OLED_SH1107_ROTATED": {
+        "label": "SH1107 Rotated"
       }
     },
     "displayModes": {
@@ -3852,88 +4053,177 @@
       "addButton": "+ Kanal Ekle",
       "footerHelp": "Anahtarlar 128 bittir (16 bayt), 32 onaltılık karakter olarak gösterilir. {{nameMax}} karaktere kadar kanal adları. {{channelCount}} kanala kadar (0–{{indexMax}} indeksleri). #Kanallar için \"Addan türet\" seçeneğini kullanın (önde # ile ismin SHA-256'sı).",
       "shareQr": "QR",
-      "shareQrAria": "{{name}} için MeshCore kanal QR'sini göster"
+      "shareQrAria": "{{name}} için MeshCore kanal QR'sini göster",
+      "privateChannel": "Özel kanal (anahtarı girin)",
+      "privateKeyHint": "Paylaşılan kanal anahtarını girin: tamamı sıfır değil, tam olarak 32 onaltılık karakter (16 bayt)."
     },
     "regions": {
-      "0": {
-        "label": "Ayarlanmadı"
+      "UNSET": {
+        "label": "Unset"
       },
-      "1": {
-        "label": "BİZ"
+      "US": {
+        "label": "US"
       },
-      "2": {
+      "EU_433": {
         "label": "EU_433"
       },
-      "3": {
+      "EU_868": {
         "label": "EU_868"
       },
-      "4": {
+      "CN": {
         "label": "CN"
       },
-      "5": {
-        "label": "Japonya"
+      "JP": {
+        "label": "JP"
       },
-      "6": {
+      "ANZ": {
         "label": "ANZ"
       },
-      "7": {
-        "label": "Kore"
+      "KR": {
+        "label": "KR"
       },
-      "8": {
+      "TW": {
         "label": "TW"
       },
-      "9": {
+      "RU": {
         "label": "RU"
       },
-      "10": {
-        "label": "İÇİNDE"
+      "IN": {
+        "label": "IN"
       },
-      "11": {
-        "label": "Yeni Zelanda_865"
+      "NZ_865": {
+        "label": "NZ_865"
       },
-      "12": {
+      "TH": {
         "label": "TH"
       },
-      "13": {
+      "LORA_24": {
+        "label": "LORA_24"
+      },
+      "UA_433": {
         "label": "UA_433"
       },
-      "14": {
+      "UA_868": {
         "label": "UA_868"
       },
-      "15": {
+      "MY_433": {
         "label": "MY_433"
       },
-      "16": {
+      "MY_919": {
         "label": "MY_919"
       },
-      "17": {
+      "SG_923": {
         "label": "SG_923"
       },
-      "18": {
-        "label": "LORA_24"
+      "PH_433": {
+        "label": "PH_433"
+      },
+      "PH_868": {
+        "label": "PH_868"
+      },
+      "PH_915": {
+        "label": "PH_915"
+      },
+      "ANZ_433": {
+        "label": "ANZ_433"
+      },
+      "KZ_433": {
+        "label": "KZ_433"
+      },
+      "KZ_863": {
+        "label": "KZ_863"
+      },
+      "NP_865": {
+        "label": "NP_865"
+      },
+      "BR_902": {
+        "label": "BR_902"
+      },
+      "ITU1_2M": {
+        "label": "ITU1_2M"
+      },
+      "ITU2_2M": {
+        "label": "ITU2_2M"
+      },
+      "EU_866": {
+        "label": "EU_866"
+      },
+      "EU_874": {
+        "label": "EU_874"
+      },
+      "EU_917": {
+        "label": "EU_917"
+      },
+      "EU_N_868": {
+        "label": "EU_N_868"
+      },
+      "ITU3_2M": {
+        "label": "ITU3_2M"
+      },
+      "ITU1_70CM": {
+        "label": "ITU1_70CM"
+      },
+      "ITU2_70CM": {
+        "label": "ITU2_70CM"
+      },
+      "ITU3_70CM": {
+        "label": "ITU3_70CM"
+      },
+      "ITU2_125CM": {
+        "label": "ITU2_125CM"
       }
     },
     "modemPresets": {
-      "0": {
-        "label": "Uzun Hızlı"
+      "LONG_FAST": {
+        "label": "Long Fast"
       },
-      "1": {
-        "label": "Uzun Yavaş"
+      "LONG_SLOW": {
+        "label": "Long Slow"
       },
-      "2": {
-        "label": "Uzun Orta"
+      "VERY_LONG_SLOW": {
+        "label": "Very Long Slow"
       },
-      "3": {
-        "label": "Kısa Hızlı"
+      "MEDIUM_SLOW": {
+        "label": "Medium Slow"
       },
-      "4": {
-        "label": "Kısa Yavaş"
+      "MEDIUM_FAST": {
+        "label": "Medium Fast"
       },
-      "5": {
-        "label": "Orta Hızlı"
+      "SHORT_SLOW": {
+        "label": "Short Slow"
       },
-      "6": {
-        "label": "Orta Yavaş"
+      "SHORT_FAST": {
+        "label": "Short Fast"
+      },
+      "LONG_MODERATE": {
+        "label": "Long Moderate"
+      },
+      "SHORT_TURBO": {
+        "label": "Short Turbo"
+      },
+      "LONG_TURBO": {
+        "label": "Long Turbo"
+      },
+      "LITE_FAST": {
+        "label": "Lite Fast"
+      },
+      "LITE_SLOW": {
+        "label": "Lite Slow"
+      },
+      "NARROW_FAST": {
+        "label": "Narrow Fast"
+      },
+      "NARROW_SLOW": {
+        "label": "Narrow Slow"
+      },
+      "TINY_FAST": {
+        "label": "Tiny Fast"
+      },
+      "TINY_SLOW": {
+        "label": "Tiny Slow"
+      },
+      "MEDIUM_TURBO": {
+        "label": "Medium Turbo"
       }
     },
     "floodScopeSaved": "Kaydedilen kapsam",
@@ -3941,7 +4231,42 @@
     "floodScopeSavedEmpty": "Henüz kayıtlı kapsam yok. Özel bir etiket uygulayın veya eklemek için Sohbet'teki Özel kapsamı kullanın.",
     "floodScopeRemoveSaved": "Kaydedilen kapsamlardan kaldır",
     "floodScopeRemoveSavedAria": "{{hashtag}} öğesini kayıtlı kapsamlardan kaldırın",
-    "floodScopeInvalidHashtag": "Geçerli bir bölge hashtag'i girin (örneğin #myregion)."
+    "floodScopeInvalidHashtag": "Geçerli bir bölge hashtag'i girin (örneğin #myregion).",
+    "sendPositionDisabledShareOff": "Konumunuzu cihaza göndermek için Uygulama → GPS / Konum'da konumumu paylaş'ı etkinleştirin.",
+    "clientMuteGpsSuppressed": "İstemci Sessiz uygulandı — GPS yayınları ve MQTT harita raporlaması cihazda devre dışı bırakıldı.",
+    "validationShortNameTooLong": "Kısa Ad 4 UTF -8 bayta sığmalıdır",
+    "validationShortNameEmojiTooLarge": "Bu karakter Kısa Ad için çok büyük (ad başına maksimum 4 UTF -8 bayt)",
+    "enumDeprecatedSuffix": "(* Kaldırıldı)",
+    "lockdown": {
+      "title": "Aygıt Yazılımı Kilitleme",
+      "description": "Kilitli bir radyo, parolasıyla kilidi açılana kadar yapılandırma değişikliklerini reddeder. Durum, ürün yazılımı tarafından bildirilir; kilitleme desteği olmayan telsizler asla bildirmez.",
+      "stateLabel": "Durum",
+      "stateNotReported": "Bu radyo tarafından bildirilmedi",
+      "reasonLabel": "Nedeni",
+      "bootsRemainingLabel": "Kalan yeniden başlatma sayısı",
+      "validUntilLabel": "Şu tarihe kadar açık:",
+      "backoffLabel": "Geri çekmeyi yeniden dene",
+      "backoffValue": "{{seconds}}s",
+      "passphraseLabel": "Parola",
+      "provision": "Hüküm",
+      "unlock": "Kilidini Aç",
+      "unlockAria": "Ürün yazılımı kilitlemesinin kilidini açın veya sağlayın",
+      "lockNow": "Şimdi kilitle",
+      "lockNowAria": "Radyoyu hemen kilitle",
+      "disable": "Karantinayı devre dışı bırak",
+      "disableAria": "Ürün yazılımı kilitlemesini devre dışı bırak",
+      "states": {
+        "STATE_UNSPECIFIED": "Belirtilmemiş",
+        "NEEDS_PROVISION": "Karşılanması gerekiyor",
+        "LOCKED": "Kilitli",
+        "UNLOCKED": "Kilidi açıldı",
+        "UNLOCK_FAILED": "Kilit açma başarısız",
+        "DISABLED": "Engelli"
+      }
+    },
+    "contactsFullAlarm": "Telsiz iletişim deposu dolu. Boş yuvalara kişileri uygulama veritabanına aktarın.",
+    "contactsFullAlarmAction": "Bırakma",
+    "contactsFullAutoOffloadStarted": "Radyo kontakları dolu — otomatik boşaltma başlatılıyor…"
   },
   "rawPacketLog": {
     "filterPackets": "Paketleri filtrele",
@@ -4430,7 +4755,8 @@
     "openGlobalMapAria": "RMAP v4 global haritasını rmap.world'de açın",
     "applyPartialSuccess": "{{total}} arabirimlerinin {{applied}} öğesine uygulanan RMAP ayarları.",
     "disablePartialSuccess": "{{total}} arayüzlerinin {{applied}} üzerinde RMAP yayınlama devre dışı bırakıldı.",
-    "hint": "Etkinleştirilen tüm RMAP özellikli arayüzlerde (RNode/Multi, KISS, BLE eş, I2P, UDP, pipe) RMAP yayınlamayı ve Uygulama GPS koordinatlarını etkinleştirir. Onay kutusu yalnızca tüm uygun arayüzler yayınlanırken açıktır; kısmi bir durum belirsizdir; geri kalanını senkronize etmek için tekrar kontrol edin. Hassas kontrol için her arayüz için RMAP geçişlerini Bağlantı üzerinde kullanın. LoRa yolları aynı zamanda ulaşımı ve rmap.world merkezini de mümkün kılar."
+    "hint": "Etkinleştirilen tüm RMAP özellikli arayüzlerde (RNode/Multi, KISS, BLE eş, I2P, UDP, pipe) RMAP yayınlamayı ve Uygulama GPS koordinatlarını etkinleştirir. Onay kutusu yalnızca tüm uygun arayüzler yayınlanırken açıktır; kısmi bir durum belirsizdir; geri kalanını senkronize etmek için tekrar kontrol edin. Hassas kontrol için her arayüz için RMAP geçişlerini Bağlantı üzerinde kullanın. LoRa yolları aynı zamanda ulaşımı ve rmap.world merkezini de mümkün kılar.",
+    "disabledShareOff": "RMAP'te yayınlamak için Uygulama → GPS / Konumunda konumumu paylaş'ı etkinleştirin."
   },
   "reticulumTopology": {
     "title": "Ağ topolojisi",
@@ -4474,7 +4800,7 @@
     "rssiTitle": "RSSI Dağılımı",
     "rssiAxis": "RSSI (dBm)",
     "hopTitle": "Hop Sayısı Dağılımı",
-    "hopAxis": "Atlama"
+    "hopAxis": "Hop"
   },
   "roleInfo": {
     "placeholderDash": "-",
@@ -4783,7 +5109,8 @@
     "regenerateWarning": "Yeniden oluşturma, mevcut ATAK veri paketlerini geçersiz kılar; yeniden içe aktarmanız gerekecektir.",
     "durationSec": "{{s}}s",
     "durationMin": "{{m}}m",
-    "durationHourMin": "{{h}}h {{m}}m"
+    "durationHourMin": "{{h}}h {{m}}m",
+    "atakUndecodable": "Yük, TAK paketi olarak tanınmıyor"
   },
   "telemetryPanel": {
     "title": "Telemetri",
@@ -4824,14 +5151,20 @@
     "tempUnitC": "°C",
     "exportCsvButton": "CSV'yi dışa aktar",
     "emptyWaitingConnected": "Henüz telemetri verisi yok. Cihazdan veri bekleniyor…",
-    "emptyWaitingDisconnected": "Henüz telemetri verisi yok. Gerçek zamanlı ölçümleri görmek için bir cihaza bağlanın."
+    "emptyWaitingDisconnected": "Henüz telemetri verisi yok. Gerçek zamanlı ölçümleri görmek için bir cihaza bağlanın.",
+    "sectionParticulates": "Partiküller, CO₂ ve Yıldırım",
+    "chartAriaParticulates": "Partikül grafiği: en son PM2.5 {{pm25}}, CO₂ {{co2}}, {{count}} noktaları",
+    "axisParticulates": "µg/m³ · grevler",
+    "axisCo2": "ppm",
+    "seriesPm25": "PM2.5 (µg/m³)",
+    "seriesCo2": "CO₂ (ppm)",
+    "seriesLightningStrikes": "Yıldırım düşmesi (1 sa.)"
   },
   "toasts": {
     "firmwareAvailable": "Ürün yazılımı güncellemesi mevcut: v{{version}}",
     "newMessages_one": "{{protocol}}: {{count}} yeni mesaj",
     "newMessages_other": "{{protocol}}: {{count}} yeni mesajlar",
-    "meshcoreDistanceFilterHint": "Haritada GPS'li {{count}} kişi var. Yakındaki düğümlere odaklanmak için Uygulama → Dış görünüş bölümünde mesafe filtresini etkinleştirin.",
-    "longSessionRestartNudge": "mesh-client dört gündür çalışıyor. Uzun MeshCore BLE oturumlarında çökme riskini azaltmak için uygulamayı yeniden başlatın."
+    "meshcoreDistanceFilterHint": "Haritada GPS'li {{count}} kişi var. Yakındaki düğümlere odaklanmak için Uygulama → Dış görünüş bölümünde mesafe filtresini etkinleştirin."
   },
   "updateStatus": {
     "checking": "Kontrol ediliyor…",
@@ -5019,7 +5352,15 @@
     "whisperReplyPlaceholder": "{{name}} veya /msg'ye yanıt verin…",
     "jumpToLatest": "En Yeniye Atla",
     "stackNotReady": "Reticulum yığını henüz hazır değil. Bağlanana kadar bekleyin, ardından tekrar deneyin.",
-    "sidecarNotRunning": "Reticulum sidecar çalışmıyor. Bağlantı bölümünde yığını başlatın, sonra tekrar deneyin."
+    "sidecarNotRunning": "Reticulum sidecar çalışmıyor. Bağlantı bölümünde yığını başlatın, sonra tekrar deneyin.",
+    "whoReplyMissing": "{{room}} için merkezden üye listesi yok (yanıt bağlantı boyutunu aşabilir). Kişiler katılırken veya sohbet ederken adlar görünecektir.",
+    "openNomadPage": "Nomad sayfasını aç {{address}}",
+    "openDm": "{{address}} ile doğrudan mesajı açın",
+    "openReticulumAddress": "Reticulum adresini aç: {{address}}",
+    "addressChoiceTitle": "Reticulum adresini aç",
+    "addressChoiceMessage": "{{address}} bir Nomad sayfası veya eş olabilir. Hangisini açmak istersiniz?",
+    "addressChoiceNomad": "Nomad sayfası",
+    "addressChoiceDm": "Doğrudan mesaj"
   },
   "signalMeter": {
     "rssi": "RSSI",
@@ -5364,7 +5705,8 @@
     "sessionRowAria": "{{app}} ile {{peer}} oyunu",
     "apps": {
       "ttt": "Tic Tac Toe",
-      "chess": "Satranç"
+      "chess": "Satranç",
+      "four_in_a_row": "Dört Taş"
     },
     "status": {
       "pending": "Bekleyen",
@@ -5416,6 +5758,19 @@
       "boardAria": "Tic - Tac - Toe tahtası",
       "cellEmptyAria": "Cell {{index}}, empty",
       "cellOccupiedAria": "Cell {{index}}, {{marker}}"
+    },
+    "fourInARow": {
+      "youWon": "Sen kazandın!",
+      "opponentWon": "Rakip kazandı.",
+      "draw": "Berabere.",
+      "yourTurn": "Sıra sende.",
+      "opponentTurn": "Rakibin Sırası",
+      "yourMarker": "Siz {{marker}}",
+      "moveCount": "{{count}} hamle",
+      "boardAria": "Dört Taş tahtası",
+      "columnAria": "Sütun {{column}}, aşağıdan yukarıya: {{contents}}. Buraya bırak",
+      "columnFullAria": "Sütun {{column}}, aşağıdan yukarıya: {{contents}}. Dolu",
+      "columnEmptyContents": "boş"
     },
     "chess": {
       "youWon": "Sen kazandın!",
@@ -5472,5 +5827,102 @@
     },
     "drawOfferWaitingBanner": "Beraberlik teklifi gönderildi. Rakip bekleniyor…",
     "idleExpiryNotice": "Oyunlar işlem yapılmadığında sona erer ve yalnızca silinebilir. Cevapsız zorluklar: 24 saat (tüm oyunlar). Aktif oyunlar: 24 saat sonra tic - tac - toe, 7 gün sonra satranç ve four - in - a - row."
+  },
+  "longSession": {
+    "title": "Yeniden başlatma önerilir",
+    "body": "mesh-client dört gündür Bluetooth radyo bağlı olarak çalışıyor. Uzun Noble BLE oturumlarında çökme riskini azaltmak için uygulamayı yeniden başlat.",
+    "restart": "Yeniden Başlat",
+    "dismiss": "Yok say"
+  },
+  "reticulumSetup": {
+    "eyebrow": "RETICULUM · BAŞLARKEN",
+    "open": "Kurulum kılavuzunu aç",
+    "intro": "Reticulum kullanmaya yeni mi başladınız? Bağlantı kurun, kişileri bulun ve sekmeleri tanıyın.",
+    "title": "İlk bağlantınız",
+    "hide": "Kılavuzu gizle",
+    "startTitle": "Buradan başlayın",
+    "exploreTitle": "Deneyin",
+    "connectionTitle": "Bağlantı kurun",
+    "identityTitle": "Kimliğiniz",
+    "stepsLabel": "Reticulum kurulum adımları",
+    "working": "Çalışma…",
+    "startAction": "Hadi başlayalım",
+    "startBody": "Reticulum insanları ve uygulamaları internet, yerel ağlar veya uyumlu radyolar üzerinden birbirine bağlar. Sadece bu bilgisayar ve internet bağlantısıyla deneyebilirsiniz.",
+    "startHint": "Bu kılavuz, uygulama içinde Reticulum'u başlatır. Daha sonra bir isim ve diğer insanlara ulaşmanın bir yolunu seçeceksiniz.",
+    "identityBody": "Kimliğiniz bu ağdaki hesabınızdır. Hiçbir kayıt veya merkezi hesap sağlayıcısı olmadan bu bilgisayarda yaşar. Adınızı değiştirdiğinizde mesajlaşma adresiniz aynı kalır.",
+    "existingIdentity": "Zaten bir kimliğiniz var. Bu kılavuz onu korur ve yalnızca görünen adınızı günceller.",
+    "nameLabel": "İsim veya çağrı işareti",
+    "nameHint": "Bu ad akranlarla paylaşılır. Takma ad iyidir; gerçek adınız olması gerekmez.",
+    "saveIdentity": "Adı kaydet ve devam et",
+    "backupTitle": "Kurtarma kelimelerinizi güvende tutun",
+    "savedWords": "Kurtarma kelimelerimi kaydettim",
+    "importIdentity": "Geri yüklemem gereken bir kimliğim var",
+    "backupBody": "Bu sözcükler, bu bilgisayarı kaybederseniz kimliğinizi geri kazandırır. Şimdi bunları özel bir yere kaydedin. Bunları asla mesaj adresinizi isteyen birine vermeyin. Ayrıca korumalı bir yedeği daha sonra Ağdan dışarı aktarabilirsiniz.",
+    "continue": "Devam etmek",
+    "back": "Geri",
+    "routes": {
+      "internet": {
+        "title": "internet",
+        "body": "Halka açık bir merkez sizi diğer insanlara bağlar. Radyoya gerek yok; başlamak için iyi bir yer."
+      },
+      "radio": {
+        "title": "RNode radyosu",
+        "body": "Uyumlu radyo donanımını ve yerel radyo ağınızın ayarlarını kullanın."
+      },
+      "existing": {
+        "body": "Mevcut arayüzlerinizi koruyun ve hazır olup olmadıklarını kontrol edin.",
+        "title": "Mevcut kurulum"
+      }
+    },
+    "connectionBody": "Bir arayüz basitçe Reticulum'a bir bağlantıdır. Ağa nasıl ulaşmak istediğinizi seçin. Daha sonra başka bağlantılar ekleyebilirsiniz.",
+    "routeLabel": "Nasıl bağlanılır",
+    "hubLabel": "Herkese açık internet merkezi",
+    "hubHint": "Tek bir merkezle başlayın. Uygulama bu bağlantıyı ekleyecek veya etkinleştirecek ve uygulamak için Reticulum'u yeniden başlatacaktır. Genel merkezler IP adresinizi görebilir ve bazen kullanılamayabilir.",
+    "connectHub": "Bu merkeze bağlanın",
+    "hubSaved": "Bağlantı kaydedildi. Yeniden başlatmanın ardından kontrol ediliyor…",
+    "radioDevice": "RNode ürün yazılımını çalıştıran bir cihaz kullanın. Meshtastic veya MeshCore radyosu otomatik olarak bir RNode değildir; Cihazınızın talimatlarını kontrol etmeden donanım yazılımını yüklemeyin veya değiştirmeyin.",
+    "radioCheck": "Arayüzü etkinleştirin ve yeniden başlatma istemini uygulayın, ardından bu kılavuza geri dönün. Çalışan bir radyo bağlantısının kapsama alanında yine başka bir uyumlu istasyona ihtiyacı vardır.",
+    "checkTitle": "Bağlantınız kontrol ediliyor",
+    "openInterfaces": "Aşağıdaki bağlantı ayarlarını açın",
+    "existingHint": "Kılavuz mevcut arayüzlerinizi değiştirmeden kontrol edecektir. Bir yerel ağ arayüzü, o ağdaki yakındaki Reticulum cihazlarına ulaşır; tek başına sizi halka açık internetteki meslektaşlarınıza bağlamaz.",
+    "radioSettings": "Aşağıdaki bağlantı ayarlarını açın, bir RNode arayüzü ekleyin, USB veya Bluetooth'u seçin ve yerel grubunuz tarafından sağlanan frekansı, bant genişliğini, yayılma faktörünü ve kodlama hızını kullanın.",
+    "ready": "Bağlantınız mevcut",
+    "checkStack": "Reticulum ağı",
+    "checkConnection": "Seçilen bağlantı",
+    "checkMessaging": "Mesajlaşma hizmeti",
+    "available": "Hazır",
+    "waiting": "Beklemek",
+    "checkFailed": "Uygulama mevcut durumu okuyamadı. Reticulum'un çalıştığını kontrol edin ve tekrar deneyin.",
+    "readyHint": "Bu, yerel hizmetlerin ve bağlantının kurulduğunu doğrular. Belirli bir kişinin ulaşılabilir olduğunu garanti etmez.",
+    "waitHint": "Başlatma işlemi biraz zaman alabilir. Bir hub kullanılamıyorsa internet bağlantınızı kontrol edin veya başka bir hub seçin. Radyonun kablosunu, eşleştirmesini ve yerel ayarlarını kontrol edin.",
+    "checkAgain": "Tekrar kontrol edin",
+    "connectionLost": "Bağlantı artık hazır değil. Göndermeden önce kontrol etmek için geri dönün.",
+    "restartHint": "Yeniden başlatma, aktif Reticulum bağlantılarını kısa süreliğine kesintiye uğratır. Kılavuzu kapatırsanız kayıtlı ayarlar kullanılabilir durumda kalır.",
+    "exploreBody": "Temel ihtiyaçlara sahipsin. Tek bir doğrudan mesajla veya grup sohbetiyle başlayın; ihtiyaç duyduğunuzda diğer araçları keşfedebilirsiniz.",
+    "addressTitle": "Mesajlaşma adresiniz",
+    "copyAddress": "Mesaj adresimi kopyala",
+    "firstMessage": "Bir arkadaşınızdan LXMF adresini isteyin. Peers'ta adres alanını kullanarak bu kişileri arayın, ardından bir sohbet açın ve kısa bir mesaj gönderin.",
+    "addressBody": "Bu adresi bir arkadaşınızla paylaşın ki size mesaj gönderebilsinler. LXMF, Reticulum uygulamalarının kullandığı mesajlaşma sistemidir; bu sizin LXMF adresinizdir, kurtarma kelimeleriniz değil.",
+    "peersTitle": "İnsanları bul",
+    "addressCopied": "Mesaj adresi kopyalandı",
+    "discoveryHint": "Uygulama, insanlardan ve hizmetlerden gelen küçük tanıtımları duydukça akranları da doldurur. Ona zaman ver. Bazı girişler hizmettir, mesaj gönderebileceğiniz kişiler değildir.",
+    "deliveryHint": "Doğrudan mesajda Teslim Edildi'yi arayın. Bir yayılma düğümünde saklanması, mesajın bir aracıya sahip olduğu anlamına gelir; bu arkadaşınızın onu okuduğu veya aldığı anlamına gelmez.",
+    "peersBody": "Peers, doğrudan mesajlar için başlangıç ​​noktanızdır. Tekrar bulabilmek için kişileri kişi olarak kaydedin.",
+    "openRooms": "Grup sohbetini aç",
+    "roomsTitle": "Bir sohbete katılın",
+    "openPeers": "Açık Eşler",
+    "roomsBody": "RRC grup sohbetidir. Açın, bir merkez seçin, bağlanın ve bir odaya katılın. Doğrudan mesajlarınızdan farklıdır.",
+    "openNetwork": "Kimlik ve yedekleme ayarlarını aç",
+    "stopped": "Reticulum durduruldu veya hala başlıyor. Kuruluma devam etmek için başlatın.",
+    "networkHint": "Ağ, kimliğinizi, yedeklerinizi ve isteğe bağlı çevrimdışı mesaj ayarlarınızı tutar. Bağlantı, nasıl bağlanacağınızı yönettiğiniz yerdir. Nomad sayfalara göz atar; Uzaktan Kumanda ve Yönetici, onlara ihtiyacınız olana kadar bekleyebilir.",
+    "restartService": "Reticulum'u Başlat",
+    "errorDetails": "Hata ayrıntılarını göster",
+    "actionFailed": "Bu adım tamamlanmadı. Kaydedilen ayarlarınız saklandı. Ayrıntıları kontrol edip tekrar deneyin.",
+    "tabUnavailable": "Bu sekme gizlidir. Uygulama sekmesi ayarlarında bunu etkinleştirin, ardından kılavuza dönün.",
+    "privateConnection": "Bu hub'ın zaten özel ağ ayarları var. Aşağıdaki bağlantı ayarlarında bunu düzenleyin veya farklı bir genel merkez seçin.",
+    "identityUnavailable": "Kimliğiniz okunamadı. Reticulum'un çalıştığını kontrol edin ve tekrar deneyin.",
+    "identitySaveFailed": "Kimlik ayarlarınız kaydedilemedi. Tekrar deneyin.",
+    "interfacesUnavailable": "Bağlantılarınız okunamadı. Reticulum'un çalıştığını kontrol edin ve tekrar deneyin.",
+    "interfaceSaveFailed": "Bu bağlantı kaydedilemedi. Bağlantı ayarlarınızı kontrol edip tekrar deneyin."
   }
 }
