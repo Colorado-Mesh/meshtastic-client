@@ -87,7 +87,8 @@ export function ReticulumAttachmentLine({
     if (!attachmentPath || busy) return;
     setBusy(true);
     try {
-      let dataBase64 = imageDataUrl != null ? dataUrlToBase64(imageDataUrl) : null;
+      let dataBase64 =
+        fetchedFor === fetchKey && imageDataUrl != null ? dataUrlToBase64(imageDataUrl) : null;
       if (!dataBase64) {
         const res = await window.electronAPI.chat.readReticulumAttachmentAsDataUrl({
           filePath: attachmentPath,
