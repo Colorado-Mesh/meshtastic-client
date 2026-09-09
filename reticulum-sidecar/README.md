@@ -14,7 +14,7 @@ Install Rust (**1.85+**, edition 2024). Prefer [rustup](https://rustup.rs/). See
 ./scripts/clone-ratspeak-stack.sh
 ```
 
-That floats `rsReticulum` / `rsLXMF` / `rsNomad` / `rsLXST` / `lrgp-rs` under `.rsstack/` to `origin/main` (override with `RS_RETICULUM_REF` / `RS_LXMF_REF` / `RS_NOMAD_REF` / `RS_LXST_REF` / `RS_LRGP_REF` for bisect). Peer default avatars use [LXMFace](https://github.com/ratspeak/LXMFace) in the **renderer** (`src/renderer/lib/reticulum/lxmface.ts`), not this sidecar.
+That floats `rsReticulum` / `rsLXMF` / `rsNomad` / `rsLXST` / `lrgp-rs` under `.rsstack/` to `origin/main` (override with `RS_RETICULUM_REF` / `RS_LXMF_REF` / `RS_NOMAD_REF` / `RS_LXST_REF` / `RS_LRGP_REF` for bisect). CI may temporarily pin rsReticulum / rsLXMF to open stacked PRs via `scripts/ratspeak-stack-ci-pins.env` (see [patches/README.md](patches/README.md#stacked-upstream-feature-prs-ci-pins); tracked by `pnpm run update`). Peer default avatars use [LXMFace](https://github.com/ratspeak/LXMFace) in the **renderer** (`src/renderer/lib/reticulum/lxmface.ts`), not this sidecar.
 
 **Default (stub stack)** — builds without `--features rns-stack`; Cargo still requires the `.rsstack/` checkouts on disk (CI runs `clone-ratspeak-stack.sh`; locally use the script above):
 
