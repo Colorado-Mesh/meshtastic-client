@@ -246,6 +246,7 @@ export default function NomadNetworkPanel({
   const refreshFromSidecar = useNomadNetworkStore((s) => s.refreshFromSidecar);
   const fetchNomadPage = useNomadNetworkStore((s) => s.fetchNomadPage);
   const fetchNomadFile = useNomadNetworkStore((s) => s.fetchNomadFile);
+  const fetchNomadMedia = useNomadNetworkStore((s) => s.fetchNomadMedia);
   const toggleFavorite = useNomadNetworkStore((s) => s.toggleFavorite);
 
   const selectedHash = useNomadPageViewerStore((s) => s.selectedHash);
@@ -1178,6 +1179,7 @@ export default function NomadNetworkPanel({
                         onDownloadFile={handleMicronDownload}
                         onOpenDm={onOpenDm}
                         onFetchPartial={fetchNomadPage}
+                        onFetchMedia={fetchNomadMedia}
                       />
                     ) : (
                       <pre

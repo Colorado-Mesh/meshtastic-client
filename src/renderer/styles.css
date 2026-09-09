@@ -370,6 +370,27 @@ html[data-reduce-motion='true'] .cm-watermark-mesh-tube--flicker-off .cm-waterma
   overflow-wrap: anywhere;
   max-width: 100%;
 }
+.nomad-micron-page .nomad-micron-media-figure {
+  margin: 0.5em 0;
+  max-width: 100%;
+}
+.nomad-micron-page .nomad-micron-media {
+  max-width: 100%;
+  height: auto;
+  vertical-align: middle;
+}
+.nomad-micron-page .nomad-micron-media-notice:not([hidden]) {
+  display: block;
+  font-size: 0.85em;
+  opacity: 0.75;
+}
+.nomad-micron-page .nomad-micron-collapsible {
+  margin: 0.25em 0;
+}
+.nomad-micron-page .nomad-micron-collapsible > summary {
+  cursor: pointer;
+  list-style-position: outside;
+}
 
 /* Message actions bar — use theme CSS custom property for background */
 .message-actions-bar {

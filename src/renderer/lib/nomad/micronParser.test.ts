@@ -11,6 +11,7 @@ import {
   collectNomadFormFieldValues,
   formatNomadRequestDataForUrlBar,
   isNomadFilePath,
+  isNomadMediaPath,
   isNomadMicronPage,
   loadNomadMicronPartial,
   mountNomadMicronHtml,
@@ -19,6 +20,7 @@ import {
   parseNomadLinkFieldsSpec,
   parseNomadNetworkLinkUrl,
   renderNomadMicronPage,
+  resolveNomadMediaFetchTarget,
   serializeNomadPageRequestDataKey,
   splitNomadLinkDestination,
 } from './micronParser';
@@ -299,6 +301,72 @@ describe('isNomadFilePath', () => {
     expect(isNomadFilePath('/file/readme.txt')).toBe(true);
     expect(isNomadFilePath('file/readme.txt')).toBe(true);
     expect(isNomadFilePath('/page/index.mu')).toBe(false);
+  });
+});
+
+describe('NomadNet 1.4.1 micron images and collapsibles', () => {
+  it('renders image placeholders with media data attributes', () => {
+    const markup = '`(The RNS logo`w=n`a=c`:/media/demo.webp)';
+    const html = renderNomadMicronPage(markup);
+    const container = document.createElement('div');
+    mountNomadMicronHtml(container, html);
+    const img = container.querySelector<HTMLImageElement>('.nomad-micron-media');
+    expect(img).not.toBeNull();
+    expect(img?.getAttribute('data-nomad-media-url')).toBe(':/media/demo.webp');
+    expect(img?.getAttribute('data-nomad-media-alt')).toBe('The RNS logo');
+    expect(img?.getAttribute('data-w')).toBe('n');
+    expect(img?.getAttribute('data-a')).toBe('c');
+    expect(img?.alt).toBe('The RNS logo');
+    const figure = container.querySelector<HTMLElement>('.nomad-micron-media-figure');
+    expect(figure?.style.textAlign).toBe('center');
+  });
+
+  it('renders open and collapsed collapsible headings as details/summary', () => {
+    const markup = [
+      '`+>Open by default',
+      'Visible body',
+      '`->Starts collapsed',
+      'Hidden until expanded',
+      '>Normal heading',
+      'After fold',
+    ].join('\n');
+    const html = renderNomadMicronPage(markup);
+    const container = document.createElement('div');
+    mountNomadMicronHtml(container, html);
+    const details = Array.from(
+      container.querySelectorAll<HTMLDetailsElement>('details.nomad-micron-collapsible'),
+    );
+    expect(details).toHaveLength(2);
+    expect(details[0].open).toBe(true);
+    expect(details[0].querySelector('summary')?.textContent).toContain('Open by default');
+    expect(details[0].textContent).toContain('Visible body');
+    expect(details[1].open).toBe(false);
+    expect(details[1].querySelector('summary')?.textContent).toContain('Starts collapsed');
+    expect(container.textContent).toContain('After fold');
+  });
+
+  it('resolveNomadMediaFetchTarget extracts /media path for the request', () => {
+    expect(resolveNomadMediaFetchTarget(':/media/demo.webp', 'abc', '/page/index.mu')).toEqual({
+      hash: 'abc',
+      mediaPath: '/media/demo.webp',
+    });
+    expect(
+      resolveNomadMediaFetchTarget('abcdefabcdefabcdefabcdefabcdefab:/media/x.webp', 'fallback'),
+    ).toEqual({
+      hash: 'abcdefabcdefabcdefabcdefabcdefab',
+      mediaPath: '/media/x.webp',
+    });
+    expect(resolveNomadMediaFetchTarget('/media/bare.webp', 'abc')).toEqual({
+      hash: 'abc',
+      mediaPath: '/media/bare.webp',
+    });
+    expect(resolveNomadMediaFetchTarget(':/page/index.mu', 'abc')).toBeNull();
+  });
+
+  it('isNomadMediaPath detects media routes', () => {
+    expect(isNomadMediaPath('/media/demo.webp')).toBe(true);
+    expect(isNomadMediaPath('media/demo.webp')).toBe(true);
+    expect(isNomadMediaPath('/file/demo.webp')).toBe(false);
   });
 });
 

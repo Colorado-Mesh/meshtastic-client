@@ -150,6 +150,109 @@ export function isNomadFilePath(path: string): boolean {
   return normalizeNomadPagePath(path).startsWith('/file/');
 }
 
+/** True when a Nomad link path targets the `/media` WebP host (NomadNet 1.4.1). */
+export function isNomadMediaPath(path: string): boolean {
+  const normalized = normalizeNomadPagePath(path);
+  return normalized === '/media' || normalized.startsWith('/media/');
+}
+
+/**
+ * Resolve a Micron image URL into node hash + `/media/...` request path.
+ * Matches NomadNet Browser.__get_image_request_data (path from parse_url).
+ */
+export function resolveNomadMediaFetchTarget(
+  mediaUrl: string,
+  selectedHash: string,
+  defaultPagePath: string = DEFAULT_NOMAD_NODE_PAGE_PATH,
+): { hash: string; mediaPath: string } | null {
+  const trimmed = stripNomadUrlSchemes(mediaUrl.trim());
+  if (!trimmed) return null;
+
+  let parsed = parseNomadNetworkLinkUrl(trimmed, defaultPagePath);
+  if (!parsed && (trimmed.startsWith('/media/') || trimmed === '/media')) {
+    parsed = { destination_hash: null, path: normalizeNomadPagePath(trimmed) };
+  }
+  if (!parsed || !isNomadMediaPath(parsed.path)) return null;
+
+  return {
+    hash: parsed.destination_hash ?? selectedHash,
+    mediaPath: parsed.path,
+  };
+}
+
+export interface NomadMicronMediaFetchResult {
+  ok: boolean;
+  content_base64?: string;
+  file_name?: string;
+  error?: string;
+}
+
+/**
+ * After Micron mount, fetch WebP bytes for each `[data-nomad-media-url]` placeholder.
+ * Does not use `/file` downloads — callers must use the Nomad `/media` API.
+ */
+export async function bindNomadMicronMedia(
+  root: HTMLElement,
+  opts: {
+    selectedHash: string;
+    defaultPagePath?: string;
+    fetchMedia: (hash: string, mediaPath: string) => Promise<NomadMicronMediaFetchResult>;
+    /** Force image/webp data URLs (NomadNet media is always WebP). */
+    toDataUrl?: (fileName: string, contentBase64: string) => string | null;
+  },
+): Promise<void> {
+  const defaultPagePath = opts.defaultPagePath ?? DEFAULT_NOMAD_NODE_PAGE_PATH;
+  const toDataUrl = opts.toDataUrl;
+  const images = Array.from(root.querySelectorAll<HTMLImageElement>('[data-nomad-media-url]'));
+  await Promise.all(
+    images.map(async (img) => {
+      const url = img.getAttribute('data-nomad-media-url') ?? '';
+      const alt = img.getAttribute('data-nomad-media-alt') ?? img.alt;
+      const notice = img.parentElement?.querySelector('.nomad-micron-media-notice');
+      const target = resolveNomadMediaFetchTarget(url, opts.selectedHash, defaultPagePath);
+      if (!target) {
+        if (notice) notice.textContent = alt ? `[${alt}]` : '[invalid media url]';
+        return;
+      }
+      if (notice) notice.textContent = alt ? `Loading ${alt}…` : 'Loading image…';
+      try {
+        const res = await opts.fetchMedia(target.hash, target.mediaPath);
+        if (!res.ok || !res.content_base64) {
+          if (notice) {
+            notice.textContent = alt
+              ? `Could not load ${alt}`
+              : `Could not load image${res.error ? `: ${res.error}` : ''}`;
+          }
+          return;
+        }
+        const fileName =
+          res.file_name && /\.webp$/i.test(res.file_name)
+            ? res.file_name
+            : `${(target.mediaPath.split('/').pop() || 'image').replace(/\.[^.]+$/, '') || 'image'}.webp`;
+        const dataUrl = toDataUrl
+          ? toDataUrl(fileName, res.content_base64)
+          : `data:image/webp;base64,${res.content_base64}`;
+        if (!dataUrl) {
+          if (notice) {
+            notice.textContent = alt ? `Could not display ${alt}` : 'Could not display image';
+          }
+          return;
+        }
+        img.src = dataUrl;
+        if (notice) notice.textContent = '';
+        notice?.setAttribute('hidden', 'true');
+      } catch (e) {
+        console.warn('[bindNomadMicronMedia] fetch failed', e);
+        if (notice) {
+          notice.textContent = alt
+            ? `Could not load ${alt}`
+            : `Could not load image: ${e instanceof Error ? e.message : String(e)}`;
+        }
+      }
+    }),
+  );
+}
+
 function stripNomadUrlSchemes(url: string): string {
   return url.replace(/^nomadnetwork:\/\//, '').replace(/^lxmf:\/\//, '');
 }
