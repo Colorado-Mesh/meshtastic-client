@@ -41,10 +41,18 @@ export class MeshcoreWebBluetoothConnection extends Connection {
   async close(): Promise<void> {
     this._serializedToDevice = null;
     if (this._fromDeviceReader) {
+      // catch-no-log-ok cancel during close — reader may already be cancelled
       await this._fromDeviceReader.cancel().catch(() => {});
       this._fromDeviceReader = null;
     }
     await this.transport.disconnect();
+  }
+
+  /** Chromium Web Bluetooth device id (opaque UUID on Linux; may be MAC-shaped elsewhere). */
+  getWebBluetoothDeviceId(): string | null {
+    return (
+      this.transport.getDeviceInfo()?.deviceId ?? this.transport.getLastGrantedDeviceId() ?? null
+    );
   }
 
   async connect(reuseDeviceId?: string): Promise<void> {

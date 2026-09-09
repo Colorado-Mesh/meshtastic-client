@@ -1,5 +1,6 @@
 import type { IpcMain } from 'electron';
 
+import { clampQueryLimit } from '../../shared/clampQueryLimit';
 import { canonicalizeReticulumDestinationHash } from '../../shared/reticulumDestinationHash';
 import type { RrcChatMessageKind } from '../../shared/rrc-types';
 import { finishDbIpcHandler, getDbForIpc } from '../db-ipc-lifecycle';
@@ -87,7 +88,7 @@ export function registerRrcDbIpcHandlers({ ipcMain }: RrcDbIpcDeps): void {
       const hub = canonicalizeHubHash(hubHash);
       const roomKey = normalizeRoom(room);
       if (!hub || !roomKey) return [];
-      const safeLimit = Math.min(Math.max(1, Number(limit) || 500), 10_000);
+      const safeLimit = clampQueryLimit(limit, { default: 500, max: 10_000 });
       const db = getDbForIpc('db:listRrcMessages');
       if (!db) return [];
       const rows = db
@@ -176,6 +177,64 @@ export function registerRrcDbIpcHandlers({ ipcMain }: RrcDbIpcDeps): void {
       return { changes: Number(result.changes) };
     } catch (err) {
       finishDbIpcHandler('db:pruneRrcMessagesByCount', err);
+    }
+  });
+
+  ipcMain.handle('db:listRrcNicks', (event, hubHash: unknown, limit = 1000) => {
+    try {
+      assertIpcSender(event, 'db:listRrcNicks');
+      const hub = canonicalizeHubHash(hubHash);
+      if (!hub) return [];
+      const safeLimit = clampQueryLimit(limit, { default: 1000, max: 10_000 });
+      const db = getDbForIpc('db:listRrcNicks');
+      if (!db) return [];
+      return db
+        .prepareOnce(
+          `SELECT identity_hash, nickname, last_seen
+             FROM rrc_nicks
+             WHERE hub_hash = ?
+             ORDER BY last_seen DESC
+             LIMIT ?`,
+        )
+        .all(hub, safeLimit) as Record<string, unknown>[];
+    } catch (err) {
+      finishDbIpcHandler('db:listRrcNicks', err);
+    }
+  });
+
+  ipcMain.handle('db:upsertRrcNick', (event, nick: unknown) => {
+    try {
+      assertIpcSender(event, 'db:upsertRrcNick');
+      const n = (nick && typeof nick === 'object' ? nick : {}) as Record<string, unknown>;
+      const hub = canonicalizeHubHash(n.hub_hash);
+      const identityHash =
+        typeof n.identity_hash === 'string' && /^[0-9a-f]{8,64}$/i.test(n.identity_hash.trim())
+          ? n.identity_hash.trim().toLowerCase()
+          : null;
+      const nickname =
+        typeof n.nickname === 'string' && n.nickname.trim()
+          ? n.nickname.trim().slice(0, MAX_NICK_LEN)
+          : null;
+      const lastSeen = Number(n.last_seen);
+      if (!hub || !identityHash || !nickname || !Number.isFinite(lastSeen)) {
+        return { changes: 0 };
+      }
+      const db = getDbForIpc('db:upsertRrcNick');
+      if (!db) return { changes: 0 };
+      // Keep the newest sighting only; an older replay must not overwrite a rename.
+      const result = db
+        .prepareOnce(
+          `INSERT INTO rrc_nicks (hub_hash, identity_hash, nickname, last_seen)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(hub_hash, identity_hash) DO UPDATE SET
+             nickname = excluded.nickname,
+             last_seen = excluded.last_seen
+           WHERE excluded.last_seen >= rrc_nicks.last_seen`,
+        )
+        .run(hub, identityHash, nickname, Math.floor(lastSeen));
+      return { changes: Number(result.changes) };
+    } catch (err) {
+      finishDbIpcHandler('db:upsertRrcNick', err);
     }
   });
 

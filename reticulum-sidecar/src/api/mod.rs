@@ -1,10 +1,12 @@
 //! HTTP + WebSocket API (Ratspeak-aligned contract; see docs/reticulum-sidecar-ipc.md).
 
 mod config;
+mod games;
 mod identity;
 mod interfaces;
 mod lxmf;
 mod nomad;
+mod path_medium;
 mod propagation;
 mod remote;
 mod rmap;
@@ -14,6 +16,8 @@ mod rrc;
 mod status;
 mod system;
 pub(crate) mod validate;
+mod voice;
+mod voice_memo;
 mod ws;
 
 use std::sync::Arc;
@@ -32,6 +36,10 @@ pub fn router(stack: Arc<StackHandle>) -> Router {
         .route("/api/v1/app/info", get(status::app_info))
         .route("/api/v1/identity/status", get(identity::identity_status))
         .route(
+            "/api/v1/identity/register-known",
+            post(identity::identity_register_known),
+        )
+        .route(
             "/api/v1/identity/generate",
             post(identity::identity_generate),
         )
@@ -45,6 +53,10 @@ pub fn router(stack: Arc<StackHandle>) -> Router {
             post(identity::identity_import_private),
         )
         .route("/api/v1/identity/export", post(identity::identity_export))
+        .route(
+            "/api/v1/identity/export-raw",
+            post(identity::identity_export_raw),
+        )
         .route(
             "/api/v1/identity/display-name",
             post(identity::identity_set_display_name),
@@ -87,7 +99,10 @@ pub fn router(stack: Arc<StackHandle>) -> Router {
         )
         .route("/api/v1/ble/scan", get(interfaces::ble_scan))
         .route("/api/v1/lxmf/send", post(lxmf::lxmf_send))
+        .route("/api/v1/lxmf/paper/create", post(lxmf::lxmf_paper_create))
+        .route("/api/v1/lxmf/paper/ingest", post(lxmf::lxmf_paper_ingest))
         .route("/api/v1/lxmf/reaction", post(lxmf::lxmf_reaction))
+        .route("/api/v1/lxmf/recent", get(lxmf::list_recent_lxmf))
         .route(
             "/api/v1/lxmf/messages/{hash}",
             axum::routing::delete(lxmf::lxmf_delete_message),
@@ -99,6 +114,23 @@ pub fn router(stack: Arc<StackHandle>) -> Router {
         .route("/api/v1/peers", get(lxmf::list_peers))
         .route("/api/v1/peers/{hash}/path", post(lxmf::peer_path))
         .route("/api/v1/peers/{hash}/probe", post(lxmf::peer_probe))
+        .route(
+            "/api/v1/peers/{hash}/paths",
+            get(path_medium::get_peer_paths),
+        )
+        .route(
+            "/api/v1/peers/{hash}/medium-pin",
+            put(path_medium::put_peer_medium_pin),
+        )
+        .route(
+            "/api/v1/maintenance/path-table",
+            post(lxmf::clear_path_table),
+        )
+        .route(
+            "/api/v1/settings/path-medium-preference",
+            get(path_medium::get_path_medium_preference)
+                .put(path_medium::put_path_medium_preference),
+        )
         .route("/api/v1/ping", post(lxmf::ping))
         .route("/api/v1/topology", get(system::topology))
         .route("/api/v1/rmap/discovered", get(rmap::list_rmap_discovered))
@@ -138,6 +170,22 @@ pub fn router(stack: Arc<StackHandle>) -> Router {
         .route(
             "/api/v1/propagation/auto-sync-interval",
             post(propagation::set_propagation_auto_sync_interval),
+        )
+        .route(
+            "/api/v1/propagation/mode",
+            post(propagation::set_propagation_mode),
+        )
+        .route(
+            "/api/v1/propagation/auto-blacklist",
+            post(propagation::add_propagation_auto_blacklist),
+        )
+        .route(
+            "/api/v1/propagation/auto-blacklist/{destination_hash}",
+            delete(propagation::remove_propagation_auto_blacklist),
+        )
+        .route(
+            "/api/v1/propagation/hosting-policy",
+            post(propagation::set_pn_hosting_policy),
         )
         .route(
             "/api/v1/propagation/{id}/enable",
@@ -208,6 +256,7 @@ pub fn router(stack: Arc<StackHandle>) -> Router {
         .route("/api/v1/rncp/accept", post(rncp::rncp_accept))
         .route("/api/v1/rncp/reject", post(rncp::rncp_reject))
         .route("/api/v1/rncp/status", get(rncp::rncp_status))
+        .route("/api/v1/rncp/announce", post(rncp::rncp_announce))
         .route(
             "/api/v1/rncp/listener",
             get(rncp::get_rncp_listener).post(rncp::set_rncp_listener),
@@ -218,10 +267,48 @@ pub fn router(stack: Arc<StackHandle>) -> Router {
         )
         .route("/api/v1/remote/identity", get(remote::remote_identity))
         .route("/api/v1/stack/restart", post(system::stack_restart))
+        .route(
+            "/api/v1/stack/prepare-stop",
+            post(system::stack_prepare_stop),
+        )
         .route("/api/v1/system/factory-reset", post(system::factory_reset))
         .route("/api/v1/diagnostics", get(system::diagnostics))
-        .route("/api/v1/voice/status", get(system::voice_status))
-        .route("/api/v1/games/status", get(system::games_status))
+        .route("/api/v1/voice/status", get(voice::voice_status))
+        .route("/api/v1/voice/call", post(voice::voice_call))
+        .route("/api/v1/voice/answer", post(voice::voice_answer))
+        .route("/api/v1/voice/reject", post(voice::voice_reject))
+        .route("/api/v1/voice/hangup", post(voice::voice_hangup))
+        .route("/api/v1/voice/mute", post(voice::voice_mute))
+        .route("/api/v1/voice/audio", post(voice::voice_audio))
+        .route(
+            "/api/v1/voice/memo/start",
+            post(voice_memo::voice_memo_start),
+        )
+        .route(
+            "/api/v1/voice/memo/audio",
+            post(voice_memo::voice_memo_audio),
+        )
+        .route("/api/v1/voice/memo/stop", post(voice_memo::voice_memo_stop))
+        .route(
+            "/api/v1/voice/memo/cancel",
+            post(voice_memo::voice_memo_cancel),
+        )
+        .route("/api/v1/games/status", get(games::games_status))
+        .route("/api/v1/games/apps", get(games::games_apps))
+        .route("/api/v1/games/sessions", get(games::games_sessions))
+        .route(
+            "/api/v1/games/sessions/{id}",
+            get(games::games_session_detail).delete(games::games_session_delete),
+        )
+        .route("/api/v1/games/action", post(games::games_action))
+        .route(
+            "/api/v1/games/sessions/{id}/resend",
+            post(games::games_session_resend),
+        )
+        .route(
+            "/api/v1/games/sessions/{id}/read",
+            post(games::games_session_read),
+        )
         .route(
             "/api/v1/identities",
             get(system::list_identities).post(system::create_identity),
@@ -229,6 +316,7 @@ pub fn router(stack: Arc<StackHandle>) -> Router {
         .route("/api/v1/identities/switch", post(system::switch_identity))
         .route("/api/v1/identities/delete", post(system::delete_identity))
         .route("/ws", get(ws::ws_handler))
+        .route("/ws/voice", get(ws::ws_voice_handler))
         .layer(DefaultBodyLimit::max(4 * 1024 * 1024))
         .layer(localhost_cors_layer())
         .with_state(stack)

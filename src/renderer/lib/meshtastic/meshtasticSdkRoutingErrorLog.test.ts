@@ -16,6 +16,10 @@ vi.mock('@/renderer/stores/messageStore', () => ({
 import { updateMessageStatus } from '@/renderer/stores/messageStore';
 
 import {
+  resetMeshtasticLateConfigureRetryableSwallowForTests,
+  shouldSwallowLateMeshtasticConfigureRetryableRejection,
+} from './meshtasticConfigureRetry';
+import {
   beginMeshtasticNonChatOutbound,
   endMeshtasticNonChatOutbound,
   registerMeshtasticNonChatWirePacketId,
@@ -30,6 +34,7 @@ import {
   applyMeshtasticOutboundRoutingErrorFromRejection,
   chatRoutingErrorKeyForSdkErrorName,
   humanizeMeshtasticSdkQueueRejectionError,
+  isMeshtasticMissingRecipientKeyError,
   parseMeshtasticSdkQueueRejection,
   parseMeshtasticSdkRoutingErrorLog,
 } from './meshtasticSdkRoutingErrorLog';
@@ -44,6 +49,7 @@ interface SeedRow {
   channelIndex?: number;
   timestamp?: number;
   from?: number;
+  to?: number;
 }
 
 function clearStoreMessages(): void {
@@ -62,7 +68,7 @@ function seedOutbound(rows: SeedRow[]): void {
         id: String(row.packetId),
         from: row.from ?? 42,
         senderName: 'Me',
-        to: 0xffffffff,
+        to: row.to ?? 0xffffffff,
         payload: row.payload ?? 'hello',
         channelIndex: row.channelIndex ?? 0,
         timestamp: row.timestamp ?? Date.now(),
@@ -180,6 +186,51 @@ describe('meshtasticSdkRoutingErrorLog', () => {
     expect(updateMessageStatus).toHaveBeenCalled();
   });
 
+  it('does not fall back unmatched TIMEOUT onto a sole sending outbound', () => {
+    seedOutbound([{ packetId: 55, timestamp: Date.now() }]);
+    const applied = applyMeshtasticOutboundRoutingErrorFromLog(
+      'Packet 41841545 of type packet timed out',
+      { myNodeNum: 42, identityId: IDENTITY },
+    );
+    expect(applied).toBe(false);
+    expect(updateMessageStatus).not.toHaveBeenCalled();
+  });
+
+  it('does not fall back unmatched MAX_RETRANSMIT onto a sole sending outbound', () => {
+    seedOutbound([{ packetId: 55, timestamp: Date.now() }]);
+    const applied = applyMeshtasticOutboundRoutingErrorFromLog(
+      'Error received for packet 985918657: MAX_RETRANSMIT',
+      { myNodeNum: 42, identityId: IDENTITY },
+    );
+    expect(applied).toBe(false);
+    expect(updateMessageStatus).not.toHaveBeenCalled();
+  });
+
+  it('does not fall back unmatched NO_RESPONSE onto a sole sending outbound', () => {
+    seedOutbound([{ packetId: 55, timestamp: Date.now() }]);
+    const applied = applyMeshtasticOutboundRoutingErrorFromLog(
+      'Error received for packet 424242: NO_RESPONSE',
+      { myNodeNum: 42, identityId: IDENTITY },
+    );
+    expect(applied).toBe(false);
+    expect(updateMessageStatus).not.toHaveBeenCalled();
+  });
+
+  it('still exact-matches MAX_RETRANSMIT when the wire id matches the outbound row', () => {
+    seedOutbound([{ packetId: 985918657, timestamp: Date.now() }]);
+    const applied = applyMeshtasticOutboundRoutingErrorFromLog(
+      'Error received for packet 985918657: MAX_RETRANSMIT',
+      { myNodeNum: 42, identityId: IDENTITY },
+    );
+    expect(applied).toBe(true);
+    expect(updateMessageStatus).toHaveBeenCalledWith(
+      IDENTITY,
+      '985918657',
+      'failed',
+      'chatPanel.routingErrors.timeout',
+    );
+  });
+
   it('does not apply when no outbound rows exist', () => {
     seedOutbound([]);
     const applied = applyMeshtasticOutboundRoutingErrorFromLog(
@@ -267,6 +318,67 @@ describe('meshtasticSdkRoutingErrorLog', () => {
     ).toBeTruthy();
     expect(humanizeMeshtasticSdkQueueRejectionError('x')).toBeNull();
   });
+
+  it('requests recipient NODEINFO on PKI_SEND_FAIL_PUBLIC_KEY for a DM row', () => {
+    seedOutbound([{ packetId: 669520633, to: 0x1234 }]);
+    const onMissingRecipientKey = vi.fn();
+    const applied = applyMeshtasticOutboundRoutingErrorFromLog(
+      'Error received for packet 669520633: PKI_SEND_FAIL_PUBLIC_KEY',
+      { myNodeNum: 42, identityId: IDENTITY, onMissingRecipientKey },
+    );
+    expect(applied).toBe(true);
+    expect(onMissingRecipientKey).toHaveBeenCalledWith(0x1234);
+  });
+
+  it('requests recipient NODEINFO on PKI_UNKNOWN_PUBKEY for a DM row', () => {
+    seedOutbound([{ packetId: 669520633, to: 0xabcd }]);
+    const onMissingRecipientKey = vi.fn();
+    applyMeshtasticOutboundRoutingErrorFromLog(
+      'Error received for packet 669520633: PKI_UNKNOWN_PUBKEY',
+      { myNodeNum: 42, identityId: IDENTITY, onMissingRecipientKey },
+    );
+    expect(onMissingRecipientKey).toHaveBeenCalledWith(0xabcd);
+  });
+
+  it('does not request NODEINFO for non-key routing errors', () => {
+    seedOutbound([{ packetId: 711859058, to: 0x1234 }]);
+    const onMissingRecipientKey = vi.fn();
+    applyMeshtasticOutboundRoutingErrorFromLog('Packet 711859058 of type packet timed out', {
+      myNodeNum: 42,
+      identityId: IDENTITY,
+      onMissingRecipientKey,
+    });
+    expect(onMissingRecipientKey).not.toHaveBeenCalled();
+  });
+
+  it('does not request NODEINFO for a broadcast row (no recipient)', () => {
+    seedOutbound([{ packetId: 669520633 }]);
+    const onMissingRecipientKey = vi.fn();
+    const applied = applyMeshtasticOutboundRoutingErrorFromLog(
+      'Error received for packet 669520633: PKI_SEND_FAIL_PUBLIC_KEY',
+      { myNodeNum: 42, identityId: IDENTITY, onMissingRecipientKey },
+    );
+    expect(applied).toBe(true);
+    expect(onMissingRecipientKey).not.toHaveBeenCalled();
+  });
+
+  it('does not request NODEINFO when no outbound row matches', () => {
+    seedOutbound([]);
+    const onMissingRecipientKey = vi.fn();
+    const applied = applyMeshtasticOutboundRoutingErrorFromLog(
+      'Error received for packet 669520633: PKI_SEND_FAIL_PUBLIC_KEY',
+      { myNodeNum: 42, identityId: IDENTITY, onMissingRecipientKey },
+    );
+    expect(applied).toBe(false);
+    expect(onMissingRecipientKey).not.toHaveBeenCalled();
+  });
+
+  it('classifies missing recipient key errors', () => {
+    expect(isMeshtasticMissingRecipientKeyError('PKI_SEND_FAIL_PUBLIC_KEY')).toBe(true);
+    expect(isMeshtasticMissingRecipientKeyError('PKI_UNKNOWN_PUBKEY')).toBe(true);
+    expect(isMeshtasticMissingRecipientKeyError('MAX_RETRANSMIT')).toBe(false);
+    expect(isMeshtasticMissingRecipientKeyError('TIMEOUT')).toBe(false);
+  });
 });
 
 describe('installMeshtasticSdkRoutingErrorConsoleHook', () => {
@@ -325,12 +437,12 @@ describe('installMeshtasticSdkRoutingErrorConsoleHook', () => {
   it('does not intercept unrelated console.warn messages', () => {
     const onRoutingErrorLog = vi.fn();
     const restore = installMeshtasticSdkRoutingErrorConsoleHook(onRoutingErrorLog);
-    console.warn('[meshcoreRepeaterSession] repeater login failed (continuing) timeout');
+    console.warn('[meshcoreRepeaterSession] repeater login failed timeout');
     restore();
     expect(onRoutingErrorLog).not.toHaveBeenCalled();
     expect(debugSpy).not.toHaveBeenCalled();
     expect(priorWarnSpy).toHaveBeenCalledWith(
-      '[meshcoreRepeaterSession] repeater login failed (continuing) timeout',
+      '[meshcoreRepeaterSession] repeater login failed timeout',
     );
   });
 
@@ -371,7 +483,9 @@ describe('installMeshtasticSdkRoutingErrorUnhandledRejectionHandler', () => {
     expect(onQueueRejection).toHaveBeenCalledWith(reason);
     expect(preventDefault).toHaveBeenCalled();
     restore();
-    expect(window.removeEventListener).toHaveBeenCalledWith('unhandledrejection', handler);
+    expect(window.removeEventListener).toHaveBeenCalledWith('unhandledrejection', handler, {
+      capture: true,
+    });
   });
 
   it('does not preventDefault when handler returns false', () => {
@@ -402,5 +516,48 @@ describe('installMeshtasticSdkRoutingErrorUnhandledRejectionHandler', () => {
     expect(onQueueRejection).not.toHaveBeenCalled();
     expect(preventDefault).not.toHaveBeenCalled();
     restore();
+  });
+
+  it('does not swallow mid-session Packet does not exist (only the late window does)', () => {
+    const onQueueRejection = vi.fn();
+    const restore = installMeshtasticSdkRoutingErrorUnhandledRejectionHandler(onQueueRejection);
+    const handler = vi.mocked(window.addEventListener).mock.calls[0]?.[1] as (event: {
+      reason: unknown;
+      preventDefault: () => void;
+    }) => void;
+    const reason = new Error('Packet does not exist');
+    const preventDefault = vi.fn();
+    handler({ reason, preventDefault });
+    expect(onQueueRejection).not.toHaveBeenCalled();
+    expect(preventDefault).not.toHaveBeenCalled();
+    restore();
+  });
+
+  it('registers unhandledrejection listener in capture phase', () => {
+    const restore = installMeshtasticSdkRoutingErrorUnhandledRejectionHandler(vi.fn());
+    expect(window.addEventListener).toHaveBeenCalledWith(
+      'unhandledrejection',
+      expect.any(Function),
+      { capture: true },
+    );
+    restore();
+    expect(window.removeEventListener).toHaveBeenCalledWith(
+      'unhandledrejection',
+      expect.any(Function),
+      { capture: true },
+    );
+  });
+
+  it('arms late-swallow window when the capture handler is removed', () => {
+    resetMeshtasticLateConfigureRetryableSwallowForTests();
+    const restore = installMeshtasticSdkRoutingErrorUnhandledRejectionHandler(vi.fn());
+    expect(
+      shouldSwallowLateMeshtasticConfigureRetryableRejection(new Error('Packet does not exist')),
+    ).toBe(false);
+    restore();
+    expect(
+      shouldSwallowLateMeshtasticConfigureRetryableRejection(new Error('Packet does not exist')),
+    ).toBe(true);
+    resetMeshtasticLateConfigureRetryableSwallowForTests();
   });
 });

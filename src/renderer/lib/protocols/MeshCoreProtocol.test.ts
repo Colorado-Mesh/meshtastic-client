@@ -16,6 +16,8 @@ const EVENT_PATH_UPDATED = 129;
 const EVENT_DM_ACK = 130;
 const EVENT_WAITING_MESSAGES = 131;
 const EVENT_RF_RX = 136;
+const EVENT_CONTACT_DELETED = 0x8f;
+const EVENT_CONTACTS_FULL = 0x90;
 const EVENT_DISCONNECTED = 'disconnected';
 
 function mockMeshCoreConnection() {
@@ -111,6 +113,7 @@ describe('MeshCoreProtocol.subscribe', () => {
     });
     const ids = events
       .filter((e) => e.type === 'text_message')
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Runtime guard protects external or callback-mutated state.
       .map((e) => (e.type === 'text_message' ? e.payload.id : undefined));
     expect(ids).toHaveLength(2);
     expect(new Set(ids).size).toBe(2);
@@ -138,6 +141,21 @@ describe('MeshCoreProtocol.subscribe', () => {
     });
     const flood = events.find((e) => e.type === 'text_message');
     expect(flood?.type === 'text_message' && flood.payload.hopCount).toBe(3);
+    teardown();
+  });
+
+  it('unpacks packed multibyte pathLen on channel messages (e.g. 65 → 1 hop)', () => {
+    const conn = mockMeshCoreConnection();
+    const events: DomainEvent[] = [];
+    const teardown = meshcoreProtocol.subscribe(conn, (e) => events.push(e));
+    conn.emit(EVENT_CHANNEL_MESSAGE, {
+      channelIdx: 0,
+      text: 'packed hops',
+      senderTimestamp: 1_700_002,
+      pathLen: 65, // pack(1, 2-byte hashes)
+    });
+    const text = events.find((e) => e.type === 'text_message');
+    expect(text?.type === 'text_message' && text.payload.hopCount).toBe(1);
     teardown();
   });
 
@@ -289,6 +307,47 @@ describe('MeshCoreProtocol.subscribe', () => {
     const teardown = meshcoreProtocol.subscribe(conn, (e) => events.push(e));
     conn.emit(EVENT_WAITING_MESSAGES, {});
     expect(events.some((e) => e.type === 'meshcore_waiting_messages')).toBe(true);
+    teardown();
+  });
+
+  it('emits meshcore_contact_deleted on 0x8F with publicKey', () => {
+    const conn = mockMeshCoreConnection();
+    const events: DomainEvent[] = [];
+    const teardown = meshcoreProtocol.subscribe(conn, (e) => events.push(e));
+    const publicKey = Uint8Array.from({ length: 32 }, (_, i) => i + 1);
+    conn.emit(EVENT_CONTACT_DELETED, { publicKey });
+    const deleted = events.find((e) => e.type === 'meshcore_contact_deleted');
+    const expectedNodeId = pubkeyToNodeId(publicKey);
+    expect(expectedNodeId).not.toBe(0);
+    expect(deleted).toMatchObject({
+      type: 'meshcore_contact_deleted',
+      payload: { publicKey, nodeId: expectedNodeId },
+    });
+    teardown();
+  });
+
+  it.each([null, undefined])(
+    'ignores malformed MC_PUSH_CONTACT_DELETED payload (%s)',
+    (payload) => {
+      const conn = mockMeshCoreConnection();
+      const events: DomainEvent[] = [];
+      const teardown = meshcoreProtocol.subscribe(conn, (e) => {
+        events.push(e);
+      });
+      expect(() => {
+        conn.emit(EVENT_CONTACT_DELETED, payload);
+      }).not.toThrow();
+      expect(events.some((e) => e.type === 'meshcore_contact_deleted')).toBe(false);
+      teardown();
+    },
+  );
+
+  it('emits meshcore_contacts_full on 0x90', () => {
+    const conn = mockMeshCoreConnection();
+    const events: DomainEvent[] = [];
+    const teardown = meshcoreProtocol.subscribe(conn, (e) => events.push(e));
+    conn.emit(EVENT_CONTACTS_FULL, {});
+    expect(events.some((e) => e.type === 'meshcore_contacts_full')).toBe(true);
     teardown();
   });
 

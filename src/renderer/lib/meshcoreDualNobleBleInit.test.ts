@@ -219,9 +219,9 @@ describe('meshcoreDualNobleBleInit', () => {
     expect(isRendererNobleBlePlatform()).toBe(false);
   });
 
-  it('needsSequentialMeshcoreRadioInit is true for serial and Linux Web Bluetooth only', () => {
+  it('needsSequentialMeshcoreRadioInit is true for serial, TCP, and Linux Web Bluetooth', () => {
     expect(needsSequentialMeshcoreRadioInit('serial')).toBe(true);
-    expect(needsSequentialMeshcoreRadioInit('tcp')).toBe(false);
+    expect(needsSequentialMeshcoreRadioInit('tcp')).toBe(true);
     vi.mocked(window.electronAPI.getPlatform).mockReturnValue('darwin');
     expect(needsSequentialMeshcoreRadioInit('ble')).toBe(false);
     vi.mocked(window.electronAPI.getPlatform).mockReturnValue('linux');
@@ -377,6 +377,33 @@ describe('meshcoreDualNobleBleInit', () => {
     notifyNobleBlePrimaryRfLinkReady('meshcore');
     await secondaryWait;
     expect(secondaryUnblocked).toBe(true);
+    localStorage.removeItem('mesh-client:lastBleDevice:meshtastic');
+    localStorage.removeItem('mesh-client:lastBleDevice:meshcore');
+    localStorage.removeItem('mesh-client:protocol');
+  });
+
+  it('initNobleBleDualRadioStartup marks primaryAutoConnectInFlight in the mutex snapshot', () => {
+    vi.mocked(window.electronAPI.getPlatform).mockReturnValue('darwin');
+    localStorage.setItem('mesh-client:lastBleDevice:meshtastic', 'mt-peripheral');
+    localStorage.setItem('mesh-client:lastBleDevice:meshcore', 'mc-peripheral');
+    localStorage.setItem('mesh-client:protocol', 'meshtastic');
+    initNobleBleDualRadioStartup();
+    expect(getNobleBleConnectMutexSnapshot().primaryAutoConnectInFlight).toBe(true);
+    expect(getNobleBleConnectMutexSnapshot().primaryProtocol).toBe('meshtastic');
+    localStorage.removeItem('mesh-client:lastBleDevice:meshtastic');
+    localStorage.removeItem('mesh-client:lastBleDevice:meshcore');
+    localStorage.removeItem('mesh-client:protocol');
+  });
+
+  it('notifyNobleBlePrimaryAutoConnectSettled clears primaryAutoConnectInFlight in the mutex snapshot', () => {
+    vi.mocked(window.electronAPI.getPlatform).mockReturnValue('darwin');
+    localStorage.setItem('mesh-client:lastBleDevice:meshtastic', 'mt-peripheral');
+    localStorage.setItem('mesh-client:lastBleDevice:meshcore', 'mc-peripheral');
+    localStorage.setItem('mesh-client:protocol', 'meshtastic');
+    initNobleBleDualRadioStartup();
+    expect(getNobleBleConnectMutexSnapshot().primaryAutoConnectInFlight).toBe(true);
+    notifyNobleBlePrimaryAutoConnectSettled();
+    expect(getNobleBleConnectMutexSnapshot().primaryAutoConnectInFlight).toBe(false);
     localStorage.removeItem('mesh-client:lastBleDevice:meshtastic');
     localStorage.removeItem('mesh-client:lastBleDevice:meshcore');
     localStorage.removeItem('mesh-client:protocol');

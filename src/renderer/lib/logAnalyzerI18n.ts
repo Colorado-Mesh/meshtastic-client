@@ -2,6 +2,14 @@
  * Static i18n key maps for log analysis (see `check:i18n` — no dynamic t('...' + id)).
  */
 export const LOG_ANALYZER_CATEGORY_LABEL_KEYS: Record<string, string> = {
+  'renderer-unresponsive': 'logAnalyzer.categories.renderer-unresponsive.label',
+  'database-persistence': 'logAnalyzer.categories.database-persistence.label',
+  'meshtastic-tcp': 'logAnalyzer.categories.meshtastic-tcp.label',
+  'reticulum-sidecar': 'logAnalyzer.categories.reticulum-sidecar.label',
+  'reticulum-delivery': 'logAnalyzer.categories.reticulum-delivery.label',
+  'reticulum-backpressure': 'logAnalyzer.categories.reticulum-backpressure.label',
+  'firmware-flash': 'logAnalyzer.categories.firmware-flash.label',
+  unclassified: 'logAnalyzer.categories.unclassified.label',
   'ble-connection': 'logAnalyzer.categories.ble-connection.label',
   mqtt: 'logAnalyzer.categories.mqtt.label',
   'mqtt-retries-exhausted': 'logAnalyzer.categories.mqtt-retries-exhausted.label',
@@ -26,7 +34,16 @@ export const LOG_ANALYZER_CATEGORY_LABEL_KEYS: Record<string, string> = {
   'reticulum-nomad-hosting': 'logAnalyzer.categories.reticulum-nomad-hosting.label',
 };
 
-export const LOG_ANALYZER_CATEGORY_RECOMMENDATION_KEYS: Record<string, string> = {
+export const LOG_ANALYZER_CATEGORY_RECOMMENDATION_KEYS: Partial<Record<string, string>> = {
+  'renderer-unresponsive': 'logAnalyzer.categories.renderer-unresponsive.recommendation',
+  'database-persistence': 'logAnalyzer.categories.database-persistence.recommendation',
+  'meshtastic-tcp': 'logAnalyzer.categories.meshtastic-tcp.recommendation',
+  'reticulum-sidecar': 'logAnalyzer.categories.reticulum-sidecar.recommendation',
+  'reticulum-delivery': 'logAnalyzer.categories.reticulum-delivery.recommendation',
+  'reticulum-backpressure': 'logAnalyzer.categories.reticulum-backpressure.recommendation',
+  'firmware-flash': 'logAnalyzer.categories.firmware-flash.recommendation',
+  unclassified: 'logAnalyzer.categories.unclassified.recommendation',
+  'serial-reconnect': 'logAnalyzer.categories.serial-reconnect.recommendation',
   'ble-connection': 'logAnalyzer.categories.ble-connection.recommendation',
   mqtt: 'logAnalyzer.categories.mqtt.recommendation',
   'mqtt-retries-exhausted': 'logAnalyzer.categories.mqtt-retries-exhausted.recommendation',
@@ -52,7 +69,7 @@ export const LOG_ANALYZER_CATEGORY_RECOMMENDATION_KEYS: Record<string, string> =
 };
 
 /** Used only by unit tests merging synthetic categories in `dedupeRecommendations`. */
-export const LOG_ANALYZER_GROUP_RECOMMENDATION_KEYS: Record<string, string> = {
+export const LOG_ANALYZER_GROUP_RECOMMENDATION_KEYS: Partial<Record<string, string>> = {
   __test_merged: 'logAnalyzer.recommendationGroups.__test_merged.recommendation',
 };
 

@@ -1,8 +1,6 @@
 import type { MeshProtocol } from '@/shared/meshProtocol';
 import { MS_PER_DAY, MS_PER_HOUR } from '@/shared/timeConstants';
 
-import { RETICULUM_LXMF_PAYLOAD_LIMIT } from '../chatComposerLimits';
-
 /**
  * Protocol-agnostic capability descriptor. Each radio protocol adapter exposes
  * one of these so UI and diagnostic engines can branch on features rather than
@@ -10,7 +8,13 @@ import { RETICULUM_LXMF_PAYLOAD_LIMIT } from '../chatComposerLimits';
  */
 export interface ProtocolCapabilities {
   protocol: MeshProtocol;
-  /** Whether hops_away is populated for peers (Meshtastic: true; MeshCore: false) */
+  /**
+   * Max `[i/N]` chunks the composer may emit per outbound text send.
+   * MeshCore is 1 (single-packet; no multi-split). Meshtastic/Reticulum use 9
+   * (keep in sync with `MAX_CHUNKS` in `chatComposerLimits.ts`).
+   */
+  composerMaxChunks: number;
+  /** Whether hops_away is populated for peers (Meshtastic / MeshCore: true; Reticulum: false) */
   hasHopCount: boolean;
   /** [min, max] valid hop limit for this protocol */
   hopLimitRange: [number, number];
@@ -32,6 +36,12 @@ export interface ProtocolCapabilities {
   hasTraceRoute: boolean;
   /** Whether per-hop SNR from tracePath is available (MeshCore unique strength) */
   hasPerHopSnr: boolean;
+  /**
+   * Whether GPS+hop distance heuristics (hop_goblin, close-in bad_route warning) apply.
+   * Meshtastic: true. MeshCore: false — multi-hop nearby contacts are poorly connected /
+   * repeater-mediated, not Meshtastic-style critical over-hopping.
+   */
+  hasDistanceBasedHopAnomalies: boolean;
   /** Whether battery level / voltage telemetry is available */
   hasBatteryTelemetry: boolean;
   /** Whether repeater status (noise floor, air time, packet counts) is available */
@@ -88,6 +98,8 @@ export interface ProtocolCapabilities {
   hasStoreForward: boolean;
   /** Whether ATAK Plugin integration is available */
   hasAtakPlugin: boolean;
+  /** Whether the firmware reports lockdown status and accepts LockdownAuth (Meshtastic) */
+  hasLockdown: boolean;
   /** Whether Map Report packets are available */
   hasMapReport: boolean;
   /** Whether XMODEM file transfer is available (Meshtastic local radio) */
@@ -118,6 +130,11 @@ export interface ProtocolCapabilities {
   dedupeQueueBadgeForLocalSending: boolean;
   /** Header self-node label prefers deviceOwner.longName over picker label */
   prefersDeviceOwnerLongNameInHeader: boolean;
+  /**
+   * Chat: when an own message has both device `status` and `mqttStatus`, show only the
+   * device badge (MeshCore — MQTT ✓ was masking RF heard-by). Meshtastic keeps dual badges.
+   */
+  prefersDeviceDeliveryStatusOverMqtt: boolean;
   /** Meshtastic-centric routing/RF diagnostics (Hop Goblins, CU, foreign LoRa). */
   hasDiagnosticsPanel: boolean;
   /** Reticulum: Connection panel interface editor (TCP, Auto, serial) */
@@ -147,12 +164,23 @@ export interface ProtocolCapabilities {
   hasReticulumRemotePanel: boolean;
   /** Reticulum: rncp file transfer available from Chat DM header */
   hasRncpTransfer: boolean;
+  /** Reticulum: LXST voice calls (Peers / Chat DM) */
+  hasLxstVoice: boolean;
+  /** Reticulum: LXMF voice memo recording + playback in DM composer / chat */
+  hasReticulumVoiceMemo: boolean;
+  /** Reticulum: LRGP games (Games tab, Peers / Chat DM Challenge) */
+  hasLrgpGames: boolean;
+  /** Whether Cancel/disconnect should stop Noble BLE scanning (Meshtastic/MeshCore on macOS/Windows). */
+  hasNobleBleScanning: boolean;
+  /** Reticulum: LXMF encrypted paper message share/scan (Chat DM) */
+  hasLxmfPaper: boolean;
   /** DM composer payload limit (Reticulum LXMF only) */
   lxmfPayloadLimit?: number;
 }
 
 export const MESHTASTIC_CAPABILITIES: ProtocolCapabilities = {
   protocol: 'meshtastic',
+  composerMaxChunks: 9,
   hasHopCount: true,
   hopLimitRange: [1, 7],
   hasMqttHybrid: true,
@@ -164,6 +192,7 @@ export const MESHTASTIC_CAPABILITIES: ProtocolCapabilities = {
   hasModemPresets: true,
   hasTraceRoute: true,
   hasPerHopSnr: false,
+  hasDistanceBasedHopAnomalies: true,
   hasBatteryTelemetry: true,
   hasRepeaterStatus: false,
   hasOnDemandNodeStatus: false,
@@ -192,6 +221,7 @@ export const MESHTASTIC_CAPABILITIES: ProtocolCapabilities = {
   hasDetectionSensor: true,
   hasStoreForward: true,
   hasAtakPlugin: true,
+  hasLockdown: true,
   hasMapReport: true,
   hasXmodem: true,
   hasContactImportExport: false,
@@ -207,6 +237,7 @@ export const MESHTASTIC_CAPABILITIES: ProtocolCapabilities = {
   hasFirmwareUpdateCheck: true,
   dedupeQueueBadgeForLocalSending: true,
   prefersDeviceOwnerLongNameInHeader: false,
+  prefersDeviceDeliveryStatusOverMqtt: false,
   hasDiagnosticsPanel: true,
   hasReticulumInterfaceConfig: false,
   hasReticulumNetworkPanel: false,
@@ -222,10 +253,16 @@ export const MESHTASTIC_CAPABILITIES: ProtocolCapabilities = {
   hasReticulumAdminPanel: false,
   hasReticulumRemotePanel: false,
   hasRncpTransfer: false,
+  hasLxstVoice: false,
+  hasReticulumVoiceMemo: false,
+  hasLrgpGames: false,
+  hasNobleBleScanning: true,
+  hasLxmfPaper: false,
 };
 
 export const MESHCORE_CAPABILITIES: ProtocolCapabilities = {
   protocol: 'meshcore',
+  composerMaxChunks: 1,
   hasHopCount: true,
   hopLimitRange: [1, 64],
   /** MeshCore session is RF-first; MQTT bridge is optional and not shown as a node column. */
@@ -238,6 +275,7 @@ export const MESHCORE_CAPABILITIES: ProtocolCapabilities = {
   hasModemPresets: false,
   hasTraceRoute: true,
   hasPerHopSnr: true,
+  hasDistanceBasedHopAnomalies: false,
   hasBatteryTelemetry: true,
   hasRepeaterStatus: true,
   hasOnDemandNodeStatus: true,
@@ -266,6 +304,7 @@ export const MESHCORE_CAPABILITIES: ProtocolCapabilities = {
   hasDetectionSensor: false,
   hasStoreForward: false,
   hasAtakPlugin: false,
+  hasLockdown: false,
   hasMapReport: false,
   hasXmodem: false,
   hasContactImportExport: true,
@@ -281,6 +320,7 @@ export const MESHCORE_CAPABILITIES: ProtocolCapabilities = {
   hasFirmwareUpdateCheck: true,
   dedupeQueueBadgeForLocalSending: false,
   prefersDeviceOwnerLongNameInHeader: true,
+  prefersDeviceDeliveryStatusOverMqtt: true,
   hasDiagnosticsPanel: true,
   hasReticulumInterfaceConfig: false,
   hasReticulumNetworkPanel: false,
@@ -296,10 +336,16 @@ export const MESHCORE_CAPABILITIES: ProtocolCapabilities = {
   hasReticulumAdminPanel: false,
   hasReticulumRemotePanel: false,
   hasRncpTransfer: false,
+  hasLxstVoice: false,
+  hasReticulumVoiceMemo: false,
+  hasLrgpGames: false,
+  hasNobleBleScanning: true,
+  hasLxmfPaper: false,
 };
 
 export const RETICULUM_CAPABILITIES: ProtocolCapabilities = {
   protocol: 'reticulum',
+  composerMaxChunks: 9,
   hasHopCount: false,
   hopLimitRange: [1, 128],
   hasMqttHybrid: false,
@@ -311,6 +357,7 @@ export const RETICULUM_CAPABILITIES: ProtocolCapabilities = {
   hasModemPresets: false,
   hasTraceRoute: true,
   hasPerHopSnr: false,
+  hasDistanceBasedHopAnomalies: false,
   hasBatteryTelemetry: false,
   hasRepeaterStatus: true,
   hasOnDemandNodeStatus: false,
@@ -339,6 +386,7 @@ export const RETICULUM_CAPABILITIES: ProtocolCapabilities = {
   hasDetectionSensor: false,
   hasStoreForward: false,
   hasAtakPlugin: false,
+  hasLockdown: false,
   hasMapReport: false,
   hasXmodem: false,
   hasContactImportExport: false,
@@ -354,6 +402,7 @@ export const RETICULUM_CAPABILITIES: ProtocolCapabilities = {
   hasFirmwareUpdateCheck: false,
   dedupeQueueBadgeForLocalSending: false,
   prefersDeviceOwnerLongNameInHeader: false,
+  prefersDeviceDeliveryStatusOverMqtt: false,
   hasDiagnosticsPanel: true,
   hasReticulumInterfaceConfig: true,
   hasReticulumNetworkPanel: true,
@@ -369,5 +418,11 @@ export const RETICULUM_CAPABILITIES: ProtocolCapabilities = {
   hasReticulumAdminPanel: true,
   hasReticulumRemotePanel: true,
   hasRncpTransfer: true,
-  lxmfPayloadLimit: RETICULUM_LXMF_PAYLOAD_LIMIT,
+  hasLxstVoice: true,
+  hasReticulumVoiceMemo: true,
+  hasLrgpGames: true,
+  hasNobleBleScanning: false,
+  hasLxmfPaper: true,
+  // Keep in sync with RETICULUM_LXMF_PAYLOAD_LIMIT in chatComposerLimits.ts (no import — avoids cycle).
+  lxmfPayloadLimit: 4096,
 };

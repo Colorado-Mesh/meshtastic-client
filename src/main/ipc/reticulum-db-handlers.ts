@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import type { IpcMain } from 'electron';
 
+import { isValidBlockedContactHash, normalizeBlockedHash } from '../../shared/blockedContactHash';
+import { clampQueryLimit } from '../../shared/clampQueryLimit';
 import { isMeshProtocol } from '../../shared/meshProtocol';
 import type {
   RemoteAddressBookRow,
@@ -9,15 +11,88 @@ import type {
   RemoteInboundDecision,
   RemoteInboundPolicyRow,
 } from '../../shared/remote-types';
+import { RETICULUM_DELIVERY_METHODS } from '../../shared/reticulumDeliveryMethod';
 import { canonicalizeReticulumDestinationHash } from '../../shared/reticulumDestinationHash';
 import { sanitizeReticulumDisplayNameForDb } from '../../shared/reticulumDisplayName';
+import { isAllowedReticulumReceivedVia } from '../../shared/reticulumMessageTransport';
 import { finishDbIpcHandler, getDbForIpc } from '../db-ipc-lifecycle';
 import { buildFtsMatchQuery, isMessageFtsReady } from '../messageFts';
 import { sanitizeReticulumAttachmentPathForDb } from '../reticulum-attachment-path';
 import { assertIpcSender } from '../validate-ipc-sender';
 
+export { isAllowedReticulumReceivedVia };
+
 const REMOTE_ADDRESS_SERVICES = new Set<RemoteAddressService>(['rnsh', 'rncp']);
 const REMOTE_INBOUND_DECISIONS = new Set<RemoteInboundDecision>(['allow', 'block']);
+const ALLOWED_DELIVERY_METHOD = new Set<string>(RETICULUM_DELIVERY_METHODS);
+/** Upper bound on a single blocklist import so a huge file cannot stall the DB. */
+export const BLOCKED_CONTACTS_IMPORT_MAX = 10_000;
+
+/**
+ * Prior-row delete key for optimistic LXMF rekey: pending ids or hex message hashes only.
+ * Rejects arbitrary strings so a malformed save cannot DELETE an unintended row.
+ */
+export function sanitizeReplacesMessageHash(raw: unknown): string | null {
+  if (typeof raw !== 'string' || raw.length === 0 || raw.length > 128) return null;
+  if (/^reticulum-pending-[A-Za-z0-9_-]+$/.test(raw)) return raw;
+  const hex = raw.toLowerCase();
+  if (/^[0-9a-f]{32}$/.test(hex) || /^[0-9a-f]{64}$/.test(hex)) return hex;
+  return null;
+}
+
+interface ParsedRemoteAddressUpsert {
+  id: string;
+  label: string;
+  service: RemoteAddressService;
+  destinationHash: string;
+  identityHash: string | null;
+  lxmfPeerHash: string | null;
+  lastUsedAt: number | null;
+}
+
+function parseRemoteAddressUpsertRow(row: unknown): ParsedRemoteAddressUpsert {
+  if (!row || typeof row !== 'object') {
+    throw new Error('db:upsertReticulumRemoteAddress: row must be an object');
+  }
+  const r = row as Record<string, unknown>;
+  const destinationHash = canonicalizeHash32(r.destination_hash);
+  if (!destinationHash) {
+    throw new Error('db:upsertReticulumRemoteAddress: destination_hash invalid');
+  }
+  const service = r.service;
+  if (
+    typeof service !== 'string' ||
+    !REMOTE_ADDRESS_SERVICES.has(service as RemoteAddressService)
+  ) {
+    throw new Error('db:upsertReticulumRemoteAddress: service invalid');
+  }
+  const label = typeof r.label === 'string' ? r.label.trim().slice(0, 128) : '';
+  if (!label) {
+    throw new Error('db:upsertReticulumRemoteAddress: label required');
+  }
+  const identityHash = r.identity_hash != null ? canonicalizeHash32(r.identity_hash) : null;
+  const lxmfPeerHash =
+    r.lxmf_peer_hash != null && r.lxmf_peer_hash !== ''
+      ? canonicalizeHash32(r.lxmf_peer_hash)
+      : null;
+  if (r.lxmf_peer_hash != null && r.lxmf_peer_hash !== '' && !lxmfPeerHash) {
+    throw new Error('db:upsertReticulumRemoteAddress: lxmf_peer_hash invalid');
+  }
+  const lastUsedAt =
+    r.last_used_at != null && Number.isFinite(Number(r.last_used_at))
+      ? Math.trunc(Number(r.last_used_at))
+      : null;
+  const id = typeof r.id === 'string' && r.id.trim() ? r.id.trim().slice(0, 64) : randomUUID();
+  return {
+    id,
+    label,
+    service: service as RemoteAddressService,
+    destinationHash,
+    identityHash,
+    lxmfPeerHash,
+    lastUsedAt,
+  };
+}
 
 /** 32-hex identity/destination hash — delegates to shared helper (matches sidecar `parse_hash16()`). */
 function canonicalizeHash32(raw: unknown): string | null {
@@ -33,19 +108,6 @@ const ALLOWED_DELIVERY_STATUS = new Set([
   'queued',
 ]);
 
-const ALLOWED_DELIVERY_METHOD = new Set(['direct', 'propagated', 'opportunistic', 'paper']);
-
-const RETICULUM_VIA_ATOMS = new Set(['rf', 'ble', 'tcp', 'network', 'mqtt', 'both']);
-const RETICULUM_MULTI_VIA_ATOMS = new Set(['ble', 'rf', 'tcp', 'network']);
-
-/** Single atom or explicit `+`-joined multi-egress (e.g. `rf+tcp`). */
-export function isAllowedReticulumReceivedVia(value: string): boolean {
-  if (RETICULUM_VIA_ATOMS.has(value)) return true;
-  const parts = value.split('+');
-  if (parts.length < 2 || parts.length > 4) return false;
-  return parts.every((p) => RETICULUM_MULTI_VIA_ATOMS.has(p));
-}
-
 export interface ReticulumDbIpcDeps {
   ipcMain: IpcMain;
 }
@@ -55,7 +117,7 @@ export function registerReticulumDbIpcHandlers({ ipcMain }: ReticulumDbIpcDeps):
     try {
       assertIpcSender(event, 'db:getReticulumMessages');
       if (typeof identityId !== 'string' || identityId.length > 128) return [];
-      const safeLimit = Math.min(Math.max(1, Number(limit) || 500), 10000);
+      const safeLimit = clampQueryLimit(limit, { default: 500, max: 10000 });
       const db = getDbForIpc('db:getReticulumMessages');
       if (!db) return [];
       const rows = db
@@ -116,6 +178,14 @@ export function registerReticulumDbIpcHandlers({ ipcMain }: ReticulumDbIpcDeps):
       const attachmentPath = sanitizeReticulumAttachmentPathForDb(
         typeof m.attachment_path === 'string' ? m.attachment_path : null,
       );
+      const audioMode =
+        m.audio_mode != null && Number.isFinite(Number(m.audio_mode))
+          ? Math.trunc(Number(m.audio_mode))
+          : null;
+      const audioDurationSec =
+        m.audio_duration_sec != null && Number.isFinite(Number(m.audio_duration_sec))
+          ? Number(m.audio_duration_sec)
+          : null;
       const deliveryAttempts =
         m.delivery_attempts != null && Number.isFinite(Number(m.delivery_attempts))
           ? Math.trunc(Number(m.delivery_attempts))
@@ -124,60 +194,78 @@ export function registerReticulumDbIpcHandlers({ ipcMain }: ReticulumDbIpcDeps):
         m.next_delivery_attempt_at != null && Number.isFinite(Number(m.next_delivery_attempt_at))
           ? Math.trunc(Number(m.next_delivery_attempt_at))
           : null;
+      const replacesMessageHash = sanitizeReplacesMessageHash(m.replaces_message_hash);
 
-      if (
-        messageHash &&
-        !messageHash.startsWith('reticulum-pending-') &&
-        deliveryStatus &&
-        deliveryStatus !== 'sending'
-      ) {
-        db.prepareOnce(
-          `DELETE FROM reticulum_messages
-           WHERE identity_id = ? AND sender_id = ? AND payload = ?
-             AND message_hash LIKE 'reticulum-pending-%'
-             AND ABS(timestamp - ?) <= 60000`,
-        ).run(identityId, senderId, payload, truncatedTimestamp);
-      }
-
-      if (messageHash) {
-        const existing = db
-          .prepareOnce(
-            'SELECT id FROM reticulum_messages WHERE identity_id = ? AND message_hash = ? LIMIT 1',
-          )
-          .get(identityId, messageHash) as { id?: number } | undefined;
-        if (existing?.id != null) {
+      // Exact prior-hash delete + upsert must be atomic so a failed write rolls back cleanup.
+      const run = db.transaction(() => {
+        if (replacesMessageHash && messageHash && replacesMessageHash !== messageHash) {
           db.prepareOnce(
-            `UPDATE reticulum_messages
-             SET delivery_status = COALESCE(?, delivery_status),
-                 received_via = COALESCE(?, received_via),
-                 sender_name = COALESCE(?, sender_name),
-                 delivery_method = COALESCE(?, delivery_method)
-             WHERE id = ?`,
-          ).run(deliveryStatus, receivedVia, senderName, deliveryMethod, existing.id);
-          return { changes: 1 };
+            'DELETE FROM reticulum_messages WHERE identity_id = ? AND message_hash = ?',
+          ).run(identityId, replacesMessageHash);
         }
-      }
 
-      db.prepareOnce(
-        `INSERT INTO reticulum_messages (identity_id, sender_id, sender_name, payload, timestamp, to_hash, reply_to_hash, message_hash, received_via, delivery_status, delivery_attempts, next_delivery_attempt_at, attachment_path, delivery_method)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(
-        identityId,
-        senderId,
-        senderName,
-        payload,
-        truncatedTimestamp,
-        toHash,
-        replyToHash,
-        messageHash,
-        receivedVia,
-        deliveryStatus,
-        deliveryAttempts,
-        nextDeliveryAttemptAt,
-        attachmentPath,
-        deliveryMethod,
-      );
-      return { changes: 1 };
+        if (messageHash) {
+          const existing = db
+            .prepareOnce(
+              'SELECT id FROM reticulum_messages WHERE identity_id = ? AND message_hash = ? LIMIT 1',
+            )
+            .get(identityId, messageHash) as { id?: number } | undefined;
+          if (existing?.id != null) {
+            // Never demote a delivered Completes back to in-flight (retry/echo saves).
+            db.prepareOnce(
+              `UPDATE reticulum_messages
+               SET delivery_status = CASE
+                     WHEN delivery_status = 'delivered'
+                          AND ? IN ('sending', 'pending', 'queued')
+                     THEN delivery_status
+                     ELSE COALESCE(?, delivery_status)
+                   END,
+                   received_via = COALESCE(?, received_via),
+                   sender_name = COALESCE(?, sender_name),
+                   delivery_method = COALESCE(?, delivery_method),
+                   attachment_path = COALESCE(?, attachment_path),
+                   audio_mode = COALESCE(?, audio_mode),
+                   audio_duration_sec = COALESCE(?, audio_duration_sec)
+               WHERE id = ?`,
+            ).run(
+              deliveryStatus,
+              deliveryStatus,
+              receivedVia,
+              senderName,
+              deliveryMethod,
+              attachmentPath,
+              audioMode,
+              audioDurationSec,
+              existing.id,
+            );
+            return { changes: 1 };
+          }
+        }
+
+        db.prepareOnce(
+          `INSERT INTO reticulum_messages (identity_id, sender_id, sender_name, payload, timestamp, to_hash, reply_to_hash, message_hash, received_via, delivery_status, delivery_attempts, next_delivery_attempt_at, attachment_path, delivery_method, audio_mode, audio_duration_sec)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          identityId,
+          senderId,
+          senderName,
+          payload,
+          truncatedTimestamp,
+          toHash,
+          replyToHash,
+          messageHash,
+          receivedVia,
+          deliveryStatus,
+          deliveryAttempts,
+          nextDeliveryAttemptAt,
+          attachmentPath,
+          deliveryMethod,
+          audioMode,
+          audioDurationSec,
+        );
+        return { changes: 1 };
+      });
+      return run();
     } catch (err) {
       finishDbIpcHandler('db:saveReticulumMessage', err);
     }
@@ -220,7 +308,7 @@ export function registerReticulumDbIpcHandlers({ ipcMain }: ReticulumDbIpcDeps):
         assertIpcSender(event, 'db:searchReticulumMessages');
         if (typeof identityId !== 'string' || identityId.length > 128) return [];
         if (typeof query !== 'string' || query.length > 256) return [];
-        const safeLimit = Math.min(Math.max(1, Number(limit) || 200), 5000);
+        const safeLimit = clampQueryLimit(limit, { default: 200, max: 5000 });
         const db = getDbForIpc('db:searchReticulumMessages');
         if (!db) return [];
         const ftsQuery = buildFtsMatchQuery(query);
@@ -328,9 +416,11 @@ export function registerReticulumDbIpcHandlers({ ipcMain }: ReticulumDbIpcDeps):
       if (!db) return { changes: 0 };
       const favoritedProvided = Object.prototype.hasOwnProperty.call(r, 'favorited');
       const favoritedForInsert = r.favorited === true || r.favorited === 1 ? 1 : 0;
+      const isContactProvided = Object.prototype.hasOwnProperty.call(r, 'is_contact');
+      const isContactForInsert = r.is_contact === true || r.is_contact === 1 ? 1 : 0;
       db.prepareOnce(
-        `INSERT INTO reticulum_destinations (destination_hash, display_name, last_heard, favorited, icon_name, icon_color)
-         VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO reticulum_destinations (destination_hash, display_name, last_heard, favorited, is_contact, icon_name, icon_color)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(destination_hash) DO UPDATE SET
            display_name = CASE
              WHEN excluded.display_name IS NOT NULL
@@ -343,6 +433,10 @@ export function registerReticulumDbIpcHandlers({ ipcMain }: ReticulumDbIpcDeps):
            favorited = CASE
              WHEN ? = 1 THEN excluded.favorited
              ELSE reticulum_destinations.favorited
+           END,
+           is_contact = CASE
+             WHEN ? = 1 THEN excluded.is_contact
+             ELSE reticulum_destinations.is_contact
            END,
            icon_name = COALESCE(excluded.icon_name, reticulum_destinations.icon_name),
            icon_color = COALESCE(excluded.icon_color, reticulum_destinations.icon_color)`,
@@ -357,9 +451,11 @@ export function registerReticulumDbIpcHandlers({ ipcMain }: ReticulumDbIpcDeps):
           ? Math.trunc(Number(r.last_heard))
           : null,
         favoritedForInsert,
+        isContactForInsert,
         typeof r.icon_name === 'string' ? r.icon_name.slice(0, 64) : null,
         typeof r.icon_color === 'string' ? r.icon_color.slice(0, 32) : null,
         favoritedProvided ? 1 : 0,
+        isContactProvided ? 1 : 0,
       );
       return { changes: 1 };
     } catch (err) {
@@ -412,7 +508,7 @@ export function registerReticulumDbIpcHandlers({ ipcMain }: ReticulumDbIpcDeps):
     }
   });
 
-  /** Clear LXMF contact marker (last_heard); keeps display_name / favorite / icon peer meta. */
+  /** Clear saved-contact flag; keeps History last_heard / display_name / favorite / icon. */
   ipcMain.handle('db:clearReticulumContactDestinations', (event) => {
     try {
       assertIpcSender(event, 'db:clearReticulumContactDestinations');
@@ -420,7 +516,7 @@ export function registerReticulumDbIpcHandlers({ ipcMain }: ReticulumDbIpcDeps):
       if (!db) return { changes: 0 };
       const result = db
         .prepareOnce(
-          'UPDATE reticulum_destinations SET last_heard = NULL WHERE last_heard IS NOT NULL',
+          'UPDATE reticulum_destinations SET is_contact = 0 WHERE is_contact IS NOT NULL AND is_contact != 0',
         )
         .run();
       return { changes: result.changes ?? 0 };
@@ -469,7 +565,10 @@ export function registerReticulumDbIpcHandlers({ ipcMain }: ReticulumDbIpcDeps):
       const deletable = (
         db
           .prepareOnce(
-            'SELECT COUNT(*) as cnt FROM reticulum_destinations WHERE (favorited IS NULL OR favorited = 0) AND last_heard IS NOT NULL',
+            `SELECT COUNT(*) as cnt FROM reticulum_destinations
+             WHERE (favorited IS NULL OR favorited = 0)
+               AND (is_contact IS NULL OR is_contact = 0)
+               AND last_heard IS NOT NULL`,
           )
           .get() as { cnt: number }
       ).cnt;
@@ -479,7 +578,9 @@ export function registerReticulumDbIpcHandlers({ ipcMain }: ReticulumDbIpcDeps):
         .prepareOnce(
           `DELETE FROM reticulum_destinations WHERE destination_hash IN (
             SELECT destination_hash FROM reticulum_destinations
-            WHERE (favorited IS NULL OR favorited = 0) AND last_heard IS NOT NULL
+            WHERE (favorited IS NULL OR favorited = 0)
+              AND (is_contact IS NULL OR is_contact = 0)
+              AND last_heard IS NOT NULL
             ORDER BY last_heard ASC LIMIT ?
           )`,
         )
@@ -501,13 +602,14 @@ export function registerReticulumDbIpcHandlers({ ipcMain }: ReticulumDbIpcDeps):
       const db = getDbForIpc('db:deleteReticulumDestinationsByAge');
       if (!db) return { changes: 0 };
       const safeDays = typeof days === 'number' && days > 0 ? Math.floor(days) : 30;
-      // reticulum_destinations.last_heard is Unix seconds (see persistReticulumContactFromPayload).
+      // reticulum_destinations.last_heard is Unix seconds (history stamp / contact activity).
       const cutoff = Math.floor(Date.now() / 1000) - safeDays * 86_400;
       const result = db
         .prepareOnce(
           `DELETE FROM reticulum_destinations
            WHERE last_heard IS NOT NULL AND last_heard < ?
-             AND (favorited IS NULL OR favorited = 0)`,
+             AND (favorited IS NULL OR favorited = 0)
+             AND (is_contact IS NULL OR is_contact = 0)`,
         )
         .run(cutoff);
       if (result.changes > 0) {
@@ -616,6 +718,83 @@ export function registerReticulumDbIpcHandlers({ ipcMain }: ReticulumDbIpcDeps):
     },
   );
 
+  ipcMain.handle('db:exportBlockedContacts', (event, protocol: string, identityId: string) => {
+    try {
+      assertIpcSender(event, 'db:exportBlockedContacts');
+      if (!isMeshProtocol(protocol)) return [];
+      if (typeof identityId !== 'string' || identityId.length > 128) return [];
+      const db = getDbForIpc('db:exportBlockedContacts');
+      if (!db) return [];
+      const rows = db
+        .prepareOnce(
+          'SELECT blocked_hash FROM blocked_contacts WHERE protocol = ? AND identity_id = ? ORDER BY created_at DESC',
+        )
+        .all(protocol, identityId) as { blocked_hash: string }[];
+      return rows.map((r) => r.blocked_hash);
+    } catch (err) {
+      finishDbIpcHandler('db:exportBlockedContacts', err);
+    }
+  });
+
+  ipcMain.handle(
+    'db:importBlockedContacts',
+    (event, protocol: string, identityId: string, hashes: unknown) => {
+      try {
+        assertIpcSender(event, 'db:importBlockedContacts');
+        if (!isMeshProtocol(protocol)) return { imported: 0, skipped: 0 };
+        if (typeof identityId !== 'string' || identityId.length > 128) {
+          return { imported: 0, skipped: 0 };
+        }
+        if (!Array.isArray(hashes)) return { imported: 0, skipped: 0 };
+        if (hashes.length > BLOCKED_CONTACTS_IMPORT_MAX) {
+          throw new Error(
+            `db:importBlockedContacts: too many entries (max ${BLOCKED_CONTACTS_IMPORT_MAX})`,
+          );
+        }
+        const db = getDbForIpc('db:importBlockedContacts');
+        if (!db) return { imported: 0, skipped: 0 };
+
+        // Strict validation: the lenient normalizer would otherwise persist junk.
+        const valid: string[] = [];
+        let skipped = 0;
+        const seen = new Set<string>();
+        for (const entry of hashes) {
+          if (!isValidBlockedContactHash(entry)) {
+            skipped += 1;
+            continue;
+          }
+          const normalized = normalizeBlockedHash(entry as string);
+          if (seen.has(normalized)) {
+            skipped += 1;
+            continue;
+          }
+          seen.add(normalized);
+          valid.push(normalized);
+        }
+
+        // Real per-row `changes` gives accurate imported-vs-skipped counts, which
+        // db:blockContact cannot report (it always returns 1).
+        let imported = 0;
+        db.transaction(() => {
+          const stmt = db.prepareOnce(
+            `INSERT INTO blocked_contacts (protocol, identity_id, blocked_hash, created_at)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT(protocol, identity_id, blocked_hash) DO NOTHING`,
+          );
+          const now = Date.now();
+          for (const hash of valid) {
+            const result = stmt.run(protocol, identityId, hash, now);
+            if ((result.changes ?? 0) > 0) imported += 1;
+            else skipped += 1;
+          }
+        })();
+        return { imported, skipped };
+      } catch (err) {
+        finishDbIpcHandler('db:importBlockedContacts', err);
+      }
+    },
+  );
+
   ipcMain.handle('db:getReticulumIdentityActivity', (event, destinationHash: string) => {
     try {
       assertIpcSender(event, 'db:getReticulumIdentityActivity');
@@ -632,12 +811,42 @@ export function registerReticulumDbIpcHandlers({ ipcMain }: ReticulumDbIpcDeps):
     }
   });
 
+  ipcMain.handle('db:getReticulumIdentityActivityByIdentity', (event, identityHash: string) => {
+    try {
+      assertIpcSender(event, 'db:getReticulumIdentityActivityByIdentity');
+      if (typeof identityHash !== 'string' || identityHash.length > 128) return [];
+      const key = canonicalizeHash32(identityHash);
+      if (!key) return [];
+      const db = getDbForIpc('db:getReticulumIdentityActivityByIdentity');
+      if (!db) return [];
+      return db
+        .prepareOnce(
+          'SELECT * FROM reticulum_identity_activity WHERE identity_hash = ? ORDER BY last_seen DESC',
+        )
+        .all(key) as Record<string, unknown>[];
+    } catch (err) {
+      finishDbIpcHandler('db:getReticulumIdentityActivityByIdentity', err);
+    }
+  });
+
   const IDENTITY_ACTIVITY_UPSERT_SQL = `INSERT INTO reticulum_identity_activity (destination_hash, aspect, identity_hash, last_seen, hops)
          VALUES (?, ?, ?, ?, ?)
          ON CONFLICT(destination_hash, aspect) DO UPDATE SET
            identity_hash = COALESCE(excluded.identity_hash, reticulum_identity_activity.identity_hash),
            last_seen = excluded.last_seen,
            hops = COALESCE(excluded.hops, reticulum_identity_activity.hops)`;
+
+  const IDENTITY_ACTIVITY_DELETE_UNKNOWN_SQL = `DELETE FROM reticulum_identity_activity
+         WHERE destination_hash = ? AND aspect = 'unknown'`;
+
+  function clearUnknownIdentityActivity(
+    db: NonNullable<ReturnType<typeof getDbForIpc>>,
+    destinationHash: string,
+    aspect: string,
+  ): void {
+    if (aspect === 'unknown') return;
+    db.prepareOnce(IDENTITY_ACTIVITY_DELETE_UNKNOWN_SQL).run(destinationHash);
+  }
 
   function parseIdentityActivityRow(row: unknown): {
     destinationHash: string;
@@ -680,6 +889,7 @@ export function registerReticulumDbIpcHandlers({ ipcMain }: ReticulumDbIpcDeps):
         parsed.lastSeen,
         parsed.hops,
       );
+      clearUnknownIdentityActivity(db, parsed.destinationHash, parsed.aspect);
       return { changes: 1 };
     } catch (err) {
       finishDbIpcHandler('db:upsertReticulumIdentityActivity', err);
@@ -699,9 +909,13 @@ export function registerReticulumDbIpcHandlers({ ipcMain }: ReticulumDbIpcDeps):
       }
       if (parsed.length === 0) return { changes: 0 };
       const stmt = db.prepareOnce(IDENTITY_ACTIVITY_UPSERT_SQL);
+      const clearUnknown = db.prepareOnce(IDENTITY_ACTIVITY_DELETE_UNKNOWN_SQL);
       const run = db.transaction(() => {
         for (const p of parsed) {
           stmt.run(p.destinationHash, p.aspect, p.identityHash, p.lastSeen, p.hops);
+          if (p.aspect !== 'unknown') {
+            clearUnknown.run(p.destinationHash);
+          }
         }
       });
       run();
@@ -729,33 +943,7 @@ export function registerReticulumDbIpcHandlers({ ipcMain }: ReticulumDbIpcDeps):
   ipcMain.handle('db:upsertReticulumRemoteAddress', (event, row: unknown) => {
     try {
       assertIpcSender(event, 'db:upsertReticulumRemoteAddress');
-      if (!row || typeof row !== 'object') {
-        throw new Error('db:upsertReticulumRemoteAddress: row must be an object');
-      }
-      const r = row as Record<string, unknown>;
-      const destinationHash = canonicalizeHash32(r.destination_hash);
-      if (!destinationHash) {
-        throw new Error('db:upsertReticulumRemoteAddress: destination_hash invalid');
-      }
-      const service = r.service;
-      if (
-        typeof service !== 'string' ||
-        !REMOTE_ADDRESS_SERVICES.has(service as RemoteAddressService)
-      ) {
-        throw new Error('db:upsertReticulumRemoteAddress: service invalid');
-      }
-      const label = typeof r.label === 'string' ? r.label.trim().slice(0, 128) : '';
-      if (!label) {
-        throw new Error('db:upsertReticulumRemoteAddress: label required');
-      }
-      const identityHash = r.identity_hash != null ? canonicalizeHash32(r.identity_hash) : null;
-      const lxmfPeerHash =
-        typeof r.lxmf_peer_hash === 'string' ? r.lxmf_peer_hash.slice(0, 128) : null;
-      const lastUsedAt =
-        r.last_used_at != null && Number.isFinite(Number(r.last_used_at))
-          ? Math.trunc(Number(r.last_used_at))
-          : null;
-      const id = typeof r.id === 'string' && r.id.trim() ? r.id.trim().slice(0, 64) : randomUUID();
+      const parsed = parseRemoteAddressUpsertRow(row);
       const now = Date.now();
       const db = getDbForIpc('db:upsertReticulumRemoteAddress');
       if (!db) return { changes: 0 };
@@ -769,7 +957,17 @@ export function registerReticulumDbIpcHandlers({ ipcMain }: ReticulumDbIpcDeps):
            lxmf_peer_hash = COALESCE(excluded.lxmf_peer_hash, reticulum_remote_addresses.lxmf_peer_hash),
            updated_at = excluded.updated_at,
            last_used_at = COALESCE(excluded.last_used_at, reticulum_remote_addresses.last_used_at)`,
-      ).run(id, label, service, destinationHash, identityHash, lxmfPeerHash, now, now, lastUsedAt);
+      ).run(
+        parsed.id,
+        parsed.label,
+        parsed.service,
+        parsed.destinationHash,
+        parsed.identityHash,
+        parsed.lxmfPeerHash,
+        now,
+        now,
+        parsed.lastUsedAt,
+      );
       return { changes: 1 };
     } catch (err) {
       finishDbIpcHandler('db:upsertReticulumRemoteAddress', err);

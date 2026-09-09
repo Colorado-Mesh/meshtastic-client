@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron';
 
-import type { TAKServerStatus } from '../../shared/tak-types';
+import type { TAKServerStatus, TAKSettings } from '../../shared/tak-types';
 import { sanitizeLogMessage } from '../log-service';
 import type { TakServerManager } from '../tak-server-manager';
 import { assertIpcSender } from '../validate-ipc-sender';
@@ -9,14 +9,16 @@ export interface TakIpcDeps {
   idleTakStatus: TAKServerStatus;
   ensureTakServerManager: () => Promise<TakServerManager>;
   getTakServerManager: () => TakServerManager | null;
-  validateTakSettings: (settings: unknown) => void;
+  validateTakSettings: (settings: unknown) => asserts settings is TAKSettings;
 }
 
 /** Register TAK server IPC handlers (`tak:*`). */
 export function registerTakIpcHandlers(deps: TakIpcDeps): void {
-  const { idleTakStatus, ensureTakServerManager, getTakServerManager, validateTakSettings } = deps;
+  const { idleTakStatus, ensureTakServerManager, getTakServerManager } = deps;
+  const validateTakSettings: (settings: unknown) => asserts settings is TAKSettings =
+    deps.validateTakSettings;
 
-  ipcMain.handle('tak:start', async (event, settings) => {
+  ipcMain.handle('tak:start', async (event, settings: unknown) => {
     assertIpcSender(event, 'tak:start');
     try {
       console.debug('[IPC] tak:start');
@@ -80,17 +82,25 @@ export function registerTakIpcHandlers(deps: TakIpcDeps): void {
 
   ipcMain.handle('tak:pushNodeUpdate', async (event, node: unknown) => {
     assertIpcSender(event, 'tak:pushNodeUpdate');
-    if (!node || typeof node !== 'object')
-      throw new Error('tak:pushNodeUpdate: node must be object');
-    const n = node as Record<string, unknown>;
-    const nodeId = Number(n.node_id);
-    if (!Number.isFinite(nodeId) || nodeId <= 0)
-      throw new Error('tak:pushNodeUpdate: invalid node_id');
-    const m = await ensureTakServerManager();
-    if (!m.getStatus().running) {
-      console.debug('[IPC] tak:pushNodeUpdate: TAK server not running, skipping');
-      return;
+    try {
+      if (!node || typeof node !== 'object')
+        throw new Error('tak:pushNodeUpdate: node must be object');
+      const n = node as Record<string, unknown>;
+      const nodeId = Number(n.node_id);
+      if (!Number.isFinite(nodeId) || nodeId <= 0)
+        throw new Error('tak:pushNodeUpdate: invalid node_id');
+      const m = await ensureTakServerManager();
+      if (!m.getStatus().running) {
+        console.debug('[IPC] tak:pushNodeUpdate: TAK server not running, skipping');
+        return;
+      }
+      m.onNodeUpdate(n as Parameters<TakServerManager['onNodeUpdate']>[0]);
+    } catch (err) {
+      console.error(
+        '[IPC] tak:pushNodeUpdate failed:',
+        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+      );
+      throw err;
     }
-    m.onNodeUpdate(n as Parameters<TakServerManager['onNodeUpdate']>[0]);
   });
 }

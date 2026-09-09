@@ -16,10 +16,23 @@ import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
 import { formatRelativeOrIsoDate } from '@/renderer/lib/formatRelativeOrIsoDate';
 import { normalizeLastHeardMs } from '@/renderer/lib/nodeStatus';
 import {
+  classifyReticulumVia,
+  formatReticulumViaBadgeLabel,
+} from '@/renderer/lib/reticulum/classifyReticulumVia';
+import {
   registerReticulumDestinationHash,
   reticulumHashToNodeId,
 } from '@/renderer/lib/reticulum/destHash';
+import {
+  isReticulumTelephonyOnlyDestination,
+  resolveReticulumChatLxmfDestination,
+} from '@/renderer/lib/reticulum/resolveReticulumChatLxmfDest';
 import { parseReticulumDestinationInput } from '@/renderer/lib/reticulum/reticulumDestinationInput';
+import {
+  refreshReticulumPeerRouteFromPaths,
+  RETICULUM_PATH_RETRY_MS,
+  RETICULUM_PATH_SETTLE_MS,
+} from '@/renderer/lib/reticulum/reticulumPathMedium';
 import {
   cheapReticulumPeerLabel,
   filterPreparedReticulumPeerRows,
@@ -44,15 +57,19 @@ import type { ReticulumPeer } from '@/shared/reticulum-types';
 import type { ContactGroup } from '../../shared/electron-api.types';
 import type { MeshNode } from '../lib/types';
 import { useNomadNetworkStore } from '../stores/nomadNetworkStore';
+import { useReticulumIdentityActivityStore } from '../stores/reticulumIdentityActivityStore';
 import {
   refreshReticulumPeersFromSidecar,
   resolveReticulumPeerLabel,
   useReticulumPeerStore,
 } from '../stores/reticulumPeerStore';
-import { hasCustomReticulumProfileIcon, ReticulumProfileIcon } from './ReticulumProfileIcon';
+import { ReticulumGameChallengeButton } from './reticulum/ReticulumGameChallengeButton';
+import { ReticulumPeerPathsDetail } from './reticulum/ReticulumPeerPathsDetail';
+import { ReticulumVoiceCallButton } from './reticulum/ReticulumVoiceCallButton';
+import { ReticulumProfileIconSlot } from './ReticulumProfileIcon';
 import { useToast } from './Toast';
 
-type PeerListTab = 'peers' | 'contacts' | 'favorites';
+type PeerListTab = 'peers' | 'history' | 'contacts' | 'favorites';
 type SortKey = ReticulumPeerSortKey;
 type SortDir = ReticulumPeerSortDir;
 
@@ -73,6 +90,10 @@ export interface ReticulumPeerListPanelProps {
   onManageGroups?: () => void;
   groupMemberIds?: Set<number>;
   contactGroupsEnabled?: boolean;
+  /** LXST voice Call button on each peer row. */
+  hasLxstVoice?: boolean;
+  /** LRGP games Challenge button on each peer row. */
+  hasLrgpGames?: boolean;
 }
 
 function peerHashToNodeNum(hash: string): number {
@@ -81,13 +102,43 @@ function peerHashToNodeNum(hash: string): number {
   return nodeId;
 }
 
+/**
+ * Hop count plus the medium of the active path.
+ *
+ * RNS keeps one active path per destination, so a TCP route can silently shadow a
+ * direct RF one. Showing the medium here makes that visible without opening the
+ * peer detail modal, which is the only other place ranked path slots are rendered.
+ */
+function PeerHopsCell({
+  peer,
+  t,
+}: {
+  peer: ReticulumPeer;
+  t: (key: string, opts?: Record<string, string>) => string;
+}) {
+  const iface = peer.interface?.trim();
+  const via = iface ? classifyReticulumVia(iface) : null;
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span>{peer.hops ?? '—'}</span>
+      {via != null && peer.hops != null ? (
+        <span
+          className="text-muted rounded bg-slate-700/60 px-1 py-0.5 text-[10px] font-medium"
+          title={t('peerListPanel.pathMediumTitle', { medium: formatReticulumViaBadgeLabel(via) })}
+        >
+          {formatReticulumViaBadgeLabel(via)}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 interface PeerTableRowProps {
   prepared: PreparedReticulumPeerRow;
   activeTab: PeerListTab;
   busy: boolean;
   contacted: boolean;
   verified: boolean;
-  showIcon: boolean;
   iconName?: string | null;
   iconColor?: string | null;
   displayLabel: string;
@@ -104,7 +155,6 @@ const PeerTableRow = memo(function PeerTableRow({
   busy,
   contacted,
   verified,
-  showIcon,
   iconName,
   iconColor,
   displayLabel,
@@ -124,9 +174,12 @@ const PeerTableRow = memo(function PeerTableRow({
     >
       <td className="max-w-[10rem] truncate py-2 pr-2 pl-2 font-mono" title={peer.destination_hash}>
         <span className="inline-flex items-center gap-1.5">
-          {showIcon ? (
-            <ReticulumProfileIcon iconName={iconName} iconColor={iconColor} size={14} />
-          ) : null}
+          <ReticulumProfileIconSlot
+            iconName={iconName}
+            iconColor={iconColor}
+            size={14}
+            destinationHash={peer.destination_hash}
+          />
           <span className="truncate">{displayLabel}</span>
           {verified ? (
             <Check
@@ -149,7 +202,9 @@ const PeerTableRow = memo(function PeerTableRow({
               {contacted ? t('peerListPanel.contactYes') : t('peerListPanel.contactNo')}
             </span>
           </td>
-          <td className="py-2 pr-2">{peer.hops ?? '—'}</td>
+          <td className="py-2 pr-2">
+            <PeerHopsCell peer={peer} t={t} />
+          </td>
           <td className="py-2 pr-2 whitespace-nowrap" title={formatPeerActivity(peer)}>
             {formatPeerActivity(peer)}
           </td>
@@ -162,7 +217,9 @@ const PeerTableRow = memo(function PeerTableRow({
           <td className="py-2 pr-2 whitespace-nowrap" title={formatPeerActivity(peer)}>
             {formatPeerActivity(peer)}
           </td>
-          <td className="py-2 pr-2">{peer.hops ?? '—'}</td>
+          <td className="py-2 pr-2">
+            <PeerHopsCell peer={peer} t={t} />
+          </td>
           <td className="py-2 pr-2">
             <button
               type="button"
@@ -187,6 +244,7 @@ function buildSourcePeerRows(
   activeTab: PeerListTab,
   peers: Map<string, ReticulumPeer>,
   contacts: Map<string, ReticulumPeer>,
+  history: Map<string, ReticulumPeer>,
   selectedGroupId: number | null,
   groupMemberIds: Set<number> | undefined,
 ): ReticulumPeer[] {
@@ -198,7 +256,13 @@ function buildSourcePeerRows(
     for (const contact of contacts.values()) {
       if (contact.favorited) all.set(contact.destination_hash, contact);
     }
+    for (const row of history.values()) {
+      if (row.favorited) all.set(row.destination_hash, row);
+    }
     return [...all.values()];
+  }
+  if (activeTab === 'history') {
+    return [...history.values()];
   }
   if (activeTab === 'contacts') {
     let rows = [...contacts.values()];
@@ -224,12 +288,17 @@ export default function ReticulumPeerListPanel({
   onManageGroups,
   groupMemberIds,
   contactGroupsEnabled = false,
+  hasLxstVoice = false,
+  hasLrgpGames = false,
 }: ReticulumPeerListPanelProps) {
   const { t } = useTranslation();
   const { addToast } = useToast();
-  const peers = useReticulumPeerStore((s) => s.peers);
+  // Re-render when identity activity updates so Chat can enable after LXMF announce.
+  useReticulumIdentityActivityStore((s) => s.byDestination);
   const peersRevision = useReticulumPeerStore((s) => s.peersRevision);
+  const peersSize = useReticulumPeerStore((s) => s.peers.size);
   const contacts = useReticulumPeerStore((s) => s.contacts);
+  const history = useReticulumPeerStore((s) => s.history);
   const peerAppearanceByHash = useReticulumPeerStore((s) => s.peerAppearanceByHash);
   const isContact = useReticulumPeerStore((s) => s.isContact);
   const nomadNodes = useNomadNetworkStore((s) => s.nodes);
@@ -257,6 +326,7 @@ export default function ReticulumPeerListPanel({
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [refreshing, setRefreshing] = useState(false);
   const [actionBusyHash, setActionBusyHash] = useState<string | null>(null);
+  const [pathsDetailHash, setPathsDetailHash] = useState<string | null>(null);
   const [sortedRows, setSortedRows] = useState<PreparedReticulumPeerRow[]>([]);
   const [verifiedHashes, setVerifiedHashes] = useState<Set<string>>(() => new Set());
 
@@ -293,7 +363,7 @@ export default function ReticulumPeerListPanel({
     return () => {
       cancelled = true;
     };
-  }, [peersRevision, contacts]);
+  }, [peersRevision, contacts, history]);
 
   const runForcedRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -354,10 +424,12 @@ export default function ReticulumPeerListPanel({
     const gen = ++sortedRowsPrepGenRef.current;
     const run = () => {
       if (gen !== sortedRowsPrepGenRef.current) return;
+      const peers = useReticulumPeerStore.getState().peers;
       const sourceRows = buildSourcePeerRows(
         activeTab,
         peers,
         contacts,
+        history,
         selectedGroupId,
         groupMemberIds,
       );
@@ -374,12 +446,15 @@ export default function ReticulumPeerListPanel({
     };
     const approxCount =
       activeTab === 'peers'
-        ? peers.size
-        : activeTab === 'contacts'
-          ? contacts.size
-          : peers.size + contacts.size;
-    // Debounce large-list rebuilds under patch storms; keep small lists snappy.
-    const debounceMs = approxCount > RETICULUM_PEER_VIRTUALIZE_THRESHOLD ? 120 : 0;
+        ? peersSize
+        : activeTab === 'history'
+          ? history.size
+          : activeTab === 'contacts'
+            ? contacts.size
+            : peersSize + contacts.size + history.size;
+    // Debounce large-list rebuilds under patch storms; stretch further at mega-mesh.
+    const debounceMs =
+      approxCount > 10_000 ? 400 : approxCount > RETICULUM_PEER_VIRTUALIZE_THRESHOLD ? 250 : 0;
     let timer: ReturnType<typeof setTimeout> | null = null;
     if (debounceMs > 0) {
       timer = setTimeout(() => {
@@ -391,14 +466,15 @@ export default function ReticulumPeerListPanel({
     return () => {
       if (timer != null) clearTimeout(timer);
     };
-    // peersRevision ensures Map identity churn still recomputes when patches flush.
+    // peersRevision (not Map identity) drives rebuilds when patches flush.
   }, [
     activeTab,
     contacts,
+    history,
     debouncedSearchQuery,
     groupMemberIds,
-    peers,
     peersRevision,
+    peersSize,
     resolvePeerLabel,
     selectedGroupId,
     sortDir,
@@ -452,7 +528,10 @@ export default function ReticulumPeerListPanel({
       const toast = formatReticulumPeerPathToast(t, result);
       addToast(toast.message, toast.variant);
       if (result.ok) {
-        await refreshReticulumPeersFromSidecar({ forceRefresh: true });
+        await refreshReticulumPeerRouteFromPaths(hash, {
+          settleMs: RETICULUM_PATH_SETTLE_MS,
+          retryMs: RETICULUM_PATH_RETRY_MS,
+        });
       }
     } catch (e) {
       console.warn('[ReticulumPeerListPanel] path ' + errLikeToLogString(e));
@@ -475,7 +554,7 @@ export default function ReticulumPeerListPanel({
         useReticulumPeerStore.getState().updatePeer(hash, { hops: result.hops });
       }
       if (result.ok) {
-        await refreshReticulumPeersFromSidecar({ forceRefresh: true });
+        await refreshReticulumPeerRouteFromPaths(hash);
       }
     } catch (e) {
       console.warn('[ReticulumPeerListPanel] probe ' + errLikeToLogString(e));
@@ -531,50 +610,106 @@ export default function ReticulumPeerListPanel({
   const emptyKey =
     activeTab === 'contacts'
       ? 'peerListPanel.emptyContacts'
-      : activeTab === 'favorites'
-        ? 'peerListPanel.emptyFavorites'
-        : 'peerListPanel.emptyPeers';
+      : activeTab === 'history'
+        ? 'peerListPanel.emptyHistory'
+        : activeTab === 'favorites'
+          ? 'peerListPanel.emptyFavorites'
+          : 'peerListPanel.emptyPeers';
 
   const tableColSpan = activeTab === 'peers' ? 6 : 5;
 
-  const renderActionButtons = (peer: ReticulumPeer, busy: boolean) => (
-    <>
-      <button
-        type="button"
-        className="text-amber-400 hover:underline disabled:opacity-40"
-        disabled={busy}
-        onClick={(e) => {
-          e.stopPropagation();
-          onSendMessage(peerHashToNodeNum(peer.destination_hash));
-        }}
-        aria-label={t('peerListPanel.openChat')}
-      >
-        <MessageCircle className="inline h-3.5 w-3.5" aria-hidden />
-      </button>
-      <button
-        type="button"
-        className="ml-2 text-amber-400 hover:underline disabled:opacity-40"
-        disabled={busy}
-        onClick={(e) => {
-          e.stopPropagation();
-          void requestPath(peer.destination_hash);
-        }}
-      >
-        {t('connectionPanel.reticulumPeers.path')}
-      </button>
-      <button
-        type="button"
-        className="ml-2 text-amber-400 hover:underline disabled:opacity-40"
-        disabled={busy}
-        onClick={(e) => {
-          e.stopPropagation();
-          void probePeer(peer.destination_hash);
-        }}
-      >
-        {t('connectionPanel.reticulumPeers.probe')}
-      </button>
-    </>
-  );
+  const renderActionButtons = (peer: ReticulumPeer, busy: boolean) => {
+    const telephonyOnly = isReticulumTelephonyOnlyDestination(peer.destination_hash);
+    const chatResolved = resolveReticulumChatLxmfDestination(peer.destination_hash);
+    const chatBlocked = telephonyOnly && chatResolved.status !== 'ok';
+    const gamesLxmfHash = chatResolved.status === 'ok' ? chatResolved.hash : peer.destination_hash;
+    return (
+      <>
+        <button
+          type="button"
+          className="text-amber-400 hover:underline disabled:opacity-40"
+          disabled={busy || chatBlocked}
+          title={chatBlocked ? t('peerListPanel.chatNeedsLxmfDelivery') : undefined}
+          onClick={(e) => {
+            e.stopPropagation();
+            const resolved = resolveReticulumChatLxmfDestination(peer.destination_hash);
+            if (resolved.status === 'missing_lxmf') {
+              addToast(t('peerListPanel.chatNeedsLxmfDelivery'), 'error');
+              return;
+            }
+            if (resolved.status !== 'ok') {
+              addToast(t('peerListPanel.lookupInvalid'), 'error');
+              return;
+            }
+            const nodeId = peerHashToNodeNum(resolved.hash);
+            registerReticulumDestinationHash(nodeId, resolved.hash);
+            onSendMessage(nodeId);
+          }}
+          aria-label={t('peerListPanel.openChat')}
+        >
+          <MessageCircle className="inline h-3.5 w-3.5" aria-hidden />
+        </button>
+        {telephonyOnly ? (
+          <span
+            className="ml-1 text-[10px] font-semibold tracking-wide text-cyan-400/90 uppercase"
+            title={t('peerListPanel.voiceAspectTitle')}
+          >
+            {t('peerListPanel.voiceAspectBadge')}
+          </span>
+        ) : null}
+        {hasLxstVoice ? (
+          <ReticulumVoiceCallButton
+            lxmfPeerHash={peer.destination_hash}
+            identityHash={peer.identity_hash}
+            disabled={busy || !isConnected}
+          />
+        ) : null}
+        {hasLrgpGames ? (
+          <ReticulumGameChallengeButton
+            lxmfPeerHash={gamesLxmfHash}
+            disabled={busy || !isConnected}
+          />
+        ) : null}
+        <button
+          type="button"
+          className="ml-2 text-amber-400 hover:underline disabled:opacity-40"
+          disabled={busy}
+          onClick={(e) => {
+            e.stopPropagation();
+            void requestPath(peer.destination_hash);
+          }}
+        >
+          {t('connectionPanel.reticulumPeers.path')}
+        </button>
+        <button
+          type="button"
+          className="ml-2 text-amber-400 hover:underline disabled:opacity-40"
+          disabled={busy}
+          onClick={(e) => {
+            e.stopPropagation();
+            void probePeer(peer.destination_hash);
+          }}
+        >
+          {t('connectionPanel.reticulumPeers.probe')}
+        </button>
+        <button
+          type="button"
+          className="ml-2 text-amber-400 hover:underline disabled:opacity-40"
+          disabled={busy}
+          aria-label={t('peerListPanel.pathsAria', { hash: peer.destination_hash })}
+          aria-expanded={pathsDetailHash === peer.destination_hash}
+          onClick={(e) => {
+            e.stopPropagation();
+            setPathsDetailHash((cur) =>
+              cur === peer.destination_hash ? null : peer.destination_hash,
+            );
+          }}
+        >
+          {t('peerListPanel.paths')}
+        </button>
+      </>
+    );
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
@@ -664,6 +799,19 @@ export default function ReticulumPeerListPanel({
           }}
         >
           {t('peerListPanel.tabPeers')}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'history'}
+          className={`rounded px-3 py-1 text-sm ${activeTab === 'history' ? 'bg-readable-green text-white' : 'border border-gray-600 text-gray-300'}`}
+          onClick={() => {
+            setActiveTab('history');
+            setSortKey('lastSeen');
+            setSortDir('desc');
+          }}
+        >
+          {t('peerListPanel.tabHistory')}
         </button>
         <button
           type="button"
@@ -859,10 +1007,6 @@ export default function ReticulumPeerListPanel({
                 const peer = prepared.peer;
                 const busy = actionBusyHash === peer.destination_hash;
                 const iconMeta = peerAppearanceByHash.get(peer.destination_hash.toLowerCase());
-                const showIcon = hasCustomReticulumProfileIcon(
-                  iconMeta?.icon_name,
-                  iconMeta?.icon_color,
-                );
                 const contacted = isContact(peer.destination_hash);
                 const verified = verifiedHashes.has(peer.destination_hash.toLowerCase());
                 const displayLabel =
@@ -875,7 +1019,6 @@ export default function ReticulumPeerListPanel({
                     busy={busy}
                     contacted={contacted}
                     verified={verified}
-                    showIcon={showIcon}
                     iconName={iconMeta?.icon_name}
                     iconColor={iconMeta?.icon_color}
                     displayLabel={displayLabel}
@@ -905,6 +1048,16 @@ export default function ReticulumPeerListPanel({
           </tbody>
         </table>
       </div>
+
+      {pathsDetailHash ? (
+        <ReticulumPeerPathsDetail
+          key={pathsDetailHash}
+          destinationHash={pathsDetailHash}
+          onClose={() => {
+            setPathsDetailHash(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

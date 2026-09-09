@@ -1,11 +1,17 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { Copy } from 'lucide-react-motion';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
 import { DetailsChevron } from '@/renderer/lib/icons/detailsChevron';
+import { handleReticulumQrIngest } from '@/renderer/lib/reticulum/handleReticulumQrIngest';
 import { translateReticulumAuditIssue } from '@/renderer/lib/reticulum/reticulumConfigAudit';
+import {
+  fetchPathMediumPreference,
+  type PathMediumPreference,
+  setPathMediumPreference,
+} from '@/renderer/lib/reticulum/reticulumPathMedium';
 import { reticulumSidecarEventRefreshActions } from '@/renderer/lib/reticulum/reticulumSidecarPeerRefreshEvents';
 import {
   createReticulumIdentitySlot,
@@ -16,23 +22,28 @@ import {
   switchReticulumIdentity,
 } from '@/renderer/lib/reticulum/reticulumSidecarReads';
 import { parseReticulumStackSettingsPayload } from '@/renderer/lib/reticulum/reticulumStackSettings';
+import { showReticulumQrIngestToast } from '@/renderer/lib/reticulum/showReticulumQrIngestToast';
 import {
   type ReticulumIdentityStatus,
   useReticulumSidecarApi,
 } from '@/renderer/lib/reticulum/useReticulumSidecarApi';
 import { writeClipboardText } from '@/renderer/lib/writeClipboardText';
-import { buildLxmIdentityUri, classifyMeshClientDeepLink } from '@/shared/meshClientDeepLink';
+import { buildLxmaContactUri, buildLxmIdentityUri } from '@/shared/meshClientDeepLink';
 import type {
   ReticulumConfigValidateResult,
   ReticulumSidecarEvent,
 } from '@/shared/reticulum-types';
 
+import { useReticulumBlocklistIdentityId } from '../stores/blockStore';
 import { refreshReticulumPeersFromSidecar } from '../stores/reticulumPeerStore';
 import { ConfirmModal } from './ConfirmModal';
 import { IdentityVaultPanel } from './IdentityVaultPanel';
 import QrCodeImage from './QrCodeImage';
 import QrIngestControl from './QrIngestControl';
 import { ReticulumAnnounceControls } from './ReticulumAnnounceControls';
+import { ReticulumBlockedContactsSection } from './ReticulumBlockedContactsSection';
+import { ReticulumPathTableMaintenance } from './ReticulumPathTableMaintenance';
+import ReticulumPnHostingDangerZone from './ReticulumPnHostingDangerZone';
 import ReticulumPropagationSection from './ReticulumPropagationSection';
 import { ReticulumRmapDiscoveryControls } from './ReticulumRmapDiscoveryControls';
 import { useToast } from './Toast';
@@ -47,14 +58,15 @@ function formatIdentityApiError(t: (key: string) => string, error: string | unde
       return t('connectionPanel.reticulumIdentity.invalidMnemonic');
     case 'identity file missing; re-import or generate identity':
       return t('connectionPanel.reticulumIdentity.identityFileMissing');
-    case 'backup_hash_mismatch_with_identity_file':
-      return t('connectionPanel.reticulumIdentity.backupHashMismatch');
     case 'identity operations require an rns-stack sidecar build':
       return t('connectionPanel.reticulumIdentity.importPrivateKeyRequiresStack');
     case 'invalid private key length: expected 64, got 0':
     default:
       if (error?.startsWith('invalid private key length')) {
         return t('connectionPanel.reticulumIdentity.invalidPrivateKeyLength');
+      }
+      if (error?.includes('does not match private key') || error?.includes('backup hash')) {
+        return t('connectionPanel.reticulumIdentity.backupHashMismatch');
       }
       if (error?.includes('BIP-39')) {
         return t('connectionPanel.reticulumIdentity.invalidMnemonic');
@@ -98,6 +110,25 @@ export interface ReticulumNetworkPanelProps {
   onOpenAppGpsSettings?: () => void;
   /** When incremented, opens the propagation collapsible section. */
   propagationSectionOpenKey?: number;
+  /** Open Connection → Interfaces (PN establish dual-TCP recovery). */
+  onOpenInterfaces?: () => void;
+  onOpenSetupGuide?: () => boolean;
+}
+
+function reticulumExportPinError(
+  passphrase: string,
+  confirm: string,
+  t: (key: string) => string,
+): string | null {
+  const pin = passphrase.trim();
+  const pinConfirm = confirm.trim();
+  if (pin.length < 6) {
+    return t('connectionPanel.reticulumIdentity.exportPassphraseRequired');
+  }
+  if (pin !== pinConfirm) {
+    return t('connectionPanel.reticulumIdentity.exportPassphraseMismatch');
+  }
+  return null;
 }
 
 /** Network tab: identity, stack settings, propagation, config import. */
@@ -106,6 +137,8 @@ export function ReticulumNetworkPanel({
   onStartStack,
   onOpenAppGpsSettings,
   propagationSectionOpenKey = 0,
+  onOpenInterfaces,
+  onOpenSetupGuide,
 }: ReticulumNetworkPanelProps) {
   const { t } = useTranslation();
   const { addToast } = useToast();
@@ -124,15 +157,20 @@ export function ReticulumNetworkPanel({
   const [importPhrase, setImportPhrase] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [identityError, setIdentityError] = useState<string | null>(null);
+  const [identityNotice, setIdentityNotice] = useState<string | null>(null);
   const [confirmSaved, setConfirmSaved] = useState(false);
-  const [exportJson, setExportJson] = useState<string | null>(null);
   const [exportPassphrase, setExportPassphrase] = useState('');
+  const [exportPassphraseConfirm, setExportPassphraseConfirm] = useState('');
+  const [exportPinError, setExportPinError] = useState<string | null>(null);
   const [importBackupJson, setImportBackupJson] = useState('');
+  const [importBackupPin, setImportBackupPin] = useState('');
+  const [identityActionBusy, setIdentityActionBusy] = useState(false);
   const [importPrivateKey, setImportPrivateKey] = useState('');
   const [showReplaceIdentityConfirm, setShowReplaceIdentityConfirm] = useState(false);
   const [pendingReplaceAction, setPendingReplaceAction] = useState<IdentityReplaceAction | null>(
     null,
   );
+  const reticulumBlocklistIdentityId = useReticulumBlocklistIdentityId();
   const [configPaste, setConfigPaste] = useState('');
   const [importWarnings, setImportWarnings] = useState<string[]>([]);
   const [showImportConfirm, setShowImportConfirm] = useState(false);
@@ -142,6 +180,9 @@ export function ReticulumNetworkPanel({
     share_instance: false,
     loglevel: 4,
   });
+  const [pathMediumPreference, setPathMediumPreferenceState] =
+    useState<PathMediumPreference>('lowest');
+  const [pathMediumBusy, setPathMediumBusy] = useState(false);
   const [configValidateBusy, setConfigValidateBusy] = useState(false);
   const [configValidateResult, setConfigValidateResult] =
     useState<ReticulumConfigValidateResult | null>(null);
@@ -157,10 +198,30 @@ export function ReticulumNetworkPanel({
         share_instance: body.share_instance,
         loglevel: typeof body.loglevel === 'number' ? body.loglevel : 4,
       });
+      const pref = await fetchPathMediumPreference();
+      if (pref.ok) setPathMediumPreferenceState(pref.preference);
     } catch (e) {
       console.debug('[ReticulumNetworkPanel] stack settings ' + errLikeToLogString(e));
     }
   }, [sidecarApiReady]);
+
+  const savePathMediumPreference = async (preference: PathMediumPreference) => {
+    setPathMediumBusy(true);
+    try {
+      const res = await setPathMediumPreference(preference);
+      if (!res.ok) {
+        addToast(t('networkPanel.reticulumStackSettings.pathMediumPreferenceSaveFailed'), 'error');
+        return;
+      }
+      setPathMediumPreferenceState(preference);
+      addToast(t('networkPanel.reticulumStackSettings.pathMediumPreferenceSaved'), 'success');
+    } catch (e) {
+      console.warn('[ReticulumNetworkPanel] path medium ' + errLikeToLogString(e));
+      addToast(t('networkPanel.reticulumStackSettings.pathMediumPreferenceSaveFailed'), 'error');
+    } finally {
+      setPathMediumBusy(false);
+    }
+  };
 
   const refreshPeers = useCallback(async () => {
     if (!sidecarApiReady) return;
@@ -189,27 +250,108 @@ export function ReticulumNetworkPanel({
     void refreshPeers();
   }, [sidecarApiReady, refreshStackSettings, refreshPeers]);
 
+  const clearExportPins = () => {
+    setExportPassphrase('');
+    setExportPassphraseConfirm('');
+    setExportPinError(null);
+  };
+
   const handleExportIdentity = async () => {
-    const passphrase = exportPassphrase.trim();
-    if (!passphrase) {
-      setIdentityError(t('connectionPanel.reticulumIdentity.exportPassphraseRequired'));
+    if (identityActionBusy) return;
+    const pinError = reticulumExportPinError(exportPassphrase, exportPassphraseConfirm, t);
+    if (pinError) {
+      setExportPinError(pinError);
       return;
     }
+    setExportPinError(null);
+    const passphrase = exportPassphrase.trim();
     setIdentityError(null);
+    setIdentityNotice(null);
+    setIdentityActionBusy(true);
     try {
       const res = (await window.electronAPI.reticulum.proxyPost('/api/v1/identity/export', {
         passphrase,
-      })) as { ok?: boolean; backup?: unknown; error?: string };
-      if (!res.ok) {
+      })) as { ok?: boolean; backup?: unknown; file_name?: string; error?: string };
+      if (!res.ok || res.backup == null) {
         setIdentityError(res.error ?? t('connectionPanel.reticulumIdentity.failed'));
         return;
       }
-      setExportJson(
-        typeof res.backup === 'string' ? res.backup : JSON.stringify(res.backup, null, 2),
-      );
+      const json =
+        typeof res.backup === 'string' ? res.backup : JSON.stringify(res.backup, null, 2);
+      const fileName =
+        res.file_name ||
+        (typeof res.backup === 'object' &&
+        res.backup &&
+        'file_name' in res.backup &&
+        typeof (res.backup as { file_name?: unknown }).file_name === 'string'
+          ? (res.backup as { file_name: string }).file_name
+          : 'ratspeak-identity.rsi');
+      const utf8Bytes = new TextEncoder().encode(json);
+      let binary = '';
+      for (const byte of utf8Bytes) {
+        binary += String.fromCharCode(byte);
+      }
+      const saved = await window.electronAPI.reticulum.saveIdentityExportDialog({
+        defaultPath: fileName,
+        contentBase64: btoa(binary),
+      });
+      clearExportPins();
+      if (saved.error) {
+        setIdentityError(t('connectionPanel.reticulumIdentity.exportSaveFailed'));
+        return;
+      }
+      if (saved.path) {
+        setIdentityNotice(t('connectionPanel.reticulumIdentity.exportSaved'));
+      }
     } catch (e) {
       // catch-no-log-ok: export failure shown via setIdentityError
       setIdentityError(errLikeToLogString(e));
+    } finally {
+      setIdentityActionBusy(false);
+    }
+  };
+
+  const handleExportRawIdentity = async () => {
+    if (identityActionBusy) return;
+    const pinError = reticulumExportPinError(exportPassphrase, exportPassphraseConfirm, t);
+    if (pinError) {
+      setExportPinError(pinError);
+      return;
+    }
+    setExportPinError(null);
+    const passphrase = exportPassphrase.trim();
+    setIdentityError(null);
+    setIdentityNotice(null);
+    setIdentityActionBusy(true);
+    try {
+      const res = (await window.electronAPI.reticulum.proxyPost('/api/v1/identity/export-raw', {
+        passphrase,
+      })) as {
+        ok?: boolean;
+        raw?: { data_base64?: string; file_name?: string };
+        error?: string;
+      };
+      if (!res.ok || !res.raw?.data_base64) {
+        setIdentityError(res.error ?? t('connectionPanel.reticulumIdentity.failed'));
+        return;
+      }
+      const saved = await window.electronAPI.reticulum.saveIdentityExportDialog({
+        defaultPath: res.raw.file_name ?? 'reticulum-identity.identity',
+        contentBase64: res.raw.data_base64,
+      });
+      clearExportPins();
+      if (saved.error) {
+        setIdentityError(t('connectionPanel.reticulumIdentity.exportSaveFailed'));
+        return;
+      }
+      if (saved.path) {
+        setIdentityNotice(t('connectionPanel.reticulumIdentity.exportSaved'));
+      }
+    } catch (e) {
+      // catch-no-log-ok: export failure shown via setIdentityError
+      setIdentityError(errLikeToLogString(e));
+    } finally {
+      setIdentityActionBusy(false);
     }
   };
 
@@ -295,24 +437,37 @@ export function ReticulumNetworkPanel({
   };
 
   const handleImportBackup = async (replace = false) => {
-    if (!sidecarApiReady) return;
+    if (!sidecarApiReady || identityActionBusy) return;
     const raw = importBackupJson.trim();
     if (!raw) return;
-    setIdentityError(null);
-    let backup: unknown;
+    let parsedJson: unknown;
     try {
-      backup = JSON.parse(raw) as unknown;
+      parsedJson = JSON.parse(raw) as unknown;
     } catch {
       // catch-no-log-ok: invalid JSON shown via setIdentityError
       setIdentityError(t('connectionPanel.reticulumIdentity.failed'));
       return;
     }
+    if (parsedJson == null || typeof parsedJson !== 'object' || Array.isArray(parsedJson)) {
+      setIdentityError(t('connectionPanel.reticulumIdentity.failed'));
+      return;
+    }
+    const backup = parsedJson as { format?: unknown } & Record<string, unknown>;
+    const pin = importBackupPin.trim();
+    const format = typeof backup.format === 'string' ? backup.format : '';
+    if (format === 'ratspeak.identity.v2' && pin.length < 6) {
+      setIdentityError(t('connectionPanel.reticulumIdentity.importBackupPinRequired'));
+      return;
+    }
+    setIdentityError(null);
+    setIdentityActionBusy(true);
     try {
       const res = (await window.electronAPI.reticulum.proxyPost('/api/v1/identity/import-backup', {
         backup,
+        passphrase: pin,
         display_name: displayName.trim() || null,
         replace,
-      })) as { ok?: boolean; error?: string; metadata_only?: boolean };
+      })) as { ok?: boolean; error?: string };
       if (!res.ok) {
         if (res.error === 'identity_already_configured' && !replace) {
           setPendingReplaceAction('importBackup');
@@ -323,9 +478,31 @@ export function ReticulumNetworkPanel({
         return;
       }
       setImportBackupJson('');
+      setImportBackupPin('');
       await refreshIdentity();
     } catch (e) {
       // catch-no-log-ok: import failure shown via setIdentityError
+      setIdentityError(errLikeToLogString(e));
+    } finally {
+      setIdentityActionBusy(false);
+    }
+  };
+
+  const handleImportBackupFromFile = async () => {
+    if (identityActionBusy) return;
+    try {
+      const result = await window.electronAPI.reticulum.showIdentityBackupImportDialog();
+      if (!result.contentText) {
+        if (result.error === 'too_large') {
+          setIdentityError(t('connectionPanel.reticulumIdentity.importBackupTooLarge'));
+        } else if (result.error === 'read_failed') {
+          setIdentityError(t('connectionPanel.reticulumIdentity.failed'));
+        }
+        return;
+      }
+      setImportBackupJson(result.contentText);
+    } catch (e) {
+      // catch-no-log-ok: dialog failure shown via setIdentityError
       setIdentityError(errLikeToLogString(e));
     }
   };
@@ -477,10 +654,22 @@ export function ReticulumNetworkPanel({
   };
 
   const identityReady = Boolean(identity?.lxmf_hash?.trim());
-  const identityActionsDisabled = !sidecarApiReady || connecting;
+  const identityActionsDisabled = !sidecarApiReady || connecting || identityActionBusy;
 
   return (
     <div className="space-y-4">
+      {onOpenSetupGuide && (
+        <button
+          type="button"
+          className="text-sm text-amber-300 underline underline-offset-4 hover:text-amber-200"
+          aria-label={t('reticulumSetup.open')}
+          onClick={() => {
+            if (!onOpenSetupGuide()) addToast(t('reticulumSetup.tabUnavailable'), 'error');
+          }}
+        >
+          {t('reticulumSetup.open')}
+        </button>
+      )}
       {!sidecarUiRunning && !connecting ? (
         <p className="rounded-lg border border-amber-600/40 bg-amber-950/20 p-3 text-sm text-amber-200">
           {t('connectionPanel.reticulumIdentity.startStackFirst')}
@@ -528,6 +717,29 @@ export function ReticulumNetworkPanel({
               ))}
             </select>
           </label>
+          <label className="block text-xs text-gray-400">
+            {t('networkPanel.reticulumStackSettings.pathMediumPreference')}
+            <select
+              value={pathMediumPreference}
+              disabled={!sidecarApiReady || pathMediumBusy}
+              aria-label={t('networkPanel.reticulumStackSettings.pathMediumPreferenceAria')}
+              onChange={(e) => {
+                void savePathMediumPreference(e.target.value as PathMediumPreference);
+              }}
+              className="mt-1 block rounded border border-gray-600 bg-slate-900 px-2 py-1 text-sm text-gray-100"
+            >
+              <option value="lowest">
+                {t('networkPanel.reticulumStackSettings.pathMediumLowest')}
+              </option>
+              <option value="network">
+                {t('networkPanel.reticulumStackSettings.pathMediumNetwork')}
+              </option>
+              <option value="rf">{t('networkPanel.reticulumStackSettings.pathMediumRf')}</option>
+            </select>
+            <span className="mt-1 block text-[11px] text-gray-500">
+              {t('networkPanel.reticulumStackSettings.pathMediumPreferenceHint')}
+            </span>
+          </label>
           <button
             type="button"
             disabled={!sidecarApiReady}
@@ -541,6 +753,27 @@ export function ReticulumNetworkPanel({
         </div>
       </ReticulumCollapsibleSection>
 
+      <ReticulumCollapsibleSection title={t('networkPanel.reticulumScanImport.title')}>
+        <p className="text-muted text-xs">{t('networkPanel.reticulumScanImport.hint')}</p>
+        <div className="mt-2">
+          <p className="text-muted mb-1 text-[11px]">{t('qrIngest.pasteImageHint')}</p>
+          <QrIngestControl
+            disabled={!sidecarApiReady}
+            onDecoded={(text) => {
+              void (async () => {
+                const outcome = await handleReticulumQrIngest(text);
+                showReticulumQrIngestToast(outcome, { t, addToast });
+              })().catch((err: unknown) => {
+                console.error(
+                  '[ReticulumNetworkPanel] QR ingest failed: ' + errLikeToLogString(err),
+                );
+                addToast(t('qrIngest.unknownLink'), 'error');
+              });
+            }}
+          />
+        </div>
+      </ReticulumCollapsibleSection>
+
       <ReticulumCollapsibleSection title={t('connectionPanel.reticulumIdentity.title')}>
         <p className="text-muted text-xs">{t('connectionPanel.reticulumIdentity.hint')}</p>
         {identityError ? (
@@ -548,45 +781,11 @@ export function ReticulumNetworkPanel({
             {identityError}
           </p>
         ) : null}
-        <div className="mt-2">
-          <p className="text-muted mb-1 text-[11px]">{t('qrIngest.pasteImageHint')}</p>
-          <QrIngestControl
-            disabled={!sidecarApiReady}
-            onDecoded={(text) => {
-              void (async () => {
-                const parsed = classifyMeshClientDeepLink(text);
-                if (parsed.kind === 'lxmPaperUnsupported') {
-                  addToast(t('qrIngest.paperUnsupported'), 'error');
-                  return;
-                }
-                if (parsed.kind === 'lxmContact') {
-                  try {
-                    await window.electronAPI.db.upsertReticulumDestination({
-                      destination_hash: parsed.destinationHash,
-                      display_name: parsed.name ?? null,
-                      // reticulum_destinations.last_heard is Unix seconds (retention prune).
-                      last_heard: Math.floor(Date.now() / 1000),
-                    });
-                    addToast(t('qrIngest.contactImported'), 'success');
-                    void refreshReticulumPeersFromSidecar({ forceRefresh: true });
-                  } catch (err) {
-                    console.error(
-                      '[ReticulumNetworkPanel] QR contact upsert failed: ' +
-                        errLikeToLogString(err),
-                    );
-                    addToast(t('qrIngest.contactImportFailed'), 'error');
-                  }
-                  return;
-                }
-                if (parsed.kind === 'lxmIdentity') {
-                  addToast(t('qrIngest.identityShown'), 'success');
-                  return;
-                }
-                addToast(t('qrIngest.unknownLink'), 'error');
-              })();
-            }}
-          />
-        </div>
+        {identityNotice ? (
+          <p className="text-readable-green mt-2 text-sm" role="status">
+            {identityNotice}
+          </p>
+        ) : null}
         {identityReady ? (
           <>
             <IdentitySlotsSection
@@ -607,12 +806,23 @@ export function ReticulumNetworkPanel({
             <IdentityConfiguredView
               identity={identity}
               exportPassphrase={exportPassphrase}
-              exportJson={exportJson}
-              exportDisabled={!sidecarApiReady}
-              saveDisabled={!sidecarApiReady}
-              onExportPassphraseChange={setExportPassphrase}
+              exportPassphraseConfirm={exportPassphraseConfirm}
+              exportPinError={exportPinError}
+              exportDisabled={identityActionsDisabled}
+              saveDisabled={identityActionsDisabled}
+              onExportPassphraseChange={(v) => {
+                setExportPassphrase(v);
+                if (exportPinError) setExportPinError(null);
+              }}
+              onExportPassphraseConfirmChange={(v) => {
+                setExportPassphraseConfirm(v);
+                if (exportPinError) setExportPinError(null);
+              }}
               onExport={() => {
                 void handleExportIdentity();
+              }}
+              onExportRaw={() => {
+                void handleExportRawIdentity();
               }}
               onSaveDisplayName={(name) => handleSaveDisplayName(name)}
             />
@@ -638,11 +848,16 @@ export function ReticulumNetworkPanel({
         <IdentityImportExtras
           disabled={identityActionsDisabled}
           importBackupJson={importBackupJson}
+          importBackupPin={importBackupPin}
           importPrivateKey={importPrivateKey}
           onImportBackupJsonChange={setImportBackupJson}
+          onImportBackupPinChange={setImportBackupPin}
           onImportPrivateKeyChange={setImportPrivateKey}
           onImportBackup={() => {
             void handleImportBackup();
+          }}
+          onImportBackupFromFile={() => {
+            void handleImportBackupFromFile();
           }}
           onImportPrivateKey={() => {
             void handleImportPrivateKey();
@@ -652,9 +867,7 @@ export function ReticulumNetworkPanel({
           }}
           showReplaceHint={identityReady}
         />
-        {identityReady ? (
-          <IdentityVaultPanel disabled={identityActionsDisabled} secret={exportJson} />
-        ) : null}
+        {identityReady ? <IdentityVaultPanel disabled={identityActionsDisabled} /> : null}
         {identityReady && sidecarApiReady ? (
           <ReticulumAnnounceControls disabled={!sidecarApiReady} />
         ) : null}
@@ -668,6 +881,13 @@ export function ReticulumNetworkPanel({
             identityDisplayName={identity?.display_name ?? displayName}
             onOpenAppGpsSettings={onOpenAppGpsSettings}
           />
+        </ReticulumCollapsibleSection>
+      ) : null}
+
+      {/* Not gated on sidecarApiReady — the blocklist is local DB state, editable with the stack stopped. */}
+      {reticulumBlocklistIdentityId ? (
+        <ReticulumCollapsibleSection title={t('appPanel.reticulumBlocklist.title')}>
+          <ReticulumBlockedContactsSection identityId={reticulumBlocklistIdentityId} />
         </ReticulumCollapsibleSection>
       ) : null}
 
@@ -797,8 +1017,12 @@ export function ReticulumNetworkPanel({
             title={t('connectionPanel.reticulumPropagation.title')}
             defaultOpen={propagationSectionOpenKey > 0}
           >
-            <ReticulumPropagationSection embedded />
+            <ReticulumPropagationSection embedded onOpenInterfaces={onOpenInterfaces} />
           </ReticulumCollapsibleSection>
+
+          <ReticulumPnHostingDangerZone disabled={!sidecarApiReady} />
+
+          <ReticulumPathTableMaintenance disabled={!sidecarApiReady} />
         </>
       ) : null}
 
@@ -848,20 +1072,26 @@ export function ReticulumNetworkPanel({
 function IdentityImportExtras({
   disabled,
   importBackupJson,
+  importBackupPin,
   importPrivateKey,
   onImportBackupJsonChange,
+  onImportBackupPinChange,
   onImportPrivateKeyChange,
   onImportBackup,
+  onImportBackupFromFile,
   onImportPrivateKey,
   onImportPrivateKeyFromFile,
   showReplaceHint,
 }: {
   disabled: boolean;
   importBackupJson: string;
+  importBackupPin: string;
   importPrivateKey: string;
   onImportBackupJsonChange: (v: string) => void;
+  onImportBackupPinChange: (v: string) => void;
   onImportPrivateKeyChange: (v: string) => void;
   onImportBackup: () => void;
+  onImportBackupFromFile: () => void;
   onImportPrivateKey: () => void;
   onImportPrivateKeyFromFile: () => void;
   showReplaceHint: boolean;
@@ -895,14 +1125,40 @@ function IdentityImportExtras({
           aria-label={t('connectionPanel.reticulumIdentity.importBackupLabel')}
         />
       </label>
-      <button
-        type="button"
-        disabled={disabled || !importBackupJson.trim()}
-        onClick={onImportBackup}
-        className="rounded-lg border border-gray-600 px-3 py-1.5 text-sm hover:bg-slate-800 disabled:opacity-40"
-      >
-        {t('connectionPanel.reticulumIdentity.importBackup')}
-      </button>
+      <label className="block text-xs text-gray-400">
+        {t('connectionPanel.reticulumIdentity.importBackupPin')}
+        <input
+          type="password"
+          value={importBackupPin}
+          onChange={(e) => {
+            onImportBackupPinChange(e.target.value);
+          }}
+          disabled={disabled}
+          autoComplete="off"
+          className="mt-1 w-full rounded border border-gray-600 bg-slate-900 px-2 py-1.5 text-sm disabled:opacity-50"
+          aria-label={t('connectionPanel.reticulumIdentity.importBackupPin')}
+        />
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={disabled || !importBackupJson.trim()}
+          onClick={onImportBackup}
+          aria-label={t('connectionPanel.reticulumIdentity.importBackupAria')}
+          className="rounded-lg border border-gray-600 px-3 py-1.5 text-sm hover:bg-slate-800 disabled:opacity-40"
+        >
+          {t('connectionPanel.reticulumIdentity.importBackup')}
+        </button>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onImportBackupFromFile}
+          aria-label={t('connectionPanel.reticulumIdentity.importBackupFromFileAria')}
+          className="rounded-lg border border-gray-600 px-3 py-1.5 text-sm hover:bg-slate-800 disabled:opacity-40"
+        >
+          {t('connectionPanel.reticulumIdentity.importBackupFromFile')}
+        </button>
+      </div>
       <label className="block text-xs text-gray-400">
         {t('connectionPanel.reticulumIdentity.importPrivateKeyLabel')}
         <p className="text-muted mt-1 text-[11px]">
@@ -1155,23 +1411,30 @@ function IdentitySlotsSection({
 function IdentityConfiguredView({
   identity,
   exportPassphrase,
-  exportJson,
+  exportPassphraseConfirm,
+  exportPinError,
   exportDisabled,
   saveDisabled,
   onExportPassphraseChange,
+  onExportPassphraseConfirmChange,
   onExport,
+  onExportRaw,
   onSaveDisplayName,
 }: {
   identity: ReticulumIdentityStatus | null;
   exportPassphrase: string;
-  exportJson: string | null;
+  exportPassphraseConfirm: string;
+  exportPinError: string | null;
   exportDisabled: boolean;
   saveDisabled: boolean;
   onExportPassphraseChange: (v: string) => void;
+  onExportPassphraseConfirmChange: (v: string) => void;
   onExport: () => void;
+  onExportRaw: () => void;
   onSaveDisplayName: (name: string) => Promise<boolean>;
 }) {
   const { t } = useTranslation();
+  const exportPinErrorId = useId();
   const [nameDraft, setNameDraft] = useState(identity?.display_name?.trim() ?? '');
   const [saving, setSaving] = useState(false);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
@@ -1180,9 +1443,18 @@ function IdentityConfiguredView({
     setNameDraft(identity?.display_name?.trim() ?? '');
   }, [identity?.display_name]);
 
+  const identityHash = identity?.identity_hash?.trim() ?? '';
   const lxmfHash = identity?.lxmf_hash?.trim() ?? '';
   const [showIdentityQr, setShowIdentityQr] = useState(false);
   const identityQrUri = useMemo(() => {
+    const pub = identity?.public_key?.trim();
+    if (lxmfHash && pub && /^[0-9a-f]{128}$/i.test(pub)) {
+      try {
+        return buildLxmaContactUri(lxmfHash, pub);
+      } catch {
+        // catch-no-log-ok fall through to mesh-client identity URI
+      }
+    }
     const idHash = identity?.identity_hash?.trim();
     if (!idHash) return null;
     try {
@@ -1196,6 +1468,15 @@ function IdentityConfiguredView({
       return null;
     }
   }, [identity, lxmfHash]);
+
+  const copyIdentityHash = useCallback(async () => {
+    if (!identityHash) return;
+    try {
+      await writeClipboardText(identityHash);
+    } catch (e) {
+      console.warn('[ReticulumNetworkPanel] copy identity hash ' + errLikeToLogString(e));
+    }
+  }, [identityHash]);
 
   const copyLxmfHash = useCallback(async () => {
     if (!lxmfHash) return;
@@ -1221,6 +1502,26 @@ function IdentityConfiguredView({
 
   return (
     <div className="mt-3 space-y-1 text-sm text-gray-300">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-muted">
+          {t('connectionPanel.reticulumIdentity.identityHashLabel')}
+        </span>
+        <code className="text-gray-200" title={identityHash || undefined}>
+          {identityHash ? `${identityHash.slice(0, 24)}…` : '—'}
+        </code>
+        {identityHash ? (
+          <button
+            type="button"
+            className="shrink-0 text-gray-400 hover:text-gray-300"
+            aria-label={t('connectionPanel.reticulumIdentity.copyIdentityHash')}
+            onClick={() => {
+              void copyIdentityHash();
+            }}
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
+      </div>
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-muted">{t('connectionPanel.reticulumIdentity.hashLabel')}</span>
         <code className="text-amber-300" title={lxmfHash || undefined}>
@@ -1298,20 +1599,56 @@ function IdentityConfiguredView({
             onExportPassphraseChange(e.target.value);
           }}
           autoComplete="new-password"
-          className="mt-1 block w-full rounded border border-gray-600 bg-slate-900 px-2 py-1.5 text-sm text-gray-200"
+          aria-invalid={exportPinError != null}
+          aria-describedby={exportPinError ? exportPinErrorId : undefined}
+          className={`mt-1 block w-full rounded border bg-slate-900 px-2 py-1.5 text-sm text-gray-200 ${
+            exportPinError ? 'border-red-500' : 'border-gray-600'
+          }`}
+          aria-label={t('connectionPanel.reticulumIdentity.exportPassphrase')}
         />
       </label>
-      <button
-        type="button"
-        disabled={exportDisabled}
-        onClick={onExport}
-        className="mt-2 rounded border border-gray-600 px-2 py-1 text-xs text-gray-300 hover:bg-slate-800 disabled:opacity-40"
-      >
-        {t('connectionPanel.reticulumIdentity.export')}
-      </button>
-      {exportJson ? (
-        <textarea readOnly value={exportJson} rows={3} className="mt-2 w-full font-mono text-xs" />
+      <label className="mt-2 block text-xs text-gray-400">
+        {t('connectionPanel.reticulumIdentity.exportPassphraseConfirm')}
+        <input
+          type="password"
+          value={exportPassphraseConfirm}
+          onChange={(e) => {
+            onExportPassphraseConfirmChange(e.target.value);
+          }}
+          autoComplete="new-password"
+          aria-invalid={exportPinError != null}
+          aria-describedby={exportPinError ? exportPinErrorId : undefined}
+          className={`mt-1 block w-full rounded border bg-slate-900 px-2 py-1.5 text-sm text-gray-200 ${
+            exportPinError ? 'border-red-500' : 'border-gray-600'
+          }`}
+          aria-label={t('connectionPanel.reticulumIdentity.exportPassphraseConfirm')}
+        />
+      </label>
+      {exportPinError ? (
+        <p id={exportPinErrorId} className="mt-2 text-sm text-red-400" role="alert">
+          {exportPinError}
+        </p>
       ) : null}
+      <div className="mt-2 flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={exportDisabled}
+          onClick={onExport}
+          aria-label={t('connectionPanel.reticulumIdentity.exportAria')}
+          className="rounded border border-gray-600 px-2 py-1 text-xs text-gray-300 hover:bg-slate-800 disabled:opacity-40"
+        >
+          {t('connectionPanel.reticulumIdentity.export')}
+        </button>
+        <button
+          type="button"
+          disabled={exportDisabled}
+          onClick={onExportRaw}
+          aria-label={t('connectionPanel.reticulumIdentity.exportRawAria')}
+          className="rounded border border-gray-600 px-2 py-1 text-xs text-gray-300 hover:bg-slate-800 disabled:opacity-40"
+        >
+          {t('connectionPanel.reticulumIdentity.exportRaw')}
+        </button>
+      </div>
     </div>
   );
 }

@@ -14,6 +14,10 @@ export interface ProtocolRuntimeQueueStatus {
   free: number;
   maxlen: number;
   res: number;
+  /** Optional interface label (Reticulum worst local-RF TX queue). */
+  interfaceName?: string;
+  /** Reticulum: true when host TX fill exceeds idle-baseline thresholds. */
+  buffering?: boolean;
 }
 
 export interface ProtocolRuntimeDeviceOwner {
@@ -89,7 +93,9 @@ export interface ProtocolRuntime {
   traceRoute?: (nodeId: number) => Promise<boolean | undefined>;
   reboot?: () => Promise<void>;
   deleteNode?: (nodeId: number) => Promise<void>;
-  clearRawPackets?: () => void;
+  clearRawPackets?: () => void | Promise<void>;
+  /** Reticulum: refresh Sniffer/Stats from GET /api/v1/packets (wire_packet WS disabled). */
+  hydrateRawPackets?: () => Promise<void>;
   getRemoteAdminKeyForNode?: (nodeId: number) => string | null;
   setRemoteAdminKeyForNode?: (nodeId: number, key: string) => void;
   refreshOurPosition?: () => Promise<void>;

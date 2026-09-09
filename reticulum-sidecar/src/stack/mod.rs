@@ -1,12 +1,18 @@
 //! Persistent stack state + optional live RNS/LXMF bridge.
 
+mod announce_ws_coalesce;
+mod auto_path_policy;
 mod ble;
 pub mod config;
 pub mod config_audit;
 mod identity_apply;
+#[cfg(feature = "rns-stack")]
+mod identity_backup;
 mod identity_import;
 mod identity_slots;
+pub mod interface_catalog;
 mod local_rnode_primary;
+mod lxmf_inbound_log;
 mod nomad_content_source;
 mod nomad_file;
 mod nomad_link_errors;
@@ -14,8 +20,21 @@ mod nomad_link_errors;
 mod nomad_request_payload;
 mod nomad_timeouts;
 mod packet_log;
+mod path_failover;
+mod path_medium;
 mod path_speed;
 mod persistence;
+#[cfg(feature = "rns-stack")]
+mod pn_hosting_apply;
+mod pn_hosting_policy;
+#[cfg(feature = "rns-stack")]
+mod pn_inbound;
+mod propagation_mode;
+#[cfg(feature = "rns-stack")]
+#[allow(dead_code)] // Vendored Ratspeak vault surface; .rsi uses encrypt/decrypt helpers.
+#[allow(clippy::struct_field_names)] // Upstream VaultParams keeps m_cost/t_cost/p_cost names.
+#[path = "../../vendor/ratspeak_vault.rs"]
+mod ratspeak_vault;
 pub mod rf_profiles;
 mod rmap_discovery;
 mod rrc_codec;
@@ -25,6 +44,10 @@ mod types;
 mod via;
 
 #[cfg(feature = "rns-stack")]
+mod games_outbound_store;
+#[cfg(feature = "rns-stack")]
+mod games_session;
+#[cfg(feature = "rns-stack")]
 mod link_task;
 #[cfg(feature = "rns-stack")]
 mod live;
@@ -33,7 +56,13 @@ mod lxmf_delivery;
 #[cfg(feature = "rns-stack")]
 mod nomad_server;
 #[cfg(feature = "rns-stack")]
+mod propagation_announce;
+#[cfg(feature = "rns-stack")]
 mod propagation_bridge;
+#[cfg(feature = "rns-stack")]
+mod propagation_download;
+#[cfg(feature = "rns-stack")]
+mod propagation_serve;
 #[cfg(feature = "rns-stack")]
 mod rncp_transfer;
 #[cfg(feature = "rns-stack")]
@@ -42,23 +71,95 @@ mod rnsh_session;
 mod rrc_link;
 #[cfg(feature = "rns-stack")]
 mod rrc_session;
+#[cfg(feature = "rns-stack")]
+mod voice_memo;
+#[cfg(feature = "rns-stack")]
+mod voice_session;
 
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 pub use config::{ImportMode, ImportResult, StackSettings, UpdateInterfacePatch};
+use lxmf_inbound_log::{LxmfInboundBuffer, MAX_LXMF_INBOUND_LOG};
 use packet_log::{MAX_WIRE_PACKET_LOG, PacketLogBuffer, WirePacketRow};
+pub use path_medium::{PathMediumPreferenceSetting, PathMediumSetting};
 use persistence::PersistedState;
+pub use pn_hosting_policy::PnHostingPolicy;
+pub use propagation_mode::parse_propagation_mode;
 use tokio::sync::{Mutex, RwLock, broadcast};
 pub use types::{
-    AddInterfaceRequest, ContactRow, DiscoveredPropagationRow, InterfaceRow, LxmfReactionRequest,
-    LxmfSendRequest, NomadNodeRow, NomadServingStatus, PeerRow, RrcHubRow, StackIdentity,
+    AddInterfaceRequest, ContactRow, DiscoveredPropagationRow, InterfaceRow,
+    LxmfPaperCreateRequest, LxmfPaperIngestRequest, LxmfReactionRequest, LxmfSendRequest,
+    NomadNodeRow, NomadServingStatus, PeerRow, RrcHubRow, StackIdentity,
 };
 
 #[cfg(not(feature = "rns-stack"))]
 const NOMAD_REQUIRES_STACK: &str = "Nomad serving requires an rns-stack sidecar build";
 const NOMAD_DISPLAY_NAME_MAX_CHARS: usize = 128;
+
+/// Live view of the local propagation node for the `local-prop` list row.
+#[cfg(feature = "rns-stack")]
+struct LocalPropagationStats {
+    count: usize,
+    bytes: usize,
+    /// Router is serving the local PN (deferred until the messagestore finishes loading).
+    serving: bool,
+    /// Background messagestore load has not finished yet.
+    load_pending: bool,
+    hash: String,
+}
+
+/// Status label for the `local-prop` row.
+///
+/// `loading` distinguishes "enabled but the messagestore is still being read from disk"
+/// from a user-disabled node, so the renderer can say so instead of reporting a sync failure.
+#[cfg(any(feature = "rns-stack", test))]
+fn local_propagation_status(
+    serving: bool,
+    load_pending: bool,
+    persisted_enabled: bool,
+) -> &'static str {
+    if serving {
+        return "active";
+    }
+    if load_pending && persisted_enabled {
+        return "loading";
+    }
+    "idle"
+}
+
+/// Parse Columba register-known inputs and require dest == LXMF delivery hash of the key.
+#[cfg(feature = "rns-stack")]
+fn validated_known_identity_key(
+    destination_hash: &str,
+    public_key_hex: &str,
+) -> Result<(String, [u8; 64]), String> {
+    use rns_identity::destination::Destination;
+    use rns_identity::identity::Identity;
+
+    let dest = destination_hash.trim().to_lowercase();
+    if dest.len() != 32 || !dest.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err("invalid_destination_hash".into());
+    }
+    let key_hex = public_key_hex.trim().to_lowercase();
+    if key_hex.len() != 128 || !key_hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err("invalid_public_key".into());
+    }
+    let bytes = hex::decode(&key_hex).map_err(|_| "invalid_public_key".to_string())?;
+    let key: [u8; 64] = bytes
+        .try_into()
+        .map_err(|_| "invalid_public_key".to_string())?;
+    let identity = Identity::from_public_key(&key).map_err(|_| "invalid_public_key".to_string())?;
+    let expected = hex::encode(Destination::hash_from_name_and_identity(
+        identity_apply::LXMF_APP_NAME,
+        Some(&identity.hash),
+    ));
+    if expected != dest {
+        return Err("destination_mismatch".into());
+    }
+    Ok((dest, key))
+}
 
 /// Trim, reject control characters, and cap length for announce/UI display names.
 fn sanitize_nomad_display_name(name: &str) -> Result<String, String> {
@@ -78,12 +179,26 @@ pub struct StackHandle {
     inner: Arc<RwLock<PersistedState>>,
     event_tx: broadcast::Sender<String>,
     packet_log: Arc<PacketLogBuffer>,
+    /// Recent inbound LXMF payloads for WS lag / reconnect catch-up (not durable across restart).
+    inbound_lxmf: Arc<LxmfInboundBuffer>,
     /// When true, `list_contacts` must retry persisting contact name overlays after a prior save failure.
     contact_name_persist_dirty: std::sync::atomic::AtomicBool,
     /// Serializes create / switch / delete so on-disk slot state cannot interleave.
     identity_op_lock: Mutex<()>,
+    /// Serializes path-medium preference/pin persist → live-apply → rollback sequences.
+    path_medium_op_lock: Mutex<()>,
     #[cfg(feature = "rns-stack")]
-    live: Option<Arc<live::LiveBridge>>,
+    /// Set once after HTTP is already listening (TCP usable before BLE finishes).
+    live: std::sync::OnceLock<Arc<live::LiveBridge>>,
+    /// Serializes attach_live so concurrent callers cannot spawn duplicate live bridges.
+    #[cfg(feature = "rns-stack")]
+    attach_live_lock: Mutex<()>,
+    /// Opus/Ogg voice-memo encoder sessions (independent of live LXST calls).
+    #[cfg(feature = "rns-stack")]
+    voice_memo: Arc<voice_memo::VoiceMemoManager>,
+    /// Test-only: next preference/pin apply returns this error after persist (exercises rollback).
+    #[cfg(test)]
+    test_path_medium_apply_error: Mutex<Option<String>>,
 }
 
 impl StackHandle {
@@ -127,6 +242,28 @@ impl StackHandle {
             tracing::warn!("failed to repair RNode radio fields in config: {e}");
         }
 
+        match config::repair_flow_control_defaults_in_config(&config_dir) {
+            Ok(true) => {
+                tracing::info!("enabled flow_control default on RF interfaces missing the key");
+            }
+            Ok(false) => {}
+            Err(e) => {
+                tracing::warn!("failed to apply flow_control defaults in config: {e}");
+            }
+        }
+
+        match config::repair_ignore_config_warnings_in_config(&config_dir) {
+            Ok(true) => {
+                tracing::info!(
+                    "reconciled ignore_config_warnings for discoverable interfaces with non-AP/Gateway mode"
+                );
+            }
+            Ok(false) => {}
+            Err(e) => {
+                tracing::warn!("failed to reconcile ignore_config_warnings in config: {e}");
+            }
+        }
+
         let mut persisted = PersistedState::load(&config_dir, &storage_dir);
         persisted.ensure_defaults();
         if let Ok(ifaces) = config::interfaces_from_config_dir(&config_dir) {
@@ -158,49 +295,34 @@ impl StackHandle {
         }
 
         let inner = Arc::new(RwLock::new(persisted));
+        // Cold start: do not advertise RNS/LXMF ready from a prior session's persisted flags
+        // until attach_live finishes (HTTP listen-first path).
+        {
+            let mut guard = inner.write().await;
+            guard.rns_ready = false;
+            guard.lxmf_ready = false;
+        }
 
+        let inbound_lxmf = Arc::new(LxmfInboundBuffer::new(MAX_LXMF_INBOUND_LOG));
         #[cfg(feature = "rns-stack")]
         let packet_log = Arc::new(PacketLogBuffer::new(MAX_WIRE_PACKET_LOG));
-        #[cfg(feature = "rns-stack")]
-        let live = match live::LiveBridge::spawn(
-            config_dir.clone(),
-            storage_dir.clone(),
-            event_tx.clone(),
-            packet_log.clone(),
-            inner.clone(),
-        )
-        .await
-        {
-            Ok(bridge) => {
-                let bridge = Arc::new(bridge);
-                {
-                    let mut inner_guard = inner.write().await;
-                    if let Err(e) = identity_apply::reconcile_persisted_identity_from_file(
-                        &mut inner_guard,
-                        &config_dir,
-                        &storage_dir,
-                    ) {
-                        tracing::warn!("identity reconcile after live spawn failed: {e}");
-                    }
-                }
-                Some(bridge)
-            }
-            Err(e) => {
-                tracing::warn!("live RNS bridge unavailable, using local stack: {e}");
-                None
-            }
-        };
 
         #[cfg(feature = "rns-stack")]
         let handle = Self {
             config_dir,
             storage_dir,
             inner,
-            event_tx: event_tx.clone(),
+            event_tx,
             packet_log,
+            inbound_lxmf,
             contact_name_persist_dirty: std::sync::atomic::AtomicBool::new(false),
             identity_op_lock: Mutex::new(()),
-            live,
+            path_medium_op_lock: Mutex::new(()),
+            live: std::sync::OnceLock::new(),
+            attach_live_lock: Mutex::new(()),
+            voice_memo: Arc::new(voice_memo::VoiceMemoManager::new()),
+            #[cfg(test)]
+            test_path_medium_apply_error: Mutex::new(None),
         };
         #[cfg(not(feature = "rns-stack"))]
         let handle = Self {
@@ -209,27 +331,143 @@ impl StackHandle {
             inner,
             event_tx,
             packet_log: Arc::new(PacketLogBuffer::new(MAX_WIRE_PACKET_LOG)),
+            inbound_lxmf,
             contact_name_persist_dirty: std::sync::atomic::AtomicBool::new(false),
             identity_op_lock: Mutex::new(()),
+            path_medium_op_lock: Mutex::new(()),
+            #[cfg(test)]
+            test_path_medium_apply_error: Mutex::new(None),
         };
-        #[cfg(feature = "rns-stack")]
-        if let Some(live) = &handle.live {
-            live.register_nomad_announce_handler(
-                handle.inner.clone(),
-                handle.config_dir.clone(),
-                handle.storage_dir.clone(),
-            );
-            live.register_rrc_announce_handler(
-                handle.inner.clone(),
-                handle.config_dir.clone(),
-                handle.storage_dir.clone(),
-            );
-            live.register_propagation_announce_handler();
-            live.register_lxmf_identity_announce_handler();
-            live.register_rmap_discovery_watcher(event_tx.clone());
-        }
+        // Live RNS attach happens after HTTP listen (see main + attach_live) so TCP/LXMF/RRC
+        // clients can reach /api/v1/status while BLE RNode / large path tables finish loading.
         handle.emit_stats().await;
         handle
+    }
+
+    /// Finish live RNS/LXMF bring-up after the HTTP server is already accepting connections.
+    #[cfg(feature = "rns-stack")]
+    pub async fn attach_live(self: &Arc<Self>) {
+        let _attach_guard = self.attach_live_lock.lock().await;
+        if self.live.get().is_some() {
+            return;
+        }
+        let started = std::time::Instant::now();
+        match Box::pin(live::LiveBridge::spawn(
+            self.config_dir.clone(),
+            self.storage_dir.clone(),
+            self.event_tx.clone(),
+            self.packet_log.clone(),
+            self.inbound_lxmf.clone(),
+            self.inner.clone(),
+        ))
+        .await
+        {
+            Ok(bridge) => {
+                let bridge = Arc::new(bridge);
+                {
+                    let mut inner_guard = self.inner.write().await;
+                    if let Err(e) = identity_apply::reconcile_persisted_identity_from_file(
+                        &mut inner_guard,
+                        &self.config_dir,
+                        &self.storage_dir,
+                    ) {
+                        tracing::warn!("identity reconcile after live spawn failed: {e}");
+                    }
+                }
+                bridge.register_nomad_announce_handler(
+                    self.inner.clone(),
+                    self.config_dir.clone(),
+                    self.storage_dir.clone(),
+                );
+                bridge.register_rrc_announce_handler(
+                    self.inner.clone(),
+                    self.config_dir.clone(),
+                    self.storage_dir.clone(),
+                );
+                bridge.register_propagation_announce_handler();
+                bridge.register_lxmf_identity_announce_handler();
+                bridge.register_rmap_discovery_watcher(self.event_tx.clone());
+                if self.live.set(bridge).is_err() {
+                    tracing::warn!("live bridge already attached");
+                } else {
+                    // Restore local PN serving only after messagestore load so peers do not
+                    // sync against an empty store while the background scan runs.
+                    {
+                        let live = self.live.get().expect("live just set").clone();
+                        let inner = self.inner.clone();
+                        let local_prop_enabled = {
+                            let state = inner.read().await;
+                            state
+                                .propagation
+                                .iter()
+                                .find(|p| p.id == "local-prop")
+                                .map(|p| p.enabled)
+                                .unwrap_or(false)
+                        };
+                        if local_prop_enabled {
+                            tokio::spawn(async move {
+                                if let Err(e) = live.wait_propagation_messagestore_loaded().await {
+                                    tracing::warn!(
+                                        error = %e,
+                                        "skipping local-prop serve restore: messagestore load failed"
+                                    );
+                                    return;
+                                }
+                                let still_enabled = {
+                                    let state = inner.read().await;
+                                    state
+                                        .propagation
+                                        .iter()
+                                        .find(|p| p.id == "local-prop")
+                                        .map(|p| p.enabled)
+                                        .unwrap_or(false)
+                                };
+                                if still_enabled {
+                                    live.set_local_propagation_serving(true).await;
+                                }
+                            });
+                        }
+                    }
+                    // BLE Peer bring-up is slow (adapter/scan); keep it off the HTTP-ready path.
+                    #[cfg(feature = "rns-ble")]
+                    {
+                        let live = self.live.get().expect("live just set").clone();
+                        let config_dir = self.config_dir.clone();
+                        tokio::spawn(async move {
+                            match config::interfaces_from_config_dir(&config_dir) {
+                                Ok(ifaces) => {
+                                    if let Err(e) = live.sync_ble_peer_interfaces(&ifaces).await {
+                                        tracing::warn!(
+                                            error = %e,
+                                            "background BLE Peer sync failed"
+                                        );
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        error = %e,
+                                        "background BLE Peer sync: config read failed"
+                                    );
+                                }
+                            }
+                        });
+                    }
+                }
+                tracing::info!(
+                    elapsed_ms = started.elapsed().as_millis() as u64,
+                    "live RNS bridge attached (HTTP was already listening)"
+                );
+                self.emit_stats().await;
+            }
+            Err(e) => {
+                tracing::warn!("live RNS bridge unavailable, using local stack: {e}");
+            }
+        }
+    }
+
+    #[cfg(not(feature = "rns-stack"))]
+    pub async fn attach_live(self: &Arc<Self>) {
+        let _ = self;
     }
 
     #[allow(clippy::needless_pass_by_value)] // payload is moved into the broadcast frame
@@ -242,12 +480,38 @@ impl StackHandle {
         self.event_tx.subscribe()
     }
 
+    /// High-rate `voice.audio` PCM frames (dedicated `/ws/voice` bus, not shared `/ws`).
+    pub fn subscribe_voice_audio(&self) -> broadcast::Receiver<String> {
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            return live.subscribe_voice_audio();
+        }
+        // No live stack: closed channel so `/ws/voice` clients exit cleanly.
+        let (tx, rx) = broadcast::channel(1);
+        drop(tx);
+        rx
+    }
+
     pub fn list_packets(&self, limit: usize) -> Vec<WirePacketRow> {
         self.packet_log.snapshot(limit)
     }
 
     pub fn clear_packets(&self) {
         self.packet_log.clear();
+    }
+
+    /// Recent inbound LXMF payloads retained for catch-up after WS lag/reconnect.
+    pub fn list_recent_inbound_lxmf(
+        &self,
+        since_ts: Option<i64>,
+        since_seq: Option<u64>,
+        limit: usize,
+    ) -> Vec<serde_json::Value> {
+        self.inbound_lxmf.snapshot(since_ts, since_seq, limit)
+    }
+
+    pub fn inbound_lxmf_ring_len(&self) -> usize {
+        self.inbound_lxmf.len()
     }
 
     async fn sync_interfaces_from_config(&self) {
@@ -409,6 +673,60 @@ impl StackHandle {
         }
     }
 
+    /// Local identity public key as 128 lowercase hex when identity is configured.
+    ///
+    /// Matches [`Self::identity_status`]: prefer the on-disk identity when its hash
+    /// matches status (covers replace-before-live-restart), else the live bridge
+    /// only when its hash matches status.
+    pub async fn identity_public_key_hex(&self) -> Option<String> {
+        let status = self.inner.read().await.identity.clone();
+        if !status.configured {
+            return None;
+        }
+        #[cfg(feature = "rns-stack")]
+        {
+            if let Ok(id) = identity_apply::load_identity_from_file(&self.config_dir) {
+                let file_hash = hex::encode(id.hash);
+                if file_hash.eq_ignore_ascii_case(&status.identity_hash) {
+                    return Some(hex::encode(id.get_public_key()));
+                }
+            }
+            if let Some(live) = self.live.get() {
+                if live
+                    .identity_hash_hex()
+                    .eq_ignore_ascii_case(&status.identity_hash)
+                {
+                    return Some(live.identity_public_key_hex());
+                }
+            }
+            None
+        }
+        #[cfg(not(feature = "rns-stack"))]
+        {
+            None
+        }
+    }
+
+    /// Register a destination hash + 64-byte public key for Direct LXMF (Columba QR).
+    pub fn register_known_identity(
+        &self,
+        destination_hash: &str,
+        public_key_hex: &str,
+    ) -> Result<(), String> {
+        #[cfg(feature = "rns-stack")]
+        {
+            let (dest, key) = validated_known_identity_key(destination_hash, public_key_hex)?;
+            let live = self.require_live()?;
+            live.register_known_identity(&dest, key)?;
+            Ok(())
+        }
+        #[cfg(not(feature = "rns-stack"))]
+        {
+            let _ = (destination_hash, public_key_hex);
+            Err("identity operations require an rns-stack sidecar build".into())
+        }
+    }
+
     async fn ensure_identity_replace_allowed(&self, replace: bool) -> Result<(), String> {
         let configured = self.inner.read().await.identity.configured;
         if configured && !replace {
@@ -544,8 +862,49 @@ impl StackHandle {
         &self,
         passphrase: &str,
     ) -> Result<serde_json::Value, String> {
-        let inner = self.inner.read().await;
-        inner.export_identity_backup(passphrase)
+        identity_apply::identity_requires_rns_stack()?;
+        #[cfg(feature = "rns-stack")]
+        {
+            let snapshot = {
+                let inner = self.inner.read().await;
+                identity_backup::IdentityExportSnapshot::from_state(&inner)
+            };
+            let config_dir = self.config_dir.clone();
+            let pin = passphrase.to_string();
+            tokio::task::spawn_blocking(move || {
+                identity_backup::export_rsi_backup(&config_dir, &snapshot, &pin)
+            })
+            .await
+            .map_err(|e| format!("identity export task failed: {e}"))?
+        }
+        #[cfg(not(feature = "rns-stack"))]
+        {
+            let _ = passphrase;
+            Err("identity operations require an rns-stack sidecar build".into())
+        }
+    }
+
+    pub async fn identity_export_raw(&self, passphrase: &str) -> Result<serde_json::Value, String> {
+        identity_apply::identity_requires_rns_stack()?;
+        #[cfg(feature = "rns-stack")]
+        {
+            identity_backup::validate_backup_pin(passphrase)?;
+            let snapshot = {
+                let inner = self.inner.read().await;
+                identity_backup::IdentityExportSnapshot::from_state(&inner)
+            };
+            let config_dir = self.config_dir.clone();
+            tokio::task::spawn_blocking(move || {
+                identity_backup::export_raw_identity(&config_dir, &snapshot)
+            })
+            .await
+            .map_err(|e| format!("identity export task failed: {e}"))?
+        }
+        #[cfg(not(feature = "rns-stack"))]
+        {
+            let _ = passphrase;
+            Err("identity operations require an rns-stack sidecar build".into())
+        }
     }
 
     pub async fn identity_import_backup(
@@ -555,42 +914,37 @@ impl StackHandle {
         display_name: Option<String>,
         replace: bool,
     ) -> Result<StackIdentity, String> {
-        if self.inner.read().await.identity.configured && !replace {
-            return Err("identity_already_configured".into());
-        }
-
-        let format = backup.get("format").and_then(|v| v.as_str()).unwrap_or("");
-        if format != "mesh-client.identity.v1" && format != "ratspeak.identity.v2" {
-            return Err("unsupported backup format".into());
-        }
-        let backup_identity_hash = backup
-            .get("identity_hash")
-            .and_then(|v| v.as_str())
-            .ok_or("missing identity_hash")?;
-        let backup_lxmf_hash = backup
-            .get("lxmf_hash")
-            .and_then(|v| v.as_str())
-            .ok_or("missing lxmf_hash")?;
-
+        identity_apply::identity_requires_rns_stack()?;
+        // Fast path UX check; real gate is under the write lock after Argon2.
+        self.ensure_identity_replace_allowed(replace).await?;
         #[cfg(feature = "rns-stack")]
-        if identity_apply::backup_conflicts_with_file(
-            &self.config_dir,
-            backup_identity_hash,
-            backup_lxmf_hash,
-        )? {
-            return Err("backup_hash_mismatch_with_identity_file".into());
+        {
+            let pin = passphrase.to_string();
+            let parsed = tokio::task::spawn_blocking(move || {
+                identity_backup::parse_identity_backup(backup, &pin)
+            })
+            .await
+            .map_err(|e| format!("identity import task failed: {e}"))??;
+            let mut inner = self.inner.write().await;
+            if inner.identity.configured && !replace {
+                return Err("identity_already_configured".into());
+            }
+            let identity = identity_backup::apply_parsed_backup(
+                &mut inner,
+                &self.config_dir,
+                &self.storage_dir,
+                parsed,
+                display_name,
+            )?;
+            drop(inner);
+            self.maybe_emit_identity_restart();
+            Ok(identity)
         }
-
-        let mut inner = self.inner.write().await;
-        let mut identity = inner.import_identity_backup(backup, passphrase)?;
-        if let Some(name) = display_name {
-            identity.display_name = Some(name.clone());
-            inner.identity.display_name = Some(name);
+        #[cfg(not(feature = "rns-stack"))]
+        {
+            let _ = (backup, passphrase, display_name);
+            Err("identity operations require an rns-stack sidecar build".into())
         }
-        inner.save(&self.config_dir, &self.storage_dir)?;
-        drop(inner);
-        self.maybe_emit_identity_restart();
-        Ok(identity)
     }
 
     pub async fn set_display_name(&self, name: &str) -> Result<(), String> {
@@ -623,7 +977,7 @@ impl StackHandle {
         };
 
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             if let Ok(rows) = live.fetch_interfaces().await {
                 if !rows.is_empty() {
                     return rows;
@@ -644,7 +998,7 @@ impl StackHandle {
         self.sync_interfaces_from_config().await;
         self.emit_event("interface.state", serde_json::json!({ "action": "added" }));
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             let _ = live.apply_interfaces(self).await;
         }
         Ok(row)
@@ -662,13 +1016,58 @@ impl StackHandle {
             serde_json::json!({ "id": id, "action": "updated" }),
         );
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             let _ = live.apply_interfaces(self).await;
         }
         Ok(row)
     }
 
+    /// Configured interface name for `id`, resolved before a config mutation removes it.
+    async fn interface_name_for_id(&self, id: &str) -> Option<String> {
+        let inner = self.inner.read().await;
+        inner
+            .interfaces
+            .iter()
+            .find(|row| row.id.eq_ignore_ascii_case(id))
+            .map(|row| row.name.clone())
+    }
+
+    /// Drop peer routes and live transport hops learned on an interface that just went away.
+    async fn invalidate_routes_for_interface(&self, iface_name: &str) {
+        let cleared = {
+            let mut inner = self.inner.write().await;
+            let cleared = clear_peer_routes_for_interface(&mut inner.peers, iface_name);
+            if !cleared.is_empty() {
+                if let Err(e) = inner.save(&self.config_dir, &self.storage_dir) {
+                    tracing::warn!("failed to persist peers after interface route purge: {e}");
+                }
+            }
+            cleared
+        };
+        // A direct neighbour has hops with no via, so cleared route fields must drive this
+        // just as much as dropped next hops.
+        if cleared.is_empty() {
+            return;
+        }
+        tracing::info!(
+            iface = %iface_name,
+            vias = cleared.dropped_vias.len(),
+            peers = cleared.changed_peers,
+            "cleared peer routes learned on removed interface"
+        );
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            live.drop_routes_for_interface(iface_name, &cleared.dropped_vias)
+                .await;
+        }
+        self.emit_event(
+            "peers_updated",
+            serde_json::json!({ "routes_cleared_interface": iface_name }),
+        );
+    }
+
     pub async fn delete_interface(&self, id: &str) -> Result<(), String> {
+        let iface_name = self.interface_name_for_id(id).await;
         config::delete_interface_from_config(&self.config_dir, id)?;
         self.sync_interfaces_from_config().await;
         self.reconcile_primary_after_interface_change().await;
@@ -677,13 +1076,21 @@ impl StackHandle {
             serde_json::json!({ "id": id, "action": "deleted" }),
         );
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             let _ = live.apply_interfaces(self).await;
+        }
+        if let Some(name) = iface_name {
+            self.invalidate_routes_for_interface(&name).await;
         }
         Ok(())
     }
 
     pub async fn set_interface_enabled(&self, id: &str, enabled: bool) -> Result<(), String> {
+        let iface_name = if enabled {
+            None
+        } else {
+            self.interface_name_for_id(id).await
+        };
         config::set_interface_enabled_in_config(&self.config_dir, id, enabled)?;
         self.sync_interfaces_from_config().await;
         self.reconcile_primary_after_interface_change().await;
@@ -692,8 +1099,11 @@ impl StackHandle {
             serde_json::json!({ "id": id, "enabled": enabled }),
         );
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             let _ = live.apply_interfaces(self).await;
+        }
+        if let Some(name) = iface_name {
+            self.invalidate_routes_for_interface(&name).await;
         }
         Ok(())
     }
@@ -702,7 +1112,7 @@ impl StackHandle {
         config::write_config(&self.config_dir, content)?;
         self.sync_interfaces_from_config().await;
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             let _ = live.apply_interfaces(self).await;
         }
         Ok(())
@@ -716,13 +1126,13 @@ impl StackHandle {
         let result = config::import_config(&self.config_dir, content, mode)?;
         self.sync_interfaces_from_config().await;
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             let _ = live.apply_interfaces(self).await;
         }
         Ok(result)
     }
 
-    #[allow(clippy::unused_async)] // async matches StackHandle settings API awaited by HTTP handlers
+    #[allow(clippy::unused_async, clippy::unused_async_trait_impl)] // async matches StackHandle settings API awaited by HTTP handlers
     pub async fn set_stack_settings(&self, settings: &StackSettings) -> Result<(), String> {
         config::set_stack_settings(&self.config_dir, settings)
     }
@@ -731,7 +1141,7 @@ impl StackHandle {
         #[cfg(feature = "rns-stack")]
         let announce_labels = self
             .live
-            .as_ref()
+            .get()
             .map(|live| live.display_name_snapshot())
             .unwrap_or_default();
         #[cfg(not(feature = "rns-stack"))]
@@ -792,7 +1202,7 @@ impl StackHandle {
 
     pub async fn list_peers_with_refresh(&self, force_refresh: bool) -> Vec<PeerRow> {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             let announce_labels = live.display_name_snapshot();
             let fetched = live.fetch_peers(force_refresh).await;
             let mut inner = self.inner.write().await;
@@ -816,21 +1226,42 @@ impl StackHandle {
     }
 
     pub async fn request_peer_path(&self, hash: &str) -> Result<(), String> {
+        self.request_peer_path_with_opts(hash, false).await
+    }
+
+    pub async fn request_peer_path_with_opts(&self, hash: &str, force: bool) -> Result<(), String> {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
-            let res = live.request_path(hash).await;
+        if let Some(live) = self.live.get() {
+            let res = if force {
+                live.request_path_force(hash).await
+            } else {
+                live.request_path(hash).await
+            };
             if res.is_ok() {
                 self.emit_event("peers_updated", serde_json::json!({ "hash": hash }));
             }
             return res;
         }
-        let _ = hash;
+        let _ = (hash, force);
         Ok(())
+    }
+
+    /// Clear the whole RNS path table; returns the number of routes dropped.
+    pub async fn drop_path_table(&self) -> Result<i64, String> {
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            let res = live.drop_path_table().await;
+            if res.is_ok() {
+                self.emit_event("peers_updated", serde_json::json!({}));
+            }
+            return res;
+        }
+        Ok(0)
     }
 
     pub async fn probe_peer(&self, hash: &str) -> Result<serde_json::Value, String> {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             let res = live.probe_peer(hash).await;
             if res.is_ok() {
                 self.emit_event("peers_updated", serde_json::json!({ "hash": hash }));
@@ -844,15 +1275,172 @@ impl StackHandle {
         res
     }
 
+    /// Persisted global path-medium preference (default `lowest`).
+    pub async fn path_medium_preference(&self) -> PathMediumPreferenceSetting {
+        self.inner.read().await.path_medium_preference
+    }
+
+    /// Persist the global preference, then hot-apply it to a live transport.
+    ///
+    /// Failure point: durable save — the in-memory value is rolled back so the
+    /// stored and applied preference cannot diverge. Failure point: live apply —
+    /// persisted preference is rolled back to the prior snapshot so disk/UI cannot
+    /// drift ahead of the transport. When the stack is not live the value is
+    /// stored only and applied on the next start.
+    pub async fn set_path_medium_preference(
+        &self,
+        preference: PathMediumPreferenceSetting,
+    ) -> Result<(), String> {
+        let _op = self.path_medium_op_lock.lock().await;
+        let snapshot = {
+            let mut inner = self.inner.write().await;
+            let snapshot = inner.path_medium_preference;
+            inner.set_path_medium_preference(preference);
+            if let Err(e) = inner.save(&self.config_dir, &self.storage_dir) {
+                inner.set_path_medium_preference(snapshot);
+                return Err(e);
+            }
+            snapshot
+        };
+        #[cfg(test)]
+        if let Some(err) = self.take_test_path_medium_apply_error().await {
+            self.rollback_path_medium_preference(snapshot).await;
+            return Err(err);
+        }
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            if let Err(e) = live.apply_path_medium_preference(preference).await {
+                self.rollback_path_medium_preference(snapshot).await;
+                return Err(e);
+            }
+        }
+        self.emit_event(
+            "path_medium_preference",
+            serde_json::json!({ "preference": preference.as_str() }),
+        );
+        Ok(())
+    }
+
+    /// All persisted medium pins as `{ "<32 hex dest>": "rf" | "network" }`.
+    pub async fn peer_medium_pins_json(&self) -> serde_json::Value {
+        self.inner.read().await.peer_medium_pins.to_json()
+    }
+
+    /// Persist a destination medium pin (`None` clears it), then hot-apply it.
+    ///
+    /// Failure point: live apply — pin map is rolled back to the pre-save snapshot
+    /// so disk cannot drift ahead of the transport.
+    pub async fn set_peer_medium_pin(
+        &self,
+        hash: &str,
+        pin: Option<PathMediumSetting>,
+    ) -> Result<String, String> {
+        let _op = self.path_medium_op_lock.lock().await;
+        let (canonical, pin_snapshot) = {
+            let mut inner = self.inner.write().await;
+            let pin_snapshot = inner.peer_medium_pins.clone();
+            let canonical = inner.set_peer_medium_pin(hash, pin)?;
+            if let Err(e) = inner.save(&self.config_dir, &self.storage_dir) {
+                inner.peer_medium_pins = pin_snapshot;
+                return Err(e);
+            }
+            (canonical, pin_snapshot)
+        };
+        #[cfg(test)]
+        if let Some(err) = self.take_test_path_medium_apply_error().await {
+            self.rollback_peer_medium_pins(pin_snapshot).await;
+            return Err(err);
+        }
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            if let Err(e) = live.apply_peer_medium_pin(&canonical, pin).await {
+                self.rollback_peer_medium_pins(pin_snapshot).await;
+                return Err(e);
+            }
+        }
+        self.emit_event("peers_updated", serde_json::json!({ "hash": canonical }));
+        Ok(canonical)
+    }
+
+    async fn rollback_path_medium_preference(&self, snapshot: PathMediumPreferenceSetting) {
+        let mut inner = self.inner.write().await;
+        inner.set_path_medium_preference(snapshot);
+        if let Err(save_err) = inner.save(&self.config_dir, &self.storage_dir) {
+            tracing::warn!("path medium preference rollback persist failed: {save_err}");
+        }
+    }
+
+    async fn rollback_peer_medium_pins(&self, snapshot: path_medium::PeerMediumPins) {
+        let mut inner = self.inner.write().await;
+        inner.peer_medium_pins = snapshot;
+        if let Err(save_err) = inner.save(&self.config_dir, &self.storage_dir) {
+            tracing::warn!("peer medium pin rollback persist failed: {save_err}");
+        }
+    }
+
+    #[cfg(test)]
+    async fn take_test_path_medium_apply_error(&self) -> Option<String> {
+        self.test_path_medium_apply_error.lock().await.take()
+    }
+
+    #[cfg(test)]
+    async fn force_next_path_medium_apply_error(&self, err: impl Into<String>) {
+        *self.test_path_medium_apply_error.lock().await = Some(err.into());
+    }
+
+    /// Ranked transport path slots for one destination plus the stored preference / pin.
+    pub async fn peer_path_slots(&self, hash: &str) -> Result<serde_json::Value, String> {
+        let canonical = canonical_peer_hash(hash)?;
+        let (preference, pin) = {
+            let inner = self.inner.read().await;
+            (
+                inner.path_medium_preference,
+                inner.peer_medium_pins.get(&canonical),
+            )
+        };
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            let (paths, effective_preference) = live.path_slots(&canonical).await?;
+            return Ok(peer_path_slots_json(
+                &canonical,
+                &PeerPathSlotsView {
+                    preference,
+                    pin,
+                    effective_preference: Some(effective_preference),
+                    paths,
+                    live: true,
+                },
+            ));
+        }
+        // Stack not live: report the stored preference / pin with no live slots.
+        Ok(peer_path_slots_json(
+            &canonical,
+            &PeerPathSlotsView {
+                preference,
+                pin,
+                effective_preference: None,
+                paths: Vec::new(),
+                live: false,
+            },
+        ))
+    }
+
     pub async fn list_propagation(&self) -> serde_json::Value {
         let inner = self.inner.read().await;
         let preferred_id = inner.preferred_propagation_id.clone();
         let auto_sync_interval_sec = inner.auto_sync_interval_sec;
+        let propagation_mode = inner.propagation_mode;
+        let pn_hosting_policy = inner.pn_hosting_policy.clone();
         #[cfg(feature = "rns-stack")]
-        let local_stats = if let Some(live) = &self.live {
+        let local_stats = if let Some(live) = self.live.get() {
             let (count, bytes) = live.propagation_local_stats();
-            let serving = live.propagation_is_local_serving();
-            Some((count, bytes, serving, live.propagation_local_hash()))
+            Some(LocalPropagationStats {
+                count,
+                bytes,
+                serving: live.propagation_is_local_serving(),
+                load_pending: live.propagation_messagestore_load_pending(),
+                hash: live.propagation_local_hash(),
+            })
         } else {
             None
         };
@@ -861,39 +1449,66 @@ impl StackHandle {
             .iter()
             .map(|p| {
                 let preferred = preferred_id.as_deref() == Some(p.id.as_str());
+                let mut hops = p.hops;
+                let mut path_interface: Option<String> = None;
+                #[cfg(feature = "rns-stack")]
+                if p.id != "local-prop" {
+                    if let Some(live) = self.live.get() {
+                        if let Some(dest) = p.destination_hash.as_deref() {
+                            let (live_hops, live_iface) =
+                                live.live_path_fields_for_destination(dest);
+                            if hops.is_none() {
+                                hops = live_hops;
+                            }
+                            path_interface = live_iface;
+                        }
+                    }
+                }
                 let mut row = serde_json::json!({
                     "id": p.id,
                     "name": p.name,
-                    "hops": p.hops,
+                    "hops": hops,
                     "enabled": p.enabled,
                     "status": p.status,
                     "preferred": preferred,
                     "destination_hash": p.destination_hash,
                 });
+                if let Some(iface) = path_interface {
+                    if let Some(obj) = row.as_object_mut() {
+                        obj.insert("interface".into(), serde_json::Value::String(iface));
+                    }
+                }
                 #[cfg(feature = "rns-stack")]
                 if p.id == "local-prop" {
-                    if let Some((count, bytes, serving, hash)) = &local_stats {
+                    if let Some(stats) = &local_stats {
                         if let Some(obj) = row.as_object_mut() {
                             obj.insert(
                                 "message_count".into(),
-                                serde_json::Value::Number((*count).into()),
+                                serde_json::Value::Number(stats.count.into()),
                             );
                             obj.insert(
                                 "storage_bytes".into(),
-                                serde_json::Value::Number((*bytes).into()),
+                                serde_json::Value::Number(stats.bytes.into()),
                             );
-                            obj.insert("enabled".into(), serde_json::Value::Bool(*serving));
+                            // Keep the user's Host toggle (persisted). Serving is
+                            // reflected in `status` (`active` / `loading` / `idle`) —
+                            // overwriting enabled with serving hid local-prop from
+                            // Auto settle whenever the node was not yet announcing.
+                            obj.insert("enabled".into(), serde_json::Value::Bool(p.enabled));
                             obj.insert(
                                 "status".into(),
-                                if *serving {
-                                    serde_json::Value::String("active".into())
-                                } else {
-                                    serde_json::Value::String("idle".into())
-                                },
+                                serde_json::Value::String(
+                                    local_propagation_status(
+                                        stats.serving,
+                                        stats.load_pending,
+                                        p.enabled,
+                                    )
+                                    .into(),
+                                ),
                             );
                             obj.insert(
                                 "destination_hash".into(),
-                                serde_json::Value::String(hash.clone()),
+                                serde_json::Value::String(stats.hash.clone()),
                             );
                         }
                     }
@@ -901,23 +1516,59 @@ impl StackHandle {
                 row
             })
             .collect();
+        let auto_blacklist = inner.propagation_auto_blacklist.clone();
         serde_json::json!({
             "propagation": propagation,
             "preferred_id": preferred_id,
             "auto_sync_interval_sec": auto_sync_interval_sec,
+            "propagation_mode": propagation_mode.as_str(),
+            "propagation_auto_blacklist": auto_blacklist,
+            "pn_hosting_policy": pn_hosting_policy,
         })
+    }
+
+    pub async fn add_propagation_auto_blacklist(
+        &self,
+        destination_hash: &str,
+    ) -> Result<(), String> {
+        {
+            let mut inner = self.inner.write().await;
+            inner.add_propagation_auto_blacklist(destination_hash)?;
+            inner.save(&self.config_dir, &self.storage_dir)?;
+        }
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            live.refresh_pn_cascade_candidates().await;
+        }
+        Ok(())
+    }
+
+    pub async fn remove_propagation_auto_blacklist(
+        &self,
+        destination_hash: &str,
+    ) -> Result<(), String> {
+        {
+            let mut inner = self.inner.write().await;
+            inner.remove_propagation_auto_blacklist(destination_hash)?;
+            inner.save(&self.config_dir, &self.storage_dir)?;
+        }
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            live.refresh_pn_cascade_candidates().await;
+        }
+        Ok(())
     }
 
     pub fn list_discovered_propagation(&self) -> Vec<DiscoveredPropagationRow> {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             return live.list_discovered_propagation();
         }
         Vec::new()
     }
 
     pub async fn set_preferred_propagation(&self, id: &str) -> Result<(), String> {
-        let prop_hash = {
+        let (prop_hash, mode) = {
             let mut inner = self.inner.write().await;
             inner.set_preferred_propagation(id)?;
             let hash = inner
@@ -925,14 +1576,67 @@ impl StackHandle {
                 .iter()
                 .find(|p| p.id == id)
                 .and_then(|p| p.destination_hash.clone());
+            let mode = inner.propagation_mode;
             inner.save(&self.config_dir, &self.storage_dir)?;
+            (hash, mode)
+        };
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            // Mode Off keeps Preferred on disk but never arms it for outbound.
+            let armed = if mode.is_off() {
+                None
+            } else {
+                prop_hash.as_deref()
+            };
+            live.set_outbound_propagation_node(armed).await;
+            live.refresh_pn_cascade_candidates().await;
+            if prop_hash.is_none() {
+                tracing::warn!(
+                    target: "lxmf-outbound",
+                    preferred_id = %id,
+                    "set_preferred_propagation: preferred row has no destination_hash"
+                );
+            }
+        }
+        #[cfg(not(feature = "rns-stack"))]
+        let _ = mode;
+        Ok(())
+    }
+
+    /// Apply the renderer propagation mode. `Off` disarms the outbound PN and empties the
+    /// Direct→PN cascade so nothing is deposited on any propagation node.
+    pub async fn set_propagation_mode(&self, mode: &str) -> Result<(), String> {
+        let mode = parse_propagation_mode(mode)?;
+        let prop_hash = {
+            let mut inner = self.inner.write().await;
+            // Snapshot for rollback if durable save fails after in-memory mutate.
+            let snapshot = inner.propagation_mode;
+            inner.set_propagation_mode(mode);
+            let hash = inner.preferred_propagation_id.as_ref().and_then(|id| {
+                inner
+                    .propagation
+                    .iter()
+                    .find(|p| p.id == *id)
+                    .and_then(|p| p.destination_hash.clone())
+            });
+            if let Err(e) = inner.save(&self.config_dir, &self.storage_dir) {
+                inner.set_propagation_mode(snapshot);
+                return Err(e);
+            }
             hash
         };
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
-            live.set_outbound_propagation_node(prop_hash.as_deref())
-                .await;
+        if let Some(live) = self.live.get() {
+            let armed = if mode.is_off() {
+                None
+            } else {
+                prop_hash.as_deref()
+            };
+            live.set_outbound_propagation_node(armed).await;
+            live.refresh_pn_cascade_candidates().await;
         }
+        #[cfg(not(feature = "rns-stack"))]
+        let _ = prop_hash;
         Ok(())
     }
 
@@ -940,6 +1644,26 @@ impl StackHandle {
         let mut inner = self.inner.write().await;
         inner.set_auto_sync_interval_sec(sec);
         inner.save(&self.config_dir, &self.storage_dir)?;
+        Ok(())
+    }
+
+    pub async fn set_pn_hosting_policy(&self, policy: PnHostingPolicy) -> Result<(), String> {
+        let policy = {
+            let mut inner = self.inner.write().await;
+            // Snapshot for rollback if durable save fails after in-memory mutate.
+            let snapshot = inner.pn_hosting_policy.clone();
+            inner.set_pn_hosting_policy(policy)?;
+            let policy = inner.pn_hosting_policy.clone();
+            if let Err(e) = inner.save(&self.config_dir, &self.storage_dir) {
+                inner.pn_hosting_policy = snapshot;
+                return Err(e);
+            }
+            policy
+        };
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            live.apply_pn_hosting_policy(&policy).await?;
+        }
         Ok(())
     }
 
@@ -962,7 +1686,7 @@ impl StackHandle {
             #[cfg(feature = "rns-stack")]
             {
                 self.live
-                    .as_ref()
+                    .get()
                     .map(|live| live.propagation_local_hash())
                     .unwrap_or_default()
             }
@@ -974,8 +1698,17 @@ impl StackHandle {
         let sync_self = is_local
             || prop_hash.eq_ignore_ascii_case(&lxmf)
             || (!local_prop_hash.is_empty() && prop_hash.eq_ignore_ascii_case(&local_prop_hash));
-        // Local inbox lives in this process — settle without a self LinkRequest.
+        // Local inbox lives in this process — settle without a self LinkRequest,
+        // but still drain our own mail out of the local PN store into Chat.
         if is_local {
+            #[cfg(feature = "rns-stack")]
+            {
+                let Some(live) = self.live.get() else {
+                    // Match remotes: Auto cascade soft-defers and retries when attach lags.
+                    return Err("PROPAGATION_STACK_NOT_LIVE".into());
+                };
+                live.drain_local_propagation_inbox().await;
+            }
             self.emit_event(
                 "propagation_sync",
                 serde_json::json!({
@@ -991,20 +1724,68 @@ impl StackHandle {
             return Err("LOCAL_PROPAGATION_SYNC_UNSUPPORTED".into());
         }
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
-            live.start_propagation_sync(&prop_hash).await?;
+        {
+            if let Some(live) = self.live.get() {
+                live.clone().start_propagation_sync(&prop_hash).await?;
+                return Ok(());
+            }
+            // Never fall through to the persistence stub: it marks sync active at
+            // progress 0 with no emitter, so the renderer stall-watchdogs for 45s.
+            // Match start_propagation_sync_by_hash — cascade can defer/retry.
+            Err("PROPAGATION_STACK_NOT_LIVE".into())
+        }
+        #[cfg(not(feature = "rns-stack"))]
+        {
+            let mut inner = self.inner.write().await;
+            inner.start_propagation_sync(propagation_id)?;
+            inner.save(&self.config_dir, &self.storage_dir)?;
+            self.emit_event("propagation_sync", inner.propagation_sync.clone());
+            Ok(())
+        }
+    }
+
+    /// One-time remote sync by destination hash. Does not add a configured row or change Preferred.
+    pub async fn start_propagation_sync_by_hash(
+        &self,
+        destination_hash: &str,
+    ) -> Result<(), String> {
+        let prop_hash = destination_hash.trim().to_lowercase();
+        if prop_hash.len() != 32 || !prop_hash.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err("destination_hash must be 32 hex characters".into());
+        }
+        let lxmf = {
+            let inner = self.inner.read().await;
+            inner.identity.lxmf_hash.clone()
+        };
+        let local_prop_hash = {
+            #[cfg(feature = "rns-stack")]
+            {
+                self.live
+                    .get()
+                    .map(|live| live.propagation_local_hash())
+                    .unwrap_or_default()
+            }
+            #[cfg(not(feature = "rns-stack"))]
+            {
+                String::new()
+            }
+        };
+        if prop_hash.eq_ignore_ascii_case(&lxmf)
+            || (!local_prop_hash.is_empty() && prop_hash.eq_ignore_ascii_case(&local_prop_hash))
+        {
+            return Err("LOCAL_PROPAGATION_SYNC_UNSUPPORTED".into());
+        }
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            live.clone().start_propagation_sync(&prop_hash).await?;
             return Ok(());
         }
-        let mut inner = self.inner.write().await;
-        inner.start_propagation_sync(propagation_id)?;
-        inner.save(&self.config_dir, &self.storage_dir)?;
-        self.emit_event("propagation_sync", inner.propagation_sync.clone());
-        Ok(())
+        Err("PROPAGATION_STACK_NOT_LIVE".into())
     }
 
     pub async fn cancel_propagation_sync(&self) -> Result<(), String> {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             live.cancel_propagation_sync().await;
             return Ok(());
         }
@@ -1018,13 +1799,19 @@ impl StackHandle {
     pub async fn set_propagation_enabled(&self, id: &str, enabled: bool) -> Result<(), String> {
         if id == "local-prop" {
             #[cfg(feature = "rns-stack")]
-            if let Some(live) = &self.live {
+            if let Some(live) = self.live.get() {
                 live.set_local_propagation_serving(enabled).await;
             }
         }
-        let mut inner = self.inner.write().await;
-        inner.set_propagation_enabled(id, enabled)?;
-        inner.save(&self.config_dir, &self.storage_dir)?;
+        {
+            let mut inner = self.inner.write().await;
+            inner.set_propagation_enabled(id, enabled)?;
+            inner.save(&self.config_dir, &self.storage_dir)?;
+        }
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            live.refresh_pn_cascade_candidates().await;
+        }
         Ok(())
     }
 
@@ -1032,12 +1819,13 @@ impl StackHandle {
         &self,
         destination_hash: &str,
         name: Option<String>,
+        skip_probe: bool,
     ) -> Result<serde_json::Value, String> {
         let hash = destination_hash.trim().to_lowercase();
         // Prefer live known key / discovered announce metadata before persist.
         let (pub_hex, id_hex) = {
             #[cfg(feature = "rns-stack")]
-            if let Some(live) = &self.live {
+            if let Some(live) = self.live.get() {
                 let discovered = live
                     .list_discovered_propagation()
                     .into_iter()
@@ -1057,9 +1845,16 @@ impl StackHandle {
             }
             #[cfg(not(feature = "rns-stack"))]
             {
+                let _ = skip_probe;
                 (None, None)
             }
         };
+        #[cfg(feature = "rns-stack")]
+        if !skip_probe {
+            if let Some(live) = self.live.get() {
+                live.probe_propagation_offer(&hash).await?;
+            }
+        }
         let mut inner = self.inner.write().await;
         let mut row = inner.add_propagation_node(destination_hash, name)?;
         if pub_hex.is_some() || id_hex.is_some() {
@@ -1074,6 +1869,11 @@ impl StackHandle {
             }
         }
         inner.save(&self.config_dir, &self.storage_dir)?;
+        drop(inner);
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            live.refresh_pn_cascade_candidates().await;
+        }
         Ok(serde_json::json!({ "ok": true, "node": row }))
     }
 
@@ -1081,14 +1881,15 @@ impl StackHandle {
         // Live sync tracks progress in PropagationBridge, not persisted flags — always
         // cancel before mutating so RF/`/offer` work cannot outlive a deleted node.
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             live.cancel_propagation_sync().await;
+            // Quiet supersede — renderer must not map this to "node unreachable".
             self.emit_event(
                 "propagation_sync",
                 serde_json::json!({
                     "active": false,
                     "progress": 0.0,
-                    "message": "propagation sync cancelled",
+                    "message": "PROPAGATION_SYNC_SUPERSEDED",
                 }),
             );
         }
@@ -1110,9 +1911,13 @@ impl StackHandle {
         };
         if cleared_preferred {
             #[cfg(feature = "rns-stack")]
-            if let Some(live) = &self.live {
+            if let Some(live) = self.live.get() {
                 live.set_outbound_propagation_node(None).await;
             }
+        }
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            live.refresh_pn_cascade_candidates().await;
         }
         Ok(())
     }
@@ -1148,7 +1953,7 @@ impl StackHandle {
 
     pub async fn list_rmap_discovered(&self) -> Vec<rmap_discovery::RmapDiscoveredWireRow> {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             return live.fetch_rmap_discovered().await;
         }
         #[cfg(not(feature = "rns-stack"))]
@@ -1166,7 +1971,7 @@ impl StackHandle {
         let mut name_by_hash =
             topology::build_topology_name_map(&inner.peers, &inner.contacts, &inner.nomad_nodes);
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             topology::extend_name_map_with_announce_labels(
                 &mut name_by_hash,
                 &live.display_name_snapshot(),
@@ -1193,7 +1998,7 @@ impl StackHandle {
     /// Send an LXMF delivery announce immediately (live stack only).
     pub async fn announce_now(&self) -> Result<(), String> {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             return live.announce_lxmf_now().await;
         }
         #[cfg(feature = "rns-stack")]
@@ -1207,7 +2012,22 @@ impl StackHandle {
     }
 
     pub async fn list_nomad_nodes(&self) -> Vec<NomadNodeRow> {
-        self.inner.read().await.nomad_nodes.clone()
+        let mut nodes = self.inner.read().await.nomad_nodes.clone();
+        // Own Nomad announces often sit in the path table as multi-hop echoes.
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            let our_id = live.identity_hash_hex();
+            for node in &mut nodes {
+                if node
+                    .identity_hash
+                    .as_ref()
+                    .is_some_and(|id| id.eq_ignore_ascii_case(&our_id))
+                {
+                    node.hops = Some(0);
+                }
+            }
+        }
+        nodes
     }
 
     pub async fn set_nomad_favorite(&self, hash: &str, favorited: bool) -> Result<(), String> {
@@ -1220,13 +2040,13 @@ impl StackHandle {
     #[cfg(feature = "rns-stack")]
     fn require_live(&self) -> Result<&Arc<live::LiveBridge>, String> {
         self.live
-            .as_ref()
+            .get()
             .ok_or_else(|| "Nomad serving requires a live RNS stack".into())
     }
 
     pub async fn nomad_serving_status(&self) -> NomadServingStatus {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             return live.nomad_serving_status().await;
         }
         let inner = self.inner.read().await;
@@ -1613,7 +2433,7 @@ impl StackHandle {
             let _ = inner.save(&self.config_dir, &self.storage_dir);
         }
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             return live.rrc_connect(bytes, clean, hops, nick).await;
         }
         let _ = (bytes, nick, hops);
@@ -1625,7 +2445,7 @@ impl StackHandle {
 
     pub async fn rrc_disconnect(&self, dest_hash_hex: Option<&str>) -> serde_json::Value {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             return live.rrc_disconnect(dest_hash_hex).await;
         }
         let _ = dest_hash_hex;
@@ -1634,7 +2454,7 @@ impl StackHandle {
 
     pub async fn rrc_status(&self) -> serde_json::Value {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             return live.rrc_status().await;
         }
         serde_json::json!({
@@ -1650,7 +2470,7 @@ impl StackHandle {
         key: Option<&str>,
     ) -> serde_json::Value {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             return live.rrc_join(hub_dest_hash, room, key).await;
         }
         let _ = (hub_dest_hash, room, key);
@@ -1659,7 +2479,7 @@ impl StackHandle {
 
     pub async fn rrc_part(&self, hub_dest_hash: &str, room: &str) -> serde_json::Value {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             return live.rrc_part(hub_dest_hash, room).await;
         }
         let _ = (hub_dest_hash, room);
@@ -1675,7 +2495,7 @@ impl StackHandle {
         dst_hash: Option<&str>,
     ) -> serde_json::Value {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             return live
                 .rrc_send(hub_dest_hash, room, body, kind.unwrap_or("msg"), dst_hash)
                 .await;
@@ -1690,7 +2510,7 @@ impl StackHandle {
         nickname: &str,
     ) -> serde_json::Value {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             return live.rrc_set_nick(hub_dest_hash, nickname).await;
         }
         let _ = (hub_dest_hash, nickname);
@@ -1699,7 +2519,7 @@ impl StackHandle {
 
     pub async fn rrc_rooms(&self, hub_dest_hash: Option<&str>) -> serde_json::Value {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             return live.rrc_rooms(hub_dest_hash).await;
         }
         let _ = hub_dest_hash;
@@ -1708,7 +2528,7 @@ impl StackHandle {
 
     pub async fn rnsh_connect(&self, destination_hash: &str) -> serde_json::Value {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             return live.rnsh_connect(destination_hash).await;
         }
         let _ = destination_hash;
@@ -1717,7 +2537,7 @@ impl StackHandle {
 
     pub async fn rnsh_input(&self, session_id: &str, data: Vec<u8>) -> serde_json::Value {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             return live.rnsh_input(session_id, data).await;
         }
         let _ = (session_id, data);
@@ -1731,7 +2551,7 @@ impl StackHandle {
         cols: Option<u32>,
     ) -> serde_json::Value {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             return live.rnsh_resize(session_id, rows, cols).await;
         }
         let _ = (session_id, rows, cols);
@@ -1740,7 +2560,7 @@ impl StackHandle {
 
     pub async fn rnsh_disconnect(&self, session_id: &str) -> serde_json::Value {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             return live.rnsh_disconnect(session_id).await;
         }
         let _ = session_id;
@@ -1749,7 +2569,7 @@ impl StackHandle {
 
     pub async fn rnsh_status(&self) -> serde_json::Value {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             return live.rnsh_status().await;
         }
         serde_json::json!({ "sessions": [] })
@@ -1757,7 +2577,7 @@ impl StackHandle {
 
     pub async fn rncp_send(&self, destination_hash: &str, path: &str) -> serde_json::Value {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             return live.rncp_send(destination_hash, path).await;
         }
         let _ = (destination_hash, path);
@@ -1771,7 +2591,7 @@ impl StackHandle {
         save_path: Option<String>,
     ) -> serde_json::Value {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             let save_dir = save_path
                 .map(PathBuf::from)
                 .unwrap_or_else(|| self.storage_dir.join("rncp_fetched"));
@@ -1785,7 +2605,7 @@ impl StackHandle {
 
     pub async fn rncp_cancel(&self, transfer_id: &str) -> serde_json::Value {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             return live.rncp_cancel(transfer_id).await;
         }
         let _ = transfer_id;
@@ -1794,7 +2614,7 @@ impl StackHandle {
 
     pub async fn rncp_accept(&self, transfer_id: &str) -> serde_json::Value {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             return live.rncp_accept(transfer_id).await;
         }
         let _ = transfer_id;
@@ -1803,7 +2623,7 @@ impl StackHandle {
 
     pub async fn rncp_reject(&self, transfer_id: &str) -> serde_json::Value {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             return live.rncp_reject(transfer_id).await;
         }
         let _ = transfer_id;
@@ -1812,10 +2632,19 @@ impl StackHandle {
 
     pub async fn rncp_status(&self) -> serde_json::Value {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             return live.rncp_status().await;
         }
         serde_json::json!({ "transfers": [], "pending_offers": [] })
+    }
+
+    /// Force one `rncp.receive` announce while the inbound listener is enabled.
+    pub async fn rncp_announce_now(&self) -> serde_json::Value {
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            return live.rncp_announce_now().await;
+        }
+        serde_json::json!({ "ok": false, "error": "rncp requires live rns-stack sidecar" })
     }
 
     /// `enabled: false` tears down the listener and sets policy to `off`.
@@ -1835,7 +2664,7 @@ impl StackHandle {
         blocked: Vec<String>,
     ) -> serde_json::Value {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             if !enabled {
                 live.rncp_stop_listener().await;
                 let _ = live
@@ -1850,7 +2679,9 @@ impl StackHandle {
                         tracing::warn!("rncp listener persist failed: {e}");
                     }
                 }
-                return live.rncp_listener_status().await;
+                // Stamp explicit `ok: true` success marker (same RemoteOkResponse
+                // contract as enable) onto the post-disable listener status.
+                return with_rncp_listener_ok(live.rncp_listener_status().await);
             }
             let mode = if allowed.is_empty() {
                 "ask"
@@ -1905,7 +2736,7 @@ impl StackHandle {
 
     pub async fn rncp_listener_status(&self) -> serde_json::Value {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             return live.rncp_listener_status().await;
         }
         serde_json::json!({
@@ -1919,7 +2750,7 @@ impl StackHandle {
 
     pub fn path_capability(&self, destination_hash: &str) -> serde_json::Value {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             return live.path_capability(destination_hash);
         }
         let clean = destination_hash.trim().to_lowercase();
@@ -1937,7 +2768,7 @@ impl StackHandle {
 
     pub async fn remote_identity(&self) -> serde_json::Value {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             return serde_json::json!({
                 "identity_hash": live.identity_hash_hex(),
                 "rncp_receive_hash": live.rncp_receive_destination_hash().await,
@@ -1964,9 +2795,10 @@ impl StackHandle {
         path: &str,
         data_b64: Option<&str>,
         force_path_refresh: bool,
+        request_id: Option<&str>,
     ) -> serde_json::Value {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             let interfaces = self.inner.read().await.interfaces.clone();
             let identity_hash = self.nomad_identity_hash_for(hash).await;
             return live
@@ -1977,10 +2809,11 @@ impl StackHandle {
                     data_b64,
                     &interfaces,
                     force_path_refresh,
+                    request_id,
                 )
                 .await;
         }
-        let _ = (hash, path, data_b64, force_path_refresh);
+        let _ = (hash, path, data_b64, force_path_refresh, request_id);
         serde_json::json!({
             "ok": false,
             "error": "nomad page fetch requires live rns-stack sidecar"
@@ -1994,7 +2827,7 @@ impl StackHandle {
         force_path_refresh: bool,
     ) -> serde_json::Value {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             let interfaces = self.inner.read().await.interfaces.clone();
             let identity_hash = self.nomad_identity_hash_for(hash).await;
             return live
@@ -2016,7 +2849,7 @@ impl StackHandle {
 
     pub async fn lxmf_send(&self, req: LxmfSendRequest) -> Result<serde_json::Value, String> {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             let res = live.send_lxmf(&req).await?;
             let payload = res.get("message").cloned().unwrap_or(res.clone());
             if payload.get("text").is_some() {
@@ -2028,18 +2861,60 @@ impl StackHandle {
                 "sent_via": res.get("sent_via"),
             }));
         }
-        let mut inner = self.inner.write().await;
-        let res = inner.send_lxmf_local(&req)?;
-        inner.save(&self.config_dir, &self.storage_dir)?;
-        let payload = res.clone();
-        drop(inner);
-        self.emit_event("lxmf_message", payload);
-        Ok(res)
+        // Fail closed while listen-first HTTP is up but live attach has not finished.
+        // Local persistence fallback would report ok without a wire send.
+        #[cfg(feature = "rns-stack")]
+        {
+            let _ = req;
+            Err("lxmf send requires live rns-stack sidecar".into())
+        }
+        #[cfg(not(feature = "rns-stack"))]
+        {
+            let mut inner = self.inner.write().await;
+            let res = inner.send_lxmf_local(&req)?;
+            inner.save(&self.config_dir, &self.storage_dir)?;
+            let payload = res.clone();
+            drop(inner);
+            self.emit_event("lxmf_message", payload);
+            Ok(res)
+        }
+    }
+
+    pub async fn lxmf_paper_create(
+        &self,
+        req: LxmfSendRequest,
+    ) -> Result<serde_json::Value, String> {
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            let res = live.create_lxmf_paper(&req).await?;
+            if res.get("ok") == Some(&serde_json::Value::Bool(true)) {
+                if let Some(payload) = res.get("message").cloned() {
+                    self.emit_event("lxmf_message", payload);
+                }
+            }
+            return Ok(res);
+        }
+        Ok(serde_json::json!({
+            "ok": false,
+            "error": "identity_not_configured",
+        }))
+    }
+
+    pub async fn lxmf_paper_ingest(&self, uri: String) -> Result<serde_json::Value, String> {
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            // ingest_lxm_uri fires the delivery callback (WS lxmf_message); return HTTP body only.
+            return live.ingest_lxmf_paper(&uri).await;
+        }
+        Ok(serde_json::json!({
+            "ok": false,
+            "error": "identity_not_configured",
+        }))
     }
 
     fn maybe_emit_identity_restart(&self) {
         #[cfg(feature = "rns-stack")]
-        if self.live.is_some() {
+        if self.live.get().is_some() {
             self.emit_event("stack_restart_requested", serde_json::json!({ "ok": true }));
         }
     }
@@ -2049,25 +2924,33 @@ impl StackHandle {
         req: LxmfReactionRequest,
     ) -> Result<serde_json::Value, String> {
         #[cfg(feature = "rns-stack")]
-        if let Some(live) = &self.live {
+        if let Some(live) = self.live.get() {
             let res = live.send_reaction(&req).await?;
             self.emit_event("lxmf_message", res.clone());
             return Ok(res);
         }
-        let mut inner = self.inner.write().await;
-        let res = inner.send_reaction(&req)?;
-        inner.save(&self.config_dir, &self.storage_dir)?;
-        drop(inner);
-        self.emit_event("lxmf_message", res.clone());
-        Ok(res)
+        #[cfg(feature = "rns-stack")]
+        {
+            let _ = req;
+            Err("lxmf reaction requires live rns-stack sidecar".into())
+        }
+        #[cfg(not(feature = "rns-stack"))]
+        {
+            let mut inner = self.inner.write().await;
+            let res = inner.send_reaction(&req)?;
+            inner.save(&self.config_dir, &self.storage_dir)?;
+            drop(inner);
+            self.emit_event("lxmf_message", res.clone());
+            Ok(res)
+        }
     }
 
-    #[allow(clippy::unused_async)] // async matches StackHandle admin API awaited by HTTP handlers
+    #[allow(clippy::unused_async, clippy::unused_async_trait_impl)] // async matches StackHandle admin API awaited by HTTP handlers
     pub async fn rnode_presets(&self) -> serde_json::Value {
         rf_profiles::presets_wire_json()
     }
 
-    #[allow(clippy::unused_async)] // async matches StackHandle admin API awaited by HTTP handlers
+    #[allow(clippy::unused_async, clippy::unused_async_trait_impl)] // async matches StackHandle admin API awaited by HTTP handlers
     pub async fn serial_ports(&self) -> serde_json::Value {
         serde_json::json!({ "ports": enumerate_serial_ports() })
     }
@@ -2091,9 +2974,19 @@ impl StackHandle {
         Ok(removed)
     }
 
-    #[allow(clippy::unused_async)] // async matches StackHandle lifecycle API awaited by HTTP handlers
+    #[allow(clippy::unused_async, clippy::unused_async_trait_impl)] // async matches StackHandle lifecycle API awaited by HTTP handlers
     pub async fn request_stack_restart(&self) -> Result<(), String> {
         self.emit_event("stack_restart_requested", serde_json::json!({ "ok": true }));
+        Ok(())
+    }
+
+    /// Graceful RNS shutdown (BLE RNode detach) before the process is SIGTERM'd.
+    pub async fn prepare_stop(&self) -> Result<(), String> {
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            live.prepare_stop().await;
+            return Ok(());
+        }
         Ok(())
     }
 
@@ -2125,6 +3018,7 @@ impl StackHandle {
                 })
             })
             .collect();
+        let announce_ws = announce_ws_coalesce::announce_ws_pressure_snapshot();
         serde_json::json!({
             "rns_ready": inner.rns_ready,
             "lxmf_ready": inner.lxmf_ready,
@@ -2133,6 +3027,13 @@ impl StackHandle {
             "peer_count": inner.peers.len(),
             "message_count": inner.messages.len(),
             "interfaces": interfaces,
+            "announce_ws": {
+                "last_window_ingress": announce_ws.last_window_ingress,
+                "last_window_unique": announce_ws.last_window_unique,
+                "last_window_overflow": announce_ws.last_window_overflow,
+                "last_storm_at_ms": announce_ws.last_storm_at_ms,
+                "last_flush_at_ms": announce_ws.last_flush_at_ms,
+            },
         })
     }
 
@@ -2144,7 +3045,7 @@ impl StackHandle {
         config_audit::audit_config(&self.config_dir, &live, &settings, stack_running)
     }
 
-    #[allow(clippy::unused_async)] // async matches StackHandle config API awaited by HTTP handlers
+    #[allow(clippy::unused_async, clippy::unused_async_trait_impl)] // async matches StackHandle config API awaited by HTTP handlers
     pub async fn config_repair(
         &self,
         request: config_audit::ConfigRepairRequest,
@@ -2152,23 +3053,228 @@ impl StackHandle {
         config_audit::repair_config(&self.config_dir, &request)
     }
 
-    #[allow(clippy::unused_async)] // async matches StackHandle feature-status API awaited by HTTP handlers
     pub async fn voice_status(&self) -> serde_json::Value {
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            return live.voice_status().await;
+        }
         serde_json::json!({
             "available": cfg!(feature = "rns-stack"),
             "enabled": false,
+            "running": false,
+            "microphone_muted": false,
             "codec": "opus",
-            "reason": "LXST voice pipeline pending rsLXST integration"
+            "reason": if cfg!(feature = "rns-stack") {
+                "stack not running"
+            } else {
+                "rns-stack feature required"
+            },
+            "active_call": null,
         })
     }
 
-    #[allow(clippy::unused_async)] // async matches StackHandle feature-status API awaited by HTTP handlers
+    pub async fn voice_call(&self, identity_hash: &str) -> serde_json::Value {
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            return live.voice_call(identity_hash).await;
+        }
+        let _ = identity_hash;
+        serde_json::json!({ "ok": false, "error": "voice requires live rns-stack sidecar" })
+    }
+
+    pub async fn voice_answer(&self) -> serde_json::Value {
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            return live.voice_answer().await;
+        }
+        serde_json::json!({ "ok": false, "error": "voice requires live rns-stack sidecar" })
+    }
+
+    pub async fn voice_reject(&self) -> serde_json::Value {
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            return live.voice_reject().await;
+        }
+        serde_json::json!({ "ok": false, "error": "voice requires live rns-stack sidecar" })
+    }
+
+    pub async fn voice_hangup(&self) -> serde_json::Value {
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            return live.voice_hangup().await;
+        }
+        serde_json::json!({ "ok": false, "error": "voice requires live rns-stack sidecar" })
+    }
+
+    pub async fn voice_mute(&self, muted: bool) -> serde_json::Value {
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            return live.voice_mute(muted).await;
+        }
+        let _ = muted;
+        serde_json::json!({ "ok": false, "error": "voice requires live rns-stack sidecar" })
+    }
+
+    pub async fn voice_audio(
+        &self,
+        profile: Option<u32>,
+        channels: u8,
+        samples_b64: &str,
+    ) -> serde_json::Value {
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            return live.voice_audio(profile, channels, samples_b64).await;
+        }
+        let _ = (profile, channels, samples_b64);
+        serde_json::json!({ "ok": false, "error": "voice requires live rns-stack sidecar" })
+    }
+
+    pub fn voice_memo_start(&self) -> serde_json::Value {
+        #[cfg(feature = "rns-stack")]
+        {
+            match self.voice_memo.start() {
+                Ok(v) => v,
+                Err(e) => serde_json::json!({ "ok": false, "error": e }),
+            }
+        }
+        #[cfg(not(feature = "rns-stack"))]
+        serde_json::json!({ "ok": false, "error": "voice_memo requires rns-stack sidecar" })
+    }
+
+    pub fn voice_memo_audio(
+        &self,
+        session_id: &str,
+        channels: u8,
+        samples_b64: &str,
+    ) -> serde_json::Value {
+        #[cfg(feature = "rns-stack")]
+        {
+            match self
+                .voice_memo
+                .push_audio(session_id, channels, samples_b64)
+            {
+                Ok(v) => v,
+                Err(e) => serde_json::json!({ "ok": false, "error": e }),
+            }
+        }
+        #[cfg(not(feature = "rns-stack"))]
+        {
+            let _ = (session_id, channels, samples_b64);
+            serde_json::json!({ "ok": false, "error": "voice_memo requires rns-stack sidecar" })
+        }
+    }
+
+    pub fn voice_memo_stop(&self, session_id: &str) -> serde_json::Value {
+        #[cfg(feature = "rns-stack")]
+        {
+            match self.voice_memo.stop(session_id) {
+                Ok(v) => v,
+                Err(e) => serde_json::json!({ "ok": false, "error": e }),
+            }
+        }
+        #[cfg(not(feature = "rns-stack"))]
+        {
+            let _ = session_id;
+            serde_json::json!({ "ok": false, "error": "voice_memo requires rns-stack sidecar" })
+        }
+    }
+
+    pub fn voice_memo_cancel(&self, session_id: &str) -> serde_json::Value {
+        #[cfg(feature = "rns-stack")]
+        {
+            match self.voice_memo.cancel(session_id) {
+                Ok(v) => v,
+                Err(e) => serde_json::json!({ "ok": false, "error": e }),
+            }
+        }
+        #[cfg(not(feature = "rns-stack"))]
+        {
+            let _ = session_id;
+            serde_json::json!({ "ok": false, "error": "voice_memo requires rns-stack sidecar" })
+        }
+    }
+
     pub async fn games_status(&self) -> serde_json::Value {
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            return live.games_status().await;
+        }
         serde_json::json!({
-            "available": true,
+            "available": cfg!(feature = "rns-stack"),
             "enabled": false,
-            "reason": "LRGP games pending lrgp-rs integration"
+            "reason": "LRGP games require a live rns-stack sidecar"
         })
+    }
+
+    pub async fn games_apps(&self) -> serde_json::Value {
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            return live.games_apps().await;
+        }
+        serde_json::json!({ "apps": [] })
+    }
+
+    pub async fn games_sessions(&self, peer: Option<&str>) -> serde_json::Value {
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            return live.games_sessions(peer).await;
+        }
+        let _ = peer;
+        serde_json::json!({ "sessions": [] })
+    }
+
+    pub async fn games_session_detail(&self, session_id: &str) -> serde_json::Value {
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            return live.games_session_detail(session_id).await;
+        }
+        let _ = session_id;
+        serde_json::json!({ "session": null })
+    }
+
+    pub async fn games_send_action(
+        &self,
+        dest_hash: &str,
+        app_id: &str,
+        command: &str,
+        session_id: Option<&str>,
+        payload: Option<&serde_json::Value>,
+    ) -> Result<serde_json::Value, String> {
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            return live
+                .send_game_action(dest_hash, app_id, command, session_id, payload)
+                .await;
+        }
+        let _ = (dest_hash, app_id, command, session_id, payload);
+        Err("LRGP games require a live rns-stack sidecar".to_string())
+    }
+
+    pub async fn games_resend_action(&self, session_id: &str) -> Result<serde_json::Value, String> {
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            return live.resend_last_game_action(session_id).await;
+        }
+        let _ = session_id;
+        Err("LRGP games require a live rns-stack sidecar".to_string())
+    }
+
+    pub async fn games_mark_read(&self, session_id: &str) -> Result<(), String> {
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            return live.games_mark_read(session_id).await;
+        }
+        let _ = session_id;
+        Err("LRGP games require a live rns-stack sidecar".to_string())
+    }
+
+    pub async fn games_delete_session(&self, session_id: &str) -> Result<(), String> {
+        #[cfg(feature = "rns-stack")]
+        if let Some(live) = self.live.get() {
+            return live.games_delete_session(session_id).await;
+        }
+        let _ = session_id;
+        Err("LRGP games require a live rns-stack sidecar".to_string())
     }
 
     pub async fn list_identities(&self) -> serde_json::Value {
@@ -2343,17 +3449,31 @@ impl StackHandle {
         }
     }
 
-    #[allow(clippy::unused_async)] // async matches StackHandle identity API awaited by HTTP handlers
+    #[allow(clippy::unused_async, clippy::unused_async_trait_impl)] // async matches StackHandle identity API awaited by HTTP handlers
     pub async fn delete_identity_slot(&self, identity_id: &str) -> Result<(), String> {
         let _op = self.identity_op_lock.lock().await;
         identity_slots::delete_slot(&self.config_dir, identity_id)
     }
 
     pub async fn rns_ready(&self) -> bool {
+        #[cfg(feature = "rns-stack")]
+        {
+            // Persisted flags can be true from a prior session before live attach finishes.
+            // HTTP may already be up — only report ready once the live bridge is attached.
+            if self.live.get().is_none() {
+                return false;
+            }
+        }
         self.inner.read().await.rns_ready
     }
 
     pub async fn lxmf_ready(&self) -> bool {
+        #[cfg(feature = "rns-stack")]
+        {
+            if self.live.get().is_none() {
+                return false;
+            }
+        }
         self.inner.read().await.lxmf_ready
     }
 
@@ -2437,8 +3557,8 @@ fn enumerate_serial_ports() -> Vec<serde_json::Value> {
 }
 
 /// Hard ceiling on peer rows returned / persisted after a live path-table sync.
-/// Matches the renderer destination cap (`50_000` / `MAX_MESH_ENTITY_CAP` floor).
-const MAX_PEER_CACHE: usize = 50_000;
+/// Matches the renderer `MAX_MESH_ENTITY_CAP` (100_000).
+const MAX_PEER_CACHE: usize = 100_000;
 /// Cap on peers retained after leaving the live path table (e.g. Clear Contacts demotions).
 const MAX_ORPHAN_PEERS: usize = 5_000;
 /// Drop orphaned peers with `last_seen` older than this (Unix seconds). Missing
@@ -2447,6 +3567,72 @@ const ORPHAN_PEER_MAX_AGE_SECS: u64 = 30 * 86_400;
 
 fn peer_last_seen_or_zero(peer: &PeerRow) -> u64 {
     peer.last_seen.unwrap_or(0)
+}
+
+/// Outcome of clearing peer routes for one interface.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct ClearedPeerRoutes {
+    /// Distinct next hops removed, for `DropAllVia` on the live transport.
+    dropped_vias: Vec<String>,
+    /// Peers whose route fields changed. A peer can have `hops` / `path_hash` without a
+    /// `via_hash` (direct neighbour), so this is not implied by `dropped_vias`.
+    changed_peers: usize,
+}
+
+impl ClearedPeerRoutes {
+    fn is_empty(&self) -> bool {
+        self.dropped_vias.is_empty() && self.changed_peers == 0
+    }
+}
+
+/// Clear route fields for peers whose active path was learned on `iface_name`.
+///
+/// Identity fields (`display_name`, `public_key`, `last_seen`, `interface`) are kept:
+/// the peer is still known, only its route is gone. Without this, disabling a TCP
+/// interface leaves peers advertising a `via_hash` that is reachable on no live
+/// interface, and the chat route badge renders it as real.
+fn clear_peer_routes_for_interface(peers: &mut [PeerRow], iface_name: &str) -> ClearedPeerRoutes {
+    let mut out = ClearedPeerRoutes::default();
+    for peer in peers.iter_mut() {
+        let learned_here = peer
+            .interface
+            .as_deref()
+            .is_some_and(|name| name.eq_ignore_ascii_case(iface_name));
+        if !learned_here {
+            continue;
+        }
+        let had_route = peer.via_hash.is_some() || peer.path_hash.is_some() || peer.hops.is_some();
+        if let Some(via) = peer.via_hash.take() {
+            if !out
+                .dropped_vias
+                .iter()
+                .any(|v| v.eq_ignore_ascii_case(&via))
+            {
+                out.dropped_vias.push(via);
+            }
+        }
+        peer.path_hash = None;
+        peer.hops = None;
+        if had_route {
+            out.changed_peers += 1;
+        }
+    }
+    out
+}
+
+/// True when a peer that left the live path table still claims a route.
+///
+/// Orphans keep their route fields verbatim, so a peer that dropped out of the table
+/// (interface down, path expired) would otherwise keep advertising a dead next hop.
+fn orphan_peer_has_route(peer: &PeerRow) -> bool {
+    peer.via_hash.is_some() || peer.path_hash.is_some() || peer.hops.is_some()
+}
+
+/// Strip route fields from an orphaned peer, keeping identity fields.
+fn strip_orphan_peer_route(peer: &mut PeerRow) {
+    peer.via_hash = None;
+    peer.path_hash = None;
+    peer.hops = None;
 }
 
 fn now_unix_secs() -> u64 {
@@ -2488,6 +3674,13 @@ fn sync_live_peer_cache(cache: &mut Vec<PeerRow>, fetched: Vec<PeerRow>) -> Vec<
             None => true,
         })
         .cloned()
+        .map(|mut peer| {
+            // Left the live path table: identity stays, the route it claimed does not.
+            if orphan_peer_has_route(&peer) {
+                strip_orphan_peer_route(&mut peer);
+            }
+            peer
+        })
         .collect();
     preserved.sort_by_key(|b| std::cmp::Reverse(peer_last_seen_or_zero(b)));
     if preserved.len() > MAX_ORPHAN_PEERS {
@@ -2523,6 +3716,36 @@ fn sync_live_peer_cache(cache: &mut Vec<PeerRow>, fetched: Vec<PeerRow>) -> Vec<
     merged
 }
 
+/// Canonicalize a peer destination hash for path-medium routes (32 lowercase hex).
+fn canonical_peer_hash(hash: &str) -> Result<String, String> {
+    topology::canonicalize_destination_hash(hash)
+        .ok_or_else(|| "destination_hash must be 32 hex characters".to_string())
+}
+
+/// Path-slot response fields for one destination.
+struct PeerPathSlotsView {
+    /// Persisted global preference.
+    preference: PathMediumPreferenceSetting,
+    /// Persisted pin for this destination.
+    pin: Option<PathMediumSetting>,
+    /// Preference the live transport actually applies here (pin resolved); `None` when offline.
+    effective_preference: Option<PathMediumPreferenceSetting>,
+    paths: Vec<serde_json::Value>,
+    live: bool,
+}
+
+fn peer_path_slots_json(destination_hash: &str, view: &PeerPathSlotsView) -> serde_json::Value {
+    serde_json::json!({
+        "ok": true,
+        "destination_hash": destination_hash,
+        "preference": view.preference.as_str(),
+        "pin": view.pin.map(PathMediumSetting::as_str),
+        "effective_preference": view.effective_preference.map(PathMediumPreferenceSetting::as_str),
+        "live": view.live,
+        "paths": view.paths,
+    })
+}
+
 /// Apply a live path-table fetch: update cache only when non-empty; otherwise keep last known peers.
 fn merge_live_peer_fetch(
     cache: &mut Vec<PeerRow>,
@@ -2541,6 +3764,15 @@ fn merge_live_peer_fetch(
     }
 }
 
+/// Stamp `ok: true` onto an rncp listener status object so disable returns the
+/// same explicit RNCP success marker as enable (`RemoteOkResponse`).
+fn with_rncp_listener_ok(mut status: serde_json::Value) -> serde_json::Value {
+    if let Some(map) = status.as_object_mut() {
+        map.insert("ok".into(), serde_json::Value::Bool(true));
+    }
+    status
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2557,6 +3789,40 @@ mod tests {
     }
 
     #[test]
+    fn local_propagation_status_reports_loading_only_while_enabled_and_unloaded() {
+        assert_eq!(local_propagation_status(true, false, true), "active");
+        // Serving wins even if a later load is still pending.
+        assert_eq!(local_propagation_status(true, true, true), "active");
+        assert_eq!(local_propagation_status(false, true, true), "loading");
+        // Disabled by the user — not loading, just off.
+        assert_eq!(local_propagation_status(false, true, false), "idle");
+        assert_eq!(local_propagation_status(false, false, true), "idle");
+    }
+
+    #[test]
+    fn with_rncp_listener_ok_stamps_ok_true_on_status() {
+        let status = serde_json::json!({
+            "enabled": false,
+            "inbound_mode": "off",
+            "allowed": [],
+            "blocked": [],
+        });
+        let out = with_rncp_listener_ok(status);
+        assert_eq!(
+            out.get("ok").and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            out.get("enabled").and_then(serde_json::Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            out.get("inbound_mode").and_then(|v| v.as_str()),
+            Some("off")
+        );
+    }
+
+    #[test]
     fn merge_live_peer_fetch_preserves_cache_on_empty_or_error() {
         let mut cache = vec![PeerRow {
             destination_hash: "abc".into(),
@@ -2566,6 +3832,7 @@ mod tests {
             interface: None,
             path_hash: None,
             via_hash: None,
+            public_key: None,
         }];
         let empty = merge_live_peer_fetch(&mut cache, Ok(vec![]));
         assert_eq!(empty.len(), 1);
@@ -2587,6 +3854,7 @@ mod tests {
             interface: Some("tcp".into()),
             path_hash: None,
             via_hash: None,
+            public_key: None,
         };
         let fetched = merge_live_peer_fetch(&mut cache, Ok(vec![row.clone()]));
         assert_eq!(fetched.len(), 1);
@@ -2604,6 +3872,7 @@ mod tests {
             interface: None,
             path_hash: None,
             via_hash: None,
+            public_key: None,
         }];
         let fetched = sync_live_peer_cache(&mut cache, vec![]);
         assert!(fetched.is_empty());
@@ -2620,6 +3889,7 @@ mod tests {
             interface: None,
             path_hash: None,
             via_hash: None,
+            public_key: None,
         }];
         let fetched = sync_live_peer_cache(
             &mut cache,
@@ -2631,6 +3901,7 @@ mod tests {
                 interface: Some("tcp".into()),
                 path_hash: None,
                 via_hash: None,
+                public_key: None,
             }],
         );
         assert_eq!(fetched.len(), 1);
@@ -2649,6 +3920,7 @@ mod tests {
             interface: Some("tcp".into()),
             path_hash: None,
             via_hash: None,
+            public_key: None,
         };
         let fetched = sync_live_peer_cache(&mut cache, vec![row.clone()]);
         assert_eq!(fetched.len(), 1);
@@ -2677,9 +3949,88 @@ mod tests {
     async fn list_peers_stub_empty_after_clear_announces() {
         let (config_dir, storage_dir) = temp_stack_dirs();
         let (tx, _) = broadcast::channel(8);
-        let handle = StackHandle::bootstrap(config_dir.clone(), storage_dir.clone(), tx).await;
+        let handle = Box::pin(StackHandle::bootstrap(
+            config_dir.clone(),
+            storage_dir.clone(),
+            tx,
+        ))
+        .await;
         handle.clear_announces().await.expect("clear announces");
         assert!(handle.list_peers().await.is_empty());
+        let _ = std::fs::remove_dir_all(config_dir);
+        let _ = std::fs::remove_dir_all(storage_dir);
+    }
+
+    #[tokio::test]
+    async fn start_propagation_sync_by_hash_rejects_invalid_and_leaves_list_unchanged() {
+        let (config_dir, storage_dir) = temp_stack_dirs();
+        let (tx, _) = broadcast::channel(8);
+        let handle = Box::pin(StackHandle::bootstrap(
+            config_dir.clone(),
+            storage_dir.clone(),
+            tx,
+        ))
+        .await;
+        let before = handle.list_propagation().await;
+        let preferred_before = before
+            .get("preferred_id")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let err = handle
+            .start_propagation_sync_by_hash("dead")
+            .await
+            .expect_err("short hash");
+        assert!(err.contains("32 hex"), "unexpected error: {err}");
+        let after = handle.list_propagation().await;
+        assert_eq!(
+            after
+                .get("preferred_id")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null),
+            preferred_before
+        );
+        assert_eq!(
+            after
+                .get("propagation")
+                .and_then(|n| n.as_array())
+                .map(Vec::len),
+            before
+                .get("propagation")
+                .and_then(|n| n.as_array())
+                .map(Vec::len)
+        );
+        let _ = std::fs::remove_dir_all(config_dir);
+        let _ = std::fs::remove_dir_all(storage_dir);
+    }
+
+    #[tokio::test]
+    async fn bootstrap_clears_persisted_rns_and_lxmf_ready_until_attach_live() {
+        let (config_dir, storage_dir) = temp_stack_dirs();
+        let mut stale = PersistedState::load(&config_dir, &storage_dir);
+        stale.rns_ready = true;
+        stale.lxmf_ready = true;
+        stale
+            .save(&config_dir, &storage_dir)
+            .expect("save stale ready flags");
+        let reloaded = PersistedState::load(&config_dir, &storage_dir);
+        assert!(reloaded.rns_ready);
+        assert!(reloaded.lxmf_ready);
+
+        let (tx, _) = broadcast::channel(8);
+        let handle = Box::pin(StackHandle::bootstrap(
+            config_dir.clone(),
+            storage_dir.clone(),
+            tx,
+        ))
+        .await;
+
+        // diagnostics_snapshot reads inner flags (not the live-gate on rns_ready()).
+        let snap = handle.diagnostics_snapshot().await;
+        assert_eq!(snap["rns_ready"], false);
+        assert_eq!(snap["lxmf_ready"], false);
+        assert!(!handle.rns_ready().await);
+        assert!(!handle.lxmf_ready().await);
+
         let _ = std::fs::remove_dir_all(config_dir);
         let _ = std::fs::remove_dir_all(storage_dir);
     }
@@ -2695,6 +4046,7 @@ mod tests {
             interface: None,
             path_hash: None,
             via_hash: None,
+            public_key: None,
         }];
         let live = PeerRow {
             destination_hash: "ccdd02".into(),
@@ -2704,6 +4056,7 @@ mod tests {
             interface: Some("tcp".into()),
             path_hash: None,
             via_hash: None,
+            public_key: None,
         };
         let merged = sync_live_peer_cache(&mut cache, vec![live]);
         assert_eq!(merged.len(), 2);
@@ -2723,6 +4076,7 @@ mod tests {
                 interface: None,
                 path_hash: None,
                 via_hash: None,
+                public_key: None,
             })
             .collect();
         // One orphan older than TTL must be dropped even if under the count cap.
@@ -2734,6 +4088,7 @@ mod tests {
             interface: None,
             path_hash: None,
             via_hash: None,
+            public_key: None,
         });
         let live = PeerRow {
             destination_hash: "aa".repeat(16),
@@ -2743,6 +4098,7 @@ mod tests {
             interface: Some("tcp".into()),
             path_hash: None,
             via_hash: None,
+            public_key: None,
         };
         let merged = sync_live_peer_cache(&mut cache, vec![live]);
         assert!(merged.iter().any(|p| p.destination_hash == "aa".repeat(16)));
@@ -2750,11 +4106,394 @@ mod tests {
         assert!(merged.len() <= 1 + MAX_ORPHAN_PEERS);
     }
 
+    fn routed_peer(hash: &str, iface: &str, via: &str, hops: u8) -> PeerRow {
+        PeerRow {
+            destination_hash: hash.into(),
+            display_name: Some("Desktop".into()),
+            hops: Some(hops),
+            last_seen: Some(now_unix_secs()),
+            interface: Some(iface.into()),
+            path_hash: Some(via.into()),
+            via_hash: Some(via.into()),
+            public_key: None,
+        }
+    }
+
+    #[test]
+    fn clear_peer_routes_for_interface_drops_route_and_keeps_identity() {
+        let via = "f2e5117828492caf16be98d17adfba53";
+        let mut peers = vec![
+            routed_peer(
+                "d010ea4417f71ff4fd15a6182747aaec",
+                "RNS_Transport_US-East",
+                via,
+                2,
+            ),
+            routed_peer("951c8d0cc5ca40c92c48baf54d1dfc63", "ttyUSB0", "b9bd85e6", 3),
+        ];
+
+        let dropped = clear_peer_routes_for_interface(&mut peers, "rns_transport_us-east");
+
+        assert_eq!(
+            dropped.dropped_vias,
+            vec![via.to_string()],
+            "next hop must be reported for DropAllVia"
+        );
+        assert_eq!(dropped.changed_peers, 1);
+        assert_eq!(peers[0].via_hash, None);
+        assert_eq!(peers[0].path_hash, None);
+        assert_eq!(peers[0].hops, None);
+        // Identity survives: the peer is still known, only its route is gone.
+        assert_eq!(peers[0].display_name.as_deref(), Some("Desktop"));
+        assert!(peers[0].last_seen.is_some());
+        // Peers learned on another interface are untouched.
+        assert_eq!(peers[1].via_hash.as_deref(), Some("b9bd85e6"));
+        assert_eq!(peers[1].hops, Some(3));
+    }
+
+    #[test]
+    fn clear_peer_routes_for_interface_dedupes_shared_next_hops() {
+        let via = "f2e5117828492caf16be98d17adfba53";
+        let mut peers = vec![
+            routed_peer("aa".repeat(16).as_str(), "Hub", via, 4),
+            routed_peer("bb".repeat(16).as_str(), "Hub", via, 5),
+            routed_peer("cc".repeat(16).as_str(), "Hub", "0011", 2),
+        ];
+
+        let dropped = clear_peer_routes_for_interface(&mut peers, "Hub");
+
+        assert_eq!(
+            dropped.dropped_vias,
+            vec![via.to_string(), "0011".to_string()]
+        );
+        assert_eq!(dropped.changed_peers, 3);
+        assert!(
+            peers
+                .iter()
+                .all(|p| p.via_hash.is_none() && p.hops.is_none())
+        );
+    }
+
+    #[test]
+    fn clear_peer_routes_for_interface_reports_direct_neighbour_with_no_next_hop() {
+        // A direct neighbour has hops but no via, so `dropped_vias` alone would make the
+        // purge look like a no-op and leave the stale hop count persisted and unbroadcast.
+        let mut peers = vec![routed_peer(
+            "aa".repeat(16).as_str(),
+            "RNodeLoRa",
+            "ff00",
+            1,
+        )];
+        peers[0].via_hash = None;
+        peers[0].path_hash = None;
+
+        let dropped = clear_peer_routes_for_interface(&mut peers, "RNodeLoRa");
+
+        assert!(dropped.dropped_vias.is_empty());
+        assert_eq!(dropped.changed_peers, 1);
+        assert!(!dropped.is_empty());
+        assert_eq!(peers[0].hops, None);
+    }
+
+    #[test]
+    fn clear_peer_routes_for_interface_is_empty_when_nothing_matched() {
+        let mut peers = vec![routed_peer("aa".repeat(16).as_str(), "Hub", "ff00", 1)];
+
+        let dropped = clear_peer_routes_for_interface(&mut peers, "OtherIface");
+
+        assert!(dropped.is_empty());
+        assert_eq!(peers[0].hops, Some(1));
+    }
+
+    #[test]
+    fn sync_live_peer_cache_strips_routes_from_orphaned_peers() {
+        let via = "f2e5117828492caf16be98d17adfba53";
+        // Desktop learned over TCP, now absent from the live (RF-only) path table.
+        let mut cache = vec![routed_peer(
+            "d010ea4417f71ff4fd15a6182747aaec",
+            "RNS_Transport_US-East",
+            via,
+            2,
+        )];
+        let live = routed_peer("951c8d0cc5ca40c92c48baf54d1dfc63", "ttyUSB0", "b9bd85e6", 3);
+
+        let merged = sync_live_peer_cache(&mut cache, vec![live]);
+
+        let orphan = merged
+            .iter()
+            .find(|p| p.destination_hash == "d010ea4417f71ff4fd15a6182747aaec")
+            .expect("orphan retained");
+        assert_eq!(
+            orphan.via_hash, None,
+            "orphan must not keep a dead next hop"
+        );
+        assert_eq!(orphan.path_hash, None);
+        assert_eq!(orphan.hops, None);
+        assert_eq!(orphan.display_name.as_deref(), Some("Desktop"));
+    }
+
+    #[test]
+    fn canonical_peer_hash_requires_32_hex() {
+        assert_eq!(
+            canonical_peer_hash("AABBCCDDEEFF00112233445566778899").expect("canonical"),
+            "aabbccddeeff00112233445566778899"
+        );
+        assert!(canonical_peer_hash("abcd").is_err());
+        assert!(canonical_peer_hash("aabbccddeeff0011223344556677889g").is_err());
+    }
+
+    #[test]
+    fn peer_path_slots_json_reports_stored_preference_and_pin() {
+        let hash = "aabbccddeeff00112233445566778899";
+        let value = peer_path_slots_json(
+            hash,
+            &PeerPathSlotsView {
+                preference: PathMediumPreferenceSetting::Rf,
+                pin: Some(PathMediumSetting::Network),
+                effective_preference: Some(PathMediumPreferenceSetting::Network),
+                paths: vec![serde_json::json!({ "active": true, "medium": "network" })],
+                live: true,
+            },
+        );
+        assert_eq!(value["ok"], true);
+        assert_eq!(value["destination_hash"], hash);
+        assert_eq!(value["preference"], "rf");
+        assert_eq!(value["pin"], "network");
+        assert_eq!(value["effective_preference"], "network");
+        assert_eq!(value["live"], true);
+        assert_eq!(value["paths"].as_array().map(Vec::len), Some(1));
+    }
+
+    #[test]
+    fn peer_path_slots_json_offline_omits_slots_and_effective_preference() {
+        let hash = "deadbeefcafebabe0123456789abcdef";
+        let value = peer_path_slots_json(
+            hash,
+            &PeerPathSlotsView {
+                preference: PathMediumPreferenceSetting::Lowest,
+                pin: None,
+                effective_preference: None,
+                paths: Vec::new(),
+                live: false,
+            },
+        );
+        assert_eq!(value["preference"], "lowest");
+        assert!(value["pin"].is_null());
+        assert!(value["effective_preference"].is_null());
+        assert_eq!(value["live"], false);
+        assert!(value["paths"].as_array().expect("array").is_empty());
+    }
+
+    #[tokio::test]
+    async fn path_medium_preference_defaults_to_lowest_and_survives_restart() {
+        let (config_dir, storage_dir) = temp_stack_dirs();
+        let hash = "aabbccddeeff00112233445566778899";
+        let (tx, _) = broadcast::channel(8);
+        let handle = Box::pin(StackHandle::bootstrap(
+            config_dir.clone(),
+            storage_dir.clone(),
+            tx,
+        ))
+        .await;
+        assert_eq!(
+            handle.path_medium_preference().await,
+            PathMediumPreferenceSetting::Lowest
+        );
+        assert_eq!(handle.peer_medium_pins_json().await, serde_json::json!({}));
+
+        handle
+            .set_path_medium_preference(PathMediumPreferenceSetting::Rf)
+            .await
+            .expect("set preference");
+        let canonical = handle
+            .set_peer_medium_pin(&hash.to_ascii_uppercase(), Some(PathMediumSetting::Network))
+            .await
+            .expect("set pin");
+        assert_eq!(canonical, hash);
+
+        let (tx2, _) = broadcast::channel(8);
+        let reloaded = Box::pin(StackHandle::bootstrap(
+            config_dir.clone(),
+            storage_dir.clone(),
+            tx2,
+        ))
+        .await;
+        assert_eq!(
+            reloaded.path_medium_preference().await,
+            PathMediumPreferenceSetting::Rf
+        );
+        assert_eq!(
+            reloaded.peer_medium_pins_json().await,
+            serde_json::json!({ hash: "network" })
+        );
+
+        // Offline path slots still report the stored preference and pin.
+        let slots = reloaded.peer_path_slots(hash).await.expect("slots");
+        assert_eq!(slots["preference"], "rf");
+        assert_eq!(slots["pin"], "network");
+        assert_eq!(slots["live"], false);
+
+        reloaded
+            .set_peer_medium_pin(hash, None)
+            .await
+            .expect("clear pin");
+        assert_eq!(
+            reloaded.peer_medium_pins_json().await,
+            serde_json::json!({})
+        );
+        assert!(reloaded.peer_path_slots("nothex").await.is_err());
+
+        let _ = std::fs::remove_dir_all(config_dir);
+        let _ = std::fs::remove_dir_all(storage_dir);
+    }
+
+    #[tokio::test]
+    async fn path_medium_preference_emits_event_only_after_success() {
+        let (config_dir, storage_dir) = temp_stack_dirs();
+        let (tx, _) = broadcast::channel(8);
+        let handle = Box::pin(StackHandle::bootstrap(
+            config_dir.clone(),
+            storage_dir.clone(),
+            tx,
+        ))
+        .await;
+        // Subscribe after bootstrap so stats_update / startup noise is not in the queue.
+        let mut rx = handle.subscribe_events();
+
+        handle
+            .force_next_path_medium_apply_error("path_medium_preference_apply_failed")
+            .await;
+        let _ = handle
+            .set_path_medium_preference(PathMediumPreferenceSetting::Rf)
+            .await
+            .expect_err("apply must fail");
+        assert!(
+            rx.try_recv().is_err(),
+            "failed preference apply must not emit path_medium_preference"
+        );
+
+        handle
+            .set_path_medium_preference(PathMediumPreferenceSetting::Network)
+            .await
+            .expect("set preference");
+        let raw = rx.try_recv().expect("success must emit");
+        let msg: serde_json::Value = serde_json::from_str(&raw).expect("json");
+        assert_eq!(msg["type"], "path_medium_preference");
+        assert_eq!(msg["payload"]["preference"], "network");
+
+        let _ = std::fs::remove_dir_all(config_dir);
+        let _ = std::fs::remove_dir_all(storage_dir);
+    }
+
+    #[tokio::test]
+    async fn path_medium_apply_failure_rolls_back_persisted_preference_and_pin() {
+        let (config_dir, storage_dir) = temp_stack_dirs();
+        let hash = "aabbccddeeff00112233445566778899";
+        let (tx, _) = broadcast::channel(8);
+        let handle = Box::pin(StackHandle::bootstrap(
+            config_dir.clone(),
+            storage_dir.clone(),
+            tx,
+        ))
+        .await;
+        assert_eq!(
+            handle.path_medium_preference().await,
+            PathMediumPreferenceSetting::Lowest
+        );
+
+        handle
+            .force_next_path_medium_apply_error("path_medium_preference_apply_failed")
+            .await;
+        let err = handle
+            .set_path_medium_preference(PathMediumPreferenceSetting::Rf)
+            .await
+            .expect_err("apply must fail");
+        assert_eq!(err, "path_medium_preference_apply_failed");
+        assert_eq!(
+            handle.path_medium_preference().await,
+            PathMediumPreferenceSetting::Lowest
+        );
+
+        // Persist a known-good pin first, then fail the next apply so rollback restores it.
+        handle
+            .set_peer_medium_pin(hash, Some(PathMediumSetting::Rf))
+            .await
+            .expect("set pin while offline/apply-ok");
+        assert_eq!(
+            handle.peer_medium_pins_json().await,
+            serde_json::json!({ hash: "rf" })
+        );
+        handle
+            .force_next_path_medium_apply_error("peer_medium_pin_apply_failed")
+            .await;
+        let pin_err = handle
+            .set_peer_medium_pin(hash, Some(PathMediumSetting::Network))
+            .await
+            .expect_err("pin apply must fail");
+        assert_eq!(pin_err, "peer_medium_pin_apply_failed");
+        assert_eq!(
+            handle.peer_medium_pins_json().await,
+            serde_json::json!({ hash: "rf" })
+        );
+
+        let _ = std::fs::remove_dir_all(config_dir);
+        let _ = std::fs::remove_dir_all(storage_dir);
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn set_propagation_mode_rolls_back_when_save_fails() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (config_dir, storage_dir) = temp_stack_dirs();
+        let (tx, _) = broadcast::channel(8);
+        let handle = Box::pin(StackHandle::bootstrap(
+            config_dir.clone(),
+            storage_dir.clone(),
+            tx,
+        ))
+        .await;
+        handle.set_propagation_mode("auto").await.expect("set auto");
+        assert_eq!(handle.list_propagation().await["propagation_mode"], "auto");
+
+        // Directory 555 still allows rewriting an existing writable file; lock the state file.
+        let state_path = storage_dir.join("mesh_client_stack.json");
+        let mut perms = std::fs::metadata(&state_path)
+            .expect("state meta")
+            .permissions();
+        perms.set_mode(0o444);
+        std::fs::set_permissions(&state_path, perms).expect("lock state file");
+
+        let err = handle
+            .set_propagation_mode("manual")
+            .await
+            .expect_err("save must fail");
+        assert!(!err.is_empty());
+        assert_eq!(
+            handle.list_propagation().await["propagation_mode"],
+            "auto",
+            "in-memory mode must roll back when save fails"
+        );
+
+        let mut restore = std::fs::metadata(&state_path)
+            .expect("state meta")
+            .permissions();
+        restore.set_mode(0o644);
+        std::fs::set_permissions(&state_path, restore).expect("unlock state file");
+        let _ = std::fs::remove_dir_all(config_dir);
+        let _ = std::fs::remove_dir_all(storage_dir);
+    }
+
     #[tokio::test]
     async fn clear_contacts_empties_persisted_lxmf_contacts() {
         let (config_dir, storage_dir) = temp_stack_dirs();
         let (tx, _) = broadcast::channel(8);
-        let handle = StackHandle::bootstrap(config_dir.clone(), storage_dir.clone(), tx).await;
+        let handle = Box::pin(StackHandle::bootstrap(
+            config_dir.clone(),
+            storage_dir.clone(),
+            tx,
+        ))
+        .await;
         {
             let mut inner = handle.inner.write().await;
             inner.upsert_contact("aabbccddeeff00112233445566778899", Some("Announced".into()));
@@ -2775,5 +4514,78 @@ mod tests {
         assert_eq!(peers[0].display_name.as_deref(), Some("Announced"));
         let _ = std::fs::remove_dir_all(config_dir);
         let _ = std::fs::remove_dir_all(storage_dir);
+    }
+
+    #[cfg(feature = "rns-stack")]
+    #[tokio::test]
+    async fn identity_public_key_hex_matches_status_after_replace_before_live_restart() {
+        let (config_dir, storage_dir) = temp_stack_dirs();
+        let (tx, _) = broadcast::channel(8);
+        let handle = Box::pin(StackHandle::bootstrap(
+            config_dir.clone(),
+            storage_dir.clone(),
+            tx,
+        ))
+        .await;
+        let first = handle
+            .identity_generate(None, false)
+            .await
+            .expect("generate first identity");
+        let first_key = handle
+            .identity_public_key_hex()
+            .await
+            .expect("first public key");
+        assert_eq!(first_key.len(), 128);
+
+        let second = handle
+            .identity_generate(None, true)
+            .await
+            .expect("replace identity");
+        assert_ne!(first.identity_hash, second.identity_hash);
+        // Live bridge is not restarted in-process (only stack_restart_requested is emitted).
+        let status = handle.identity_status().await;
+        assert_eq!(status.identity_hash, second.identity_hash);
+        let key = handle
+            .identity_public_key_hex()
+            .await
+            .expect("public key after replace");
+        let file_id =
+            identity_apply::load_identity_from_file(&config_dir).expect("load replaced identity");
+        assert_eq!(key, hex::encode(file_id.get_public_key()));
+        assert_eq!(hex::encode(file_id.hash), second.identity_hash);
+        assert_ne!(key, first_key);
+
+        let _ = std::fs::remove_dir_all(config_dir);
+        let _ = std::fs::remove_dir_all(storage_dir);
+    }
+
+    #[cfg(feature = "rns-stack")]
+    #[test]
+    fn validated_known_identity_key_accepts_matching_lxmf_dest() {
+        use rns_identity::destination::Destination;
+        use rns_identity::identity::Identity;
+
+        let identity = Identity::new();
+        let key = identity.get_public_key();
+        let dest = hex::encode(Destination::hash_from_name_and_identity(
+            identity_apply::LXMF_APP_NAME,
+            Some(&identity.hash),
+        ));
+        let (parsed_dest, parsed_key) =
+            validated_known_identity_key(&dest, &hex::encode(key)).expect("valid pair");
+        assert_eq!(parsed_dest, dest);
+        assert_eq!(parsed_key, key);
+    }
+
+    #[cfg(feature = "rns-stack")]
+    #[test]
+    fn validated_known_identity_key_rejects_mismatched_dest() {
+        use rns_identity::identity::Identity;
+
+        let identity = Identity::new();
+        let key_hex = hex::encode(identity.get_public_key());
+        let err = validated_known_identity_key("aa".repeat(16).as_str(), &key_hex)
+            .expect_err("mismatched dest");
+        assert_eq!(err, "destination_mismatch");
     }
 }

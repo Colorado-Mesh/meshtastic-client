@@ -1,17 +1,12 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ContactGroup } from '@/shared/electron-api.types';
 
+import { renderWithToast } from '../lib/testRenderHelpers';
 import type { MeshNode } from '../lib/types';
 import ContactGroupsModal from './ContactGroupsModal';
-import { ToastProvider } from './Toast';
-
-function renderWithToast(ui: ReactElement) {
-  return render(<ToastProvider>{ui}</ToastProvider>);
-}
 
 function makeNode(partial: Partial<MeshNode> & Pick<MeshNode, 'node_id' | 'long_name'>): MeshNode {
   return {
@@ -63,6 +58,58 @@ describe('ContactGroupsModal', () => {
     await waitFor(() => {
       expect(onCreate).toHaveBeenCalledWith('My Crew');
     });
+  });
+
+  it('does not call onCreate when selfNodeId is missing', async () => {
+    const user = userEvent.setup();
+    const onCreate = vi.fn().mockRejectedValue(new Error('No selfNodeId'));
+
+    renderWithToast(
+      <ContactGroupsModal
+        groups={[]}
+        contacts={new Map()}
+        selfNodeId={null}
+        protocol="meshtastic"
+        memberIds={new Set()}
+        {...defaultHandlers}
+        onCreate={onCreate}
+      />,
+    );
+
+    const add = screen.getByRole('button', { name: 'Add' });
+    expect(add).toBeDisabled();
+    await user.type(screen.getByPlaceholderText(/New group name/i), 'My Crew');
+    expect(add).toBeDisabled();
+    expect(onCreate).not.toHaveBeenCalled();
+  });
+
+  it('toasts and does not reject when create fails', async () => {
+    const user = userEvent.setup();
+    const onCreate = vi.fn().mockRejectedValue(new Error('No selfNodeId'));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    renderWithToast(
+      <ContactGroupsModal
+        groups={[]}
+        contacts={new Map()}
+        selfNodeId={1}
+        protocol="meshtastic"
+        memberIds={new Set()}
+        {...defaultHandlers}
+        onCreate={onCreate}
+      />,
+    );
+
+    await user.type(screen.getByPlaceholderText(/New group name/i), 'My Crew');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+
+    await waitFor(() => {
+      expect(onCreate).toHaveBeenCalledWith('My Crew');
+    });
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to create group/i)).toBeInTheDocument();
+    });
+    errorSpy.mockRestore();
   });
 
   it('calls onClose when Escape is pressed in list view', async () => {

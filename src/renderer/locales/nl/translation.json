@@ -13,7 +13,7 @@
     "loadingPanel": "Laadpaneel",
     "loadingDialog": "Dialoogvenster laden",
     "meshtasticQueueTooltip": "Verzendwachtrij: pakketten die wachten om te worden verzonden. Groen = laag, oranje = vol, rood = verstopt.",
-    "meshcoreQueueTooltip": "Omdat MeshCore snel berichten verzendt en we elke 30 seconden een poll uitvoeren, moet dit altijd 0 zijn. Als dit niet 0 is, is er sprake van congestie.",
+    "meshcoreQueueTooltip": "Omdat MeshCore snel berichten verzendt en we elke 30 seconden een poll uitvoeren, moet dit altijd 0 zijn. Als dit niet 0 is, is er sprake van congestie of een programmafout.",
     "takRunning": "TAK loopt",
     "takStopped": "TAK stopte",
     "takServerRunning": "TAK-server actief",
@@ -44,7 +44,11 @@
     "footerDiscordTitle": "Colorado Mesh Discord",
     "footerGithubTitle": "Colorado Mesh op GitHub",
     "footerWebsiteTitle": "Colorado Mesh-website",
-    "loadingApp": "Mesh-client laden"
+    "loadingApp": "Mesh-client laden",
+    "reticulumQueueTooltip": "TX-wachtrij voor hosts voor lokale RNode \"{{name}}\": pakketten die wachten op de radio (slechtst gevuld als er meerdere RNodes zijn). Groen onder 25%, amber onder 60%, rood bij 60% of meer.",
+    "reticulumQueueTooltipGeneric": "Host TX-wachtrij voor de drukste lokale RNode: pakketten die wachten op de radio. Groen onder 25%, amber onder 60%, rood bij 60% of meer.",
+    "reticulumTxBuffering": "Bufferen van uitgaande pakketten naar een lokale RNode (host TX-wachtrij leeglopen).",
+    "reticulumTxBufferingNamed": "Bufferen van uitgaande pakketten op \"{{name}}\" (TX-wachtrij van host loopt leeg)."
   },
   "appPanel": {
     "failedSaveRetention": "Kan de instelling voor het bewaren van berichten niet opslaan.",
@@ -216,8 +220,6 @@
     "clearReticulumMessagesTitle": "Directe berichten wissen",
     "clearReticulumMessagesConfirm": "Hiermee worden alle {{count}} lokaal opgeslagen Reticulum-directe berichten permanent verwijderd. Dit kan niet ongedaan worden gemaakt.",
     "clearReticulumMessagesConfirmButton": "{{count}} berichten wissen",
-    "reticulumSection": "Reticulum stack",
-    "reticulumAnnounceHelp": "Hoe vaak uw identiteit wordt aangekondigd op het netwerk en tools om opgeslagen aankondigingen te wissen.",
     "logPanelHelp": "Indien ingeschakeld, verschijnt er aan de rechterkant een live logstream. Op het tabblad Reticulum omvatten apparaatregels zijspanuitvoer en lokale interfacestatus. Voor foutopsporingsregels is het selectievakje in het logpaneel vereist.",
     "autoPruneUnheardContactsDaysAria": "Ongehoorde contacten automatisch opschonen bij het opstarten, ouder dan {{days}} dagen",
     "capTotalContactsCountAria": "Beperk het totale aantal contacten, bewaar de meest recent geziene {{count}} contacten",
@@ -300,6 +302,14 @@
       "chatIncomingBorder": {
         "label": "Rand voor inkomend bericht",
         "description": "Randkleur voor inkomende kanaalberichten."
+      },
+      "messageActionsBarBg": {
+        "label": "Achtergrond van de actiebalk van het bericht",
+        "description": "Achtergrondvulling voor de rij met actieknoppen van het bericht. Standaard verborgen — inschakelen met het selectievakje \"Achtergrond weergeven\"."
+      },
+      "messageActionButtonHover": {
+        "label": "Bericht actieknop hover kleur",
+        "description": "Hover kleur voor alle actieknoppen van het bericht (kopiëren, beantwoorden, reageren, direct bericht, ster en wanneer met ster)."
       }
     },
     "themePreset": {
@@ -364,7 +374,48 @@
     "capStoredRrcMessages": "Beperk opgeslagen RRC-ruimtegeschiedenis, bewaar de nieuwste",
     "capStoredRrcMessagesLabel": "Beperk opgeslagen RRC-ruimtegeschiedenis, bewaar de nieuwste",
     "capStoredRrcMessagesCountAria": "Beperk de opgeslagen RRC-ruimtegeschiedenis, bewaar de nieuwste {{count}}-berichten",
-    "reticulumPropagationHelp": "Configureer externe LXMF-voortplantingsknooppunten voor offline DM's. Lokale verspreiding is alleen de inbox van dit apparaat — het vervangt geen extern knooppunt."
+    "alwaysShowMessageActions": "Altijd berichtacties weergeven",
+    "alwaysShowMessageActionsDesc": "Houd de actiebalk voor kopiëren/beantwoorden/reageren zichtbaar op elk bericht in plaats van deze alleen bij aanwijzen weer te geven.",
+    "themeSaved": "Huidige kleuren opgeslagen.",
+    "themeRestored": "Opgeslagen kleuren hersteld.",
+    "saveTheme": "Huidige kleuren opslaan als controlepunt",
+    "restoreTheme": "Opgeslagen kleurcontrolepunt herstellen",
+    "noSavedThemeTooltip": "Nog geen opgeslagen kleuren — gebruik Opslaan om een controlepunt te maken",
+    "saveThemeButton": "Opslaan",
+    "restoreThemeButton": "Herstellen",
+    "use24HourTime": "24-uursaanduiding",
+    "use24HourTimeDesc": "Forceer klokken zoals chattijdstempels naar 24-uurs formaat. Als deze optie is uitgeschakeld, volgt u de landinstelling van uw systeem.",
+    "themeSaveFailed": "Kan kleurcontrolepunt niet opslaan.",
+    "themeRestoreFailed": "Kan kleurcontrolepunt niet herstellen.",
+    "themeResetFailed": "Kan kleuren niet resetten.",
+    "messageActionsBarBgVisible": "Achtergrond tonen",
+    "rrcUnreadAllRoomMessages": "RRC ongelezen voor alle kamerberichten",
+    "rrcUnreadAllRoomMessagesHint": "Wanneer ingeschakeld, markeert elk nieuw RRC-kamerbericht ongelezen en kan een kanaalgeluid worden afgespeeld. Schakel uit voor waarschuwingen in IRC-stijl: alleen directe berichten en @vermeldingen.",
+    "shareMyLocation": "Deel mijn locatie",
+    "shareMyLocationOffInfo": "Locatie delen is uitgeschakeld — host GPS verversen en mesh verzenden zijn uitgeschakeld. Schakel Mijn locatie hierboven delen in om automatisch vernieuwen te gebruiken of uw positie te verzenden.",
+    "shareMyLocationHint": "Indien ingeschakeld, kan deze app uw locatie op deze computer opzoeken en deze via Meshtastic, MeshCore of Reticulum verzenden (chat share, radio push, RMAP). Wanneer uitgeschakeld, zijn de GPS-zoekopdrachten van de host en het verzenden van de app uitgeschakeld; statische coördinaten werken nog steeds alleen voor je lokale kaart. Een radio met een eigen GPS kan uw positie nog steeds lokaal weergeven. Apparaatfirmware kan nog steeds uitzenden totdat u de radio- of module-instellingen aanpast.",
+    "reticulumBlocklist": {
+      "description": "Geblokkeerde afzenders worden verwijderd voordat hun LXMF-berichten je inbox bereiken. Exporteer de lijst om deze naar een andere installatie te verplaatsen, of importeer een lijst om veel afzenders tegelijk te blokkeren.",
+      "exportButton": "Blokkeerlijst exporteren",
+      "exportAria": "Geblokkeerde contacten exporteren",
+      "importButton": "Blokkeerlijst importeren",
+      "importAria": "Geblokkeerde contacten importeren",
+      "exportOk": "{{count}} geblokkeerde contacten geëxporteerd",
+      "exportEmpty": "Er zijn geen geblokkeerde contacten om te exporteren.",
+      "exportFailed": "Kon de blokkeerlijst niet exporteren.",
+      "importOk": "Geïmporteerde {{imported}} geblokkeerde contacten ({{skipped}} overgeslagen)",
+      "importFailed": "Kon de blokkeerlijst niet importeren.",
+      "unblockAria": "Deblokkeer {{hash}}",
+      "unblockFailed": "Kon dat contact niet deblokkeren.",
+      "empty": "Geblokkeerde contactpersonen",
+      "title": "Geblokkeerde contacten"
+    },
+    "fontSize": "Lettertypegrootte",
+    "fontSizeDesc": "Pas de tekstgrootte in de app aan. Kaarten, grafieken en de terminal worden niet beïnvloed.",
+    "decreaseFontSize": "Lettertype verkleinen",
+    "increaseFontSize": "Lettertype vergroten",
+    "resetFontSize": "Resetten",
+    "resetFontSizeAria": "Lettertype herstellen"
   },
   "aria": {
     "closeDialog": "Dialoogvenster sluiten",
@@ -486,7 +537,14 @@
       "splitHint": "Verzonden als afzonderlijke pakketten met het label [1/N], [2/N], …",
       "overMax": "Te lang — maximaal {{totalMax}} tekens ({{maxParts}} berichten)",
       "sendParts_one": "Verstuur {{count}} onderdeel",
-      "sendParts_other": "Verstuur {{count}} onderdelen"
+      "sendParts_other": "Verstuur {{count}} onderdelen",
+      "limitHintSingle": "Tot {{limit}} tekens. MeshCore verzendt elk bericht als een enkel pakket.",
+      "overMaxSingle": "Te lang — MeshCore verzendt één pakket per bericht (max {{limit}} tekens)",
+      "meshcoreSingleNotice": {
+        "title": "Bericht te lang voor MeshCore",
+        "body": "MeshCore verzendt elk bericht als een enkel radiopakket (maximaal {{limit}} tekens). Langere berichten moeten worden opgesplitst in genummerde delen, maar op een druk netwerk laten repeaters routinematig een aantal van die delen vallen, zodat de persoon die je een bericht stuurt een onvolledig bericht ontvangt zonder het te weten. Om berichten betrouwbaar te houden, worden ze niet automatisch gesplitst. Verkort dit bericht of stuur het als een paar afzonderlijke kortere berichten.",
+        "hint": "MeshCore verzendt één pakket per bericht; gesplitste delen worden vaak gedropt door drukke repeaters, dus langere berichten kunnen niet worden verzonden."
+      }
     },
     "sendFailed": "Verzenden mislukt",
     "outboxStatusQueued": "In wachtrij geplaatst",
@@ -530,9 +588,9 @@
     "reticulumSendFailed": "Versturen mislukt",
     "reticulumImageAttachment": "Afbeelding: {{name}}",
     "reticulumFileAttachment": "Bestand: {{name}}",
-    "reticulumSendPropagated": "In de wachtrij geplaatst bij het voortplantingsknooppunt",
+    "reticulumSendPropagated": "In de wachtrij geplaatst bij het propagatieknooppunt",
     "reticulumNoPropagationNode": "Er is geen propagatieknooppunt geconfigureerd. Stel een voorkeurspropagatieknooppunt in op het tabblad Reticulum Radio.",
-    "sentViaPropagation": "Voortplantingsknooppunt",
+    "sentViaPropagation": "propagatieknooppunt",
     "reticulumAudioAttachment": "Stem: {{name}}",
     "dmPeerInfoAria": "DM peer-info",
     "clearDateAria": "Duidelijke datum",
@@ -586,13 +644,29 @@
       "rememberAddress": "Dit adres onthouden",
       "rememberAddressAria": "Onthoud deze rncp-bestemming voor deze collega",
       "chooseAndSend": "Bestand kiezen en verzenden...",
-      "sending": "Versturen...",
       "sendStarted": "{{file}} verzenden…",
       "sendFailed": "Verzenden mislukt: {{error}}",
       "newOfferToast": "{{peer}} wil je een bestand sturen: {{file}}",
       "requestEnable": "Aanvraag inschakelen",
       "requestEnableAria": "Vraag deze collega om bestandsontvangst in te schakelen",
-      "destinationLabel": "RNCP-bestemmingshash"
+      "destinationLabel": "Peer's rncp ontvangt bestemming",
+      "destinationHelp": "Niet hun Chat/LXMF-hash. Gebruik Request enable - mesh-client-peers delen dit automatisch nadat ze dit hebben geaccepteerd. Of plak vanaf hun afstandsbediening → Mijn rncp ontvangstbestemming.",
+      "activeTransfersBadgeAria_one": "{{count}} actieve bestandsoverdracht met deze collega",
+      "activeTransfersBadgeAria_other": "{{count}} actieve bestandsoverdrachten met deze collega",
+      "transfersTitle": "Overschrijvingen",
+      "useFromChat": "Bestemming van chat gebruiken",
+      "useFromChatAria": "Zoek en gebruik een rncp-ontvangstbestemming die in deze chat wordt gedeeld",
+      "noShareInChat": "Nog geen rncp-share-regel in deze chat. Vraag hen om hun ontvangstbestemming te plakken (Remote → My rncp receive destination), of plak de hash van 32 tekens hieronder.",
+      "savedForOtherPeers": "Opgeslagen ontvangstbestemmingen bestaan voor andere chats ({{peers}}). Open de DM van die peer om automatisch te vullen.",
+      "transferProgressAria": "Voortgang overdracht voor {{file}}: {{progress}} procent",
+      "transferCompletedToast": "Bestand verzonden: {{file}}",
+      "transferFailedToast": "Bestandsoverdracht mislukt ({{file}}): {{error}}",
+      "forgetAddress": "Opgeslagen bestemming vergeten",
+      "forgetAddressAria": "Verwijder de opgeslagen rncp-ontvangstbestemming voor deze peer",
+      "forgotAddressToast": "Opgeslagen rncp-bestemming voor deze peer vergeten.",
+      "filledFromChatToast": "Gevuld doel van chat (niet opgeslagen — vink Vergeet niet om het te bewaren).",
+      "offerBannerTitle": "Inkomende bestandsaanbiedingen",
+      "offerBannerTitleAria": "In afwachting van inkomende bestandsaanbiedingen van deze peer"
     },
     "shareLocation": "Deel locatie",
     "shareLocationLabel": "📍 Gedeelde locatie",
@@ -613,7 +687,70 @@
     "emojiButton": "Emoji",
     "openDmByAddress": "Open",
     "reticulumSendStoredAtPn": "Opgeslagen op propagatieknooppunt",
-    "reticulumPnAbbrev": "PN"
+    "reticulumPnAbbrev": "PN",
+    "hopCountRefinedFromRf": "Bijgewerkt vanaf RF-pad",
+    "openPeerDetails": "Peerdetails",
+    "openPeerDetailsAria": "Peerdetails openen voor {{name}}",
+    "reticulumSendPaper": "Papier",
+    "reticulumSendPaperTooltip": "Gedeeld als een versleuteld LXMF-papierbericht (QR / lxm:// link)",
+    "shareAsPaper": "Delen als papier",
+    "shareAsPaperAria": "Concept delen als gecodeerd LXMF-papier QR",
+    "shareAsPaperTitle": "Papieren bericht",
+    "shareAsPaperHint": "Toon deze QR of kopieer de link. Alleen de identiteit van de ontvanger kan het ontsleutelen. Houd de tekst kort — papieren berichten hebben een maximale grootte.",
+    "shareAsPaperCopyUri": "Link kopiëren",
+    "shareAsPaperCopied": "Papieren link gekopieerd",
+    "shareAsPaperClose": "Sluiten",
+    "shareAsPaperEmpty": "Typ eerst een bericht en deel het vervolgens als papier.",
+    "shareAsPaperFailed": "Kon papieren bericht niet aanmaken.",
+    "shareAsPaperIdentityUnknown": "Openbare sleutel van peer onbekend — importeer de QR-code van de contactpersoon of wacht op een aankondiging en probeer het opnieuw.",
+    "shareAsPaperTooLarge": "Bericht is te lang voor een papieren QR — verkort het en probeer het opnieuw.",
+    "scanPaper": "Papier scannen",
+    "scanPaperAria": "Een gecodeerd LXMF-papierbericht scannen of plakken",
+    "scanPaperHint": "Plak of scan een papieren QR-code om te ontsleutelen in Chat.",
+    "shareAsPaperMessageLabel": "Bericht om te versleutelen",
+    "shareAsPaperGenerate": "Maak papieren QR",
+    "shareAsPaperCopyFailed": "Kon papieren link niet kopiëren",
+    "waitingMessagesSilentFetched": "{{processed}} van de radio gehaald...",
+    "reticulumSendStoringLocally": "Opslaan in uw lokale propagatie-inbox…",
+    "reticulumSendStoredLocally": "Bewaard in uw lokale propagatie-inbox (niet afgeleverd bij de peer)",
+    "sentViaLocalPropagation": "Lokale propagatie-inbox",
+    "reticulumSendTimeout": "Time-out voor verzenden. De Reticulum-stack is mogelijk aan het starten of bezet — probeer het opnieuw.",
+    "meshcoreFastSend": {
+      "warning": "Je verzendt sneller dan de mesh kan doorgeven. Op een drukke mesh kunnen herhalers berichten die dicht bij elkaar zijn verzonden laten vallen — laat een paar seconden tussen berichten."
+    },
+    "outboxLegacyMultipartBlocked": "Dit bericht in de wachtrij maakte gebruik van meerdelige MeshCore-splitsing, die niet langer wordt verzonden. Annuleer het en stuur een korter bericht (of meerdere afzonderlijke kortere berichten).",
+    "voiceMemo": {
+      "recordAria": "Stem opnemen",
+      "playAria": "Spraakopname",
+      "pauseAria": "Spraakmemo pauzeren",
+      "seekAria": "Afspeelpositie spraakmemo zoeken",
+      "containerAria": "Spraakopname",
+      "sendAria": "Spraakopname",
+      "callBusy": "Hang de spraakoproep op voordat u een memo opneemt.",
+      "micDenied": "Microfoontoegang is vereist om een spraakmemo op te nemen.",
+      "tooLargeForWire": "Spraakmemo is te groot om te verzenden. Neem een kortere clip op.",
+      "tooLargeForPropagation": "Spraakbericht is groter dan de limiet van de voortplantingsnode. Het wordt alleen bezorgd wanneer de ontvanger online is. Verkort het om het op te slaan voor offline bezorging.",
+      "directOnlyBadge": "Alleen direct — te groot voor offline opslag",
+      "recordTooltip": "LXMF-spraakmemo — neemt een korte Opus-clip op voor dit directe bericht. Ondersteund door mesh-client, Ratspeak en Sideband (FIELD_AUDIO). Niet hetzelfde als LXST Call.",
+      "sendTooltip": "Verstuur de opgenomen LXMF-spraakmemo",
+      "startFailed": "Kon opnemen van spraakmemo niet starten. Probeer het opnieuw.",
+      "sendAriaWithElapsed": "Spraakmemo verzenden ({{seconds}} seconden opgenomen)",
+      "unavailable": "Spraakmemo niet beschikbaar — bijlage niet in cache op dit apparaat."
+    },
+    "heardByRepeaters_one": "Gehoord door {{count}}",
+    "heardByRepeaters_other": "Gehoord door {{count}}",
+    "heardByNetwork": "Gehoord door netwerk",
+    "notHeardTimeout": "Niet gehoord (time-out)",
+    "routeRelaysPredicted": "Route: ~{{count}} relais via {{hop}}",
+    "routeViaPredicted": "Route: via {{hop}}",
+    "routeRelaysPredictedHopsOnly": "Route: ~{{count}} relais",
+    "heardByRepeatersDetail_one": "Gehoord door {{count}}: {{names}}",
+    "heardByRepeatersDetail_other": "Gehoord door {{count}}: {{names}}",
+    "heardByRepeaterNodeFallback": "Knooppunt {{nodeId}}",
+    "heardByRepeatersAdditional_one": "{{count}} extra niet-geïdentificeerde expediteur (hashes: {{hashes}})",
+    "heardByRepeatersAdditional_other": "{{count}} extra niet-geïdentificeerde expediteurs (hashes: {{hashes}})",
+    "reticulumSendAwaitingPeerReceipt": "Verzonden (in afwachting van ontvangst door collega's)",
+    "reticulumChatNeedsLxmfDelivery": "Deze peer heeft nog geen LXMF-bezorgadres (chat kan geen bestemming met alleen spraak gebruiken). Wacht op een LXMF-aankondiging of plak hun LXMF-hash van 32 tekens."
   },
   "chatPayload": {
     "mention": "Vermeld {{label}}",
@@ -834,7 +971,9 @@
         "macWakeRecoveryHint": "Sluit na de slaapstand de mesh-client (Cmd+Q), schakel Bluetooth uit en in in Systeeminstellingen, wacht een paar seconden en maak vervolgens opnieuw verbinding. Verbind MeshCore met twee radio's vóór Meshtastic.",
         "dualProtocolContentionHint": "Het andere protocol maakt mogelijk nog steeds verbinding via Bluetooth. Wacht een paar seconden en probeer het opnieuw, of schakel over naar het andere protocoltabblad om de verbindingsstatus te controleren.",
         "scanBusy": "Er wordt een nieuwe Bluetooth-scan uitgevoerd. Probeer het zo nog eens.",
-        "sameDeviceConflict": "Dit Bluetooth-apparaat is al verbonden met {{owner}}."
+        "sameDeviceConflict": "Dit Bluetooth-apparaat is al verbonden met {{owner}}.",
+        "chooserCancelledHint": "Als u niet hebt geannuleerd, zorg er dan voor dat Bluetooth is ingeschakeld (systemctl-status bluetooth) en tik vervolgens opnieuw op Verbinden. Installeer op Flatpak een build opnieuw waarbij Bluetooth is toegestaan, of gebruik AppImage/.deb/.rpm.",
+        "bluetoothctlMissingHint": "OS Bluetooth-koppelingstools zijn niet beschikbaar in deze omgeving (gebruikelijk in Flatpak). Gebruik de officiële AppImage, .deb of .rpm, of koppel de radio met host bluetoothctl en probeer Connect opnieuw."
       }
     },
     "error": {
@@ -843,8 +982,6 @@
       "pairingFailed": "Koppelen mislukt: {{msg}}",
       "pinPairingFailed": "PIN-koppeling mislukt: {{msg}}",
       "pinAcceptedNext": "Pincode geaccepteerd. Koppelen voltooid. Druk op Verbinden en selecteer uw apparaat om de verbinding te voltooien.",
-      "autoConnectTimeout": "Er is een time-out opgetreden voor automatisch verbinden.",
-      "autoConnectFailed": "Automatisch verbinden mislukt",
       "connectionFailed": "Verbinding mislukt"
     },
     "cancelMqttConnect": "Annuleren",
@@ -857,8 +994,6 @@
     "mqttTlsEnabled": "TLS (mqtts/ wss) inschakelen",
     "mqttTlsInsecure": "Sta onveilige TLS (zelfondertekend certificaat) toe. Standaard uitgeschakeld — alleen inschakelen als uw makelaar een niet-openbare CA gebruikt.",
     "channelPsksPrivateUplinkNote": "Kanaaluplink is AES-PSK-gecodeerd op /2/e/ (geen JSON-spiegel voor privésleutels). Broker-monitoren kunnen nog steeds ontsleutelingsfouten registreren voor PKI/DM-verkeer tussen andere knooppunten — dat is normaal en niet gerelateerd aan PSK's hier.",
-    "sharedBleWithMeshtastic": "Dit Bluetooth-apparaat is al verbonden via Meshtastic. Schakel over naar het tabblad Meshtastic om het te gebruiken, of kies een andere radio of transport voor MeshCore.",
-    "sharedBleWithMeshtasticHint": "Eén fysieke radio kan niet tegelijkertijd afzonderlijke Meshtastic- en MeshCore Bluetooth-sessies houden.",
     "reticulumStackTitle": "Reticulum-stack",
     "reticulumStackHint": "Start de lokale Reticulum/LXMF-sidecar (TCP- en Auto-interfaces).",
     "reticulumStartStack": "Stack starten",
@@ -872,7 +1007,6 @@
     "reticulumStackRunning": "Stack actief",
     "reticulumIdentity": {
       "title": "Reticulum-identiteit",
-      "hint": "Start de stapel hierboven en maak of importeer vervolgens een mnemonische identiteit.",
       "startStackFirst": "Start de Reticulum-stack om de identiteit te configureren.",
       "displayName": "Weergavenaam",
       "generate": "Identiteit genereren",
@@ -882,16 +1016,9 @@
       "confirmSaved": "IK HEB MIJN HERSTELZIN OPGESLAGEN",
       "hashLabel": "LXMF-hash:",
       "failed": "Identiteitsinstelling mislukt",
-      "export": "Back-up exporteren",
-      "exportPassphrase": "Back-up wachtwoordzin",
-      "exportPassphraseRequired": "Voer een back-upwachtzin in voordat u exporteert.",
-      "importBackupLabel": "Back-up-JSON importeren",
-      "importBackup": "Back-up importeren",
-      "importBackupHint": "Herstelt alleen de weergavenaam en hash-metagegevens. Voor de netwerkidentiteit is uw persoonlijke sleutelbestand of herstelzin vereist.",
       "importPrivateKeyLabel": "Privésleutel importeren",
       "importPrivateKey": "Privésleutel importeren",
       "importPrivateKeyFromFile": "Uit bestand",
-      "importPrivateKeyHint": "64-byte RNS-privésleutel: X25519 geheim (32 B) + Ed25519 zaad (32 B) als hexadecimale code van 128 tekens of base64.",
       "replaceIdentitySection": "Vervang identiteit",
       "replaceIdentityHint": "Als u een nieuwe identiteit importeert, worden uw huidige sleutels vervangen en wordt de stapel opnieuw gestart.",
       "replaceIdentityConfirmTitle": "Reticulum-identiteit vervangen?",
@@ -926,7 +1053,30 @@
       "slotCreated": "Nieuwe identiteit gecreëerd.",
       "slotDeleted": "Identiteit verwijderd.",
       "slotActionFailed": "Identiteitsactie mislukt: {{error}}",
-      "slotUnnamed": "Naamloos"
+      "slotUnnamed": "Naamloos",
+      "importBackupFromFile": "Van .rsi-bestand",
+      "importBackupPin": "Backup-PIN",
+      "importBackupPinRequired": "Voer de PIN in die werd gebruikt toen deze .rsi-back-up werd geëxporteerd.",
+      "exportRaw": "Reticulum-identiteitsbestand exporteren",
+      "exportSaved": "Identiteitsexport opgeslagen.",
+      "exportSaveFailed": "Kon de identiteitsexport niet opslaan.",
+      "exportPassphraseConfirm": "Bevestig backup-PIN",
+      "exportPassphraseMismatch": "Back-up pincodes komen niet overeen.",
+      "exportPassphrase": "Backup-PIN",
+      "importBackupTooLarge": "Identiteitsback-upbestand is te groot.",
+      "hint": "Start de stapel hierboven en maak of importeer vervolgens een BIP-39-herstelzin, een RAW Reticulum-identiteitsbestand of een met pincode gecodeerde Ratspeak .rsi-back-up.",
+      "importBackupLabel": "Importeer Ratspeak .rsi back-up",
+      "importBackup": "Importeer .rsi back-up",
+      "importBackupHint": "PIN-gecodeerde Ratspeak-identiteitsback-up (.rsi). Herstelt uw privésleutel en activeert de identiteit.",
+      "importPrivateKeyHint": "Officiële Reticulum 64-byte privésleutel (X25519 Secret + Ed25519 Seed) als hex, base64, base32 of een RAW .identity-bestand.",
+      "export": "Exporteer .rsi back-up",
+      "exportPassphraseRequired": "Voer een back-up-PIN van ten minste 6 tekens in.",
+      "importBackupAria": "Importeer Ratspeak .rsi back-up van geplakte JSON",
+      "importBackupFromFileAria": "Kies een Ratspeak .rsi back-upbestand om te importeren",
+      "exportAria": "Export PIN-gecodeerde Ratspeak .rsi identiteitsback-up",
+      "exportRawAria": "Exporteer niet-versleuteld RAW Reticulum-identiteitsbestand",
+      "identityHashLabel": "Identiteitshash:",
+      "copyIdentityHash": "Identiteitshash kopiëren"
     },
     "reticulumInterfaces": {
       "title": "Raakvlakken",
@@ -1006,7 +1156,11 @@
         "rnodeWifi": "LoRa mesh via RNode Wi-Fi (tcp://host).",
         "blePeer": "BLE-peer mesh met behulp van zaad-peer-adressen.",
         "generic": "Reticulum-netwerkinterface.",
-        "sharedInstanceClient": "Attached as a client of another app’s shared Reticulum instance — local TCP hubs from this config are not started here."
+        "sharedInstanceClient": "Attached as a client of another app’s shared Reticulum instance — local TCP hubs from this config are not started here.",
+        "i2p": "I2P-backbone via een router op deze machine. Schakel de SAM-toepassingsbrug (127.0.0.1:7656) in — niet HTTP/HTTPS I2PTunnel-proxy's (4444/4445). Start I2P opnieuw op nadat SAM is ingeschakeld, zodat de brug luistert, en start vervolgens de Reticulum-stack opnieuw als deze interface niet werkt.",
+        "serial": "Generieke seriële link naar een TNC, modem of andere host via een kabel. Stel de lijnparameters zo in dat ze overeenkomen met het uiteinde.",
+        "ax25kiss": "AX.25 pakketradio via een KUS TNC. Vereist uw roepnaam en een SSID (0-15) die dit station identificeren.",
+        "local": "Socket met gedeelde instantie op deze machine. Andere lokale tools (rnsd, Nomad Network, rnsh) kunnen via deze stack aan deze stack worden gekoppeld. Het socketpad is afgeleid van de naam van deze interface, dus het hernoemen ervan verandert het adres dat andere tools moeten gebruiken."
       },
       "rfProfile": {
         "coordinated": "Regionaal gecoördineerd",
@@ -1030,10 +1184,7 @@
       "setPrimaryLocalAria": "Stel {{name}} in als primaire lokale RNode",
       "setPrimarySuccess": "Primaire lokale RNode bijgewerkt.",
       "setPrimaryFailed": "Kan primaire lokale RNode niet instellen.",
-      "defaultHubsLabel": "Standaardhubs",
-      "addDefaultHubs": "Voeg testnet en Ratspeak hubs toe",
       "addDefaultHubsSuccess": "{{added}} toegevoegd, {{repaired}} gecorrigeerd. {{skipped}} al geconfigureerd.",
-      "addDefaultHubsFailed": "Kan standaardhubs niet toevoegen.",
       "identityNotConfigured": "Stel eerst een Reticulum-identiteit in op het tabblad Netwerk — genereer of importeer een herstelzin.",
       "identityRequiredHint": "Configureer een Reticulum-identiteit op het tabblad Netwerk voordat u interfaces toevoegt.",
       "i2pPeersRequired": "Voer ten minste één I2P-peeradres in.",
@@ -1066,8 +1217,6 @@
       "backboneDirectoryLinkAria": "Open de Reticulum-backbone-map om hubs te vinden die u als interfaces kunt toevoegen",
       "backboneDirectoryHint": "Vind meer community-backbone-hubs op directory.rns.recipes. Yggdrasil-hubs (bijvoorbeeld Yggdrasil_Ashburn_VA) hebben een actieve lokale Yggdrasil-tunnel nodig - de Reticulum-handleiding beveelt aan om te binden aan uw tunnelinterface (vaak tun0).",
       "localOfflineRowBleBondStale": "Bluetooth-verbinding is verouderd: vergeet deze RNode in Systeeminstellingen → Bluetooth en koppel opnieuw met een nieuwe pincode (het besturingssysteem kan nog steeds Gekoppeld weergeven).",
-      "addDefaultHubsAria": "Synchroniseer standaard Reticulum-backbone-hubs (US-Oost, I2P, Yggdrasil Ashburn VA, Ratspeak, RMAP World); buiten gebruik gestelde testnet-eindpunten uitschakelen",
-      "addDefaultHubsAllPresent": "Standaard backbone-hubs zijn al geconfigureerd; geen buiten gebruik gestelde testnet-hubs ingeschakeld.",
       "modeDescriptions": {
         "full": "Volledige mesh-deelname. Routeert verkeer en verspreidt aankondigingen automatisch. Gebruik voor primaire knooppunten en repeaters.",
         "access_point": "Stil tot bevraagd. Kort pad vervalt. Ideaal voor radio's met een groot bereik die intermitterende gebruikers bedienen.",
@@ -1087,10 +1236,85 @@
       "advanced": "Geavanceerd",
       "advancedHint": "Extra sleutel=waardeparen voor deze interface, één per regel. Bekende velden (host, modus, netwerknaam,...) blijven in het bovenstaande formulier staan.",
       "advancedAria": "Geavanceerde interface key-value opties",
-      "advancedKeyReserved": "Sleutel \"{{key}}\" is een bekend veld en werd genegeerd — gebruik het bovenstaande formulier."
+      "advancedKeyReserved": "Sleutel \"{{key}}\" is een bekend veld en werd genegeerd — gebruik het bovenstaande formulier.",
+      "pickerDeviceAriaWithRssi": "{{name}} {{address}}, {{rssi}} dBm",
+      "decommissionedHubEnableBlocked": "Deze hub is buiten gebruik en kan niet ingeschakeld blijven — mesh-client zet hem bij elke stackstart uit. Gebruik «Standaard backbones toevoegen» of de backbone-directory voor actieve eindpunten.",
+      "decommissionedBadge": "ontmanteld",
+      "defaultHubsPickerTitle": "Standaard backbones toevoegen",
+      "defaultHubsPickerConfirm": "Voeg {{count}} hubs toe",
+      "defaultHubsPickerConfirmSync": "Geselecteerde synchronisatie",
+      "defaultHubsPickerConfirmAria": "{{count}} geselecteerde standaard hubs toevoegen of synchroniseren",
+      "defaultHubAlreadyAdded": "Al toegevoegd",
+      "defaultHubPresetAria": "{{name}}, {{endpoint}}",
+      "defaultHubRegion": {
+        "primary_global": "Primaire en wereldwijde backbone",
+        "north_america": "Noord-Amerika",
+        "europe": "Europa",
+        "asia_oceania": "Azië/ Oceanië",
+        "specialty": "Specialiteit"
+      },
+      "backboneEnableTooMany": "Je hebt {{count}} standaard backbones ingeschakeld. Overweeg om extra's uit te schakelen en er ongeveer 2 te houden voor redundantie.",
+      "interfaceListGroup": {
+        "user_defined": "Gebruiker-gedefinieerd"
+      },
+      "selectAria": "Selecteer interface {{name}}",
+      "selectAll": "Selecteer alles",
+      "selectAllAria": "Selecteer alle verwijderbare interfaces",
+      "clearSelection": "Selectie wissen",
+      "clearSelectionAria": "Interfaceselectie wissen",
+      "deleteSelected": "Geselecteerde verwijderen ({{count}})",
+      "deleteSelectedAria": "Verwijder {{count}} geselecteerde interfaces",
+      "deleteSelectedConfirmTitle": "Geselecteerde interfaces verwijderen?",
+      "deleteSelectedConfirmBody": "{{count}} interfaces uit de stapelconfiguratie verwijderen? Dit kan niet ongedaan worden gemaakt.",
+      "deleteSelectedConfirm": "De selectie verwijderen",
+      "deleteSelectedPartialFailed": "Sommige interfaces zijn verwijderd, maar {{failed}} van {{total}} is mislukt.",
+      "enableAria": "Schakel interface {{name}} in",
+      "disableAria": "Schakel interface {{name}} uit",
+      "defaultHubsLabel": "Standaard backbones",
+      "addDefaultHubs": "Standaard backbones toevoegen",
+      "addDefaultHubsAria": "Kies regionale Reticulum-backbones om toe te voegen en synchroniseer vervolgens geselecteerde voorinstellingen",
+      "addDefaultHubsAllPresent": "Geselecteerde backbones zijn al geconfigureerd; er zijn geen ontmantelde testnet-hubs ingeschakeld.",
+      "addDefaultHubsFailed": "Kan standaard backbones niet toevoegen.",
+      "backboneEnableGuidanceLead": "Maximaal 1 tot 3 backbone-gateways inschakelen",
+      "backboneEnableGuidanceBody": "—2 is ideaal voor redundantie zonder onnodige bandbreedte. Streef naar 1 globale hub en 1 regionale gateway, en schakel speciale interfaces (zoals I2P of Yggdrasil) alleen in als nodig. Lokaal verbonden RNodes en lokale LAN-interfaces tellen niet mee voor deze backbone-limiet.",
+      "defaultHubsPickerHint": "Begin met Primair & globaal plus uw regio. Schakel hoogstens 1 tot 3 backbone-gateways in (2 is ideaal). Lokale RNodes en LAN-interfaces tellen niet mee. Nieuwe items worden uitgeschakeld toegevoegd zodat u ze kunt beoordelen. Sync schakelt ook resterende buiten gebruik gestelde officiële testnet-hubs uit (Amsterdam).",
+      "rnodeTransportBleHint": "BLE-bindingen kunnen desynchroniseren met macOS (vergeten + opnieuw koppelen). Geef de voorkeur aan USB-serieel of Wi-Fi (tcp://) wanneer de radio in de buurt is.",
+      "flowControl": "Stromingsregeling (TX ready-gate)",
+      "rmapFullModeHint": "De volledige modus met RMAP-publicatie blijft vol via ignore_config_warnings. LXMF-leveringsaankondigingen verlaten deze radio op het aankondigingsinterval van de stapel (standaard 1 uur).",
+      "effectiveModeBadge": "Met ingang van: {{mode}}",
+      "effectiveModeAria": "Effectieve runtime-modus {{mode}}. Geconfigureerde modus verschilt van wat Reticulum draait.",
+      "effectiveModeTooltip": "Reticulum herschreef deze detecteerbare interface naar Access Point (of een andere toegestane modus) omdat detecteerbaar Gateway, Intern of Access Point vereist, tenzij ignore_config_warnings is ingesteld. Herstart de stack na mesh-client stempels die zich afmelden zodat Full (of uw geconfigureerde modus) van kracht wordt.",
+      "flowControlBleHint": "Op Bluetooth stuurt de radio vaak nooit CMD_READY. Mesh-Client beweegt nog steeds TX (wacht kort tot het KLAAR is en gaat dan verder), zodat de stroomregeling overbelasting vermindert zonder de wachtrij te bevriezen.",
+      "advancedFields": "Geavanceerde instellingen",
+      "field": {
+        "port": "Poort",
+        "speed": "Snelheid (baud)",
+        "databits": "Data-bits",
+        "parity": "Parity",
+        "stopbits": "Stop bits",
+        "callsign": "Roepletters",
+        "ssid": "SSID",
+        "flow_control": "Stroomregeling",
+        "preamble": "Preambule (ms)",
+        "txtail": "TX staart (ms)",
+        "persistence": "Persistentie",
+        "slottime": "Slottijd (ms)"
+      },
+      "fieldOption": {
+        "parity": {
+          "N": "Geen",
+          "E": "Even",
+          "O": "Oneven"
+        }
+      },
+      "fieldRequired": "Dit veld is verplicht.",
+      "fieldNotANumber": "Voer een geheel getal in (alleen cijfers).",
+      "fieldOutOfRange": "Waarde valt buiten het toegestane bereik.",
+      "fieldTooLong": "Waarde is te lang",
+      "fieldInvalidOption": "Niet-ondersteund waardetype"
     },
     "reticulumPeers": {
-      "hops": "Hops",
+      "hops": "Hop",
       "actions": "Acties",
       "path": "Pad",
       "probe": "Sonde"
@@ -1114,10 +1338,12 @@
       "connectingRow": "{{name}}: verbinden via Bluetooth",
       "offlineHintWifi": "Controleer of de RNode op uw LAN staat, is ingeschakeld en bereikbaar is via het geconfigureerde IP (standaard TCP-poort 7633, niet 4242). Werk de onderstaande host bij als DHCP een nieuw adres heeft toegewezen, of voorzie wifi opnieuw in Reticulum → Admin.",
       "tcpUnreachable": "{{name}}: TCP-hub onbereikbaar ({{host}}:{{port}})",
-      "tcpUnreachableHint": "De externe Reticulum-instantie kan offline zijn of verbindingen blokkeren. Schakel deze interface uit of verifieer de host en poort.",
+      "tcpUnreachableHint": "De externe Reticulum-instantie kan offline zijn of verbindingen blokkeren. Schakel deze interface uit of verifieer de host en poort. Frequente herstarts van mesh-client of de stack kunnen ervoor zorgen dat Reticulum 1.4.0+ hubs je IP 12 uur blokkeren — wacht liever dan opnieuw te herstarten.",
       "connectingHintBle": "BLE RNode-koppelingen kunnen tot 60 seconden duren nadat de stapel is gestart (OS-wachtwoordvenster). Voer de huidige RNode-pincode in als daarom wordt gevraagd; nooit 123456. Dit is normaal en geen fout. Het apparaat verschijnt mogelijk pas in Systeeminstellingen na een succesvolle verbinding.",
       "offlineHintBle": "Om deze fout te verhelpen, moet u deze interface mogelijk verwijderen en weer toevoegen (Kies apparaat) zodat de opgeslagen Bluetooth-id wordt vernieuwd, en daarna de stack herstarten. Uw besturingssysteem kan om een 6-cijferige Bluetooth-pincode vragen (macOS, Windows of Linux). RNode genereert bij elke koppeling een nieuwe code — gebruik nooit 123456 (dat is de standaard van Meshtastic, niet van RNode). De RNode hoeft niet te verschijnen in Systeeminstellingen → Bluetooth voordat deze app verbindt; het dialoogvenster van het besturingssysteem verschijnt wanneer de stack koppelt. Radios zonder scherm: verbind USB → Reticulum Admin → Bluetooth → Koppelen starten → voer de pincode uit het Admin-paneel (niet op het radiodisplay) in het OS-dialoogvenster in. Radios met scherm: houd de knop ~7 s ingedrukt op Heltec-apparaten (timing varieert; ~10 s op veel boards activeert Wi‑Fi AP), lees de pincode op het scherm en voer die in het OS-dialoogvenster in. Wis mislukte koppelingen in de Bluetooth-instellingen van uw besturingssysteem voordat u het opnieuw probeert.",
-      "offlineHintBleBondStale": "macOS toont deze RNode nog steeds als gekoppeld, maar Bluetooth-sleutels komen niet meer overeen (peer heeft koppelingsinformatie verwijderd). Vergeet het apparaat in Systeeminstellingen → Bluetooth, zet de RNode in koppelmodus (Admin → Bluetooth → Koppelen starten, of houd de knop ~7 s ingedrukt), verwijder daarna deze interface en voeg hem opnieuw toe (Kies apparaat), herstart de stack en voer de nieuwe 6-cijferige pincode in wanneer daarom wordt gevraagd."
+      "offlineHintBleBondStale": "macOS toont deze RNode nog steeds als gekoppeld, maar Bluetooth-sleutels komen niet meer overeen (peer heeft koppelingsinformatie verwijderd). Vergeet het apparaat in Systeeminstellingen → Bluetooth, zet de RNode in koppelmodus (Admin → Bluetooth → Koppelen starten, of houd de knop ~7 s ingedrukt), verwijder daarna deze interface en voeg hem opnieuw toe (Kies apparaat), herstart de stack en voer de nieuwe 6-cijferige pincode in wanneer daarom wordt gevraagd.",
+      "tcpFastFlap": "{{name}}: hub heeft je IP-adres waarschijnlijk geblokkeerd nadat de stack vaak opnieuw is opgestart ({{host}}:{{port}})",
+      "tcpFastFlapHint": "Reticulum 1.4.0+ openbare hubs blokkeren een IP na vijf korte TCP-sessies binnen 12 uur. Snelle herstarts van mesh-client of de stack tellen mee. Schakel deze hub uit en wacht tot 12 uur — opnieuw opstarten verlengt het blok."
     },
     "autoConnectingTo": "Automatisch verbinden met {{deviceName}}…",
     "autoReconnectInProgress": "Automatisch opnieuw verbinden bezig…",
@@ -1156,19 +1382,27 @@
       "coloradomesh": "Colorado Mesh",
       "meshmapper": "MeshMapper",
       "ripple": "Ripple Networks",
-      "custom": "Aangepast"
+      "custom": "Aangepast",
+      "waev": "Waev",
+      "meshatse": "Meshat.se",
+      "meshcoreca": "MeshCore.CA",
+      "eastmesh": "EastMesh"
     },
     "meshcorePresetDeviation": {
       "letsmesh": "LetsMesh heeft WebSocket op poort 443 en server mqtt-us-v1.letsmesh.net of mqtt-eu-v1.letsmesh.net nodig. Gebruik Regio (VS/EU) of schakel over naar Aangepast voor andere makelaars.",
       "coloradomesh": "Colorado Mesh heeft WebSocket nodig op poort 443 met TLS ingeschakeld, server mqtt.meshcore.coloradomesh.org, pad /ws. Reset de preset of schakel over naar Aangepast voor andere makelaars.",
-      "meshmapper": "MeshMapper heeft WebSocket op poort 443 en server mqtt.meshmapper.cc nodig. Reset de preset of schakel over naar Aangepast voor andere makelaars."
+      "meshmapper": "MeshMapper heeft WebSocket op poort 443 en server mqtt.meshmapper.net nodig. Reset de preset of schakel over naar Aangepast voor andere makelaars.",
+      "waev": "Waev heeft WebSocket nodig op poort 443 met TLS ingeschakeld, server mqtt.waev.app. Reset de voorinstelling of schakel over naar Aangepast voor andere makelaars.",
+      "meshatse": "Meshat.se heeft WebSocket nodig op poort 443 met TLS ingeschakeld, server meshcore-mqtt.meshat.se. Reset de voorinstelling of schakel over naar Aangepast voor andere makelaars.",
+      "meshcoreca": "MeshCore.CA heeft WebSocket nodig op poort 443 met TLS ingeschakeld, server mqtt1.meshcore.ca of mqtt2.meshcore.ca. Gebruik Makelaar (Primair/Back-up) of schakel over naar Aangepast voor andere makelaars.",
+      "eastmesh": "EastMesh heeft WebSocket nodig op poort 443 met TLS ingeschakeld, server mqtt2.eastmesh.au. Reset de voorinstelling of schakel over naar Aangepast voor andere makelaars."
     },
     "meshcoreMqttIdentity": {
       "hasPrivateKey": "Auth-token (meshcore-decoder-indeling) wordt gegenereerd wanneer u verbinding maakt. De gebruikersnaam is v1_ plus uw openbare sleutel van 64 tekens (hexadecimaal). JWT-doelgroep komt overeen met de hostnaam van de server.",
       "noPrivateKey": "Geen volledige identiteit: importeer uw MeshCore-configuratie in het Radio-paneel (openbare en privésleutels), of plak de gebruikersnaam (v1_<openbare sleutel>) en token handmatig. JWT-doelgroep in het token moet overeenkomen met de hostnaam van de server.",
       "publicKeyMissing": "Openbare sleutel ontbreekt in identiteit. Importeer uw MeshCore-configuratie-JSON in het Radio-paneel (moet openbare en privésleutels bevatten) of plak een makelaartoken in het wachtwoordveld.",
-      "usernameBuildFailed": "Kon LetsMesh-gebruikersnaam niet opbouwen. Importeer uw MeshCore-configuratie-JSON in het Radio-paneel, of plak de gebruikersnaam (v1_<openbare sleutel>) en het token handmatig.",
-      "noIdentity": "Geen apparaatidentiteit gevonden. Importeer uw MeshCore-configuratie-JSON in het Radio-paneel, of plak de gebruikersnaam en het token handmatig."
+      "noIdentity": "Geen apparaatidentiteit gevonden. Importeer uw MeshCore-configuratie-JSON in het Radio-paneel, of plak de gebruikersnaam en het token handmatig.",
+      "usernameBuildFailed": "Kon de MeshCore MQTT-gebruikersnaam niet aanmaken. Importeer uw MeshCore config JSON in het radiopaneel of plak gebruikersnaam (v1_<public key>) en token handmatig."
     },
     "meshcorePacketLogger": {
       "label": "Pakketlogger: wanneer verbonden met uw radio en MQTT, stuurt u RX-pakketsamenvattingen door naar {{topic}} in dezelfde JSON-vorm als meshcoretomqtt. Standaard uitgeschakeld; alleen inschakelen als u van plan bent om gehoord luchtverkeer te delen met een pakketanalysator."
@@ -1188,9 +1422,17 @@
       "slowTransportQueryHint": "The sidecar transport actor may be wedged — restart the Reticulum stack.",
       "shareInstanceHint": "Deel instantie is ingeschakeld — sluit andere Reticulum-apps (MeshChatX, Ratspeak, standalone rnsd) volledig af en start deze stapel opnieuw voordat u DM's opnieuw probeert.",
       "bleBondRemoved": "{{name}}: Bluetooth-verbinding is verouderd (OS toont nog steeds Gekoppeld)",
-      "bleBondRemovedHint": "Vergeet deze RNode in Systeeminstellingen → Bluetooth, begin met koppelen op de radio (Admin → Bluetooth of ~7 s knop ingedrukt houden), start de stapel opnieuw op en voer de nieuwe 6-cijferige pincode in.",
+      "bleBondRemovedHint": "Vergeet deze RNode eerst in Systeeminstellingen → Bluetooth (macOS wist Paired niet automatisch). Geef waar mogelijk de voorkeur aan USB-serie of Wi‑Fi (tcp://) om BLE-koppelingen te vermijden. Daarna: Admin → Bluetooth → Gekoppelde apparaten wissen (USB, ESP32) indien beschikbaar, Koppeling starten, verwijder en voeg deze BLE-interface opnieuw toe (Apparaat kiezen), herstart de stack en voer de nieuwe 6-cijferige pincode in.",
       "blePairingTimedOut": "{{name}}: Time-out voor uitwisseling van Bluetooth-wachtwoord",
-      "blePairingTimedOutHint": "Stop de stapel, begin opnieuw met koppelen (Beheer → Bluetooth toont de pincode in het paneel - het radiodisplay kan leeg blijven - of houd de knop ~7 seconden ingedrukt voor een pincode op het scherm), start de stapel opnieuw op en voer die pincode binnen ~60 seconden in het dialoogvenster van het besturingssysteem in. Gebruik nooit 123456 (standaard Meshtastic)."
+      "blePairingTimedOutHint": "Stop de stapel, begin opnieuw met koppelen (Beheer → Bluetooth toont de pincode in het paneel - het radiodisplay kan leeg blijven - of houd de knop ~7 seconden ingedrukt voor een pincode op het scherm), start de stapel opnieuw op en voer die pincode binnen ~60 seconden in het dialoogvenster van het besturingssysteem in. Gebruik nooit 123456 (standaard Meshtastic).",
+      "bleBondRemovedStopStack": "Stop stack",
+      "bleBondRemovedOpenAdmin": "Open Beheerder Bluetooth",
+      "txQueueDropsHintBle": "Deze BLE RNode kan zijn TX-wachtrij niet legen (link vast of flapperend). Geef de voorkeur aan USB-serie of Wi‑Fi (tcp://), of stop de stack en koppel opnieuw na Vergeten in Systeeminstellingen → Bluetooth.",
+      "txQueueDropsHintBleBondStale": "TX-wachtrij is vol omdat de BLE-koppeling verouderd is. Vergeet deze RNode in Systeeminstellingen → Bluetooth en gebruik Admin → Bluetooth (Gekoppelde wissen / Koppeling starten) of schakel over naar USB.",
+      "txQueueDropsHintNeutral": "Dit interface TX-kanaal is vol. Controleer de linkstatus van die interface (of schakel deze uit) om vallen te stoppen.",
+      "txQueueDropsHintBleFlowControl": "Host TX wachtrij tegendruk terwijl de radio bezig is (stroomregeling aan). Verwacht bij RF-congestie — geen vastzittende link. Verminder de uitgaande belasting of wacht op zendtijd.",
+      "tcpResetByPeer": "{{name}}: hub heeft de TCP-sessie gereset (verbinding gereset door peer)",
+      "tcpReadEof": "{{name}}: hub sloot TCP netjes af (INFO: TCP lezen: EOF)"
     },
     "reticulumSidecarBundledMissing": "Bij deze installatie ontbreekt het gebundelde Reticulum sidecar. Upgrade naar een nieuwere release of rapporteer het probleem: bouwen vanaf de broncode is niet beschikbaar in pakketinstallaties.",
     "radioMqttRootDivergesWarning": "Radio MQTT-hoofdonderwerp is {{radioRoot}}, maar dit paneel is geabonneerd op {{appPrefix}}. Koppel de radio om landelijk knooppuntverkeer te beperken — werk het onderwerpvoorvoegsel bij en sluit MQTT opnieuw aan.",
@@ -1201,16 +1443,15 @@
     "hintMeshtasticTcp2": "Als de verbinding onbetrouwbaar is (bijv. met meshtastic.local), probeer dan in plaats daarvan het IP-adres van het apparaat — desktop mDNS kan schilferig zijn.",
     "channelPsksMqttOnlyIndexHint": "Zonder radioverbinding worden inkomende MQTT-berichten per kanaalnaam naar chattabbladen gerouteerd. Gebruik ChannelName@index=base64 zodat elke naam naar de juiste sleuf wijst — bijvoorbeeld LongFast@1=AQ== wanneer uw openbare meshkanaal sleuf 1 is (Colorado-mesh-stijl). LongFast zonder @ wijst naar sleuf 0.",
     "reticulumRmap": {
-      "publishing": "RMAP v4: publiceren op {{count}} interface(s)",
       "notPublishing": "RMAP v4: niet publiceren",
       "openSettings": "Netwerk instellingen",
       "openSettingsAria": "Open RMAP-detectie-instellingen op het tabblad Netwerk",
-      "needsSync": "{{count}} ingeschakelde lokale interface(s) hebben RMAP-detectiesynchronisatie nodig",
       "noPublishTargets": "Geen ingeschakelde lokale interfaces om op RMAP te publiceren.",
       "syncSuccess": "RMAP-detectie gesynchroniseerd met interface.",
       "openGlobalMap": "Wereldkaart",
       "openGlobalMapAria": "Open RMAP v4 globale kaart op rmap.world",
-      "syncFailed": "Synchronisatie van RMAP-detectie mislukt."
+      "syncFailed": "Synchronisatie van RMAP-detectie mislukt.",
+      "publishingOf": "RMAP v4: publicatie van {{current}} van {{total}}"
     },
     "coloradoPresetConfirm": "Colorado Mesh MQTT is voor gebruikers van Colorado-zone mesh. De preset publiceert onder meshcore/DEN (Denver IATA). Als je niet in Colorado bent, gebruik dan LetsMesh of MeshMapper. Doorgaan?",
     "coloradoServerNote": "Colorado Mesh is voor meshgebruikers in de regio Colorado. Onderwerpvoorvoegsel gebruikt de Denver IATA (meshcore/DEN).",
@@ -1233,7 +1474,39 @@
       "disableShare": "Deel instantie uitschakelen en opnieuw opstarten",
       "disableShareAria": "Schakel de instantie Delen uit en start de stapel opnieuw",
       "disableFailed": "Kan de instantie Delen niet uitschakelen."
-    }
+    },
+    "letsMeshUsernameV1Hex": "Gebruikersnaam moet v1_zijn, gevolgd door 64 hexadecimale tekens (openbare sleutel).",
+    "bleWeakSignalWarning": "Bluetooth-signaal is zwak ({{rssi}} dBm). Kom dichterbij voor een stabiele verbinding.",
+    "bleRssiDbm": "{{rssi}} dBm",
+    "hostSignal": "Signaal",
+    "hostSignalUnavailable": "—",
+    "linkQuality": "Verbindingskwaliteit",
+    "linkQualityMs": "{{ms}} ms",
+    "linkQualityUnavailable": "—",
+    "signalUnavailableWebBluetooth": "Niet beschikbaar (Web Bluetooth)",
+    "meshcoreCaBroker": "MeshCore.CA-makelaar",
+    "meshcoreCaPrimary": "Primair",
+    "meshcoreCaBackup": "Back-up",
+    "broker": "Makelaar:",
+    "letsMeshRequiresTls": "Deze makelaarspreset vereist TLS (wss). Schakel TLS in of schakel over naar Aangepast.",
+    "letsMeshRequiresWsPath": "Deze makelaarspreset vereist WebSocket-pad {{wsPath}}. Reset de voorinstelling of schakel over naar Aangepast.",
+    "letsMeshRegionUs": "US",
+    "letsMeshRegionEu": "EU",
+    "letsMeshRequiresWebSocket": "Deze broker preset vereist WebSocket transport (wss).",
+    "letsMeshRequiresPort": "Deze makelaarspreset vereist poort {{port}} (WebSocket TLS).",
+    "letsMeshKnownBrokersOnly": "Deze preset ondersteunt alleen bekende openbare MeshCore MQTT-makelaars. Schakel over naar Aangepast voor andere makelaars.",
+    "sortName": "Naam",
+    "sortRssi": "RSSI",
+    "sortToolbar": "Lijst met apparaten",
+    "sortByNameAsc": "Sorteer op naam: A tot Z",
+    "sortByNameDesc": "Sorteer op Naam, Z tot A",
+    "sortByRssiAsc": "Sorteren op RSSI, zwakste eerst",
+    "sortByRssiDesc": "Sorteren op RSSI, sterkste eerst",
+    "pickerDeviceAria": "{{name}} {{address}}",
+    "pickerDeviceAriaWithRssi": "{{name}} {{address}}, {{rssi}} dBm",
+    "bluetoothMac": "Bluetooth MAC",
+    "bluetoothId": "Bluetooth-ID",
+    "reticulumAutoResendOnAnnounce": "Probeer mislukte berichten opnieuw wanneer een collega aankondigt"
   },
   "contactGroupsModal": {
     "failedLoadMembers": "Kan leden niet laden: {{message}}",
@@ -1256,7 +1529,9 @@
     "confirmDeleteButton": "Verwijderen?",
     "manageMembersOf": "Leden van {{name}} beheren",
     "renameGroupNamed": "Hernoem {{name}}",
-    "deleteGroupNamed": "{{name}} verwijderen"
+    "deleteGroupNamed": "{{name}} verwijderen",
+    "needSelfNode": "Sluit eerst een radio aan, zodat uw knooppunt-ID bekend is voordat u een contactgroep maakt.",
+    "failedCreateGroup": "Kan groep niet aanmaken: {{message}}"
   },
   "diagnosticsPanel": {
     "dropRoutingRows": "Rijen voor droprouting die ouder zijn dan {{hours}} uur (1–168)",
@@ -1510,7 +1785,8 @@
         "edit": "Bewerkingsinterface",
         "restart_stack": "Start de stapel opnieuw",
         "add_auto": "Automatische interface toevoegen",
-        "disable_share_instance": "Turn off Share instance"
+        "disable_share_instance": "Turn off Share instance",
+        "open_interfaces": "Open interfaces"
       },
       "audit": {
         "tcp_enable_key": "TCP-interface \"{{name}}\" gebruikt de verkeerde inschakelsleutel - RNS zal deze niet laden.",
@@ -1531,7 +1807,8 @@
         "rmap_no_tcp_hub": "Ontdekbare lokale RNode heeft geen ingeschakelde TCP-clienthub voor internetbereikbaarheid.",
         "rmap_transport_disabled": "Ontdekbare interfaces zijn geconfigureerd, maar de transportmodus is uitgeschakeld.",
         "rmap_i2p_not_connectable": "I2P-interface \"{{name}}\" is detecteerbaar, maar aansluitbaar is niet ja.",
-        "shared_instance_client": "Share instance attached as a client of another app — local TCP hubs in this config are not started."
+        "shared_instance_client": "Share instance attached as a client of another app — local TCP hubs in this config are not started.",
+        "rmap_mode_autocorrect": "Interface \"{{name}}\" is detecteerbaar met een niet-AP/Gateway-modus — Reticulum zal het als toegangspunt uitvoeren, tenzij ignore_config_warnings is ingesteld. Bewerk de interface of start de stack opnieuw, zodat de mesh-client de opt-out kan afstempelen."
       },
       "runtime": {
         "rnsNotReady": "RNS-stack is niet gereed",
@@ -1544,7 +1821,7 @@
         "autoBeaconPhysicalFailures": "AutoInterface-baken TX faalt op {{ifaces}} — lokale LAN-detectie werkt mogelijk niet totdat dit is opgelost.",
         "tcpUnreachable": "TCP-hub \"{{name}}\" is onbereikbaar ({{host}}:{{port}})",
         "tcpConnectFailed": "TCP-hub \"{{name}}\" -verbinding geweigerd of er is een time-out opgetreden",
-        "txQueueDrops": "Interface \"{{name}}\" liet {{count}} uitgaande pakketten vallen (TX-wachtrij vol)",
+        "txQueueDrops": "Interface \"{{name}}\" liet {{count}} uitgaande pakketten vallen (TX-wachtrij vol) — vaak een dode TCP-hub die nog aan staat",
         "linkDeliveryTimeout": "Directe LXMF-link naar {{hash}}… time-out ({{count}}×)",
         "transportSaturated": "RNS-transport verzadigd ({{count}} LXMF-pad-aanvraagdruppels)",
         "transportSaturatedShareInstance": "RNS-transport verzadigd ({{count}} pad-aanvraagdruppels). Deel instantie is ingeschakeld — sluit andere Reticulum-apps (MeshChatX, Ratspeak, rnsd) en start de stapel opnieuw.",
@@ -1553,7 +1830,23 @@
         "blePairingTimedOut": "Er is een time-out opgetreden bij het uitwisselen van de BLE RNode \"{{name}}\"-wachtwoord: voer de huidige pincode in (niet 123456) en koppel opnieuw",
         "sidecarUnhealthy": "Reticulum-zijspan loopt, maar reageert niet op gezondheidscontroles",
         "propagationSyncStuck": "Synchronisatie van propagatieknooppunt zit vast bij het tot stand brengen van een link",
-        "propagationSyncFailing": "Synchronisatie van propagatieknooppunt mislukt"
+        "propagationSyncFailing": "Synchronisatie van propagatieknooppunt mislukt",
+        "announceBusPressure": "Hoog aankondigings-/padresponspercentage kan inkomende LXMF-chatlevering vertragen — inhaalactie is actief; er worden grote padtabellen verwacht",
+        "announceBusPressureTipDisableHubs": "Schakel ongebruikte TCP-hubs (Connection → Interfaces) uit — de grootste hendel voor het churn van de path-table.",
+        "announceBusPressureTipShareInstance": "Schakel instantie delen uit als andere lokale Reticulum-apps met deze stapel te maken hebben.",
+        "announceBusPressureTipAnnounceInterval": "Netwerkaankondigingsinterval regelt alleen de uitgaande aankondigingen van dit knooppunt — het stopt inkomende padresponsoverstromingen niet.",
+        "announceBusPressureTipWait": "Inhalen is al actief; deze waarschuwing verdwijnt na ongeveer 5 minuten zonder vertraging, storm of overloop.",
+        "announceBusPressureHot": "Hoog aankondigings-/padresponspercentage kan inkomende LXMF-chatbezorging vertragen — de meest recente padupdates zijn via \"{{hotInterface}}\"",
+        "announceBusPressureTipHotInterface": "Path-table churn is geconcentreerd op interface \"{{name}}\".",
+        "announceBusPressureTipBoundaryHubs": "Ingeschakelde grens- / ruggengraathubs: {{hubs}}.",
+        "announceBusPressureTipTxSaturated": "TX-wachtrij valt op: {{names}} — die interface kan verzadigd zijn.",
+        "tooManyDefaultBackbones": "Je hebt {{count}} standaard backbones ingeschakeld. Overweeg om extra's uit te schakelen en er ongeveer 2 te houden voor redundantie.",
+        "decommissionedHubEnabled": "Buiten gebruik gestelde hub „{{name}}” staat nog aan — mesh-client zet hem bij elke stackstart uit. Gebruik «Standaard backbones toevoegen» of de backbone-directory voor actieve eindpunten.",
+        "txQueueDropsBle": "Interface \"{{name}}\" liet {{count}} uitgaande pakketten vallen (TX-wachtrij vol) — BLE RNode-link vastgelopen; geef de voorkeur aan USB of opnieuw koppelen",
+        "txQueueDropsBleBondStale": "Interface \"{{name}}\" liet {{count}} uitgaande pakketten vallen (TX-wachtrij vol) — BLE-binding verouderd; Vergeet in OS Bluetooth en koppel opnieuw",
+        "txQueueDropsNeutral": "Interface \"{{name}}\" liet {{count}} uitgaande pakketten vallen (TX-wachtrij vol) — controleer de link van die interface",
+        "txQueueDropsBleFlowControl": "Interface \"{{name}}\" liet {{count}} uitgaande pakketten vallen (host TX-wachtrij vol) — stroomregeling aan; verwacht bij RF-congestie, geen vastzittende link",
+        "tcpFastFlap": "TCP-hub \"{{name}}\" heeft dit IP-adres waarschijnlijk geblokkeerd nadat de stack vaak opnieuw is opgestart ({{host}}:{{port}})"
       }
     },
     "routingPort": {
@@ -1681,7 +1974,9 @@
       "noSerialPorts": "Geen seriële USB-poorten gevonden. Sluit uw bord aan via USB en probeer het opnieuw.",
       "rnodeCommandTimeout": "Het apparaat reageert niet meer via serieel. Sluit andere apps die dezelfde seriële poort gebruiken, wacht tot het bord klaar is met opstarten en probeer het opnieuw.",
       "esp32FlashStalled": "Firmwareoverdracht vastgelopen zonder voortgang. Probeer een andere USB-kabel of poort, ga naar de bootloader-modus (houd BOOT ingedrukt, tik op RESET) en flash opnieuw.",
-      "unknown": "Er is een onverwachte fout opgetreden."
+      "unknown": "Er is een onverwachte fout opgetreden.",
+      "provisionWipeRequired": "EEPROM is vergrendeld met een ongeldige identiteit. Wis eerst de EEPROM en voer daarna opnieuw provisioning uit.",
+      "provisionVerifyFailed": "Provisioning-schrijfacties zijn voltooid, maar het apparaat meldt nog steeds een niet-ingerichte EEPROM. Schakel de voeding van het bord uit en weer in, wacht op opstarten en probeer opnieuw — of wis eerst de EEPROM."
     },
     "selectSerialPort": "Seriële poort selecteren",
     "noSerialPorts": "Geen USB seriële poorten gevonden.",
@@ -1724,11 +2019,15 @@
     "pairingWaiting": "Wachten op koppelingspincode van de radio via USB...",
     "pairingPinLabel": "Bluetooth-koppelingspincode",
     "pairingPinEnterHint": "Voer deze code in het OS Bluetooth-dialoogvenster in wanneer de stapel verbinding maakt. Gebruik 123456 niet.",
-    "bluetoothHint": "Schakel Bluetooth in op het apparaat en gebruik vervolgens Koppeling starten. De 6-cijferige pincode verschijnt in dit paneel via USB - het radiodisplay blijft vaak leeg. Voer die pincode in het Bluetooth-dialoogvenster van uw besturingssysteem in wanneer Reticulum verbinding maakt via BLE. RNode heeft geen standaardpincode (gebruik niet 123456 – dat is Meshtastic). Op displayborden kan het ingedrukt houden van de knop ~7 seconden ook een pincode op het scherm weergeven. De RNode verschijnt mogelijk pas in Systeeminstellingen → Bluetooth na een succesvolle verbinding."
+    "bluetoothHint": "Schakel Bluetooth in op het apparaat en gebruik Koppeling starten. De 6-cijferige pincode verschijnt in dit paneel via USB — het radiodisplay blijft vaak leeg. Voer die pincode in het Bluetooth-dialoogvenster van uw OS in wanneer Reticulum via BLE verbindt. RNode heeft geen standaardpincode (gebruik niet 123456 — dat is Meshtastic). Op displayborden kan ~7 s knop vasthouden ook een pincode tonen. De RNode verschijnt mogelijk pas in Systeeminstellingen → Bluetooth na een geslaagde koppeling. Gekoppelde apparaten wissen (ESP32) wist de radiokoppelingstabel via USB vóór herkoppelen; u moet het apparaat nog steeds Vergeten in Systeeminstellingen.",
+    "clearPairedDevices": "Gekoppelde apparaten wissen",
+    "clearPairedDevicesConfirmTitle": "RNode Bluetooth-bindingen wissen?",
+    "clearPairedDevicesConfirmMessage": "Dit stuurt CMD_BT_UNPAIR via USB en wist gekoppelde hosts op ESP32 RNodes (geen effect op sommige nRF52-builds). U moet het apparaat nog steeds Vergeten in Systeeminstellingen → Bluetooth voordat u opnieuw koppelt.",
+    "clearPairedDevicesConfirm": "Bluetooth-koppelingen wissen",
+    "clearPairedDevicesSuccess": "Wissen van radiokoppelingstabel aangevraagd."
   },
   "identityVault": {
     "title": "Identiteitskluis",
-    "hint": "Versleutel een lokale kopie van je identiteitsback-up met een kluiswachtwoordcode. Ontgrendel om toegang te krijgen tot beschermde identiteitsbewerkingen.",
     "passcode": "Toegangscode kluis",
     "confirmPasscode": "Toegangscode bevestigen",
     "setPasscode": "Schakel kluis in",
@@ -1737,13 +2036,14 @@
     "statusNotConfigured": "Niet geconfigureerd",
     "statusLocked": "Vastgezet",
     "statusUnlocked": "Ontgrendeld",
-    "passcodeTooShort": "De toegangscode moet uit minimaal 4 tekens bestaan.",
     "passcodeMismatch": "Ingevoerde toegangscodes komen niet overeen.",
     "setSuccess": "Toegangscode kluis opgeslagen.",
     "setFailed": "Kan kluistoegangscode niet opslaan.",
     "unlockSuccess": "Kluis ontgrendeld",
     "unlockFailed": "Onjuiste toegangscode of kluisfout.",
-    "lockSuccess": "Kluis vergrendeld."
+    "lockSuccess": "Kluis vergrendeld.",
+    "hint": "Versleutel desgewenst een lokaal kluisgeheim met een toegangscode (minimaal 8 tekens). Dit is geen vervanging voor het exporteren van een draagbaar .rsi- of RAW-identiteitsbestand.",
+    "passcodeTooShort": "De toegangscode moet uit ten minste 8 tekens bestaan."
   },
   "logAnalyzeModal": {
     "title": "Loganalyse",
@@ -1755,7 +2055,14 @@
     "recommendationsHeading": "Aanbevelingen",
     "lastMessagePrefix": "Laatst:",
     "appliesToCategories": "Geldt voor: {{labels}}",
-    "severityInfo": "Informatie"
+    "severityInfo": "Informatie",
+    "historyNote": "Bevindingen beschrijven gebeurtenissen in dit logboek, niet noodzakelijkerwijs problemen die nog steeds actief zijn.",
+    "copyReport": "Probleemoplossingsrapport kopiëren",
+    "copyHint": "Inclusief monsterlogboekberichten. Controleer het rapport op privégegevens voordat je het deelt.",
+    "copySuccess": "Rapport gekopieerd",
+    "copyFailure": "Kon het rapport niet kopiëren. Probeer het opnieuw of exporteer het logboek.",
+    "evidence": "Bekijk bewijsmateriaal voor {{category}}",
+    "evidenceShown": "Toont {{shown}} van {{total}} overeenkomende inzendingen, nieuwste eerst."
   },
   "logAnalyzer": {
     "categories": {
@@ -1840,11 +2147,44 @@
         "recommendation": "Chatgeschiedenis opslaan en doorsturen kon niet worden aangevraagd bij een router (vaak een korte race met ander radioverkeer). Als de chatachterstand leeg blijft, maak dan opnieuw verbinding of wacht op de volgende hartslag van de router."
       },
       "serial-reconnect": {
-        "label": "USB-serieel opnieuw verbinden"
+        "label": "USB-serieel opnieuw verbinden",
+        "recommendation": "De USB seriële poort kon niet opnieuw worden geopend of de vorige stream is nog steeds vergrendeld. Sluit andere apps met de radio, sluit de kabel opnieuw aan en maak opnieuw verbinding in de app. Als het zich herhaalt, neem dan de seriële logregels op in een bugrapport."
       },
       "reticulum-nomad-hosting": {
         "label": "Problemen met Nomad-pagina's",
         "recommendation": "Het hosten van Nomad My Pages is mislukt of de inhoudsmap is niet beschikbaar. Open Nomad Network → My Pages, kies de paginamap opnieuw als deze is verplaatst en start vervolgens met serveren. Details verschijnen als [nomad-serving] / [NomadHosting] in het logboek."
+      },
+      "renderer-unresponsive": {
+        "label": "App reageert niet meer",
+        "recommendation": "De app verzendt geen UI-hartslagen meer. Als het hersteld is, noteer dan wat je aan het doen was in de buurt van de vermelde tijd. Als het bevroren blijft, start u de app opnieuw op en voegt u dit rapport toe bij het melden van een terugkerende hang."
+      },
+      "database-persistence": {
+        "label": "Je wijzigingen konden niet worden opgeslagen.",
+        "recommendation": "Database schrijft uitgeput hun nieuwe pogingen of werden gedropt. Wijzigingen die zichtbaar zijn in deze sessie overleven een herstart mogelijk niet. Exporteer belangrijke gegevens voordat u afsluit en controleer vervolgens de vrije schijfruimte en toegang tot de app-gegevensmap. Verwijder de database niet."
+      },
+      "meshtastic-tcp": {
+        "label": "Meshtastic TCP-verbinding mislukt",
+        "recommendation": "De TCP-verbinding met de Meshtastic-radio is mislukt. Controleer het radioadres en de poort, de bereikbaarheid van het lokale netwerk en of een andere client de verbinding gebruikt voordat u opnieuw verbinding maakt."
+      },
+      "reticulum-sidecar": {
+        "label": "Reticulum-service onderbroken",
+        "recommendation": "De lokale Reticulum-service kon de gebeurtenisverbinding niet starten, beantwoorden of onderhouden. Controleer de status in Verbinding en de onderstaande logregels. Als het niet is hersteld, start u de Reticulum-verbinding opnieuw op. Als er een verpakt zijspan ontbreekt, moet de app mogelijk opnieuw worden geïnstalleerd."
+      },
+      "reticulum-delivery": {
+        "label": "Reticulum-bezorging of synchronisatie mislukt",
+        "recommendation": "Een poging tot berichtlevering of propagatiesynchronisatie is mislukt. Controleer de huidige berichtstatus voordat u het opnieuw probeert, controleer de bestemming en controleer ingeschakelde interfaces. Controleer voor verspreiding het geselecteerde knooppunt en de synchronisatiestatus onder Netwerk; een opgeslagen bericht is geen bewijs van aflevering aan de ontvanger."
+      },
+      "reticulum-backpressure": {
+        "label": "Reticulum-gebeurtenissen of pakketten verloren",
+        "recommendation": "De lokale Reticulum-service liet evenementen of pakketten vallen omdat een wachtrij vol was, een abonnee achterbleef of een payload een limiet overschreed. Verminder gelijktijdige bulkoverdrachten en controleer vervolgens de berichtstatus voordat u het opnieuw probeert. Herhaalde druppels tijdens inactiviteit zijn de moeite waard om te melden met deze logmonsters."
+      },
+      "firmware-flash": {
+        "label": "Firmware-overdracht vastgelopen",
+        "recommendation": "De overdracht van de firmware is gestopt en de seriële poort is gesloten. Bevestig de juiste firmware en het juiste apparaat, controleer de USB-kabel en volg de instructies voor apparaatherstel of opstartlader voordat u het opnieuw probeert."
+      },
+      "unclassified": {
+        "label": "Andere waarschuwingen en fouten",
+        "recommendation": "Deze logregels komen niet overeen met een bekende diagnose en kunnen verwachte herstelberichten bevatten. Bekijk hun tijdstempels en omringende context. Als een probleem zich blijft voordoen, exporteer dan het volledige logboek met dit rapport."
       }
     },
     "recommendationGroups": {
@@ -1962,14 +2302,16 @@
       "repeaterRpcInProgress": "Er is al een aanvraag voor deze repeater in behandeling",
       "cliDangerNotConfirmed": "Destructieve CLI-opdrachten moeten worden bevestigd in het paneel Herhalers.",
       "pingFailed": "Ping mislukt",
-      "floodScopeBusy": "Het overschrijven van de Floodsscope is niet beschikbaar terwijl repeaterbeheer of traceroute bezig is. Probeer het opnieuw wanneer het apparaat inactief is."
+      "floodScopeBusy": "Het overschrijven van de Floodsscope is niet beschikbaar terwijl repeaterbeheer of traceroute bezig is. Probeer het opnieuw wanneer het apparaat inactief is.",
+      "removeContactFailed": "Lokaal verwijderd, maar de radio heeft removeContact geweigerd. Het contact kan opnieuw verschijnen na een verversing."
     },
     "mqttHints": {
       "notAuthorized": "Controleer v1_ gebruikersnaam, tokenhandtekening en JWT-doelgroep versus makelaar; zie docs/letsmesh-mqtt-auth.md. Gebruik Aangepast om indien nodig een door de operator uitgegeven token te plakken.",
       "network": "Controleer netwerk, DNS, firewall en VPN.",
       "connackTimeout": "Als u geen eerdere regel 'clientfout' ziet, loopt de TLS/WebSocket-handshake mogelijk vast (probeer een ander netwerk; de app geeft de voorkeur aan IPv4 voor WSS).",
       "subscribeFailed": "De makelaar kan een wildcard-abonnement op dit onderwerp weigeren; berichten kunnen nog steeds binnenkomen als de makelaar dit toestaat.",
-      "keepalive": "De server reageert niet meer op MQTT-pings (time-out bij inactiviteit, netwerkuitval of makelaar heeft de sessie gesloten). Maak opnieuw verbinding of controleer uw link."
+      "keepalive": "De server reageert niet meer op MQTT-pings (time-out bij inactiviteit, netwerkuitval of makelaar heeft de sessie gesloten). Maak opnieuw verbinding of controleer uw link.",
+      "tlsHandshake": "TLS-handshake mislukt (makelaarscertificaat, SNI of host). Gebruik voor MeshMapper mqtt.meshmapper.net (niet .cc). Probeer een ander netwerk of reset de MeshMapper-voorinstelling."
     }
   },
   "meshcoreContactSettings": {
@@ -2005,7 +2347,10 @@
     "clearAllIntro": "Verwijder elk contact van de radio en wis de contactendatabase van de app. Dit kan niet ongedaan worden gemaakt.",
     "clearAllContactsConfirm": "Alle contacten van de radio verwijderen en lokale contactgegevens wissen?",
     "clearingContacts": "Wissen…",
-    "clearAllContactsButton": "Wis alle contacten"
+    "clearAllContactsButton": "Wis alle contacten",
+    "autoOffloadWhenFull": "Auto-offload wanneer de radio vol is",
+    "autoOffloadWhenFullLabel": "Auto-offload wanneer vol",
+    "autoOffloadWhenFullDesc": "Wanneer de metgezel meldt dat de contactenopslag vol is, laadt u contacten automatisch af naar de app-database (hetzelfde als Offload)."
   },
   "meshcoreTelemetryPrivacy": {
     "summary": "Telemetrieprivacy",
@@ -2046,7 +2391,8 @@
     "noAckTooltip": "Geen ACK (bericht kan nog steeds zijn uitgezonden; geen ander knooppunt binnen bereik om te bevestigen)",
     "failed": "Mislukt",
     "tooltipPrefixMqtt": "MQTT",
-    "tooltipPrefixDevice": "Toestel"
+    "tooltipPrefixDevice": "Toestel",
+    "noAckTooltipWifi": "Geen mesh ACK — uw WiFi/TCP-link naar de radio is prima. Mogelijk is er nog steeds een bericht verzonden; er is geen ander LoRa-knooppunt bevestigd."
   },
   "modulePanel": {
     "sectionSent": "{{name}} verzonden. Het apparaat kan kortstondig opnieuw opstarten.",
@@ -2295,7 +2641,7 @@
       "transportLost": "Seriële of Bluetooth-link verloren — opnieuw verbinden...",
       "mqttAddressRequired": "Voer een MQTT-makelaaradres in voordat u het MQTT-relais aan de apparaatzijde inschakelt.",
       "mqttDefaultServerTls": "De openbare Meshtastic MQTT-makelaar ondersteunt TLS niet. Schakel TLS uit of gebruik een aangepast makelaarsadres.",
-      "mqttDefaultServerPort": "Neem geen poort op in het openbare Meshtastic MQTT broker-adres (gebruik mqtt.meshtastic.org met no :port).",
+      "mqttDefaultServerPort": "Neem geen poort op in het openbare Meshtastic MQTT-brokeradres (gebruik mqtt.meshtastic.org zonder :port).",
       "mqttProxyRequired": "Deze radio heeft geen wifi. Schakel \"Proxy naar client\" in zodat de app MQTT doorstuurt, of gebruik LoRa \"OK naar MQTT\" in plaats van MQTT aan de apparaatzijde.",
       "serialOverrideRequiresMode": "Seriële console override is ingeschakeld op het apparaat. Stel een geldige seriële modus in op de radio voordat u de seriële module hier inschakelt."
     },
@@ -2454,7 +2800,15 @@
       "shareInstance": "Deel Reticulum-instantie",
       "logLevel": "Logniveau",
       "save": "Bewaar stapelinstellingen",
-      "saveFailed": "Kan stapelinstellingen niet opslaan."
+      "saveFailed": "Kan stapelinstellingen niet opslaan.",
+      "pathMediumPreference": "Voorkeurspad medium",
+      "pathMediumPreferenceHint": "Als een peer bereikbaar is via RF en netwerk (TCP/I2P/enz.), kies welk medium standaard wint. Laagste pad rangschikt alleen op hop-aantal. Per-peer vastzettingen op het tabblad Peers kunnen dit overschrijven.",
+      "pathMediumLowest": "Laagste pad (hoptelling)",
+      "pathMediumNetwork": "Netwerk (niet-RF)",
+      "pathMediumRf": "RF (RNode)",
+      "pathMediumPreferenceAria": "Globaal voorkeurspadmedium",
+      "pathMediumPreferenceSaved": "Pad medium voorkeur opgeslagen.",
+      "pathMediumPreferenceSaveFailed": "Kan pad mediumvoorkeur niet opslaan."
     },
     "reticulumConfigImport": {
       "title": "Importeer Reticulum-configuratie",
@@ -2482,6 +2836,69 @@
       "severityError": "error",
       "severityWarning": "warning",
       "severityInfo": "info"
+    },
+    "reticulumPnHosting": {
+      "title": "Geavanceerde PN-hosting (gevarenzone)",
+      "peeringCost": "Peering-kosten",
+      "maxPeeringCost": "Maximale peeringkosten",
+      "autopeer": "Autopeer met ontdekte PN's",
+      "autopeerMaxdepth": "Autopeer max hop",
+      "maxPeers": "Max autopeer-peers",
+      "stampCost": "Kosten voor vermeerdering van postzegels",
+      "stampFlex": "Stempel kostenflexibiliteit",
+      "storageMb": "Opslaglimiet voor berichten (MB)",
+      "propagationLimitKb": "Limiet voor verspreidingsberichten (KB)",
+      "syncLimitKb": "Overdrachtslimiet synchroniseren (KB)",
+      "deliveryLimitKb": "Leveringsoverdrachtslimiet (KB)",
+      "announceIntervalSec": "PN-aankondigingsinterval (seconden)",
+      "announceAtStart": "Kondig aan wanneer het hosten begint",
+      "fromStaticOnly": "Alleen van statische peers",
+      "authRequired": "Verificatie vereist",
+      "nodeName": "PN kondigt naam aan",
+      "staticPeers": "Statische peer-hashes (één 32-hexadecimaal per regel)",
+      "staticPeersPlaceholder": "e17f833c4ddf8890dd3a79a6fea8161d",
+      "save": "Bewaar het hostingbeleid",
+      "saving": "Besparing…",
+      "saveAria": "Bewaar PN-hostingbeleid",
+      "saveOk": "PN-hostingbeleid opgeslagen.",
+      "saveFailed": "Kan PN-hostingbeleid niet opslaan.",
+      "saveConfirmTitle": "PN-hostingbeleid opslaan?",
+      "saveConfirmBody": "Instellingen voor peering, opslag, stempel en aankondiging toepassen op het live-propagatieknooppunt? Een verkeerde configuratie kan de CPU verbranden, de schijf vullen of veel peers accepteren.",
+      "saveConfirm": "Beleid opslaan",
+      "error": {
+        "peeringCostExceedsMax": "De peeringkosten mogen niet hoger zijn dan de maximale peeringkosten.",
+        "stampFlexExceedsCost": "De postzegelflexibiliteit kan niet hoger zijn dan de postzegelkosten.",
+        "autopeerMaxdepth": "Max-hops van Autopeer zijn buiten bereik.",
+        "maxPeers": "Max. peers is buiten bereik.",
+        "storageMb": "De opslaglimiet voor berichten is buiten bereik.",
+        "propagationLimit": "De limiet voor het doorgeven van berichten ligt buiten bereik.",
+        "syncLimit": "De overdrachtslimiet voor synchronisatie ligt buiten bereik.",
+        "deliveryLimit": "De overdrachtslimiet voor bezorging ligt buiten bereik.",
+        "announceInterval": "PN-aankondigingsinterval ligt buiten bereik.",
+        "staticPeersTooMany": "Te veel statische peer-hashes (max. 256).",
+        "staticPeerInvalid": "Een of meer statische peer-hashes zijn ongeldig (er zijn 32 hexadecimale tekens nodig).",
+        "nodeNameInvalid": "PN-aankondigingsnaam bevat ongeldige tekens.",
+        "nodeNameTooLong": "Naam van PN-aankondiging is te lang.",
+        "nonFiniteNumber": "Een of meer numerieke velden zijn ongeldig."
+      },
+      "warning": "Deze instellingen regelen de hosting van lokale propagatieknooppunten, autopeer, PoW-kosten en synchronisatieweigering voor dure afstandsbedieningen. Een verkeerde configuratie kan de CPU verbranden, de schijf vullen of veel peers accepteren.",
+      "enforceUnavailableTip": "De schakelaars voor enforce stamps/ratchets worden op de huidige rsLXMF-stack niet toegepast (alleen bewaard voor compatibiliteit)."
+    },
+    "reticulumScanImport": {
+      "title": "Scannen / importeren",
+      "hint": "Scan of plak een QR voor contacten, Columba lxma://-kaarten of gecodeerde LXMF-papieren berichten."
+    },
+    "reticulumPathTable": {
+      "title": "Padtabel",
+      "description": "Het wissen van de padtabel laat elke gecachete route vallen. Routes worden opnieuw geleerd als er nieuwe aankondigingen binnenkomen, dus het eerste bericht aan een collega kan langer duren.",
+      "clear": "Padtabel wissen",
+      "clearing": "Aan het wissen….",
+      "confirmTitle": "Padtabel wissen?",
+      "confirmBody": "Elke gecachete route wordt gedropt. Routes worden herbouwd op basis van nieuwe aankondigingen.",
+      "clearOk": "Padtabel gewist ({{count}} routes verwijderd)",
+      "clearFailed": "Kan de padtabel niet wissen.",
+      "clearAria": "Padtabel wissen",
+      "confirmAction": "Wissen"
     }
   },
   "nodeDetailModal": {
@@ -2658,7 +3075,16 @@
       "packetLogAria": "Pakketlogboek voor bereiktest"
     },
     "currentRouteHeading": "Huidige route",
-    "hopNameLabel": "{{name}}"
+    "hopNameLabel": "{{name}}",
+    "shareContactQr": "Deel contact",
+    "shareContactQrAria": "Toon MeshCore-contact QR-code voor officiële app-import",
+    "publicKeyCopied": "Openbare sleutel gekopieerd naar klembord.",
+    "hasPublicKeyNoDm": "Heeft een openbare sleutel (geen directe berichten)",
+    "copyPublicKey": "Openbare sleutel kopiëren",
+    "xeddsaSigned": "XEdDSA ondertekend",
+    "xeddsaSignedHint": "De radio heeft een XEdDSA-handtekening van dit knooppunt geverifieerd, dus de openbare sleutel is cryptografisch geattesteerd.",
+    "keyManuallyVerified": "Sleutel geverifieerd",
+    "keyManuallyVerifiedHint": "De openbare sleutel van dit knooppunt werd handmatig bevestigd door een operator."
   },
   "nodeInfoBody": {
     "longName": "Lange naam",
@@ -2780,7 +3206,6 @@
     "summaryOffline_one": "{{count}} offline",
     "summaryOffline_other": "{{count}} offline",
     "tableCaptionMeshNodes": "Verbonden mesh-knooppunten",
-    "columnStatus": "Status",
     "columnFavorite": "Favoriet",
     "columnId": "Identiteitskaart",
     "columnLongName": "Lange naam",
@@ -2822,7 +3247,15 @@
     "hybridMqttPathAria": "RF- en MQTT-pad",
     "connectedViaRfAndMqttTooltip": "Verbonden via RF en MQTT",
     "connectedViaRfAndMqttAria": "Verbonden via RF en MQTT",
-    "echoesConnectionHealthTooltip": "{{score}}% verbindingsstatus"
+    "echoesConnectionHealthTooltip": "{{score}}% verbindingsstatus",
+    "tabAll": "Alles",
+    "tabHistory": "Historie",
+    "emptyHistory": "Nog geen directe berichten — stuur of ontvang een DM om peers hier te zien.",
+    "meshcoreTypeSensor": "Sensor",
+    "meshcoreTypeNone": "Geen",
+    "meshcoreTypeUnknown": "Onbekend",
+    "columnHealth": "Knooppuntgezondheid",
+    "hasPublicKeyTitle": "Openbare sleutel"
   },
   "nomadNetwork": {
     "title": "Nomad Network",
@@ -2834,7 +3267,6 @@
     "emptyFavourites": "No favourite Nomad Network nodes yet.",
     "emptyAnnounces": "No announced Nomad Network nodes yet.",
     "unavailable": "Nomad Network API is niet beschikbaar. Bouw de Reticulum sidecar opnieuw op en start de stack opnieuw.",
-    "selectNode": "Selecteer een knooppunt uit de lijst om door de pagina's ervan te bladeren.",
     "lastSeen": "Laatst gehoord {{time}}",
     "hopsAway_one": "{{count}} hop verderop",
     "hopsAway_other": "{{count}} hops verderop",
@@ -2860,7 +3292,7 @@
     "collapseNodeList": "Knooppuntenlijst samenvouwen",
     "expandNodeList": "Knooppuntenlijst uitvouwen",
     "errors": {
-      "pathTimeout": "Geen route naar dit knooppunt (padzoekopdracht time-out). Probeer een dichter knooppunt of wacht op een recentere announce.",
+      "pathTimeout": "Geen bruikbaar pad naar dit knooppunt (padzoekopdracht time-out). Wacht op de volgende Nomad-aankondiging en probeer het opnieuw. Als het blijft mislukken, probeer een andere hub of een dichter knooppunt.",
       "pubkeyNotFound": "Kon de identiteitssleutel van dit knooppunt niet vinden. Wacht op een Nomad-aankondiging en probeer het dan opnieuw.",
       "linkTimeout": "Link naar het knooppunt kon niet op tijd worden vastgesteld.",
       "responseTimeout": "Het knooppunt heeft de link geaccepteerd, maar de pagina niet op tijd teruggestuurd.",
@@ -2868,7 +3300,13 @@
       "transportUnavailable": "Reticulum-transport is niet beschikbaar. Start de stack opnieuw en probeer het opnieuw.",
       "sidecarNotRunning": "Reticulum-sidecar draait niet. Start de stack vanuit Verbinding en probeer het opnieuw.",
       "responseTooLarge": "The node returned more data than mesh-client will accept for this request.",
-      "nomadBusy": "Een ander Nomad-pagina- of bestandsverzoek is nog bezig. Probeer het zo opnieuw."
+      "nomadBusy": "Een ander Nomad-pagina- of bestandsverzoek is nog bezig. Probeer het zo opnieuw.",
+      "nomadNotServing": "Dit is uw Nomad-knooppunt, maar de My Pages-hosting is niet actief. Open Mijn pagina's, kies een map en begin met het weergeven van lokale voorbeelden.",
+      "networkNotReady": "Wachten tot een hub of radio-interface online komt. Probeer het opnieuw zodra Connection een interface toont.",
+      "pathTimeoutStale": "Kon de route naar dit knooppunt (oud pad) niet vernieuwen. Wacht op de volgende aankondiging en probeer het dan opnieuw. Aanhoudende storingen betekenen vaak dat het knooppunt offline is.",
+      "linkTimeoutCachedPath": "Er wordt een pad naar dit knooppunt weergegeven, maar de link is nooit voltooid — de route kan verouderd zijn. Wacht op de volgende aankondiging en probeer het dan opnieuw. Aanhoudende storingen betekenen meestal dat het knooppunt offline is of niet bereikbaar is via TCP.",
+      "linkTimeoutPathOk": "Een route naar dit knooppunt werd bevestigd, maar de Nomad-pagina antwoordde niet. Wacht op een versere aankondiging en probeer het opnieuw. Als het blijft mislukken, is het knooppunt mogelijk offline of host het die pagina niet.",
+      "linkTimeoutRoutesTried": "Probeerde meerdere routes ({{ifaces}}), maar het knooppunt antwoordde nooit. Wacht op een versere aankondiging, schakel een andere hub in of probeer het later opnieuw — het knooppunt is mogelijk offline."
     },
     "fitWidth": "In venster passen",
     "openWidth": "Paginabreedte",
@@ -2903,7 +3341,50 @@
       "noPages": "Nog geen pagina's. Voeg .mu-bestanden toe aan de gekozen map (bijvoorbeeld index.mu).",
       "contentSourceNotFromPicker": "Kies de map met Map kiezen voordat u deze toepast.",
       "contentSourceNone": "Geen map gekozen",
-      "contentSourceRequired": "Kies een paginamap voordat je Nomad-hosting start."
+      "contentSourceRequired": "Kies een paginamap voordat je Nomad-hosting start.",
+      "newPage": "Nieuwe pagina",
+      "newPageName": "Paginabestandsnaam (moet eindigen op .mu)",
+      "invalidPageName": "Voer een bestandsnaam in die eindigt op .mu, zonder .. of absolute paden.",
+      "edit": "Bewerken",
+      "editPage": "{{path}} bewerken",
+      "delete": "Verwijderen",
+      "deletePage": "{{path}} verwijderen",
+      "deleteConfirm": "Deze pagina verwijderen? Dit verwijdert het bestand uit de weergegeven map.",
+      "deleteConfirmAria": "Bevestig het verwijderen van deze pagina",
+      "deleteError": "Kan het bestand niet verwijderen.",
+      "openError": "Kan de pagina niet openen om te bewerken.",
+      "editorTitle": "Micron-pagina bewerken",
+      "editorAria": "Micron-paginabron",
+      "editorPreview": "Voorbeeld",
+      "toolbarAria": "Acties voor Micron",
+      "toolbar": {
+        "bold": "Vetgedrukt",
+        "italic": "Cursief",
+        "underline": "Onderstreept",
+        "h1": "Heading 1",
+        "h2": "Titel (H2)",
+        "h3": "Titel (H3)",
+        "alignLeft": "Links uitlijnen",
+        "alignCenter": "Midden",
+        "alignRight": "Rechts uitlijnen",
+        "divider": "Divider",
+        "link": "Link"
+      },
+      "linkTargetPrompt": "Linkdoel (paginapad of bestemmingshash)",
+      "save": "Opslaan",
+      "saveError": "Kon de pagina niet opslaan.",
+      "unsaved": "Niet-opgeslagen wijzigingen",
+      "discard": "Wijzigingen ongedaan maken",
+      "discardConfirm": "Deze notitie heeft aanpassingen die niet zijn opgeslagen.",
+      "discardConfirmAria": "Niet-opgeslagen wijzigingen negeren en sluiten",
+      "close": "Editor Sluiten",
+      "closeBackdropAria": "Sluit de Micron pagina-editor",
+      "pageTooLarge": "Die pagina is te groot om te hosten (limiet 512 KiB).",
+      "pageNotFound": "Die pagina bestaat niet meer in de weergegeven map.",
+      "invalidPagePath": "Dat paginapad is niet toegestaan.",
+      "pageIoError": "Kan de pagina niet lezen of schrijven op schijf.",
+      "pageNotUtf8": "Die pagina is geen geldige UTF-8-tekst.",
+      "pageWriteFailed": "Kon de pagina niet schrijven."
     },
     "sortLastHeard": "Laatst gehoord",
     "sortHops": "Hop",
@@ -2914,7 +3395,28 @@
     "sortByHopsAsc": "Sorteer op Hop, dichtstbijzijnde eerst",
     "sortByHopsDesc": "Sorteer op Hop, verste eerst",
     "sortByNameAsc": "Sorteer op naam: A tot Z",
-    "sortByNameDesc": "Sorteer op Naam, Z tot A"
+    "sortByNameDesc": "Sorteer op Naam, Z tot A",
+    "pageLoadingCountdown": "Pagina wordt geladen… {{time}} over",
+    "pageLoadingCountdownOverdue": "Pagina wordt geladen... werkt nog steeds",
+    "pageReadyToast": "Nomad-pagina klaar: {{name}}",
+    "staleLastSeenHint": "Laatst gehoord {{time}}: dit knooppunt is mogelijk offline, zelfs als het als online wordt vermeld.",
+    "pageLoadingRetryCountdown": "Time-out voor eerste poging — pad verversen en opnieuw proberen… {{time}} over",
+    "pageLoadingRetryOverdue": "Pad verversen en opnieuw proberen... werkt nog steeds",
+    "enterUrlHint": "Plak een Nomad-adres of selecteer een knooppunt in de lijst.",
+    "enterUrlPlaceholder": "hash:/page/index.mu",
+    "goToUrl": "Ga",
+    "pageLoadingTimeLeft": "{{time}} over bij deze poging",
+    "pageLoadingStillWorking": "Nog bezig",
+    "pageProgressLinking": "Verbinding maken via {{iface}} ({{hops}} hops)...",
+    "pageProgressLinkingIface": "Verbinden via {{iface}}…",
+    "pageProgressLinkingGeneric": "Koppeling met het knooppunt tot stand brengen...",
+    "pageProgressDeadRoute": "Geen antwoord via {{iface}} — op zoek naar een andere route...",
+    "pageProgressDeadRouteGeneric": "Time-out van link — op zoek naar een andere route...",
+    "pageProgressSearchingRoute": "Op zoek naar een andere volgende hop...",
+    "pageProgressFailover": "Een andere route proberen via {{iface}} ({{hops}} hops)...",
+    "pageProgressFailoverIface": "Een andere route proberen via {{iface}}…",
+    "pageProgressFailoverGeneric": "Probeer een andere route...",
+    "pageProgressNoAlternate": "Geen andere routes beschikbaar — deze poging afronden..."
   },
   "packetDistribution": {
     "overallDistribution": "Algemene distributie",
@@ -2937,8 +3439,6 @@
   },
   "peerDetailModal": {
     "networkSection": "Netwerk",
-    "pathHash": "Pad hash",
-    "copyHash": "Bestemmingshash kopiëren",
     "editNameAria": "Aangepaste weergavenaam",
     "sendMessage": "Verstuur bericht",
     "pathOk": "Padverzoek verzonden.",
@@ -2951,12 +3451,9 @@
     "saveContact": "Opslaan als contactpersoon",
     "removeContact": "Contact verwijderen",
     "removeContactConfirmTitle": "Contact verwijderen",
-    "removeContactConfirmBody": "Hiermee wordt de contactpersoon uit je lijst verwijderd. De chatgeschiedenis wordt bewaard; door ze opnieuw een bericht te sturen, wordt het contact opnieuw toegevoegd.",
     "probeOk": "Sonde OK — pad bereikbaar.",
     "blockContact": "Contactpersoon blokkeren",
     "unblockContact": "Contactpersoon deblokkeren",
-    "serviceBadge": "{{service}}",
-    "serviceBadgeTitle": "{{aspect}} — laatst gezien {{seen}}",
     "verifyMark": "Markeer geverifieerd",
     "verifyRevoke": "Verificatie intrekken",
     "verifyFingerprint": "Identiteit vingerafdruk",
@@ -2965,7 +3462,22 @@
     "shareContactQr": "Contact-QR delen",
     "shareContactQrAria": "Toon QR-code voor dit contact",
     "verifiedRowAria": "Contact geverifieerd",
-    "renameFailed": "Kan de weergavenaam niet opslaan."
+    "renameFailed": "Kan de weergavenaam niet opslaan.",
+    "removeContactConfirmBody": "Hiermee wordt de contactpersoon uit uw opgeslagen lijst verwijderd. Chatberichten blijven; ze blijven in de geschiedenis staan als je ze een bericht hebt gestuurd.",
+    "backupPaths": "Back-uppaden",
+    "announcedDestinations": "Announced destinations",
+    "openedDestinationBadge": "Opened",
+    "copyAnnouncedHashAria": "Copy {{aspect}} destination hash {{hash}}",
+    "hashCopied": "Destination hash copied.",
+    "hashCopyFailed": "Could not copy destination hash.",
+    "aspect": {
+      "chat": "Chat",
+      "voice": "Voice",
+      "nomad": "Nomad",
+      "rrc": "RRC",
+      "propagation": "Propagation",
+      "unknown": "Unknown"
+    }
   },
   "peerGraph": {
     "title": "Peer-communicatiegrafiek",
@@ -2979,7 +3491,6 @@
     "me": "Dit onderdeel",
     "directLink": "Direct (0 hops)",
     "relayLink": "Via relais (1 hop)",
-    "hiddenCount": "Toont {{shown}} van {{total}} knooppunten (niet-verbonden knooppunten verborgen)",
     "noConnectedNodes": "Geen verbonden peers om weer te geven — pas filters aan of wacht op netwerkverkeer.",
     "meShort": "Jij",
     "relayHub": "Direct relais",
@@ -2990,7 +3501,9 @@
     "maxHopsAll": "Alle hops",
     "maxHopsOption": "{{count}} hops",
     "resetView": "Weergave opnieuw instellen (reset)",
-    "compactLeafCount": "{{count}} compacte directe collega's"
+    "compactLeafCount": "{{count}} compacte directe collega's",
+    "hiddenCountLimit": "Toont {{shown}} van {{total}} knooppunten (limiet {{limit}})",
+    "visibleNodeLimitNote": "De graaf toont maximaal {{distantLimit}} knooppunten."
   },
   "peerListPanel": {
     "heading": "Collega's",
@@ -3005,7 +3518,6 @@
     "toggleFavorite": "Favoriet in-/uitschakelen",
     "openChat": "Open chat",
     "emptyPeers": "Nog geen collega's ontdekt. Stuur een aankondiging of wacht op netwerkverkeer.",
-    "emptyContacts": "Nog geen contacten — stuur een bericht naar een collega om ze hier toe te voegen.",
     "groupFilterAria": "Contacten filteren op groep",
     "allGroups": "Alle groepen",
     "manageGroups": "Groepen beheren",
@@ -3020,7 +3532,33 @@
     "lookupSubmit": "Opzoeken",
     "lookupSubmitAria": "Pad aanvragen en bestemmings-hash sondieren",
     "lookupInvalid": "Voer een geldige 32-tekens LXMF-bestemmings-hash of lxmf://-link in.",
-    "lookupHint": "Vraag een pad aan voor een hash die nog niet in de lijst met peers staat (bijvoorbeeld een peer op een hub die je deelt)."
+    "lookupHint": "Vraag een pad aan voor een hash die nog niet in de lijst met peers staat (bijvoorbeeld een peer op een hub die je deelt).",
+    "paths": "Paden",
+    "pathsAria": "Toon gerangschikte paden voor {{hash}}",
+    "pathsDetailAria": "Gerangschikte paden voor {{hash}}",
+    "pathsHeading": "Paden · {{hash}}…",
+    "pathsCloseAria": "Padendetail sluiten",
+    "pathsPreferLabel": "Voorkeur voor medium",
+    "pathsPreferAria": "Voorkeurspadmedium voor deze peer",
+    "pathsPreferAuto": "Auto (globaal)",
+    "pathsPreferRf": "RF",
+    "pathsPreferNetwork": "Netwerk",
+    "pathsGlobalPreference": "Globaal: {{preference}}",
+    "pathsListAria": "Gerangschikte pad-sleuven",
+    "pathsActiveBadge": "Actief",
+    "pathsBackupBadge": "Reserve",
+    "pathsMedium": "Medium",
+    "pathsExpired": "Verlopen",
+    "pathsEmpty": "Nog geen padvakken. Vraag een pad aan of wacht op een aankondiging.",
+    "pathsLoadFailed": "Kan padvakken niet laden.",
+    "pathsPinFailed": "Kan mediumvoorkeur voor deze peer niet bijwerken.",
+    "tabHistory": "Historie",
+    "emptyHistory": "Nog geen berichtgeschiedenis — verzend of ontvang een LXMF-bericht om peers hier te zien.",
+    "emptyContacts": "Nog geen opgeslagen contacten — open een peer en kies Opslaan als contactpersoon.",
+    "pathMediumTitle": "Actief padmedium: {{medium}}",
+    "chatNeedsLxmfDelivery": "Nog geen LXMF-bezorgadres voor deze peer. Wacht op een LXMF-aankondiging of open Chat met hun 32-karakter LXMF-hash - Voice (lxst.telephony) -bestemmingen kunnen geen Chat ontvangen.",
+    "voiceAspectBadge": "Stem",
+    "voiceAspectTitle": "Deze rij met padtabellen is een LXST-telefoniebestemming. Chat opnieuw naar de LXMF-bezorgingshash van de peer wanneer deze bekend is."
   },
   "radioPanel": {
     "offloadedContacts": "{{count}} contacten naar de database overgebracht.",
@@ -3082,57 +3620,65 @@
     "importConfigJson": "Importeer configuratie-JSON",
     "offloadContacts": "Ontladen",
     "displayUnits": {
-      "0": {
-        "label": "Metrisch"
+      "METRIC": {
+        "label": "Metric"
       },
-      "1": {
-        "label": "Imperiaal"
+      "IMPERIAL": {
+        "label": "Imperial"
       }
     },
     "deviceRoles": {
-      "0": {
-        "label": "Cliënt",
+      "CLIENT": {
+        "label": "Client",
         "description": "Normale clientmodus"
       },
-      "1": {
-        "label": "Klant dempen",
-        "description": "Client die niet verzendt"
+      "CLIENT_MUTE": {
+        "label": "Client Mute",
+        "description": "Client die geen pakketten doorstuurt. Het toepassen van deze rol schakelt ook GPS-uitzendingen en kaartrapporten op het apparaat uit."
       },
-      "2": {
+      "ROUTER": {
         "label": "Router",
-        "description": "Speciale router/repeater"
+        "description": "Toegewijde router/repeater"
       },
-      "3": {
-        "label": "Router-client",
-        "description": "Router + clientmodus"
+      "ROUTER_CLIENT": {
+        "label": "Router Client",
+        "description": "Router + client-modus. Verouderd in firmware 2.3.15 — gebruik router of client."
       },
-      "4": {
-        "label": "Klantenbestand",
-        "description": "Basisstation voor clientapparaten"
+      "REPEATER": {
+        "label": "Repeater",
+        "description": "Zendt pakketten opnieuw uit zonder van oorsprong te zijn. Verouderd in firmware 2.7.11 — creëert gaten in de heruitzendketen."
       },
-      "5": {
-        "label": "Volger",
-        "description": "Alleen GPS-tracker"
+      "TRACKER": {
+        "label": "Tracker",
+        "description": "GPS Tracker"
       },
-      "6": {
+      "SENSOR": {
         "label": "Sensor",
         "description": "Telemetriesensorknooppunt"
       },
-      "7": {
+      "TAK": {
         "label": "TAK",
-        "description": "TAK-apparaat"
+        "description": "TAK-enabled device"
       },
-      "8": {
-        "label": "Klant verborgen",
-        "description": "Client, verborgen in de knooppuntenlijst"
+      "CLIENT_HIDDEN": {
+        "label": "Client Hidden",
+        "description": "Klant, verborgen voor knooppuntenlijst"
       },
-      "9": {
-        "label": "Gevonden voorwerpen",
-        "description": "Zendt positie uit voor herstel"
+      "LOST_AND_FOUND": {
+        "label": "Lost and Found",
+        "description": "Positie uitzendingen voor herstel"
       },
-      "10": {
-        "label": "TAK-tracker",
-        "description": "TAK-trackermodus"
+      "TAK_TRACKER": {
+        "label": "TAK Tracker",
+        "description": "TAK tracker mode"
+      },
+      "ROUTER_LATE": {
+        "label": "Router Late",
+        "description": "Router die pas opnieuw uitzendt nadat andere knooppunten een kans hebben gehad, voor dichte maaskernen."
+      },
+      "CLIENT_BASE": {
+        "label": "Client Base",
+        "description": "Basisstation voor clientapparaten"
       }
     },
     "contactsOnRadioBadgeTitle": "{{part}} contacten op de radio",
@@ -3367,29 +3913,29 @@
     "tzdefLabel": "Timezone (POSIX)",
     "tzdefDesc": "POSIX timezone string e.g. EST5EDT,M3.2.0,M11.1.0. See https://github.com/nayarsystems/posix_tz_db for a reference list.",
     "rebroadcastModes": {
-      "0": {
+      "ALL": {
         "label": "All",
-        "description": "Rebroadcast all packets (default)."
+        "description": "Alle pakketten opnieuw uitzenden (standaard)."
       },
-      "1": {
-        "label": "All Skip Decoding",
-        "description": "Rebroadcast all without decoding. Reduces CPU on dedicated routers."
+      "ALL_SKIP_DECODING": {
+        "label": "Alle Overslaan-decodering",
+        "description": "Opnieuw uitzenden zonder te decoderen. Vermindert CPU op speciale routers."
       },
-      "2": {
-        "label": "Local Only",
-        "description": "Only rebroadcast packets from nodes heard directly on RF."
+      "LOCAL_ONLY": {
+        "label": "Alleen lokaal",
+        "description": "Alleen heruitzendingspakketten van knooppunten die rechtstreeks op RF worden gehoord."
       },
-      "3": {
-        "label": "Known Only",
-        "description": "Only rebroadcast from nodes in the local node database."
+      "KNOWN_ONLY": {
+        "label": "Alleen bekend",
+        "description": "Alleen opnieuw uitzenden vanaf knooppunten in de lokale knooppuntendatabase."
       },
-      "4": {
-        "label": "None",
-        "description": "Do not rebroadcast any packets."
+      "NONE": {
+        "label": "Geen",
+        "description": "Stuur geen pakketten opnieuw uit."
       },
-      "5": {
-        "label": "Core Portnums Only",
-        "description": "Only rebroadcast essential portnums (text, nodeinfo, position, telemetry)."
+      "CORE_PORTNUMS_ONLY": {
+        "label": "Alleen kernportnums",
+        "description": "Alleen essentiële portnums opnieuw uitzenden (tekst, nodeinfo, positie, telemetrie)."
       }
     },
     "autoScreenCarouselSecsLabel": "Screen Carousel Interval",
@@ -3407,22 +3953,22 @@
     "enableMessageBubblesLabel": "Message Bubbles",
     "enableMessageBubblesDesc": "Show incoming messages in a bubble on the display.",
     "oledTypes": {
-      "0": {
+      "OLED_AUTO": {
         "label": "Auto"
       },
-      "1": {
+      "OLED_SSD1306": {
         "label": "SSD1306"
       },
-      "2": {
+      "OLED_SH1106": {
         "label": "SH1106"
       },
-      "3": {
+      "OLED_SH1107": {
         "label": "SH1107 (128x64)"
       },
-      "4": {
+      "OLED_SH1107_128_128": {
         "label": "SH1107 (128x128)"
       },
-      "5": {
+      "OLED_SH1107_ROTATED": {
         "label": "SH1107 Rotated"
       }
     },
@@ -3505,88 +4051,179 @@
       "indexLabel": "Index (0–{{max}})",
       "invalidHex": "Moet precies 32 hexadecimale tekens bevatten.",
       "addButton": "+ Kanaal toevoegen",
-      "footerHelp": "Sleutels zijn 128-bits (16 bytes), weergegeven als 32 hexadecimale tekens. Kanaalnamen met maximaal {{nameMax}} tekens. Maximaal {{channelCount}} kanalen (index 0–{{indexMax}}). Voor #kanalen gebruikt u 'Afleiden van naam' (SHA-256 van de naam met een # ervoor)."
+      "footerHelp": "Sleutels zijn 128-bits (16 bytes), weergegeven als 32 hexadecimale tekens. Kanaalnamen met maximaal {{nameMax}} tekens. Maximaal {{channelCount}} kanalen (index 0–{{indexMax}}). Voor #kanalen gebruikt u 'Afleiden van naam' (SHA-256 van de naam met een # ervoor).",
+      "shareQr": "QR",
+      "shareQrAria": "Toon MeshCore-kanaal QR voor {{name}}",
+      "privateChannel": "Privékanaal (sleutel invoeren)",
+      "privateKeyHint": "Voer de gedeelde kanaalsleutel in: exact 32 hexadecimale tekens (16 bytes), niet allemaal nullen."
     },
     "regions": {
-      "0": {
-        "label": "Uitgeschakeld"
+      "UNSET": {
+        "label": "Unset"
       },
-      "1": {
-        "label": "ONS"
+      "US": {
+        "label": "US"
       },
-      "2": {
+      "EU_433": {
         "label": "EU_433"
       },
-      "3": {
+      "EU_868": {
         "label": "EU_868"
       },
-      "4": {
+      "CN": {
         "label": "CN"
       },
-      "5": {
+      "JP": {
         "label": "JP"
       },
-      "6": {
+      "ANZ": {
         "label": "ANZ"
       },
-      "7": {
+      "KR": {
         "label": "KR"
       },
-      "8": {
+      "TW": {
         "label": "TW"
       },
-      "9": {
+      "RU": {
         "label": "RU"
       },
-      "10": {
+      "IN": {
         "label": "IN"
       },
-      "11": {
+      "NZ_865": {
         "label": "NZ_865"
       },
-      "12": {
-        "label": "E"
+      "TH": {
+        "label": "TH"
       },
-      "13": {
+      "LORA_24": {
+        "label": "LORA_24"
+      },
+      "UA_433": {
         "label": "UA_433"
       },
-      "14": {
+      "UA_868": {
         "label": "UA_868"
       },
-      "15": {
-        "label": "MIJN_433"
+      "MY_433": {
+        "label": "MY_433"
       },
-      "16": {
-        "label": "MIJN_919"
+      "MY_919": {
+        "label": "MY_919"
       },
-      "17": {
+      "SG_923": {
         "label": "SG_923"
       },
-      "18": {
-        "label": "LORA_24"
+      "PH_433": {
+        "label": "PH_433"
+      },
+      "PH_868": {
+        "label": "PH_868"
+      },
+      "PH_915": {
+        "label": "PH_915"
+      },
+      "ANZ_433": {
+        "label": "ANZ_433"
+      },
+      "KZ_433": {
+        "label": "KZ_433"
+      },
+      "KZ_863": {
+        "label": "KZ_863"
+      },
+      "NP_865": {
+        "label": "NP_865"
+      },
+      "BR_902": {
+        "label": "BR_902"
+      },
+      "ITU1_2M": {
+        "label": "ITU1_2M"
+      },
+      "ITU2_2M": {
+        "label": "ITU2_2M"
+      },
+      "EU_866": {
+        "label": "EU_866"
+      },
+      "EU_874": {
+        "label": "EU_874"
+      },
+      "EU_917": {
+        "label": "EU_917"
+      },
+      "EU_N_868": {
+        "label": "EU_N_868"
+      },
+      "ITU3_2M": {
+        "label": "ITU3_2M"
+      },
+      "ITU1_70CM": {
+        "label": "ITU1_70CM"
+      },
+      "ITU2_70CM": {
+        "label": "ITU2_70CM"
+      },
+      "ITU3_70CM": {
+        "label": "ITU3_70CM"
+      },
+      "ITU2_125CM": {
+        "label": "ITU2_125CM"
       }
     },
     "modemPresets": {
-      "0": {
-        "label": "Lang snel"
+      "LONG_FAST": {
+        "label": "Long Fast"
       },
-      "1": {
-        "label": "Lang langzaam"
+      "LONG_SLOW": {
+        "label": "Long Slow"
       },
-      "2": {
-        "label": "Lang Matig"
+      "VERY_LONG_SLOW": {
+        "label": "Very Long Slow"
       },
-      "3": {
-        "label": "Kort Snel"
+      "MEDIUM_SLOW": {
+        "label": "Medium Slow"
       },
-      "4": {
-        "label": "Kort Langzaam"
+      "MEDIUM_FAST": {
+        "label": "Medium Fast"
       },
-      "5": {
-        "label": "Gemiddeld snel"
+      "SHORT_SLOW": {
+        "label": "Short Slow"
       },
-      "6": {
-        "label": "Gemiddeld langzaam"
+      "SHORT_FAST": {
+        "label": "Short Fast"
+      },
+      "LONG_MODERATE": {
+        "label": "Long Moderate"
+      },
+      "SHORT_TURBO": {
+        "label": "Short Turbo"
+      },
+      "LONG_TURBO": {
+        "label": "Long Turbo"
+      },
+      "LITE_FAST": {
+        "label": "Lite Fast"
+      },
+      "LITE_SLOW": {
+        "label": "Lite Slow"
+      },
+      "NARROW_FAST": {
+        "label": "Narrow Fast"
+      },
+      "NARROW_SLOW": {
+        "label": "Narrow Slow"
+      },
+      "TINY_FAST": {
+        "label": "Tiny Fast"
+      },
+      "TINY_SLOW": {
+        "label": "Tiny Slow"
+      },
+      "MEDIUM_TURBO": {
+        "label": "Medium Turbo"
       }
     },
     "floodScopeSaved": "Opgeslagen bereik",
@@ -3594,7 +4231,42 @@
     "floodScopeSavedEmpty": "Er zijn nog geen opgeslagen bereiken. Pas een aangepaste hashtag toe of gebruik Aangepast bereik uit Chat om er een toe te voegen.",
     "floodScopeRemoveSaved": "Verwijderen uit opgeslagen bereiken",
     "floodScopeRemoveSavedAria": "Verwijder {{hashtag}} uit opgeslagen bereiken",
-    "floodScopeInvalidHashtag": "Voer een geldige regio-hashtag in (bijvoorbeeld #mijnregio)."
+    "floodScopeInvalidHashtag": "Voer een geldige regio-hashtag in (bijvoorbeeld #mijnregio).",
+    "sendPositionDisabledShareOff": "Schakel Mijn locatie delen in de → GPS / locatie van de app in om uw positie naar het apparaat te verzenden.",
+    "clientMuteGpsSuppressed": "Client Mute toegepast — GPS-uitzendingen en MQTT-kaartrapportage uitgeschakeld op het apparaat.",
+    "validationShortNameTooLong": "Korte naam moet binnen 4 UTF-8 bytes passen",
+    "validationShortNameEmojiTooLarge": "Dit teken is te groot voor korte naam (max. 4 UTF-8 bytes per naam)",
+    "enumDeprecatedSuffix": "verouderd",
+    "lockdown": {
+      "title": "Firmwarevergrendeling",
+      "description": "Een vergrendelde radio wijst configuratiewijzigingen af totdat deze wordt ontgrendeld met zijn wachtwoordzin. Status wordt gerapporteerd door de firmware; radio's zonder lockdown-ondersteuning rapporteren er nooit een.",
+      "stateLabel": "Staat",
+      "stateNotReported": "Niet gemeld door deze radio",
+      "reasonLabel": "Reden",
+      "bootsRemainingLabel": "Resterende herstarten",
+      "validUntilLabel": "Ontgrendeld tot",
+      "backoffLabel": "Backoff opnieuw proberen",
+      "backoffValue": "{{seconds}}s",
+      "passphraseLabel": "Wachtwoordzin",
+      "provision": "Bepaling",
+      "unlock": "Ontgrendelen",
+      "unlockAria": "Firmwarevergrendeling ontgrendelen of instellen",
+      "lockNow": "Neem nu een optie.",
+      "lockNowAria": "Vergrendel de radio onmiddellijk",
+      "disable": "Vergrendeling uitschakelen",
+      "disableAria": "Firmwarevergrendeling uitschakelen",
+      "states": {
+        "STATE_UNSPECIFIED": "Niet opgegeven",
+        "NEEDS_PROVISION": "Provisioning nodig",
+        "LOCKED": "Vastgezet",
+        "UNLOCKED": "Ontgrendeld",
+        "UNLOCK_FAILED": "UNLOCK MISLUKT",
+        "DISABLED": "Uitgeschakeld"
+      }
+    },
+    "contactsFullAlarm": "Opslag radiocontact is vol. Contacten naar de app-database verplaatsen naar vrije slots.",
+    "contactsFullAlarmAction": "lossen",
+    "contactsFullAutoOffloadStarted": "Radiocontacten vol — automatisch ontladen wordt gestart..."
   },
   "rawPacketLog": {
     "filterPackets": "Pakketten filteren",
@@ -3731,7 +4403,7 @@
     }
   },
   "repeatersPanel": {
-    "searchRepeaters": "Zoek repeaters",
+    "searchRepeaters": "Zoek repeaters en ruimtes",
     "favorite": "Favoriet",
     "unfavorite": "Niet favoriet",
     "pingError": "Pingfout: {{error}}",
@@ -3743,12 +4415,12 @@
     "cliInput": "CLI-opdrachtinvoer",
     "cliInterface": "CLI-interface",
     "sensorTelemetryLpp": "Sensortelemetrie LPP",
-    "noRepeatersYet": "Nog geen repeaters ontdekt.",
-    "noRepeatersHintPre": "Repeaters verschijnen wanneer contacten met het type \"Repeater\" adverteren. Gebruik",
+    "noRepeatersYet": "Nog geen repeaters of ruimtes ontdekt.",
+    "noRepeatersHintPre": "Repeaters en roomservers verschijnen wanneer contacten van die typen adverteren. Gebruik ",
     "importContacts": "Contacten importeren",
     "noRepeatersHintMid": "op de",
     "noRepeatersHintSuffix": "tabblad om bijnamen vooraf te laden.",
-    "noRepeatersMatch": "Er zijn geen repeaters die overeenkomen met uw zoekopdracht.",
+    "noRepeatersMatch": "Geen repeaters of ruimtes komen overeen met je zoekopdracht.",
     "snrDbTooltip": "dB — van Aanvraagstatus indien beschikbaar, anders lijst met contactpersonen",
     "rssiDbmTooltip": "dBm — van Aanvraagstatus indien beschikbaar, anders lijst met contactpersonen",
     "hopCountTooltip": "Hoptelling vanaf de laatste Ping-trace (repeaters tussen jou en dit knooppunt)",
@@ -3756,7 +4428,7 @@
     "heardPrefix": "Gehoord:",
     "noLppData": "Geen LPP-sensorgegevens in dit antwoord.",
     "enterCommand": "Voer opdracht in...",
-    "searchRepeatersPlaceholder": "Zoek repeaters...",
+    "searchRepeatersPlaceholder": "Zoek repeaters en ruimtes…",
     "openCliInterface": "Open de CLI-interface",
     "sensorLppButton": "Sensor (LPP)",
     "noTelemetryResponse": "Nog geen telemetriereactie. Probeer Sensor (LPP) opnieuw.",
@@ -3771,7 +4443,7 @@
     "columnReliability": "Betrouwbaarheid",
     "columnActions": "Acties",
     "nodesTabName": "Knooppunten",
-    "title": "Repeaters",
+    "title": "Repeaters & ruimtes",
     "columnsDataHint": "SNR, RSSI, uptime en zendtijd zijn afkomstig van de statusactie (of automatisch ophalen terwijl dit paneel open is). Hop- en padgeschiedenis hebben Ping nodig. MeshCore vult deze kolommen niet alleen met adverts.",
     "remoteAuthLabel": "Repeater beheerderswachtwoord (optioneel)",
     "remoteAuthPlaceholder": "Laat leeg als repeaters geen beheerderswachtwoord hebben",
@@ -3856,7 +4528,34 @@
     "currentRouteLabel": "Huidig ​​traject:",
     "neighborsLoadMore": "Laad meer ({{loaded}} van {{total}})",
     "neighborsLoadMoreAria": "Laad meer buren ({{loaded}} van {{total}} geladen)",
-    "neighborsLoadingMore": "Aan het laden…"
+    "neighborsLoadingMore": "Aan het laden…",
+    "cliClockCannotGoBackwards": "De klok van dit knooppunt loopt voor op deze computer ({{utc}}). MeshCore-firmware zet de klok niet achteruit. Bevestig, voer clkreboot uit en daarna clock sync.",
+    "typeFilterAria": "Filter op Type",
+    "filterAll": "Alles",
+    "filterRepeaters": "Repeaters",
+    "filterRooms": "Ruimtes",
+    "openRoom": "Ruimte openen",
+    "savedPasswordOrphanRoomLabel": "Ruimte {{nodeId}}",
+    "roomCliNeedsAdminPassword": "Externe room-CLI heeft het room-adminwachtwoord nodig (SendLogin ACL). Sla het op onder Repeaters → wachtwoord voor deze ruimte en probeer opnieuw. Gast-BBS-login is niet genoeg.",
+    "cliHistoryError": "[Fout: {{detail}}]",
+    "sortByStatusAsc": "Sorteren op status, eerst offline",
+    "sortByStatusDesc": "Sorteren op status, eerst online",
+    "sortByNameAsc": "Sorteer op naam: A tot Z",
+    "sortByNameDesc": "Sorteer op Naam, Z tot A",
+    "sortByLastHeardAsc": "Sorteren op Laatst gehoord, oudste eerst",
+    "sortByLastHeardDesc": "Sorteren op Laatst gehoord, nieuwste eerst",
+    "sortBySnrAsc": "Sorteren op SNR, laagste eerst",
+    "sortBySnrDesc": "Sorteren op SNR, hoogste eerst",
+    "sortByRssiAsc": "Sorteren op RSSI, zwakste eerst",
+    "sortByRssiDesc": "Sorteren op RSSI, sterkste eerst",
+    "sortByHopsAsc": "Sorteer op Hop, dichtstbijzijnde eerst",
+    "sortByHopsDesc": "Sorteer op Hop, verste eerst",
+    "sortByUptimeAsc": "Sorteren op uptime, kortste eerst",
+    "sortByUptimeDesc": "Sorteren op uptime, langste eerst",
+    "sortByAirPctAsc": "Sorteer op Lucht%, laagste bovenaan",
+    "sortByAirPctDesc": "Sorteer op Lucht%, hoogste bovenaan",
+    "sortByReliabilityAsc": "Sorteren op Betrouwbaarheid, laagste eerst",
+    "sortByReliabilityDesc": "Sorteren op Betrouwbaarheid, hoogste eerst"
   },
   "reticulumIdentity": {
     "announceIntervalSec": "Aankondigingsinterval (seconden)",
@@ -3874,11 +4573,12 @@
   "reticulumProfileIcon": {
     "iconName": "Avatar-pictogram",
     "iconNameAria": "Peer-avatarpictogram",
-    "iconCircle": "Cirkel",
     "iconStar": "Ster",
     "iconHeart": "Hart",
     "iconShield": "Afscherming",
-    "iconUser": "Gebruiker"
+    "iconNone": "Standaardgezicht",
+    "iconSaveFailed": "Kon het avatarpictogram niet opslaan.",
+    "iconUser": "Mensen"
   },
   "reticulumPropagation": {
     "preferred": "Voorkeur",
@@ -3887,11 +4587,10 @@
     "cancelSync": "Sync annuleren",
     "syncNowFor": "Synchroniseer berichten van {{name}}",
     "addNode": "Knooppunt toevoegen",
-    "addNodeLabel": "Voeg voortplantingsknooppunt toe via hash",
-    "localInboxStats": "{{count}} in wachtrij · {{bytes}} bytes",
+    "addNodeLabel": "Voeg propagatieknooppunt toe via hash",
     "refreshing": "Verfrissend…",
-    "refreshAria": "Vernieuw de voortplantingsknooppunten",
-    "syncStatusEstablishing": "Verbinding tot stand brengen met voortplantingsknooppunt...",
+    "refreshAria": "Vernieuw de propagatieknooppunten",
+    "syncStatusEstablishing": "Verbinding tot stand brengen met propagatieknooppunt...",
     "syncStatusNegotiating": "Onderhandelen over synchronisatie met het propagatieknooppunt...",
     "syncStatusTransferring": "Berichten overbrengen van propagatieknooppunt...",
     "syncFailed": "Doorgiftesynchronisatie mislukt: het knooppunt is mogelijk onbereikbaar.",
@@ -3914,38 +4613,40 @@
       "openSettingsAria": "Open Reticulum Network propagatie-instellingen",
       "bodyWithDiscoveries": "Er is geen propagatieknooppunt geconfigureerd. {{count}} ontdekt op het netwerk. Voeg er hieronder een toe of open Netwerkinstellingen.",
       "addClosest": "Dichtstbijzijnde toevoegen ontdekt",
-      "addClosestAria": "Voeg het dichtstbijzijnde ontdekte propagatieknooppunt toe en stel dit in als voorkeur"
+      "addClosestAria": "Voeg het dichtstbijzijnde ontdekte propagatieknooppunt toe en stel dit in als voorkeur",
+      "dismiss": "Niet meer laten zien",
+      "dismissAria": "Stop met het weergeven van de herinnering voor het propagatieknooppunt in Chat"
     },
     "rename": "Hernoemen",
-    "renameLabel": "Naam van het voortplantingsknooppunt",
+    "renameLabel": "Naam van het propagatieknooppunt",
     "renameSave": "Naam opslaan",
-    "renameAria": "Naam van voortplantingsknooppunt {{name}} wijzigen",
+    "renameAria": "Naam van propagatieknooppunt {{name}} wijzigen",
     "delete": "Verwijderen",
     "deleteAria": "Doorgifteknooppunt {{name}} verwijderen",
     "deleteConfirmTitle": "Doorgifteknooppunt verwijderen?",
     "deleteConfirmBody": "{{name}} verwijderen uit de lijst met propagatieknooppunten? Dit verandert niets aan het externe knooppunt.",
     "deleteConfirm": "Verwijderen",
-    "renameSaveAria": "Sla de naam van het voortplantingsknooppunt op",
-    "renameCancelAria": "Annuleer het hernoemen van het voortplantingsknooppunt",
+    "renameSaveAria": "Sla de naam van het propagatieknooppunt op",
+    "renameCancelAria": "Annuleer het hernoemen van het propagatieknooppunt",
     "enableAria": "Doorgifteknooppunt {{name}} inschakelen",
-    "disableAria": "Schakel voortplantingsknooppunt {{name}} uit",
-    "syncNowPreferredAria": "Synchroniseer berichten van het gewenste voortplantingsknooppunt",
+    "disableAria": "Schakel propagatieknooppunt {{name}} uit",
+    "syncNowPreferredAria": "Synchroniseer berichten van het gewenste propagatieknooppunt",
     "nodeStatus": {
       "active": "actief",
       "idle": "inactief",
       "known": "bekend",
       "pending": "in behandeling",
       "unknown": "onbekend",
-      "online": "online"
+      "online": "online",
+      "loading": "Aan het laden…"
     },
-    "syncLocalNotSupported": "Lokale propagatie is uw offline inbox; deze kan niet via het netwerk worden gesynchroniseerd zoals een extern LXMF-propagatieknooppunt.",
-    "syncIdentityUnknown": "De identiteit van het voortplantingsknooppunt is onbekend: wacht op een aankondiging of padreactie en probeer het vervolgens opnieuw.",
+    "syncIdentityUnknown": "De identiteit van het propagatieknooppunt is onbekend: wacht op een aankondiging of padreactie en probeer het vervolgens opnieuw.",
     "syncTargetNotPropagationNode": "Die bestemming is bereikbaar op Reticulum, maar is geen LXMF-propagatieknooppunt (TCP-hubs zijn alleen transportpaden). Voeg een bestemming toe die wordt aangekondigd als lxmf.propagation om offline berichten te synchroniseren.",
     "syncPeeringStampFailed": "Kan geen peering-stempel maken voor dit propagatieknooppunt. Probeer het over enkele ogenblikken opnieuw.",
     "syncCancelled": "Doorgiftesynchronisatie geannuleerd.",
-    "renameFailed": "Kan de naam van het voortplantingsknooppunt niet wijzigen.",
-    "deleteFailed": "Kan het voortplantingsknooppunt niet verwijderen.",
-    "addFailed": "Kan het voortplantingsknooppunt niet toevoegen.",
+    "renameFailed": "Kan de naam van het propagatieknooppunt niet wijzigen.",
+    "deleteFailed": "Kan het propagatieknooppunt niet verwijderen.",
+    "addFailed": "Kan het propagatieknooppunt niet toevoegen.",
     "addNodePlaceholder": "Bestemmingshash van lxmf.propagation van 32 tekens",
     "syncEstablishIdentityMissing": "Propagatiesynchronisatie kon het linkbewijs niet verifiëren — de node-identiteit ontbrak. Wacht op een aankondiging en probeer het opnieuw.",
     "syncEstablishInvalidProof": "Propagation Sync heeft een ongeldig linkbewijs ontvangen van het knooppunt — probeer het zo meteen opnieuw.",
@@ -3965,24 +4666,65 @@
     "discoveredAddPrefer": "Toevoegen en verkiezen",
     "discoveredAddPreferAria": "Voeg ontdekte propagatieknooppunt {{name}} toe en stel in als voorkeur",
     "discoveredHash": "{{hash}}",
-    "syncEstablishNoLinkProof": "Voortplantingssynchronisatie heeft geen linkbewijs van het knooppunt gekregen — uw identiteit heeft mogelijk een nieuwe aankondiging nodig of het pad terug ontbreekt. Probeer Network → Announce nu en vervolgens Sync opnieuw.",
+    "syncEstablishNoLinkProof": "Propagatiesynchronisatie heeft geen linkbewijs van het knooppunt gekregen — uw identiteit heeft mogelijk een nieuwe aankondiging nodig of het pad terug ontbreekt. Probeer Network → Announce nu en vervolgens Sync opnieuw.",
     "syncOfferUnknown": "Het propagatieknooppunt heeft een onbekende synchronisatiefout geretourneerd — probeer het zo meteen opnieuw.",
     "syncPathHint": "Synchronisatie op afstand vereist een pad in beide richtingen. Sync stuurt eerst een korte LXMF-aankondiging zodat het knooppunt kan antwoorden.",
-    "setPreferredFailed": "Kan voorkeursvoortplantingsknooppunt niet instellen.",
-    "localInboxName": "Lokale verspreiding (offline inbox)",
-    "localInboxHint": "Lokale verspreiding is de offline inbox van dit apparaat. Het slaat geen uitgaande DM's op voor onbereikbare collega's — stel een extern lxmf.propagation-knooppunt in als voorkeur voor opslaan en doorsturen.",
-    "preferredLocalWarning": "Het voorkeursknooppunt is alleen lokaal — offline collega's hebben nog steeds een extern propagatieknooppunt nodig voor store-and-forward-levering."
-  },
-  "reticulumPropagationHeader": {
+    "setPreferredFailed": "Kan voorkeurspropagatieknooppunt niet instellen.",
+    "localHostStats": "{{count}} in wachtrij · {{bytes}} bytes",
+    "localHostName": "Hostpropagatieknooppunt",
+    "syncPeerCostExceedsMax": "De peeringkosten van dit propagatieknooppunt liggen boven uw maximale peeringkosten. Verhoog het maximum in Netwerk → Geavanceerde PN-hosting, of kies een ander knooppunt.",
+    "offerUnsupported": "Deze bestemming ondersteunt geen LXMF /offer-synchronisatie — mesh-client kan deze niet als propagatieknooppunt gebruiken.",
+    "offerProbeTimeout": "Er is een time-out opgetreden tijdens het controleren/aanbieden van ondersteuning: het knooppunt is mogelijk onbereikbaar. Probeer het opnieuw als er een pad beschikbaar is.",
+    "offerProbeFailed": "Kan dit propagatieknooppunt niet verifiëren/bieden. Probeer het over enkele ogenblikken opnieuw.",
+    "enableLocalHostConfirmTitle": "Hosting van lokale propagatieknooppunten inschakelen?",
+    "enableLocalHostConfirm": "Hosting inschakelen",
+    "addProbing": "/offer-ondersteuning controleren…",
+    "syncLocalNotSupported": "Het lokale hostpropagatieknooppunt kan niet via het netwerk worden gesynchroniseerd zoals een extern LXMF-propagatieknooppunt.",
+    "enableFailed": "Kan het propagatieknooppunt niet inschakelen.",
+    "disableFailed": "Kan het propagatieknooppunt niet uitschakelen.",
+    "syncOutboundBusy": "Propagatiesynchronisatie uitgesteld — een uitgaand bericht wordt op dit knooppunt gedeponeerd.",
     "modeLabel": "voortplantingsmodus",
-    "modeAria": "Voortplantingssynchronisatiemodus",
+    "modeAria": "Propagatiesynchronisatiemodus",
     "modeAuto": "Auto",
     "modeManual": "Handmatig",
-    "modeOff": "Off",
-    "sync": "Synchroniseren",
-    "syncAria": "Voortplantingsberichten synchroniseren",
-    "cancelSync": "Annuleren",
-    "cancelSyncAria": "Voortplantingssynchronisatie annuleren"
+    "modeOff": "Uit",
+    "syncStarting": "Synchronisatie aan het starten",
+    "modeHelpOff": "Uit: geen ondersteuning voor propagatieknooppunten. Niets synchroniseert en offline berichten worden niet gedeponeerd op een propagatieknooppunt. Een voorkeursknooppunt blijft opgeslagen maar ongebruikt totdat u Auto of Handmatig kiest.",
+    "syncNoTarget": "Er is nog geen propagatieknooppunt beschikbaar — er is er geen ontdekt en u hebt geen toegevoegde knooppunten. Sync draait op zichzelf zodra er een beschikbaar is.",
+    "syncLocalLoading": "Het lokale propagation-knooppunt laadt nog zijn opgeslagen berichten. Synchronisatie start vanzelf zodra het laden klaar is.",
+    "syncLocalSettledFor": "Gesynchroniseerd met {{name}}.",
+    "syncStatusWithTarget": "{{status}} ({{name}})",
+    "syncErrorWithTarget": "{{name}}: {{message}}",
+    "showChatNotice": "Toon propagatieherinnering in Chat",
+    "showChatNoticeAria": "Toon de herinneringsbanner voor het propagatieknooppunt in Chat",
+    "showChatNoticeHint": "Schakel dit uit om de chatbanner te verbergen die verschijnt als er geen propagatieknooppunt beschikbaar is.",
+    "syncPathUnknown": "Nog geen netwerkpad naar dit propagatieknooppunt. Controleer uw interfaces of hub, kondig aan en probeer het opnieuw.",
+    "syncStackNotLive": "Uitgestelde propagatiesynchronisatie — de Reticulum-stack begint nog steeds.",
+    "syncLocalSettled": "Gesynchroniseerd met lokaal propagatieknooppunt.",
+    "localHostHint": "Indien ingeschakeld kondigt dit apparaat zich aan als LXMF-propagatieknooppunt en bedient /offer en /get (volledige lxmd-pariteit). Peers hoeven je niet te Preferen; fabric-bezorging hangt nog steeds af van peering met andere propagatieknooppunten.",
+    "preferredLocalWarning": "Voorkeursknooppunt is uw lokale propagatieknooppunt — collega's hoeven u niet te verkiezen; de levering van stoffen is nog steeds afhankelijk van peering met andere propagatieknooppunten.",
+    "enableLocalHostConfirmBody": "Dit apparaat kondigt zich aan als volledig LXMF-propagatieknooppunt (store-and-forward-mail toelaten, /offer peer-sync, /get ophalen) zoals officiële lxmd. Dat gebruikt opslag, CPU en kan peeren met andere knooppunten. Clients die je announce ontdekken kunnen je Preferen/syncen; ze hoeven je niet te Preferen voor een werkend fabric bij gezonde peering.",
+    "syncRetrieveBusy": "Propagatiesynchronisatie uitgesteld — ophalen van berichten is al bezig.",
+    "ignoreForAuto": "Negeren voor Auto",
+    "ignoreForAutoAria": "Propagatieknooppunt {{name}} negeren voor automatische synchronisatie en opslaan en doorsturen",
+    "ignoreForAutoFailed": "Kon dit propagatieknooppunt voor de automatische modus niet negeren.",
+    "allowForAuto": "Automatisch toestaan",
+    "allowForAutoAria": "Sta propagatieknooppunt {{name}} toe voor synchronisatie in automatische modus en opnieuw opslaan en doorsturen",
+    "allowForAutoFailed": "Kon dit propagatieknooppunt niet opnieuw toestaan voor Auto-modus.",
+    "ignoredForAutoTitle": "Genegeerd voor Auto",
+    "ignoredForAutoHint": "De automatische modus zal niet synchroniseren van of opslaan en doorsturen via deze knooppunten. Handmatige voorkeur/synchronisatie werkt nog steeds.",
+    "modeHelpAuto": "Automatisch: synchroniseert eenmalig het beste gedetecteerde propagatieknooppunt (voegt het niet toe of wijzigt het niet van voorkeur), configureert vervolgens afstandsbedieningen en vervolgens het lokale propagatieknooppunt. Genegeerde knooppunten worden overgeslagen. Zonder netwerkinterfaces, regelt alleen lokaal.",
+    "modeHelpManual": "Handmatig: synchroniseert uw voorkeursknooppunt of kiest het dichtstbijzijnde toegevoegde knooppunt voor die synchronisatie wanneer geen de voorkeur heeft. Als het mislukt, worden de andere toegevoegde knooppunten geprobeerd en vervolgens het lokale propagatieknooppunt.",
+    "establishRecoveryTitle": "Linkbewijs ontbreekt — stopte met het proberen van andere knooppunten",
+    "establishRecoveryBody": "Het omgekeerde pad naar uw identiteit ontbreekt waarschijnlijk op deze client (geen slecht propagatieknooppunt). Sync zal niet trapsgewijs naar andere afstandsbedieningen gaan totdat dit is opgelost.",
+    "establishRecoveryAnnounce": "Nu aankondigen",
+    "establishRecoveryAnnounceAria": "Stuur nu een LXMF-bezorgaankondiging",
+    "establishRecoveryRetry": "Synchronisatie opnieuw proberen",
+    "establishRecoveryRetryWaiting": "Synchronisatie opnieuw proberen ({{seconds}}s)",
+    "establishRecoveryRetryAria": "Wacht tot de aankondiging is afgewikkeld en probeer vervolgens opnieuw te synchroniseren op het voorkeurs- of laatste doelwit",
+    "establishRecoveryDualTcpTip": "Twee of meer TCP-interfaces zijn ingeschakeld. Kondig aan en de synchronisatielink kan op verschillende paden vertrekken — schakel één backbone uit onder Verbindingsinterfaces, kondig → vervolgens aan en probeer het opnieuw.",
+    "establishRecoveryOpenInterfaces": "Open interfaces",
+    "establishRecoveryOpenInterfacesAria": "Open verbindingsinterfaces om TCP-backbones aan te passen"
   },
   "reticulumRmapDiscovery": {
     "sectionTitle": "RMAP v4-detectie",
@@ -4009,11 +4751,12 @@
       "invalidHost": "Ongeldige hostnaam voor bereikbaar op.",
       "tooLong": "Bereikbaar op waarde is te lang."
     },
-    "hint": "Is detecteerbaar=ja en past GPS-coördinaten toe op alle ingeschakelde RMAP-compatibele interfaces (RNode, KISS, BLE-peer, I2P, UDP, pipe). Gebruik per interface RMAP-schakelaars op Verbinding voor FINE-besturing. LoRa-paden maken ook transport en de rmap.world-hub mogelijk.",
     "openGlobalMap": "Globale kaart openen",
     "openGlobalMapAria": "Open RMAP v4 globale kaart op rmap.world",
     "applyPartialSuccess": "RMAP-instellingen toegepast op {{applied}} van {{total}} interfaces.",
-    "disablePartialSuccess": "RMAP-publicatie uitgeschakeld op {{applied}} van {{total}} interfaces."
+    "disablePartialSuccess": "RMAP-publicatie uitgeschakeld op {{applied}} van {{total}} interfaces.",
+    "hint": "Maakt RMAP-publicatie en app-GPS-coördinaten mogelijk op alle ingeschakelde RMAP-compatibele interfaces (RNode/Multi, KISS, BLE peer, I2P, UDP, pipe). Het selectievakje is alleen ingeschakeld als elke in aanmerking komende interface publiceert; een gedeeltelijke status is onbepaald. Controleer opnieuw om de rest te synchroniseren. Gebruik per interface RMAP-schakelaars op Verbinding voor nauwkeurige controle. LoRa-paden maken ook transport en de rmap.world-hub mogelijk.",
+    "disabledShareOff": "Schakel Mijn locatie delen in app → GPS / locatie in om op RMAP te publiceren."
   },
   "reticulumTopology": {
     "title": "Netwerktopologie",
@@ -4023,7 +4766,6 @@
     "noNodes": "Nog geen topologiegegevens: sluit de Reticulum-stack aan en vernieuw.",
     "nodeCount": "{{count}} knooppunten",
     "edgeCount": "{{count}}-koppelingen",
-    "hiddenCount": "Toont {{shown}} van {{total}} knooppunten (verre peers verborgen)",
     "legendSelf": "Dit knooppunt",
     "centerRns": "RNS",
     "showDistantPeers": "Toon collega's op afstand",
@@ -4044,7 +4786,10 @@
     "glyphWifi": "Wi-Fi-interface",
     "glyphLora": "LoRa-interface",
     "glyphTcp": "TCP-interface",
-    "glyphSerial": "Seriële interface"
+    "glyphSerial": "Seriële interface",
+    "hiddenCountLimit": "Toont {{shown}} van {{total}} knooppunten (limiet {{limit}})",
+    "visibleNodeLimitNote": "De graaf toont maximaal {{distantLimit}} knooppunten.",
+    "rfOnly": "Alleen RF"
   },
   "rfHistograms": {
     "title": "RF-signaalverdeling",
@@ -4101,12 +4846,7 @@
     "postPlaceholder": "Posten naar ruimte…",
     "postButton": "Plaatsen",
     "posting": "Plaatsen…",
-    "manageRoom": "Beheren",
-    "manageHeading": "Zaaladministratie",
-    "cliPlaceholder": "CLI-opdracht voor beheerder...",
-    "cliSend": "Versturen",
-    "clearCli": "CLI wissen",
-    "cliEmpty": "Nog geen uitvoer ...",
+    "manageRoom": "Beheren op Repeaters",
     "aclPubkeyLabel": "Openbare sleutel (64 hex)",
     "aclLevelLabel": "machtigingsniveau",
     "aclLevelRemove": "Toegang verwijderen",
@@ -4114,7 +4854,6 @@
     "aclLevelReadWrite": "Lezen/schrijven (kan posten)",
     "aclLevelAdmin": "Beheerder",
     "aclApply": "ACL toepassen",
-    "adminPasswordRequired": "Beheerderswachtwoord is vereist om deze ruimte te beheren.",
     "postFailed": "Posten naar ruimte mislukt",
     "leaveRoom": "Ruimte verlaten",
     "rememberPassword": "Wachtwoord onthouden",
@@ -4130,7 +4869,6 @@
     "cancelLoginHint": "Een andere ruimtelogin kan eerst op de radio eindigen. Annuleer stopt verdere pogingen voor deze ruimte.",
     "emptyGuestLoginHint": "Leeg gastveld: gebruik Doorgaan met alleen-lezen voor servers zonder wachtwoord. Inloggen vereist een wachtwoord en stuurt \"hello\" als het veld leeg is.",
     "unreadPosts": "{{count}} nieuw",
-    "closeManage": "Sluiten",
     "upgradeAccess": "Toegang upgraden",
     "leavingRoom": "Verlaten…",
     "leaveRoomInProgress": "Ruimte verlaten…",
@@ -4187,16 +4925,14 @@
     "legendNotSavedTooltip": "Lege cirkel — geen wachtwoord opgeslagen voor deze ruimte",
     "legendSavedTooltip": "Lichtblauwe halve cirkel — wachtwoord opgeslagen; log in om een sessie te openen",
     "legendLoggedInTooltip": "Groene stip — actieve clientsessie (verlaat de ruimte als de server offline is)",
-    "historyLocalHint": "Berichten worden alleen weergegeven terwijl u bent ingelogd in deze ruimte op dit apparaat. Schakel automatisch synchroniseren in om geabonneerd te blijven; de geschiedenis wordt niet opnieuw ingevuld vanaf de roomserver.",
+    "historyLocalHint": "Bij het inloggen vraagt mesh-client recente berichten op die nog in de ringbuffer van de roomserver staan (wanneer dit apparaat nog geen lokaal watermerk heeft). Schakel automatisch synchroniseren in om geabonneerd te blijven terwijl u verbonden bent.",
     "loginAllSavedDisabledNoSavedPasswords": "Sla eerst een ruimtewachtwoord op om alles in te loggen",
     "membersHeadingWithCount": "Leden ({{count}})",
     "collapseRoomList": "Ruimtelijst samenvouwen",
     "expandRoomList": "Ruimtelijst uitbreiden",
-    "pathHashCliGet": "Hash-modus voor pad ophalen",
-    "pathHashCliSet0": "Stel pad hash-modus 1-byte in",
-    "pathHashCliSet1": "Stel pad hash-modus 2-byte in",
-    "pathHashCliSet2": "Stel pad hash-modus in op 3 bytes",
-    "collapsedRoomWithUnread": "{{label}}, {{count}} ongelezen"
+    "collapsedRoomWithUnread": "{{label}}, {{count}} ongelezen",
+    "manageJumpHint": "Infrastructuurbediening (ping, status, CLI, ACL setperm) staat op het tabblad Repeaters.",
+    "aclPubkeyPlaceholder": "0123456789abcdef…"
   },
   "searchModal": {
     "closeSearch": "Zoekopdracht sluiten",
@@ -4333,7 +5069,8 @@
     "topology": "Netwerktopologie",
     "network": "Netwerk",
     "rrc": "RRC",
-    "remote": "Op afstand"
+    "remote": "Op afstand",
+    "games": "Games"
   },
   "takServerPanel": {
     "title": "TAK-server",
@@ -4372,7 +5109,8 @@
     "regenerateWarning": "Door opnieuw te genereren worden bestaande ATAK-datapakketten ongeldig; u zult ze opnieuw moeten importeren.",
     "durationSec": "{{s}}s",
     "durationMin": "{{m}}m",
-    "durationHourMin": "{{h}}h {{m}}m"
+    "durationHourMin": "{{h}}h {{m}}m",
+    "atakUndecodable": "Laadvermogen niet herkend als een TAK-pakket"
   },
   "telemetryPanel": {
     "title": "Telemetrie",
@@ -4413,14 +5151,20 @@
     "tempUnitC": "°C",
     "exportCsvButton": "CSV exporteren",
     "emptyWaitingConnected": "Nog geen telemetriegegevens. Wachten op gegevens van het apparaat…",
-    "emptyWaitingDisconnected": "Nog geen telemetriegegevens. Maak verbinding met een apparaat om realtime metingen te bekijken."
+    "emptyWaitingDisconnected": "Nog geen telemetriegegevens. Maak verbinding met een apparaat om realtime metingen te bekijken.",
+    "sectionParticulates": "Deeltjes, CO₂ en bliksem",
+    "chartAriaParticulates": "Deeltjesgrafiek: nieuwste PM2.5 {{pm25}}, CO₂ {{co2}}, {{count}} punten",
+    "axisParticulates": "µg/m³ · stakingen",
+    "axisCo2": "ppm",
+    "seriesPm25": "PM2,5 (µg/m³)",
+    "seriesCo2": "CO₂ (ppm)",
+    "seriesLightningStrikes": "Blikseminslag (1 uur)"
   },
   "toasts": {
     "firmwareAvailable": "Firmware-update beschikbaar: v{{version}}",
     "newMessages_one": "{{protocol}}: {{count}} nieuw bericht",
     "newMessages_other": "{{protocol}}: {{count}} nieuwe berichten",
-    "meshcoreDistanceFilterHint": "Je hebt {{count}} contacten met GPS op de kaart. Schakel het afstandsfilter in onder App → Verschijning om je te concentreren op knooppunten in de buurt.",
-    "longSessionRestartNudge": "Mesh-client draait al vier dagen. Start de app opnieuw om het risico op crashes tijdens lange MeshCore BLE-sessies te verminderen."
+    "meshcoreDistanceFilterHint": "Je hebt {{count}} contacten met GPS op de kaart. Schakel het afstandsfilter in onder App → Verschijning om je te concentreren op knooppunten in de buurt."
   },
   "updateStatus": {
     "checking": "Controleren…",
@@ -4550,8 +5294,7 @@
       "commandSent": "Opdracht verzonden: {{cmd}}",
       "helpMsg": "/msg NICK|HASH tekst — directe KENNISGEVING fluisteren (rrcd)",
       "usageMsg": "Gebruik: /msg NICK|HASH TEKST",
-      "msgTargetNotFound": "Could not resolve /msg target to a full identity hash. Join a room or use the full hash.",
-      "msgSent": "→ {{name}}: {{text}}"
+      "msgTargetNotFound": "Could not resolve /msg target to a full identity hash. Join a room or use the full hash."
     },
     "listedRooms": "Vermeld.",
     "refreshRoomList": "Lijst met kamers vernieuwen (/list)",
@@ -4570,12 +5313,15 @@
     "directNoticeUnsupported": "Deze hub ondersteunt geen directe KENNISGEVING (/msg).",
     "capDirectNotice": "direct msg",
     "moderation": {
-      "removedFromRoom": "Verwijderd uit de kamer door de hub (kick, ban of extern deel)."
+      "removedFromRoom": "Verwijderd uit de kamer door de hub (kick, ban of extern deel).",
+      "removedFromRoomSystem": "De hub heeft u gescheiden van {{room}}.",
+      "hubParted": "De hub scheidde je van de kamer."
     },
     "errors": {
       "linkProofTimeout": "Time-out bij het wachten op de hublink (linkbewijs). Probeer het opnieuw of controleer het pad/de hops naar de hub.",
       "pathTimeout": "Kon geen pad naar de hub vinden. Wacht op een versere aankondiging en maak vervolgens opnieuw verbinding.",
-      "welcomeTimeout": "Verbonden, maar de hub heeft niet op tijd een WELKOMSTBERICHT gestuurd. Probeer het opnieuw."
+      "welcomeTimeout": "Verbonden, maar de hub heeft niet op tijd een WELKOMSTBERICHT gestuurd. Probeer het opnieuw.",
+      "proxyRateLimit": "Te veel verzoeken nu (proxy-snelheidslimiet bereikt). Wacht even en probeer opnieuw."
     },
     "expandMembers": "Ledenlijst uitvouwen",
     "collapseMembers": "Ledenlijst samenvouwen",
@@ -4602,7 +5348,19 @@
     "clearHistory": "Geschiedenis wissen",
     "clearHistoryTitle": "Kamergeschiedenis wissen",
     "clearHistoryConfirm": "Alle opgeslagen berichtgeschiedenis voor {{room}} verwijderen? Dit kan niet ongedaan worden gemaakt.",
-    "clearHistoryConfirmAction": "Geschiedenis verwijderen"
+    "clearHistoryConfirmAction": "Geschiedenis verwijderen",
+    "whisperReplyPlaceholder": "Reageer op {{name}} of /msg...",
+    "jumpToLatest": "Spring naar de laatste",
+    "stackNotReady": "De Reticulum-stack is nog niet klaar. Wacht tot deze verbonden is en probeer het opnieuw.",
+    "sidecarNotRunning": "Reticulum-sidecar draait niet. Start de stack op Verbinding en probeer het opnieuw.",
+    "whoReplyMissing": "Geen ledenlijst van de hub voor {{room}} (het antwoord mag groter zijn dan de linkgrootte). Namen worden weergegeven als mensen deelnemen of chatten.",
+    "openNomadPage": "Open Nomad-pagina {{address}}",
+    "openDm": "Direct bericht openen met {{address}}",
+    "openReticulumAddress": "Reticulum-adres {{address}} openen",
+    "addressChoiceTitle": "Reticulum-adres openen",
+    "addressChoiceMessage": "{{address}} kan een Nomad-pagina of een peer zijn. Wat wil je openen?",
+    "addressChoiceNomad": "Nomad-pagina",
+    "addressChoiceDm": "Direct bericht"
   },
   "signalMeter": {
     "rssi": "RSSI",
@@ -4621,7 +5379,6 @@
   "qrIngest": {
     "qrImageAlt": "QR-code",
     "encodeFailed": "Kon geen QR-code genereren",
-    "paperUnsupported": "Gecodeerde papieren LXMF-berichten worden nog niet ondersteund",
     "contactImported": "Contact toegevoegd via deep link",
     "contactImportFailed": "Kan contactpersoon uit link niet importeren",
     "unknownLink": "Onbekende link",
@@ -4643,7 +5400,25 @@
     "cameraUnavailable": "Camera is niet beschikbaar op dit apparaat",
     "confirmContactImportTitle": "Contactpersoon importeren?",
     "confirmContactImportBody": "{{name}} van een externe link toevoegen aan uw Reticulum-contacten?",
-    "confirmContactImportAction": "Contactpersoon importeren"
+    "confirmContactImportAction": "Contactpersoon importeren",
+    "confirmMeshcoreContactImportTitle": "MeshCore-contact importeren?",
+    "confirmMeshcoreContactImportBody": "{{name}} van een MeshCore-contact QR toevoegen aan je contacten?",
+    "confirmMeshcoreContactImportAction": "Import MeshCore contact",
+    "confirmMeshcoreChannelImportTitle": "MeshCore-kanaal importeren?",
+    "confirmMeshcoreChannelImportBody": "Kanaal {{name}} toepassen vanaf een MeshCore-kanaal QR op het tabblad Radio?",
+    "confirmMeshcoreChannelImportAction": "Importeer kanaal",
+    "lxmaRegisterFailed": "Kon de openbare sleutel van het contact niet registreren (draait de Reticulum-stack?)",
+    "meshcoreContactImported": "MeshCore-contact toegevoegd vanuit QR",
+    "meshcoreContactImportFailed": "Kan MeshCore-contactpersoon niet importeren uit QR",
+    "meshcoreChannelImported": "MeshCore-kanaallink ontvangen — bekijk op het tabblad Radio",
+    "meshcoreChannelImportFailed": "Kan MeshCore-kanaal niet importeren uit QR",
+    "meshcoreChannelPrefill": "Kanaalgegevens ingevuld vanuit QR — opslaan om toe te passen",
+    "meshcoreChannelNoFreeIndex": "All MeshCore channel slots are full — delete one before importing",
+    "paperIngested": "Papieren bericht ontsleuteld in chat",
+    "paperInvalidUri": "Dat ziet er niet uit als een geldige LXMF-papieren link",
+    "paperDecryptFailed": "Kon papieren bericht niet ontsleutelen — is dit de juiste identiteit?",
+    "paperIdentityNotConfigured": "Reticulum-identiteit is niet gereed — start eerst de stack en configureer de identiteit",
+    "paperIngestFailed": "Kon papieren bericht niet opnemen"
   },
   "reticulumRemote": {
     "navAria": "Secties op afstand",
@@ -4777,7 +5552,16 @@
       "offerToast": "Inkomende bestandsaanbieding: {{file}}",
       "copyInstructionsAria": "Kopieer instructies voor het inschakelen van bestandsontvangst",
       "copyInstructions": "Kopieer instructies",
-      "instructionsCopied": "Instructies gekopieerd."
+      "instructionsCopied": "Instructies gekopieerd.",
+      "receiveDestSharedToast": "rncp-ontvangstbestemming van {{peer}} opgeslagen — u kunt nu een bestand verzenden.",
+      "receiveDestShareFailed": "Kan de rncp-ontvangstbestemming van de peer niet opslaan.",
+      "peerUnreachable": "Geen pad naar die bestemming. De peer is mogelijk offline.",
+      "checkingReachability": "Bereikbaarheid controleren...",
+      "listenerLikelyOffTitle": "Het ontvangen van bestanden is mogelijk uitgeschakeld",
+      "listenerLikelyOffConfirm": "Inschakelverzoek verzenden",
+      "pendingOffersBadgeAriaCapped": "99+ openstaande aanbiedingen voor inkomende bestanden",
+      "listenerLikelyOffBody": "Er is geen pad naar de bestemming van hun bestand, maar ze zoeken online naar chat. Vraag hen om het ontvangen van rncp-bestanden in te schakelen en hun rncp-ontvangst-hash te verzenden, en probeer het vervolgens opnieuw.",
+      "listenerLikelyOffToast": "Geen pad naar hun bestandsontvangstbestemming; Het ontvangen van bestanden is mogelijk uitgeschakeld. Vraag hen om rncp het ontvangen en verzenden van hun hash in te schakelen en probeer het vervolgens opnieuw."
     },
     "enableRequest": {
       "title": "Bestandsontvangst inschakelen?",
@@ -4793,8 +5577,10 @@
       "enabled": "Bestandsontvangst is ingeschakeld.",
       "enableFailed": "Kon het ontvangen van bestanden niet inschakelen: {{error}}",
       "saveDirRequired": "Kies een opslagmap om ontvangst in te schakelen.",
-      "identityUnknown": "De identiteitshash van deze peer kon nog niet worden bepaald — inkomend vragen is ingeschakeld, maar de peer is niet aan de toestaanlijst toegevoegd. Probeer het opnieuw nadat een pad of aankondiging is ontvangen.",
-      "lxmfBody": "Schakel bestandsontvangst (rncp) in als u mesh-client gebruikt: Extern → Instellingen → Inkomende bestandsaanbiedingen. Of voer rncp/rncp-rs uit in de luistermodus."
+      "shareDestWarning": "Als u dit inschakelt, zal mesh-client uw rncp-ontvangstbestemming naar deze peer sturen, zodat zij het verzenden van bestanden automatisch kunnen aanvullen.",
+      "lxmfBody": "Schakel het ontvangen van rncp-bestanden in en antwoord met de hash van uw rncp-ontvangstbestemming.",
+      "lxmfShareBody": "Bestandsontvangst is ingeschakeld. Mijn rncp ontvangt bestemmingshash:",
+      "identityUnknown": "Inkomend vragen is ingeschakeld, maar de identiteitshash van deze peer is nog niet bekend, dus deze is niet toegevoegd aan Altijd toestaan. U wordt nog steeds vóór elk bestand gevraagd; probeer Altijd opnieuw toestaan ​​nadat een pad of aankondiging binnenkomt."
     },
     "saved": {
       "labelPlaceholder": "Label",
@@ -4841,7 +5627,13 @@
       "autoReconnectShell": "Maak automatisch opnieuw verbinding met de externe shell na een onverwachte verbinding",
       "autoRetryTransfer": "Probeer mislukte overdrachten automatisch opnieuw",
       "identityTitle": "Mijn identiteit",
-      "myIdentity": "Mijn identiteit:"
+      "myIdentity": "Mijn identiteit:",
+      "rechooseSaveDir": "Kies de opslagmap opnieuw (één keer per start van de app vereist voor beveiliging).",
+      "announceReceiveDest": "Ontvangstbestemming aankondigen",
+      "announceReceiveDestAria": "Rncp-ontvangstbestemming aankondigen, zodat collega's deze kunnen ontdekken",
+      "announceReceiveDestDone": "RNCP-ontvangstbestemming aangekondigd.",
+      "announceReceiveDestFailed": "Kan ontvangstbestemming niet aankondigen: {{error}}",
+      "announceReceiveDestListenerOff": "Inkomende bestandsontvangst inschakelen (Vraag of Sta toe vermeld) voordat u aankondigt."
     }
   },
   "meshcoreRoute": {
@@ -4849,5 +5641,288 @@
     "direct": "Direct",
     "segmentTooltip": "Pad-hash {{hex}}",
     "segmentResolvedTooltip": "{{hex}} → {{name}}"
+  },
+  "nodeStatusNotifier": {
+    "onlineTitle": "{{name}} is nu online",
+    "onlineBody": "{{protocol}} knooppunt is online gekomen",
+    "offlineTitle": "{{name}} is offline gegaan",
+    "offlineBody": "Laatst gehoord: {{time}}",
+    "unknown": "onbekend"
+  },
+  "reticulumVoice": {
+    "call": "Oproep",
+    "answer": "Beantwoorden",
+    "reject": "Afwijzen",
+    "incomingTitle": "Binnenkomende spraakoproep",
+    "inCall": "In gesprek",
+    "callAria": "LXST-spraakoproep starten",
+    "answerAria": "Spraakoproep beantwoorden",
+    "rejectAria": "Spraakoproep weigeren",
+    "hangupAria": "Ophangen spraakoproep",
+    "muteAria": "Microfoon dempen",
+    "unmuteAria": "Dempen van de microfoon opheffen",
+    "errors": {
+      "noIdentity": "Kan niet bellen: peer-identiteit nog niet bekend. Wacht op een aankondiging of probeer de peer.",
+      "callFailed": "Spraakoproep mislukt.",
+      "callInProgress": "Er is al een spraakoproep bezig.",
+      "notRunning": "Spraak is niet beschikbaar totdat de Reticulum-stack actief is.",
+      "micFailed": "Kon geen toegang krijgen tot de microfoon voor spraak.",
+      "muteFailed": "Kan microfoondemping niet bijwerken tijdens de spraaksessie."
+    },
+    "connecting": "Verbinden…",
+    "elapsedAria": "Verstreken tijd {{time}}",
+    "txAria": "Verzonden spraakframes {{count}}",
+    "rxAria": "Ontvangen spraakframes {{count}}",
+    "statsSeparator": "·",
+    "txFrames": "TX {{count}}",
+    "txPackets": "pkt {{count}}",
+    "rxFrames": "RX {{count}}",
+    "capabilityHeard": "LXST-telefonie-aankondiging gehoord voor deze peer",
+    "capabilityUnknown": "LXST-telefonie-aankondiging nog niet gehoord (oproep kan nog steeds werken)",
+    "capabilityHeardShort": "LXST",
+    "capabilityUnknownShort": "?",
+    "help": {
+      "interop": "LXST-spraak heeft een peer-running LXST-telefonie nodig (Sideband, Ratspeak of mesh-client). Geen voice-note clip. Python LXST is de referentie; rsLXST is experimenteel."
+    },
+    "toast": {
+      "busy": "Lijn bezet",
+      "rejected": "Oproep afgewezen",
+      "noAnswer": "Geen antwoord — er is een time-out opgetreden.",
+      "failed": "Spraakoproep mislukt.",
+      "connectFailed": "Kon niet verbinden"
+    },
+    "ringing": "Overgaan…"
+  },
+  "gamesPanel": {
+    "title": "Games",
+    "filters": {
+      "all": "All",
+      "active": "Actief",
+      "pending": "Openstaand",
+      "completed": "Voltooid"
+    },
+    "noSessions": "Nog geen spelsessies.",
+    "sessionRowAria": "{{app}} game met {{peer}}",
+    "apps": {
+      "ttt": "Boter-kaas-eierenmahjongg map name",
+      "chess": "Chess",
+      "four_in_a_row": "Vier op een rij"
+    },
+    "status": {
+      "pending": "Openstaand",
+      "active": "Actief",
+      "completed": "Voltooid",
+      "expired": "Verlopen",
+      "declined": "Geweigerd"
+    },
+    "unreadBadgeAria": "{{count}} ongelezen",
+    "newChallenge": "Nieuwe Uitdaging",
+    "peerHashPlaceholder": "Peer destination hash",
+    "peerHashAria": "Peer destination hash",
+    "selectAppAria": "SPEL KIEZEN",
+    "sendChallengeAria": "Uitdaging verzenden",
+    "sendChallenge": "Uitdaging verzenden",
+    "selectSessionPrompt": "Selecteer een spelsessie om te spelen.",
+    "opponentLabel": "Tegenstander: {{peer}}",
+    "acceptAria": "Accepteer uitdaging",
+    "accept": "Aanvaarden",
+    "declineAria": "Uitdaging afwijzen",
+    "decline": "Afwijzen",
+    "resignAria": "Stoppen",
+    "resign": "Stoppen",
+    "acceptDrawAria": "Trekkingsaanbod accepteren",
+    "acceptDraw": "Tekening accepteren",
+    "declineDrawAria": "Trekkingsaanbod afwijzen",
+    "declineDraw": "Trekking afwijzen",
+    "offerDrawAria": "Aanbieding loting",
+    "offerDraw": "Aanbieding loting",
+    "resendAria": "Laatste actie opnieuw verzenden",
+    "resend": "Opnieuw versturen",
+    "deleteSessionAria": "Sessie verwijderen",
+    "deleteSession": "Sessie verwijderen",
+    "resignConfirmTitle": "Spel opzeggen?",
+    "resignConfirmMessage": "Weet je zeker dat je dit spel wilt opzeggen? Dit kan niet ongedaan worden gemaakt.",
+    "drawOfferedBanner": "Je tegenstander bood een gelijkspel aan.",
+    "challenge": "Uitdaging",
+    "challengeAria": "Uitdaging voor een spel",
+    "challengeAppAria": "Uitdaging voor {{app}}",
+    "challengeSent": "{{app}} uitdaging verzonden",
+    "ttt": {
+      "youWon": "Je hebt gewonnen!",
+      "opponentWon": "Tegenstander heeft gewonnen.",
+      "draw": "Rapen",
+      "yourTurn": "Jouw beurt",
+      "opponentTurn": "De beurt van de tegenstander",
+      "yourMarker": "Jij bent {{marker}}",
+      "moveCount": "{{count}} verhuist",
+      "boardAria": "Tic-Tac-Toe-bord",
+      "cellEmptyAria": "Cell {{index}}, empty",
+      "cellOccupiedAria": "Cell {{index}}, {{marker}}"
+    },
+    "fourInARow": {
+      "youWon": "Je hebt gewonnen!",
+      "opponentWon": "Tegenstander heeft gewonnen.",
+      "draw": "Rapen",
+      "yourTurn": "Jouw beurt",
+      "opponentTurn": "De beurt van de tegenstander",
+      "yourMarker": "Jij bent {{marker}}",
+      "moveCount": "{{count}} verhuist",
+      "boardAria": "Vier op een rij-bord",
+      "columnAria": "Kolom {{column}}, van onder naar boven: {{contents}}. Hier plaatsen",
+      "columnFullAria": "Kolom {{column}}, van onder naar boven: {{contents}}. Vol",
+      "columnEmptyContents": "leeg"
+    },
+    "chess": {
+      "youWon": "Je hebt gewonnen!",
+      "opponentWon": "Tegenstander heeft gewonnen.",
+      "draw": "Rapen",
+      "yourTurn": "Jouw beurt",
+      "yourTurnInCheck": "Jouw beurt — jij bent aan de beurt",
+      "opponentTurn": "De beurt van de tegenstander",
+      "boardAria": "SchaakbordFilter Effect: Melt Down",
+      "squareAria": "{{square}}, {{piece}}",
+      "emptySquare": "leegmaken",
+      "legalMoveAria": "Speel {{move}}",
+      "pieceNames": {
+        "K": "WHITE KING",
+        "Q": "Witte koningin",
+        "R": "Witte toren",
+        "B": "Witte bisschop",
+        "N": "witte ridder",
+        "P": "Witte pion",
+        "k": "Zwarte koning",
+        "q": "Zwarte koningin",
+        "r": "Zwarte toren",
+        "b": "Zwarte loper",
+        "n": "Zwarte ridder",
+        "p": "Zwarte pion"
+      },
+      "promotionChooserAria": "Promotiestuk kiezen",
+      "promoteTo": {
+        "q": "Promoveer tot koningin",
+        "r": "Promoveer tot toren",
+        "b": "Promoveer tot bisschop",
+        "n": "Promoveer tot ridder"
+      }
+    },
+    "errors": {
+      "invalidPeerHash": "Voer een geldige peer-bestemmingshash van 32 tekens in.",
+      "actionFailed": "Actie mislukt: {{reason}}",
+      "unknownReason": "onbekende reden",
+      "resendFailed": "Opnieuw verzenden mislukt.",
+      "deleteFailed": "Kan sessie niet verwijderen.",
+      "sessionExpired": "Dit spel is verlopen na een periode van inactiviteit en kan niet meer worden gespeeld. Gebruik Sessie verwijderen om het te verwijderen."
+    },
+    "deleteConfirmTitle": "Moment verwijderen?",
+    "deleteConfirmMessage": "Deze spelsessie uit je lijst verwijderen? Dit kan niet ongedaan worden gemaakt.",
+    "claimThreefold": "Claim drievoudig",
+    "claimThreefoldAria": "Claim drievoudige herhalingstekening",
+    "claimFiftyMove": "Claim 50-zettenregel",
+    "claimFiftyMoveAria": "Regeltrekking voor vijftig zetten claimen",
+    "delivery": {
+      "sending": "Versturen...",
+      "propagating": "Offline inbox...",
+      "propagated": "Opgeslagen",
+      "failed": "Opnieuw proberen nodig"
+    },
+    "drawOfferWaitingBanner": "Tekenaanbod verzonden. Wachten op tegenstander...",
+    "idleExpiryNotice": "Games verlopen na inactiviteit en kunnen dan alleen worden verwijderd. Onbeantwoorde uitdagingen: 24 uur (alle spellen). Actieve spellen: tic-tac-toe na 24 uur, schaken en four-in-a-row na 7 dagen."
+  },
+  "longSession": {
+    "title": "Herstart aanbevolen",
+    "body": "mesh-client draait al vier dagen met Bluetooth-radio aangesloten. Start de app opnieuw om het risico op crashes tijdens lange Noble BLE-sessies te verminderen.",
+    "restart": "Herstarten",
+    "dismiss": "Afwijzen"
+  },
+  "reticulumSetup": {
+    "title": "Je eerste verbinding",
+    "open": "Installatiehandleiding openen",
+    "intro": "Nieuw bij Reticulum? Stel een verbinding in, vind contacten en leer de tabbladen kennen.",
+    "eyebrow": "RETICULUM · AAN DE SLAG",
+    "stepsLabel": "Stappen voor het instellen van het Reticulum",
+    "identityTitle": "Jouw identiteit",
+    "startTitle": "Begin hier",
+    "hide": "Gids verbergen",
+    "startBody": "Reticulum verbindt mensen en apps via internet, lokale netwerken of compatibele radio's. U kunt het proberen met alleen deze computer en een internetverbinding.",
+    "startHint": "Deze gids start Reticulum in de app. Vervolgens kies je een naam en een manier om andere mensen te bereiken.",
+    "exploreTitle": "Probeer het eens",
+    "connectionTitle": "Maak verbinding",
+    "identityBody": "Uw identiteit is uw account op dit netwerk. Het bevindt zich op deze computer, zonder aanmelding of centrale accountprovider. Uw berichtadres blijft hetzelfde als u uw naam wijzigt.",
+    "existingIdentity": "Je hebt al een identiteit. Deze handleiding bewaart deze en werkt alleen uw weergavenaam bij.",
+    "startAction": "Laten we aan de slag gaan",
+    "working": "Werken…",
+    "saveIdentity": "Naam opslaan en doorgaan",
+    "nameLabel": "Naam of roepnaam",
+    "nameHint": "Deze naam wordt gedeeld met collega's. Een bijnaam is prima; het hoeft niet uw echte naam te zijn.",
+    "importIdentity": "Ik moet een identiteit herstellen",
+    "continue": "Doorgaan",
+    "backupTitle": "Bewaar uw herstelwoorden veilig",
+    "savedWords": "Ik heb mijn herstelwoorden bewaard",
+    "back": "Rug",
+    "backupBody": "Deze woorden herstellen uw identiteit als u deze computer kwijtraakt. Bewaar ze nu ergens privé. Geef ze nooit aan iemand die om uw berichtenadres vraagt. U kunt een beveiligde back-up ook later vanuit het netwerk exporteren.",
+    "routes": {
+      "internet": {
+        "title": "Internet",
+        "body": "Een openbare hub verbindt u met andere mensen. Geen radio nodig; een goede plek om te beginnen."
+      },
+      "radio": {
+        "body": "Gebruik compatibele radiohardware en de instellingen van uw lokale radionetwerk.",
+        "title": "RNode-radio"
+      },
+      "existing": {
+        "body": "Behoud uw huidige interfaces en controleer of deze gereed zijn.",
+        "title": "Bestaande opstelling"
+      }
+    },
+    "routeLabel": "Hoe te verbinden",
+    "connectionBody": "Een interface is eenvoudigweg een verbinding met Reticulum. Kies hoe u het netwerk wilt bereiken. U kunt later andere verbindingen toevoegen.",
+    "hubHint": "Begin met één hub. De app zal deze verbinding toevoegen of inschakelen en Reticulum opnieuw opstarten om deze toe te passen. Openbare hubs kunnen uw IP-adres zien en zijn soms niet beschikbaar.",
+    "hubLabel": "Openbare internethub",
+    "connectHub": "Maak verbinding met deze hub",
+    "hubSaved": "Verbinding opgeslagen. Controleren na het opnieuw opstarten...",
+    "radioDevice": "Gebruik een apparaat met RNode-firmware. Een Meshtastic- of MeshCore-radio is niet automatisch een RNode; flash niet en verander de firmware niet zonder de instructies van uw apparaat te controleren.",
+    "radioSettings": "Open hieronder de verbindingsinstellingen, voeg een RNode-interface toe, kies USB of Bluetooth en gebruik de frequentie, bandbreedte, spreidingsfactor en coderingssnelheid die door uw lokale groep worden geleverd.",
+    "radioCheck": "Schakel de interface in, pas de herstartprompt toe en keer vervolgens terug naar deze handleiding. Voor een werkende radioverbinding is nog steeds een ander compatibel station binnen bereik nodig.",
+    "existingHint": "De gids controleert uw bestaande interfaces zonder deze te wijzigen. Een lokale netwerkinterface bereikt nabijgelegen Reticulum-apparaten op dat netwerk; het verbindt u op zichzelf niet met openbare internetgenoten.",
+    "openInterfaces": "Open de verbindingsinstellingen hieronder",
+    "checkTitle": "Uw verbinding controleren",
+    "checkStack": "Reticulum netwerk",
+    "available": "Klaar",
+    "waiting": "Wachten",
+    "ready": "Uw verbinding is beschikbaar",
+    "checkMessaging": "Berichtenservice",
+    "checkConnection": "Gekozen verbinding",
+    "readyHint": "Dit bevestigt dat de lokale services en verbinding actief zijn. Het garandeert niet dat een bepaalde persoon bereikbaar is.",
+    "checkFailed": "De app kon de huidige status niet lezen. Controleer of Reticulum actief is en probeer het opnieuw.",
+    "waitHint": "Het opstarten kan even duren. Als een hub onbeschikbaar blijft, controleer dan je internetverbinding of kies een andere hub. Controleer bij een radio de kabel, koppeling en lokale instellingen.",
+    "restartHint": "Door opnieuw opstarten worden actieve Reticulum-verbindingen kortstondig onderbroken. Opgeslagen instellingen blijven beschikbaar als u de handleiding sluit.",
+    "checkAgain": "Controleer opnieuw",
+    "connectionLost": "De verbinding is niet meer gereed. Ga terug om het te controleren voordat u het verzendt.",
+    "addressBody": "Deel dit adres met een vriend zodat hij/zij je een bericht kan sturen. LXMF is het berichtensysteem dat wordt gebruikt door Reticulum-apps; dit is uw LXMF-adres, niet uw herstelwoorden.",
+    "exploreBody": "Je hebt de essentiële zaken. Begin met één direct bericht of een groepschat; je kunt de andere tools verkennen wanneer je ze nodig hebt.",
+    "addressTitle": "Uw berichtenadres",
+    "copyAddress": "Kopieer mijn berichtadres",
+    "firstMessage": "Vraag een vriend om zijn LXMF-adres. Gebruik in Peers het adresveld om ze op te zoeken, open vervolgens een chat en stuur een kort bericht.",
+    "addressCopied": "Berichtadres gekopieerd",
+    "discoveryHint": "Ook peers vullen zich als de app aankondigingen hoort: kleine introducties van mensen en diensten. Geef het tijd. Sommige vermeldingen zijn diensten, geen mensen naar wie u een bericht kunt sturen.",
+    "deliveryHint": "Zoek naar Bezorgd via een direct message. Opgeslagen op een voortplantingsknooppunt betekent dat een tussenpersoon de boodschap heeft; het betekent niet dat uw vriend het heeft gelezen of ontvangen.",
+    "peersTitle": "Vind mensen",
+    "openPeers": "Open collega's",
+    "peersBody": "Peers is uw startpunt voor directe berichten. Sla mensen op als contacten, zodat u ze weer kunt vinden.",
+    "roomsTitle": "Neem deel aan een gesprek",
+    "openRooms": "Groepschat openen",
+    "stopped": "Reticulum is gestopt of begint nog steeds. Start het om door te gaan met instellen.",
+    "openNetwork": "Open identiteits- en back-upinstellingen",
+    "roomsBody": "RRC is groepschat. Open het, kies een hub, maak verbinding en sluit je aan bij een kamer. Het staat los van uw directe berichten.",
+    "networkHint": "Netwerk bewaart uw identiteit, back-ups en optionele offline berichtinstellingen. Bij Verbinding beheert u hoe u verbinding maakt. Nomad bladert door pagina's; Remote en Admin kunnen wachten totdat u ze nodig heeft.",
+    "actionFailed": "Die stap is niet voltooid. Uw opgeslagen instellingen zijn behouden. Controleer de details en probeer het opnieuw.",
+    "errorDetails": "Foutdetails weergeven",
+    "tabUnavailable": "Dit tabblad is verborgen. Schakel het in in de app-tabbladinstellingen en keer vervolgens terug naar de gids.",
+    "restartService": "Begin met Reticulum",
+    "privateConnection": "Deze hub beschikt al over privénetwerkinstellingen. Bewerk het in de onderstaande verbindingsinstellingen of kies een andere openbare hub.",
+    "interfaceSaveFailed": "Kan deze verbinding niet opslaan. Controleer uw verbindingsinstellingen en probeer het opnieuw.",
+    "identityUnavailable": "Kan uw identiteit niet lezen. Controleer of Reticulum actief is en probeer het opnieuw.",
+    "identitySaveFailed": "Kan uw identiteitsinstellingen niet opslaan. Probeer het opnieuw.",
+    "interfacesUnavailable": "Kan uw verbindingen niet lezen. Controleer of Reticulum actief is en probeer het opnieuw."
   }
 }

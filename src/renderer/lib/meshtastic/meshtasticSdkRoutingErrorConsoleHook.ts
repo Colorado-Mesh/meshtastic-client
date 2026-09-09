@@ -1,3 +1,4 @@
+import { armMeshtasticLateConfigureRetryableSwallow } from './meshtasticConfigureRetry';
 import {
   parseMeshtasticSdkQueueRejection,
   parseMeshtasticSdkRoutingErrorLog,
@@ -53,17 +54,26 @@ export function installMeshtasticSdkRoutingErrorConsoleHook(
 /**
  * Swallow unhandled `@meshtastic/core` queue rejections (`{ id, error }`) after applying
  * outbound chat failure state when a matching row exists.
+ *
+ * Disconnect mid-send `Packet does not exist` rejects are intentionally NOT swallowed for the
+ * whole session — only during the short post-teardown window (armed here on cleanup and at
+ * `safeDisconnect`). The renderer-wide logger owns that window, so genuine mid-session
+ * `Packet does not exist` anomalies stay visible instead of being hidden as "disconnect mid-send".
  */
 export function installMeshtasticSdkRoutingErrorUnhandledRejectionHandler(
   onQueueRejection: (reason: unknown) => boolean,
 ): () => void {
   const handler = (event: PromiseRejectionEvent) => {
-    if (!parseMeshtasticSdkQueueRejection(event.reason)) return;
-    const applied = onQueueRejection(event.reason);
-    if (applied) event.preventDefault();
+    if (parseMeshtasticSdkQueueRejection(event.reason)) {
+      const applied = onQueueRejection(event.reason);
+      if (applied) event.preventDefault();
+    }
   };
-  window.addEventListener('unhandledrejection', handler);
+  // Capture phase so preventDefault runs before the bubble-phase renderer logger.
+  window.addEventListener('unhandledrejection', handler, { capture: true });
   return () => {
-    window.removeEventListener('unhandledrejection', handler);
+    window.removeEventListener('unhandledrejection', handler, { capture: true });
+    // Late SDK queue rejects can settle after wire-effects teardown removes this handler.
+    armMeshtasticLateConfigureRetryableSwallow();
   };
 }

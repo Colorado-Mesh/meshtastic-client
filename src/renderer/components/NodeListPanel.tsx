@@ -9,7 +9,7 @@ import {
   TriangleAlert,
   User,
 } from 'lucide-react-motion';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useIconTrigger, useParentIconTrigger } from '@/renderer/lib/icons/iconMotionContext';
@@ -25,6 +25,13 @@ import {
   type OffloadContactsFromRadioFn,
   useMeshcoreContactCapacity,
 } from '../hooks/useMeshcoreContactCapacity';
+import { useMessages } from '../hooks/useMessages';
+import {
+  buildChatDmPeerIndex,
+  type ChatDmPeerDbRow,
+  type ChatDmPeerIndexEntry,
+  mergeChatDmPeerDbRows,
+} from '../lib/chatDmPeerIndex';
 import {
   formatCoordColumns,
   latestPositionHistoryPoint,
@@ -37,13 +44,19 @@ import {
 import { translateRoutingRowDescription } from '../lib/diagnostics/diagnosticsLabels';
 import { snrMeaningfulForNodeDiagnostics } from '../lib/diagnostics/snrMeaningfulForNodeDiagnostics';
 import { downloadBlob } from '../lib/downloadBlob';
+import { errLikeToLogString } from '../lib/errLikeToLogString';
 import { formatRelativeOrIsoDate } from '../lib/formatRelativeOrIsoDate';
+import { getIdentityIdForProtocol } from '../lib/identityByProtocol';
 import { getMapOverlayColors, MAP_BASEMAPS } from '../lib/mapBasemapUtils';
 import {
   isMeshcoreOffloadAbortError,
   meshcoreOffloadAbortRemovedCount,
 } from '../lib/meshcoreOffload';
-import { MESHCORE_CONTACTS_WARNING_THRESHOLD, MESHCORE_MAX_CONTACTS } from '../lib/meshcoreUtils';
+import {
+  isMeshcoreDmExcludedHwModel,
+  MESHCORE_CONTACTS_WARNING_THRESHOLD,
+  MESHCORE_MAX_CONTACTS,
+} from '../lib/meshcoreUtils';
 import {
   MESHTASTIC_BUILTIN_CONTACT_GROUP_FILTERS,
   MESHTASTIC_CONTACT_GROUP_BUILTIN_GPS,
@@ -62,9 +75,16 @@ import {
 } from '../lib/meshtasticSourceIcons';
 import { nodeHealthScore, nodeHealthTier } from '../lib/nodeHealthScore';
 import { getNodeTypeIcon } from '../lib/nodeIcons';
-import { getNodeStatus, haversineDistanceKm, normalizeLastHeardMs } from '../lib/nodeStatus';
+import {
+  getNodeStatus,
+  haversineDistanceKm,
+  lastHeardToUnixSeconds,
+  normalizeLastHeardMs,
+} from '../lib/nodeStatus';
+import { getOfflineIdentityIdForProtocol } from '../lib/offlineProtocolIdentities';
 import { useRadioProvider } from '../lib/radio/providerFactory';
 import { RoleDisplay } from '../lib/roleInfo';
+import { messageRecordsToChatMessages } from '../lib/storeRecordAdapters';
 import type { MeshNode, MeshProtocol } from '../lib/types';
 import { useCoordFormatStore } from '../stores/coordFormatStore';
 import { useDiagnosticsStore } from '../stores/diagnosticsStore';
@@ -99,6 +119,25 @@ type SortField =
   | 'altitude'
   | 'redundancy';
 
+type NodeListTab = 'all' | 'history';
+
+function stubDmHistoryNode(nodeId: number, lastMessageAt: number, mode: MeshProtocol): MeshNode {
+  const hex = formatMeshtasticNodeId(nodeId).replace(/^!/, '');
+  return {
+    node_id: nodeId,
+    long_name: mode === 'meshcore' ? hex : `!${hex}`,
+    short_name: hex.slice(-4),
+    hw_model: mode === 'meshcore' ? 'Chat' : '',
+    snr: 0,
+    battery: 0,
+    last_heard: lastMessageAt,
+    latitude: null,
+    longitude: null,
+    favorited: false,
+    source: 'rf',
+  };
+}
+
 const BUILTIN_TYPE_FILTERS = [
   { group_id: -1, typeKey: 'nodeListPanel.meshcoreTypeChat' as const, hw_model: 'Chat' },
   { group_id: -2, typeKey: 'nodeListPanel.meshcoreTypeRepeater' as const, hw_model: 'Repeater' },
@@ -112,6 +151,9 @@ function meshcoreContactTypeLabel(
   if (hw_model === 'Chat') return t('nodeListPanel.meshcoreTypeChat');
   if (hw_model === 'Repeater') return t('nodeListPanel.meshcoreTypeRepeater');
   if (hw_model === 'Room') return t('nodeListPanel.meshcoreTypeRoom');
+  if (hw_model === 'Sensor') return t('nodeListPanel.meshcoreTypeSensor');
+  if (hw_model === 'None') return t('nodeListPanel.meshcoreTypeNone');
+  if (hw_model === 'Unknown') return t('nodeListPanel.meshcoreTypeUnknown');
   return hw_model?.trim() || t('common.emDash');
 }
 
@@ -221,12 +263,77 @@ export default function NodeListPanel({
   );
   const ignoreMqttEnabled = useDiagnosticsStore((s) => s.ignoreMqttEnabled);
   const nodeRedundancy = useDiagnosticsStore((s) => s.nodeRedundancy);
+  const [listTab, setListTab] = useState<NodeListTab>('all');
+  const [dbDmPeers, setDbDmPeers] = useState<ChatDmPeerDbRow[]>([]);
   const [sortField, setSortField] = useState<SortField>('last_heard');
   const [sortAsc, setSortAsc] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [importLoading, setImportLoading] = useState(false);
   const [refreshLoading, setRefreshLoading] = useState(false);
   const [advertLoading, setAdvertLoading] = useState(false);
+
+  const identityId = getIdentityIdForProtocol(mode) ?? getOfflineIdentityIdForProtocol(mode);
+  const identityMessages = useMessages(identityId);
+  const ownNodeIdSet = useMemo(() => new Set([myNodeNum >>> 0]), [myNodeNum]);
+  const meshcoreExcludedDmPeerIds = useMemo(() => {
+    if (mode !== 'meshcore') return null;
+    const excludedIds = new Set<number>();
+    for (const [peerId, node] of nodes) {
+      if (isMeshcoreDmExcludedHwModel(node.hw_model)) excludedIds.add(peerId);
+    }
+    return excludedIds;
+  }, [mode, nodes]);
+  const excludeDmPeer = useCallback(
+    (peer: number) => meshcoreExcludedDmPeerIds?.has(peer) === true,
+    [meshcoreExcludedDmPeerIds],
+  );
+  const chatUnreadDmOptions = useMemo(
+    () => (mode === 'meshcore' ? { excludeDmPeer } : undefined),
+    [excludeDmPeer, mode],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const rows =
+          mode === 'meshcore'
+            ? await window.electronAPI.db.listMeshcoreDmPeers(myNodeNum)
+            : await window.electronAPI.db.listMeshtasticDmPeers(myNodeNum);
+        if (!cancelled) {
+          const next = Array.isArray(rows) ? rows : [];
+          setDbDmPeers((prev) => (prev.length === 0 && next.length === 0 ? prev : next));
+        }
+      } catch (e) {
+        console.warn('[NodeListPanel] listDmPeers ' + errLikeToLogString(e));
+        if (!cancelled) {
+          setDbDmPeers((prev) => (prev.length === 0 ? prev : []));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, myNodeNum, identityMessages.length]);
+
+  const dmPeerIndex = useMemo(() => {
+    const chatMessages = messageRecordsToChatMessages(identityMessages);
+    const fromMemory = buildChatDmPeerIndex(chatMessages, ownNodeIdSet, mode, chatUnreadDmOptions);
+    const merged = mergeChatDmPeerDbRows(fromMemory, dbDmPeers);
+    if (mode !== 'meshcore' || !meshcoreExcludedDmPeerIds) return merged;
+    // Drop Room/Repeater peers even if SQLite still has DM-shaped rows.
+    for (const peer of [...merged.keys()]) {
+      if (meshcoreExcludedDmPeerIds.has(peer)) merged.delete(peer);
+    }
+    return merged;
+  }, [
+    chatUnreadDmOptions,
+    dbDmPeers,
+    identityMessages,
+    meshcoreExcludedDmPeerIds,
+    mode,
+    ownNodeIdSet,
+  ]);
   const {
     contactCount,
     loading: offloadLoading,
@@ -353,7 +460,26 @@ export default function NodeListPanel({
   };
 
   const nodeList = useMemo(() => {
-    let list = Array.from(nodes.values());
+    let list: MeshNode[];
+    const historyActivity = new Map<number, ChatDmPeerIndexEntry>();
+
+    if (listTab === 'history') {
+      list = [];
+      for (const [peerId, entry] of dmPeerIndex) {
+        historyActivity.set(peerId, entry);
+        const existing = nodes.get(peerId);
+        if (existing) {
+          list.push({
+            ...existing,
+            last_heard: Math.max(existing.last_heard ?? 0, entry.lastMessageAt),
+          });
+        } else {
+          list.push(stubDmHistoryNode(peerId, entry.lastMessageAt, mode));
+        }
+      }
+    } else {
+      list = Array.from(nodes.values());
+    }
 
     // Filter by search
     if (searchQuery.trim()) {
@@ -370,7 +496,7 @@ export default function NodeListPanel({
     }
 
     // Filter by group membership or built-in filters (MeshCore: contact type; Meshtastic: GPS / RF+MQTT)
-    if (selectedGroupId != null) {
+    if (listTab === 'all' && selectedGroupId != null) {
       if (mode === 'meshcore') {
         if (selectedGroupId < 0) {
           const typeFilter = BUILTIN_TYPE_FILTERS.find((f) => f.group_id === selectedGroupId);
@@ -392,12 +518,12 @@ export default function NodeListPanel({
     }
 
     // Filter MQTT-only nodes
-    if (locationFilter.hideMqttOnly) {
+    if (listTab === 'all' && locationFilter.hideMqttOnly) {
       list = list.filter((n) => !n.heard_via_mqtt_only);
     }
 
     // Filter by distance
-    if (locationFilter.enabled) {
+    if (listTab === 'all' && locationFilter.enabled) {
       const homeNode = myNodeNum ? nodes.get(myNodeNum) : undefined;
       const homeHasLocation =
         homeNode?.latitude != null &&
@@ -426,6 +552,11 @@ export default function NodeListPanel({
 
     // Sort
     list.sort((a, b) => {
+      if (listTab === 'history') {
+        const aTs = historyActivity.get(a.node_id)?.lastMessageAt ?? a.last_heard ?? 0;
+        const bTs = historyActivity.get(b.node_id)?.lastMessageAt ?? b.last_heard ?? 0;
+        if (aTs !== bTs) return sortAsc ? aTs - bTs : bTs - aTs;
+      }
       // Self-node always first
       if (a.node_id === myNodeNum) return -1;
       if (b.node_id === myNodeNum) return 1;
@@ -502,6 +633,8 @@ export default function NodeListPanel({
 
     return list;
   }, [
+    dmPeerIndex,
+    listTab,
     nodes,
     sortField,
     sortAsc,
@@ -554,7 +687,7 @@ export default function NodeListPanel({
     ).length;
     return { hidden: totalWithGps - visibleWithGps };
   }, [locationFilter, myNodeNum, nodes, nodeList]);
-  const totalNodeCount = nodes.size;
+  const totalNodeCount = listTab === 'history' ? dmPeerIndex.size : nodes.size;
   const visibleNodeCount = nodeList.length;
   const headerCountLabel =
     visibleNodeCount === totalNodeCount
@@ -567,12 +700,44 @@ export default function NodeListPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
+      <div
+        className="flex flex-wrap items-center gap-2"
+        aria-label={
+          mode === 'meshcore'
+            ? t('nodeListPanel.headingContacts')
+            : t('nodeListPanel.headingNodeDatabase')
+        }
+      >
+        <button
+          type="button"
+          aria-pressed={listTab === 'all'}
+          className={`rounded px-3 py-1 text-sm ${listTab === 'all' ? 'bg-readable-green text-white' : 'border border-gray-600 text-gray-300'}`}
+          onClick={() => {
+            setListTab('all');
+          }}
+        >
+          {t('nodeListPanel.tabAll')}
+        </button>
+        <button
+          type="button"
+          aria-pressed={listTab === 'history'}
+          className={`rounded px-3 py-1 text-sm ${listTab === 'history' ? 'bg-readable-green text-white' : 'border border-gray-600 text-gray-300'}`}
+          onClick={() => {
+            setListTab('history');
+          }}
+        >
+          {t('nodeListPanel.tabHistory')}
+        </button>
+      </div>
+
       {/* 1fr | auto | 1fr keeps the search visually centered on wide screens (matches MeshCore’s title | search | import row). */}
       <div className="grid grid-cols-1 items-center gap-3 min-[480px]:grid-cols-[1fr_auto_1fr]">
         <h2 className="text-bright-green text-lg font-semibold min-[480px]:justify-self-start">
-          {mode === 'meshcore'
-            ? t('nodeListPanel.headingContacts')
-            : t('nodeListPanel.headingNodeDatabase')}{' '}
+          {listTab === 'history'
+            ? t('nodeListPanel.tabHistory')
+            : mode === 'meshcore'
+              ? t('nodeListPanel.headingContacts')
+              : t('nodeListPanel.headingNodeDatabase')}{' '}
           ({headerCountLabel})
         </h2>
         <input
@@ -656,7 +821,8 @@ export default function NodeListPanel({
                 rssi: n.rssi,
                 battery: n.battery,
                 voltage: n.voltage,
-                last_heard: n.last_heard,
+                last_heard: lastHeardToUnixSeconds(n.last_heard),
+                last_heard_unit: 'unix_sec',
                 latitude: n.latitude,
                 longitude: n.longitude,
                 altitude: n.altitude,
@@ -738,8 +904,8 @@ export default function NodeListPanel({
         </div>
       )}
 
-      {/* Group filter (MeshCore + Meshtastic when contactGroupsEnabled) */}
-      {contactGroupsEnabled && onManageGroups && (
+      {/* Group filter (MeshCore + Meshtastic when contactGroupsEnabled) — All tab only */}
+      {listTab === 'all' && contactGroupsEnabled && onManageGroups && (
         <div className="flex shrink-0 items-center gap-2">
           <select
             value={selectedGroupId ?? ''}
@@ -852,25 +1018,27 @@ export default function NodeListPanel({
           <caption className="sr-only">{t('nodeListPanel.tableCaptionMeshNodes')}</caption>
           <thead>
             <tr className="bg-deep-black text-muted sticky top-0 z-10 text-left whitespace-nowrap">
-              <th scope="col" className="w-8 px-3 py-2">
-                <span className="sr-only">{t('nodeListPanel.columnStatus')}</span>
+              <th scope="col" className="w-16 px-3 py-2">
+                {t('nodeListPanel.columnHealth')}
               </th>
               <th scope="col" className="w-6 px-2 py-2" title={t('nodeListPanel.favoritesColumn')}>
                 <span className="sr-only">{t('nodeListPanel.columnFavorite')}</span>
               </th>
-              <th
-                scope="col"
-                aria-sort={
-                  sortField === 'node_id' ? (sortAsc ? 'ascending' : 'descending') : 'none'
-                }
-                className="cursor-pointer px-3 py-2 transition-colors select-none hover:text-gray-200"
-                onClick={() => {
-                  handleSort('node_id');
-                }}
-              >
-                {t('nodeListPanel.columnId')}{' '}
-                <SortIcon field="node_id" sortField={sortField} sortAsc={sortAsc} />
-              </th>
+              {mode !== 'meshcore' && (
+                <th
+                  scope="col"
+                  aria-sort={
+                    sortField === 'node_id' ? (sortAsc ? 'ascending' : 'descending') : 'none'
+                  }
+                  className="cursor-pointer px-3 py-2 transition-colors select-none hover:text-gray-200"
+                  onClick={() => {
+                    handleSort('node_id');
+                  }}
+                >
+                  {t('nodeListPanel.columnId')}{' '}
+                  <SortIcon field="node_id" sortField={sortField} sortAsc={sortAsc} />
+                </th>
+              )}
               <th
                 scope="col"
                 aria-sort={
@@ -1116,7 +1284,9 @@ export default function NodeListPanel({
                 <td colSpan={nodeTableColSpan} className="text-muted py-8 text-center">
                   {searchQuery
                     ? t('nodeListPanel.emptyNoSearchMatches')
-                    : t('nodeListPanel.emptyNoNodesYet')}
+                    : listTab === 'history'
+                      ? t('nodeListPanel.emptyHistory')
+                      : t('nodeListPanel.emptyNoNodesYet')}
                 </td>
               </tr>
             ) : (
@@ -1143,13 +1313,6 @@ export default function NodeListPanel({
                   const health = nodeHealthScore(node);
                   const healthTier = nodeHealthTier(health.total);
                   const isMqttOnlyDimmed = ignoreMqttEnabled && !!node.heard_via_mqtt_only;
-                  const rowOpacity = isMqttOnlyDimmed
-                    ? 'opacity-50'
-                    : status === 'offline'
-                      ? 'opacity-20'
-                      : status === 'stale'
-                        ? 'opacity-35'
-                        : '';
 
                   return (
                     <tr
@@ -1159,7 +1322,7 @@ export default function NodeListPanel({
                       onClick={() => {
                         onNodeClick(node);
                       }}
-                      className={`hover:bg-secondary-dark/50 cursor-pointer transition-colors ${rowOpacity} ${
+                      className={`hover:bg-secondary-dark/50 cursor-pointer transition-colors ${
                         isSelf ? 'bg-brand-green/5 border-l-brand-green border-l-2' : ''
                       }`}
                     >
@@ -1257,18 +1420,21 @@ export default function NodeListPanel({
                           </button>
                         )}
                       </td>
-                      <td className="text-muted px-3 py-2 font-mono text-xs">
-                        {formatMeshtasticNodeId(node.node_id)}
-                        {mode === 'meshcore' && meshcorePublicKeyHexByNodeId?.has(node.node_id) && (
-                          <span className="ml-1">🔑</span>
-                        )}
-                      </td>
+                      {mode !== 'meshcore' && (
+                        <td className="text-muted px-3 py-2 font-mono text-xs">
+                          {formatMeshtasticNodeId(node.node_id)}
+                        </td>
+                      )}
                       <td
                         className={`px-3 py-2 ${isSelf ? 'text-bright-green font-medium' : 'text-gray-200'} ${isMqttOnlyDimmed ? 'line-through' : ''}`}
                       >
                         <div className="flex min-w-0 flex-col gap-0.5">
                           <span className="inline-flex min-w-0 items-center gap-1">
-                            <span className="truncate">
+                            <span
+                              className={
+                                mode === 'meshcore' ? 'break-words whitespace-normal' : 'truncate'
+                              }
+                            >
                               {mode === 'meshcore'
                                 ? meshcoreContactDisplayName(node.node_id, node.long_name)
                                 : node.long_name || '-'}
@@ -1278,6 +1444,17 @@ export default function NodeListPanel({
                                 </span>
                               )}
                             </span>
+                            {mode === 'meshcore' &&
+                              meshcorePublicKeyHexByNodeId?.has(node.node_id) && (
+                                <span
+                                  role="img"
+                                  className="shrink-0"
+                                  aria-label={t('nodeListPanel.hasPublicKeyTitle')}
+                                  title={t('nodeListPanel.hasPublicKeyTitle')}
+                                >
+                                  🔑
+                                </span>
+                              )}
                             {!isSelf &&
                               (() => {
                                 const routingRow = getRoutingRowForNode(

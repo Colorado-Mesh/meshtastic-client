@@ -25,6 +25,7 @@ export type MeshcoreUserMessage = string | DiagnosticTextI18n | MeshcorePrefixed
 const I18N_JSON_PREFIX = '\x1eMC_I18N:';
 
 function isMeshcorePrefixedHint(msg: MeshcoreUserMessage): msg is MeshcorePrefixedHint {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Runtime guard protects external or callback-mutated state.
   return typeof msg === 'object' && 'type' in msg && msg.type === 'prefixed';
 }
 
@@ -171,4 +172,18 @@ export function meshcoreRepeaterRpcErrorMessage(
     return MESHCORE_ERR_AUTH_FAILED;
   }
   return { key: MESHCORE_ERR_REQUEST_FAILED, params: { detail: errMsg } };
+}
+
+/** Translate `[Error: <serialized i18n>]` CLI history lines; pass firmware text through. */
+export function translateRepeaterCliHistoryText(
+  t: TFunction,
+  type: 'sent' | 'received',
+  text: string,
+): string {
+  if (type !== 'received') return text;
+  const match = /^\[Error: (.*)\]$/s.exec(text);
+  if (!match) return text;
+  return t('repeatersPanel.cliHistoryError', {
+    detail: translateMeshcoreUserMessage(t, match[1]),
+  });
 }

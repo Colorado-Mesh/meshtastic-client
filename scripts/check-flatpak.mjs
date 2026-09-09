@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
+import yaml from 'js-yaml';
 import { offlinePnpmEnvContractViolations } from './flatpakOfflinePnpmEnv.mjs';
 import {
   flatpakWorkflowGeneratorInstallViolations,
   flatpakWorkflowStoreVersionViolations,
   storeVersionFromPackageManager,
 } from './flatpakPnpmStoreVersion.mjs';
+import { metainfoVersionMismatchMessage } from './metainfoRelease.mjs';
+import { FLATPAK_BUILD_INFO_EXPORT_SNIPPET } from './write-flatpak-ci-build-info.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -77,7 +80,7 @@ function checkMetainfoVersionMatchesPackage(pkg) {
   if (m[1] !== pkgVersion) {
     violations.push({
       file: rel,
-      message: `top <release version="${m[1]}"> does not match package.json version "${pkgVersion}" — re-run \`pnpm run release\` or update MetaInfo manually`,
+      message: metainfoVersionMismatchMessage(m[1], pkgVersion),
     });
   }
   return violations;
@@ -204,6 +207,33 @@ function checkFlatpakWorkflowStoreVersion(pkg) {
   return violations;
 }
 
+function checkManifestStagesElectronBeforeRebuild() {
+  const violations = [];
+  if (!fs.existsSync(MANIFEST)) return violations;
+
+  const yaml = fs.readFileSync(MANIFEST, 'utf8');
+  const rel = path.relative(ROOT, MANIFEST);
+
+  if (!yaml.includes('node scripts/flatpak-stage-electron.mjs')) {
+    violations.push({
+      file: rel,
+      message:
+        'manifest must run flatpak-stage-electron.mjs before rebuild (offline electron-prebuilt → node_modules/electron/dist)',
+    });
+  }
+
+  const stageIdx = yaml.indexOf('node scripts/flatpak-stage-electron.mjs');
+  const rebuildIdx = yaml.indexOf('pnpm run rebuild');
+  if (stageIdx !== -1 && rebuildIdx !== -1 && stageIdx > rebuildIdx) {
+    violations.push({
+      file: rel,
+      message: 'flatpak-stage-electron.mjs must run before pnpm run rebuild',
+    });
+  }
+
+  return violations;
+}
+
 function checkManifestBranchAndElectronPayload(pkg) {
   const violations = [];
   if (!fs.existsSync(MANIFEST)) return violations;
@@ -256,6 +286,14 @@ function checkManifestBranchAndElectronPayload(pkg) {
     violations.push({
       file: rel,
       message: 'manifest finish-args must set ELECTRON_OZONE_PLATFORM_HINT=auto for Wayland/X11',
+    });
+  }
+
+  if (!yaml.includes('--allow=bluetooth')) {
+    violations.push({
+      file: rel,
+      message:
+        'manifest finish-args must include --allow=bluetooth for Web Bluetooth (AF_BLUETOOTH)',
     });
   }
 
@@ -329,6 +367,22 @@ function checkWrapperLaunchPaths() {
     violations.push({
       file: rel,
       message: 'wrapper must launch via zypak-wrapper … . "$@" from APP_ROOT (package.json dir)',
+    });
+  }
+
+  if (!sh.includes('No usable sandbox!')) {
+    violations.push({
+      file: rel,
+      message:
+        'wrapper must detect Chromium "No usable sandbox!" fatal and retry with --no-sandbox on hardened hosts',
+    });
+  }
+
+  if (!/exec zypak-wrapper[^\n]*--no-sandbox[^\n]* \. "\$@"/.test(sh)) {
+    violations.push({
+      file: rel,
+      message:
+        'wrapper must exec zypak-wrapper with --no-sandbox fallback when user namespaces are blocked',
     });
   }
 
@@ -439,6 +493,179 @@ function checkDesktopStartupWMClass(pkg) {
   return violations;
 }
 
+/**
+ * @param {unknown} doc
+ * @param {string} fileLabel
+ * @returns {{ file: string, message: string }[]}
+ */
+export function manifestCiBuildInfoExportViolations(doc, fileLabel) {
+  const violations = [];
+  const modules = doc && typeof doc === 'object' && !Array.isArray(doc) ? doc.modules : null;
+  if (!Array.isArray(modules)) {
+    violations.push({
+      file: fileLabel,
+      message: 'manifest must define a modules array',
+    });
+    return violations;
+  }
+  const meshModule = modules.find(
+    (m) => m && typeof m === 'object' && !Array.isArray(m) && m.name === 'mesh-client',
+  );
+  if (!meshModule) {
+    violations.push({
+      file: fileLabel,
+      message: 'manifest must include a mesh-client module',
+    });
+    return violations;
+  }
+  const commands = meshModule['build-commands'];
+  if (!Array.isArray(commands) || !commands.every((c) => typeof c === 'string')) {
+    violations.push({
+      file: fileLabel,
+      message: 'mesh-client module must define build-commands as a string array',
+    });
+    return violations;
+  }
+  const joined = commands.join('\n');
+  for (const line of FLATPAK_BUILD_INFO_EXPORT_SNIPPET.split('\n')) {
+    if (!joined.includes(line)) {
+      violations.push({
+        file: fileLabel,
+        message: `manifest build must export MESH_CLIENT_BUILD_INFO from flatpak/ci-build-info.json (missing: ${line})`,
+      });
+      break;
+    }
+  }
+  return violations;
+}
+
+/**
+ * @param {unknown} doc
+ * @param {string} fileLabel
+ * @returns {{ file: string, message: string }[]}
+ */
+export function flatpakWorkflowTestBuildContractViolations(doc, fileLabel) {
+  const violations = [];
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
+    violations.push({ file: fileLabel, message: 'flatpak.yaml must parse to a mapping' });
+    return violations;
+  }
+
+  const runName = typeof doc['run-name'] === 'string' ? doc['run-name'] : '';
+  if (!runName.includes('Build Flatpak (no release)')) {
+    violations.push({
+      file: fileLabel,
+      message:
+        'flatpak.yaml run-name / labels must include Build Flatpak (no release) for workflow_dispatch',
+    });
+  }
+
+  const jobs = doc.jobs;
+  if (!jobs || typeof jobs !== 'object' || Array.isArray(jobs)) {
+    violations.push({ file: fileLabel, message: 'flatpak.yaml must define jobs' });
+    return violations;
+  }
+  const flatpakJob = jobs.flatpak;
+  if (!flatpakJob || typeof flatpakJob !== 'object' || Array.isArray(flatpakJob)) {
+    violations.push({ file: fileLabel, message: 'flatpak.yaml must define a flatpak job' });
+    return violations;
+  }
+  const steps = flatpakJob.steps;
+  if (!Array.isArray(steps)) {
+    violations.push({ file: fileLabel, message: 'flatpak job must define steps' });
+    return violations;
+  }
+
+  let sawBuildInfoWriter = false;
+  let sawDeferredUpload = false;
+  let sawDispatchRename = false;
+
+  for (const step of steps) {
+    if (!step || typeof step !== 'object' || Array.isArray(step)) continue;
+    const run = typeof step.run === 'string' ? step.run : '';
+    if (/(?:^|\n)\s*node\s+scripts\/write-flatpak-ci-build-info\.mjs\b/.test(run)) {
+      sawBuildInfoWriter = true;
+    }
+    if (
+      /(?:^|\n)\s*node\s+scripts\/rename-test-build-artifacts\.mjs\b/.test(run) &&
+      /(?:^|\s)--flatpak\b/.test(run) &&
+      typeof step.if === 'string' &&
+      step.if.includes('workflow_dispatch')
+    ) {
+      sawDispatchRename = true;
+    }
+    const withBlock =
+      step.with && typeof step.with === 'object' && !Array.isArray(step.with) ? step.with : null;
+    if (
+      typeof step.uses === 'string' &&
+      step.uses.includes('flatpak-builder') &&
+      withBlock &&
+      (withBlock['upload-artifact'] === false || withBlock['upload-artifact'] === 'false')
+    ) {
+      sawDeferredUpload = true;
+    }
+  }
+
+  if (!sawBuildInfoWriter) {
+    violations.push({
+      file: fileLabel,
+      message:
+        'flatpak.yaml must write flatpak/ci-build-info.json via write-flatpak-ci-build-info.mjs',
+    });
+  }
+  if (!sawDeferredUpload) {
+    violations.push({
+      file: fileLabel,
+      message:
+        'flatpak-builder must set upload-artifact: false so smoke/rename can run before a single upload',
+    });
+  }
+  if (!sawDispatchRename) {
+    violations.push({
+      file: fileLabel,
+      message:
+        'flatpak.yaml must rename dispatch bundles with rename-test-build-artifacts.mjs --flatpak gated on workflow_dispatch',
+    });
+  }
+  return violations;
+}
+
+function checkManifestCiBuildInfoExport() {
+  const violations = [];
+  if (!fs.existsSync(MANIFEST)) return violations;
+  const rel = path.relative(ROOT, MANIFEST);
+  let doc;
+  try {
+    doc = yaml.load(fs.readFileSync(MANIFEST, 'utf8'));
+  } catch (e) {
+    return [
+      {
+        file: rel,
+        message: `failed to parse manifest YAML: ${e instanceof Error ? e.message : String(e)}`,
+      },
+    ];
+  }
+  return manifestCiBuildInfoExportViolations(doc, rel);
+}
+
+function checkFlatpakWorkflowTestBuildContracts() {
+  const violations = [];
+  if (!fs.existsSync(FLATPAK_WORKFLOW)) return violations;
+  const rel = path.relative(ROOT, FLATPAK_WORKFLOW);
+  let doc;
+  try {
+    doc = yaml.load(fs.readFileSync(FLATPAK_WORKFLOW, 'utf8'));
+  } catch (e) {
+    return [
+      {
+        file: rel,
+        message: `failed to parse flatpak.yaml: ${e instanceof Error ? e.message : String(e)}`,
+      },
+    ];
+  }
+  return flatpakWorkflowTestBuildContractViolations(doc, rel);
+}
+
 function main() {
   const violations = [
     ...checkMetainfoVersionMatchesPackage(PKG_JSON),
@@ -446,7 +673,10 @@ function main() {
     ...checkManifestAppId(),
     ...checkManifestPnpmVersion(PKG_JSON),
     ...checkFlatpakWorkflowStoreVersion(PKG_JSON),
+    ...checkManifestStagesElectronBeforeRebuild(),
     ...checkManifestBranchAndElectronPayload(PKG_JSON),
+    ...checkManifestCiBuildInfoExport(),
+    ...checkFlatpakWorkflowTestBuildContracts(),
     ...checkManifestReticulumSidecarPayload(),
     ...checkWrapperLaunchPaths(),
     ...checkDesktopStartupWMClass(PKG_JSON),
@@ -465,4 +695,6 @@ function main() {
   process.exit(1);
 }
 
-main();
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  main();
+}

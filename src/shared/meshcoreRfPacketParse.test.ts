@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   meshCorePacketFingerprintHex,
+  meshCorePathInvariantPayloadId,
+  meshCorePathInvariantPayloadIdHex,
+  meshCorePathInvariantPayloadIdsEqual,
   meshCoreTransportCodeForRegion,
   parseMeshCoreRfPacket,
 } from './meshcoreRfPacketParse';
@@ -63,10 +66,10 @@ describe('parseMeshCoreRfPacket', () => {
     expect(p.innerPayload[2]).toBe(0x37);
     expect(p.innerPayload[3]).toBe(0xa7);
     const innerBeU32 =
-      ((p.innerPayload[0] << 24) |
-        (p.innerPayload[1] << 16) |
-        (p.innerPayload[2] << 8) |
-        p.innerPayload[3]) >>>
+      ((p.innerPayload.at(0)! << 24) |
+        (p.innerPayload.at(1)! << 16) |
+        (p.innerPayload.at(2)! << 8) |
+        p.innerPayload.at(3)!) >>>
       0;
     expect(innerBeU32).toBe(0x111337a7);
   });
@@ -117,6 +120,38 @@ describe('parseMeshCoreRfPacket', () => {
     if (!p.ok) return;
     expect(p.payloadTypeNibble).toBe(15);
     expect(p.payloadTypeString).toBe('RAW_CUSTOM');
+  });
+
+  it('path-invariant payload id is stable when path grows', () => {
+    const withPath = hexToU8(FLOOD_GRP_TXT_HEX);
+    const emptyPath = hexToU8(`1500${FLOOD_GRP_TXT_HEX.slice(8)}`);
+    const a = parseMeshCoreRfPacket(withPath);
+    const b = parseMeshCoreRfPacket(emptyPath);
+    expect(a.ok && b.ok).toBe(true);
+    if (!a.ok || !b.ok) return;
+    expect(a.pathBytes.length).toBeGreaterThan(0);
+    expect(b.pathBytes.length).toBe(0);
+    expect(meshCorePathInvariantPayloadIdHex(a.payloadTypeNibble, a.innerPayload)).toBe(
+      meshCorePathInvariantPayloadIdHex(b.payloadTypeNibble, b.innerPayload),
+    );
+    expect(
+      meshCorePathInvariantPayloadIdsEqual(
+        meshCorePathInvariantPayloadId(a.payloadTypeNibble, a.innerPayload),
+        meshCorePathInvariantPayloadId(b.payloadTypeNibble, b.innerPayload),
+      ),
+    ).toBe(true);
+    // Full-raw CRC fingerprint changes with path; identity must not.
+    expect(a.messageFingerprintHex).not.toBe(b.messageFingerprintHex);
+  });
+
+  it('rejects payload identity equality when only CRC would collide without full bytes', () => {
+    const a = meshCorePathInvariantPayloadId(5, new Uint8Array([1, 2, 3]));
+    const spoof: ReturnType<typeof meshCorePathInvariantPayloadId> = {
+      crcHex: a.crcHex,
+      payloadTypeNibble: 5,
+      innerPayload: new Uint8Array([9, 9, 9]),
+    };
+    expect(meshCorePathInvariantPayloadIdsEqual(a, spoof)).toBe(false);
   });
 });
 

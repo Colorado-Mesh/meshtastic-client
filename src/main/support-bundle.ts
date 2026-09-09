@@ -3,6 +3,7 @@ import fs from 'fs';
 import JSZip from 'jszip';
 import path from 'path';
 
+import { buildInfoForManifest, getBuildInfo } from '../shared/buildInfo';
 import type { SupportBundleMode } from '../shared/support-bundle.types';
 import { exportDatabase } from './database';
 import { flushLogBeforeQuit, getLogPath } from './log-service';
@@ -12,6 +13,8 @@ import { sanitizeLogMessage } from './sanitize-log-message';
 export type { SupportBundleMode };
 
 const MAX_DEBUG_SNAPSHOT_JSON_BYTES = 5 * 1024 * 1024;
+/** Tail-cap for preserved/rotated `mesh-client.log.1` in support zips (full file can be ~100 MB). */
+const MAX_SUPPORT_BUNDLE_LOG_BACKUP_BYTES = 10 * 1024 * 1024;
 const LOG_BACKUP_FILENAME = 'mesh-client.log.1';
 const RETICULUM_CONFIG_REL = path.join('config', 'config');
 const RETICULUM_STACK_REL = path.join('storage', 'mesh_client_stack.json');
@@ -92,6 +95,7 @@ export function validateDebugSnapshotJson(debugSnapshotJson: string): Record<str
 
 function buildManifest(mode: SupportBundleMode): Record<string, unknown> {
   const kind = mode === 'github' ? 'mesh-client-github-report' : 'mesh-client-developer-bundle';
+  const stamped = buildInfoForManifest(getBuildInfo());
   const manifest: Record<string, unknown> = {
     kind,
     bundleVersion: 1,
@@ -99,17 +103,33 @@ function buildManifest(mode: SupportBundleMode): Record<string, unknown> {
       typeof app !== 'undefined' && typeof app.getVersion === 'function'
         ? app.getVersion()
         : 'unknown',
+    buildChannel: stamped.buildChannel,
     platform: process.platform,
     arch: process.arch,
     packaged:
       typeof app !== 'undefined' && typeof app.isPackaged === 'boolean' ? app.isPackaged : false,
     capturedAt: new Date().toISOString(),
   };
+  if (stamped.buildInfo) {
+    manifest.buildInfo = stamped.buildInfo;
+  }
   const flatpakId = process.env.FLATPAK_ID;
   if (typeof flatpakId === 'string' && flatpakId.length > 0) {
     manifest.flatpakId = flatpakId;
   }
   return manifest;
+}
+
+function buildChannelReadmeLine(): string {
+  const stamped = buildInfoForManifest(getBuildInfo());
+  const runUrl =
+    stamped.buildInfo && typeof stamped.buildInfo.runUrl === 'string'
+      ? stamped.buildInfo.runUrl
+      : undefined;
+  if (runUrl) {
+    return `Build channel: ${stamped.buildChannel} — CI run: ${runUrl}`;
+  }
+  return `Build channel: ${stamped.buildChannel}`;
 }
 
 function buildReadme(mode: SupportBundleMode): string {
@@ -118,11 +138,13 @@ function buildReadme(mode: SupportBundleMode): string {
 
 This zip is safe to attach to public GitHub issues.
 
+${buildChannelReadmeLine()}
+
 Contents:
   debug-snapshot.json  — UI/session state for triage (Meshtastic, MeshCore, Reticulum sidecar)
   mesh-client.log      — Application log (current session)
-  mesh-client.log.1    — Rotated log backup (if present)
-  manifest.json        — App version and platform metadata
+  mesh-client.log.1    — Prior session log (preserved on restart) or size-rotated backup
+  manifest.json        — App version, buildChannel, and platform metadata
   README.txt           — This file
 
 Reticulum sidecar health, interface audit, and identity hashes are in debug-snapshot.json
@@ -141,16 +163,63 @@ The database may contain saved passwords (MeshCore room/repeater credentials, MQ
 settings, and similar secrets). Share this bundle only with maintainers via a
 private channel (email, Discord DM, etc.) when they request it.
 
+${buildChannelReadmeLine()}
+
 Contents:
   debug-snapshot.json           — UI/session state for triage (includes Reticulum sidecar snapshot)
   mesh-client.db                — SQLite database backup (contains secrets)
   reticulum/config              — rnsd interface config (if present)
   reticulum/mesh_client_stack.json — Sidecar stack state, mnemonic redacted (if present)
+  reticulum/lxmf-outbound.log   — Filtered LXMF outbound / PN cascade lines from app logs
   mesh-client.log               — Application log (current session)
-  mesh-client.log.1             — Rotated log backup (if present)
-  manifest.json                 — App version and platform metadata
+  mesh-client.log.1             — Prior session log (preserved on restart) or size-rotated backup
+  manifest.json                 — App version, buildChannel, and platform metadata
   README.txt                    — This file
 `;
+}
+
+/** Truncate long hex ids in exported log lines (keep triage prefix only). */
+function redactLxmfOutboundLogLine(line: string): string {
+  return line.replace(/\b([0-9a-fA-F]{16,})\b/g, (hex) => `${hex.slice(0, 8)}…`);
+}
+
+/** Extract LXMF outbound / PN cascade diagnostic lines for developer triage. */
+export function extractLxmfOutboundLogSlice(...logChunks: Buffer[]): Buffer {
+  const patterns = [
+    /lxmf-outbound/i,
+    /propagation-deposit/i,
+    /propagation-retrieve/i,
+    /propagation-sync/i,
+    /propagation establish/i,
+    /PROPAGATION_PATH_UNKNOWN/i,
+    /LXMF advancing PN cascade/i,
+    /LXMF outbound delivery failed/i,
+    /outbound Direct Completes/i,
+    /LXMF delivery Failed/i,
+    /LXMF delivery Rejected/i,
+    /Direct path failover/i,
+    /PN cascade/i,
+    /DeliverPropagated/i,
+    // PN island diagnosis: actual deposit PN hash vs preferred, and sync target counts.
+    /deposit[_ ]?pn/i,
+    /preferred[_ ]?pn/i,
+    /sync[_ ]?target/i,
+    /pn[_ ]?island/i,
+    /HaveAll|empty[_ ]?offer/i,
+  ];
+  const lines: string[] = [];
+  for (const chunk of logChunks) {
+    if (!chunk.length) continue;
+    const text = chunk.toString('utf8');
+    for (const line of text.split(/\r?\n/)) {
+      if (patterns.some((re) => re.test(line))) {
+        lines.push(redactLxmfOutboundLogLine(line));
+      }
+    }
+  }
+  // Cap slice so huge logs cannot bloat the zip.
+  const capped = lines.length > 4000 ? lines.slice(-4000) : lines;
+  return Buffer.from(capped.join('\n') + (capped.length ? '\n' : ''), 'utf8');
 }
 
 async function readFileOrEmpty(filePath: string): Promise<Buffer> {
@@ -158,6 +227,28 @@ async function readFileOrEmpty(filePath: string): Promise<Buffer> {
     return await fs.promises.readFile(filePath);
   } catch {
     // catch-no-log-ok missing log file returns empty buffer for bundle export
+    return Buffer.alloc(0);
+  }
+}
+
+/** Read the last `maxBytes` of a file (or the whole file if smaller). */
+async function readFileTailOrEmpty(filePath: string, maxBytes: number): Promise<Buffer> {
+  try {
+    // Open first, then fstat/read via the same handle (avoids CodeQL js/file-system-race TOCTOU).
+    const fh = await fs.promises.open(filePath, 'r');
+    try {
+      const st = await fh.stat();
+      if (st.size <= maxBytes) {
+        return await fh.readFile();
+      }
+      const buf = Buffer.alloc(maxBytes);
+      const { bytesRead } = await fh.read(buf, 0, maxBytes, st.size - maxBytes);
+      return buf.subarray(0, bytesRead);
+    } finally {
+      await fh.close();
+    }
+  } catch {
+    // catch-no-log-ok missing/unreadable backup returns empty buffer for bundle export
     return Buffer.alloc(0);
   }
 }
@@ -205,11 +296,14 @@ export async function buildSupportBundleZip(
 
   const logPath = getLogPath();
   const logDir = path.dirname(logPath);
-  zip.file('mesh-client.log', await readFileOrEmpty(logPath));
+  const currentLog = await readFileOrEmpty(logPath);
+  zip.file('mesh-client.log', currentLog);
 
   const backupPath = path.join(logDir, LOG_BACKUP_FILENAME);
+  let backupLog: Buffer = Buffer.alloc(0);
   if (fs.existsSync(backupPath)) {
-    zip.file(LOG_BACKUP_FILENAME, await fs.promises.readFile(backupPath));
+    backupLog = await readFileTailOrEmpty(backupPath, MAX_SUPPORT_BUNDLE_LOG_BACKUP_BYTES);
+    zip.file(LOG_BACKUP_FILENAME, backupLog);
   }
 
   zip.file('manifest.json', JSON.stringify(buildManifest(mode), null, 2));
@@ -231,9 +325,32 @@ export async function buildSupportBundleZip(
     if (reticulumArtifacts.config) {
       zip.file('reticulum/config', reticulumArtifacts.config);
     }
-    if (reticulumArtifacts.stackJson) {
-      zip.file('reticulum/mesh_client_stack.json', reticulumArtifacts.stackJson);
-    }
+    // Always include stack state so a missing PN preferred/config is unambiguous
+    // (present-but-placeholder vs silently omitted, as in the w0rmt dump).
+    zip.file(
+      'reticulum/mesh_client_stack.json',
+      reticulumArtifacts.stackJson ??
+        Buffer.from(
+          JSON.stringify(
+            { note: 'mesh_client_stack.json not found or unreadable at export time' },
+            null,
+            2,
+          ) + '\n',
+          'utf8',
+        ),
+    );
+    // Always include the cascade/outbound slice, even when empty, with a header note so
+    // the absence of PN deposit lines is explicit rather than a missing file.
+    const lxmfSlice = extractLxmfOutboundLogSlice(backupLog, currentLog);
+    zip.file(
+      'reticulum/lxmf-outbound.log',
+      lxmfSlice.length > 0
+        ? lxmfSlice
+        : Buffer.from(
+            '# No LXMF outbound / PN cascade lines matched in the exported logs at capture time.\n',
+            'utf8',
+          ),
+    );
   }
 
   const buf = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });

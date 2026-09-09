@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
+import { formatMeshtasticNodeId } from '@/shared/nodeNameUtils';
 
 import { getAppSettingsRaw, mergeAppSetting, setAppSettingsRaw } from '../lib/appSettingsStorage';
 import {
@@ -184,6 +185,20 @@ export function foreignLoraSenderKey(
     return 'meshcore:unknown';
   }
   return 'unknown';
+}
+
+/** English proximity labels for RF foreign-LoRa cause fallbacks (UI prefers proximityKey → i18n). */
+function resolveProximityLabels(proximity: string | null | undefined): {
+  proxLabel: string;
+  proximityKey: string;
+} {
+  const map: Record<string, { label: string; key: string }> = {
+    'very-close': { label: 'Very close', key: 'veryClose' },
+    nearby: { label: 'Nearby', key: 'nearby' },
+    distant: { label: 'Distant', key: 'distant' },
+  };
+  const entry = proximity ? map[proximity] : undefined;
+  return { proxLabel: entry?.label ?? '', proximityKey: entry?.key ?? '' };
 }
 
 /** Module-level rate counter for MeshCore-class packets (Meshtastic mode). */
@@ -1210,26 +1225,11 @@ export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
 
     if (packetClass === 'meshtastic') {
       condition = 'Meshtastic Traffic Detected';
-      const senderHex = senderId ? `!${senderId.toString(16).padStart(8, '0')}` : 'unknown';
+      const senderHex = senderId ? formatMeshtasticNodeId(senderId) : 'unknown';
       const senderNode = senderId ? nodes?.get(senderId) : undefined;
       const senderName = senderNode?.long_name || senderNode?.short_name;
       const senderLabel = senderName ? `${senderHex} (${senderName})` : senderHex;
-      const proxLabel =
-        proximity === 'very-close'
-          ? 'Very close'
-          : proximity === 'nearby'
-            ? 'Nearby'
-            : proximity === 'distant'
-              ? 'Distant'
-              : '';
-      const proximityKey =
-        proximity === 'very-close'
-          ? 'veryClose'
-          : proximity === 'nearby'
-            ? 'nearby'
-            : proximity === 'distant'
-              ? 'distant'
-              : '';
+      const { proxLabel, proximityKey } = resolveProximityLabels(proximity);
       cause = `Meshtastic node transmitting on this frequency. Sender: ${senderLabel}. ${proxLabel ? proxLabel + '. ' : ''}This node may be in your MeshCore repeater area.`;
       causeI18n = {
         key: 'diagnosticsPanel.foreignLoraCause.meshtastic',
@@ -1237,22 +1237,7 @@ export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
       };
     } else if (packetClass === 'reticulum') {
       condition = 'Reticulum Traffic Detected';
-      const proxLabel =
-        proximity === 'very-close'
-          ? 'Very close'
-          : proximity === 'nearby'
-            ? 'Nearby'
-            : proximity === 'distant'
-              ? 'Distant'
-              : '';
-      const proximityKey =
-        proximity === 'very-close'
-          ? 'veryClose'
-          : proximity === 'nearby'
-            ? 'nearby'
-            : proximity === 'distant'
-              ? 'distant'
-              : '';
+      const { proxLabel, proximityKey } = resolveProximityLabels(proximity);
       cause = `Reticulum (RNode/RNS) traffic on this frequency. ${proxLabel ? proxLabel + '. ' : ''}May be a nearby Reticulum node on the same LoRa band.`;
       causeI18n = {
         key: 'diagnosticsPanel.foreignLoraCause.reticulum',
@@ -1600,7 +1585,6 @@ export const useDiagnosticsStore = create<DiagnosticsState>((set, get) => ({
 
   clearDiagnostics(options) {
     const preserveForeignLora = options?.preserveForeignLora === true;
-    console.debug(`[diagnosticsStore] clearDiagnostics preserveForeignLora=${preserveForeignLora}`);
     if (diagnosticsDebounce.incrementalAnalysisTimer)
       clearTimeout(diagnosticsDebounce.incrementalAnalysisTimer);
     diagnosticsDebounce.incrementalAnalysisTimer = null;

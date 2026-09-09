@@ -11,6 +11,7 @@ import {
   type StarredMessage,
 } from '@/renderer/lib/chatPanelProtocolStorage';
 import { VIRTUALIZER_SCROLL_END_THRESHOLD } from '@/renderer/lib/chatScrollUtils';
+import { serializeMeshcoreUserMessage } from '@/renderer/lib/meshcore/meshcoreMessageI18n';
 import { buildMeshcoreRoomIncomingMessage } from '@/renderer/lib/meshcoreChannelText';
 import {
   clearAllMeshcoreRoomAutoLoginFailures,
@@ -64,7 +65,22 @@ vi.mock('@tanstack/react-virtual', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key: string, opts?: Record<string, unknown>) => {
+      if (key === 'meshcore.errors.roomLogin.noRoute') {
+        return 'No route to this room server. Trace the node from the map or wait for path adverts, then try again.';
+      }
+      if (key === 'meshcore.errors.roomLogin.pathSyncFailedDetail') {
+        const detail = typeof opts?.detail === 'string' ? opts.detail : '';
+        return `Could not program the route on your radio before login. Reconnect the device and try again.${detail}`;
+      }
+      if (key === 'meshcore.errors.roomLogin.timedOut') {
+        return 'Room login timed out. The room may be out of range or not responding.';
+      }
+      if (key === 'roomsPanel.autoLoginFailed' && typeof opts?.error === 'string') {
+        return `Auto-login failed: ${opts.error}`;
+      }
+      return key;
+    },
   }),
 }));
 
@@ -167,6 +183,9 @@ describe('RoomsPanel', () => {
     const onLoginRoom = vi.fn().mockResolvedValue(undefined);
     renderRoomsPanel(nodes, { initialRoomTarget: room.node_id, onLoginRoom });
 
+    fireEvent.change(screen.getByLabelText('roomsPanel.guestPasswordLabel'), {
+      target: { value: 'hello' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'roomsPanel.upgradeAccess' }));
 
     await waitFor(() => {
@@ -178,7 +197,7 @@ describe('RoomsPanel', () => {
     });
   });
 
-  it('forces admin relogin when managing from a read-only session', async () => {
+  it('opens Repeater ops for a read-only session without showing Rooms CLI/ACL', () => {
     const room = makeRoom(0x100c, 'Admin Elevate Room');
     const nodes = new Map<number, MeshNode>([[room.node_id, room]]);
     meshcoreApplyRoomSession(room.node_id, {
@@ -186,21 +205,14 @@ describe('RoomsPanel', () => {
       adminPassword: '',
       role: 'readonly',
     });
-    const onLoginRoom = vi.fn().mockResolvedValue(undefined);
-    renderRoomsPanel(nodes, { initialRoomTarget: room.node_id, onLoginRoom });
+    const onOpenRepeaterOps = vi.fn();
+    renderRoomsPanel(nodes, { initialRoomTarget: room.node_id, onOpenRepeaterOps });
 
     fireEvent.click(screen.getByText('roomsPanel.manageRoom'));
 
-    await waitFor(() => {
-      expect(onLoginRoom).toHaveBeenCalledWith(
-        room.node_id,
-        'password',
-        expect.objectContaining({
-          adminPassword: 'password',
-          forceRelogin: true,
-        }),
-      );
-    });
+    expect(onOpenRepeaterOps).toHaveBeenCalledWith(room.node_id);
+    expect(screen.queryByPlaceholderText('roomsPanel.cliPlaceholder')).not.toBeInTheDocument();
+    expect(screen.queryByText('roomsPanel.aclPubkeyLabel')).not.toBeInTheDocument();
   });
 
   it('shows login form for room B while room A login is in progress', () => {
@@ -282,14 +294,76 @@ describe('RoomsPanel', () => {
     });
   });
 
-  it('disables Login when guest password field is empty', () => {
+  it('translates meshcore roomLogin.noRoute instead of showing the raw key', async () => {
+    meshcoreClearAllRoomSessions();
+    const room = makeRoom(0x1005, 'No Route Room');
+    const nodes = new Map<number, MeshNode>([[room.node_id, room]]);
+    const onLoginRoom = vi.fn().mockRejectedValue(new Error('meshcore.errors.roomLogin.noRoute'));
+    renderRoomsPanel(nodes, { initialRoomTarget: room.node_id, onLoginRoom });
+    fireEvent.click(screen.getByText('roomsPanel.loginButton'));
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          'No route to this room server. Trace the node from the map or wait for path adverts, then try again.',
+        ),
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByText('meshcore.errors.roomLogin.noRoute')).not.toBeInTheDocument();
+  });
+
+  it('translates serialized pathSyncFailedDetail including radio error detail', async () => {
+    meshcoreClearAllRoomSessions();
+    const room = makeRoom(0x1006, 'Path Sync Room');
+    const nodes = new Map<number, MeshNode>([[room.node_id, room]]);
+    const onLoginRoom = vi.fn().mockRejectedValue(
+      new Error(
+        serializeMeshcoreUserMessage({
+          key: 'meshcore.errors.roomLogin.pathSyncFailedDetail',
+          params: { detail: ' (timeout)' },
+        }),
+      ),
+    );
+    renderRoomsPanel(nodes, { initialRoomTarget: room.node_id, onLoginRoom });
+    fireEvent.click(screen.getByText('roomsPanel.loginButton'));
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          'Could not program the route on your radio before login. Reconnect the device and try again. (timeout)',
+        ),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it('allows Login with empty guest password and sends blank', async () => {
+    meshcoreClearAllRoomSessions();
     const room = makeRoom(0x1004, 'Empty Guest Room');
     const nodes = new Map<number, MeshNode>([[room.node_id, room]]);
-    renderRoomsPanel(nodes, { initialRoomTarget: room.node_id });
-    fireEvent.change(screen.getByLabelText('roomsPanel.guestPasswordLabel'), {
-      target: { value: '' },
+    const onLoginRoom = vi.fn().mockResolvedValue(undefined);
+    renderRoomsPanel(nodes, { initialRoomTarget: room.node_id, onLoginRoom });
+    expect(screen.getByLabelText('roomsPanel.guestPasswordLabel')).toHaveValue('');
+    expect(screen.getByText('roomsPanel.emptyGuestLoginHint')).toBeInTheDocument();
+    expect(screen.getByText('roomsPanel.loginButton')).not.toBeDisabled();
+    fireEvent.click(screen.getByText('roomsPanel.loginButton'));
+    await waitFor(() => {
+      expect(onLoginRoom).toHaveBeenCalledWith(
+        room.node_id,
+        '',
+        expect.objectContaining({ guestPassword: '' }),
+      );
     });
-    expect(screen.getByText('roomsPanel.loginButton')).toBeDisabled();
+  });
+
+  it('disables Upgrade access when guest password field is empty', () => {
+    meshcoreClearAllRoomSessions();
+    const room = makeRoom(0x100d, 'Upgrade Empty Room');
+    const nodes = new Map<number, MeshNode>([[room.node_id, room]]);
+    meshcoreApplyRoomSession(room.node_id, {
+      guestPassword: '',
+      adminPassword: '',
+      role: 'readonly',
+    });
+    renderRoomsPanel(nodes, { initialRoomTarget: room.node_id });
+    expect(screen.getByRole('button', { name: 'roomsPanel.upgradeAccess' })).toBeDisabled();
     expect(screen.getByText('roomsPanel.emptyGuestLoginHint')).toBeInTheDocument();
   });
 
@@ -422,7 +496,25 @@ describe('RoomsPanel', () => {
     expect(textarea).toHaveValue('retry me');
   });
 
-  it('closes manage section when Close is clicked', async () => {
+  it('Refresh ACL in Members calls get acl', async () => {
+    meshcoreClearAllRoomSessions();
+    const room = makeRoom(0x1010, 'ACL Room');
+    const nodes = new Map<number, MeshNode>([[room.node_id, room]]);
+    meshcoreApplyRoomSession(room.node_id, {
+      guestPassword: '',
+      adminPassword: 'password',
+      role: 'admin',
+    });
+    const onSendRoomAdminCli = vi.fn().mockResolvedValue('aabbccdd 3\n');
+    renderRoomsPanel(nodes, { initialRoomTarget: room.node_id, onSendRoomAdminCli });
+    fireEvent.click(screen.getByText(/roomsPanel.membersHeading/));
+    fireEvent.click(screen.getByLabelText('roomsPanel.membersRefreshAcl'));
+    await waitFor(() => {
+      expect(onSendRoomAdminCli).toHaveBeenCalledWith(room.node_id, 'get acl');
+    });
+  });
+
+  it('jumps to Repeaters & Rooms ops from Manage without opening CLI drawer', () => {
     meshcoreClearAllRoomSessions();
     const room = makeRoom(0x1009, 'Admin Room');
     const nodes = new Map<number, MeshNode>([[room.node_id, room]]);
@@ -431,6 +523,7 @@ describe('RoomsPanel', () => {
       adminPassword: 'password',
       role: 'admin',
     });
+    const onOpenRepeaterOps = vi.fn();
     render(
       <RoomsPanel
         nodes={nodes}
@@ -443,14 +536,13 @@ describe('RoomsPanel', () => {
         onLeaveRoom={vi.fn().mockResolvedValue(undefined)}
         onSendRoomPost={vi.fn()}
         onSendRoomAdminCli={vi.fn()}
+        onOpenRepeaterOps={onOpenRepeaterOps}
       />,
     );
     fireEvent.click(screen.getByText('roomsPanel.manageRoom'));
-    await waitFor(() => {
-      expect(screen.getByText('roomsPanel.manageHeading')).toBeInTheDocument();
-    });
-    fireEvent.click(screen.getByLabelText('roomsPanel.closeManage'));
-    expect(screen.queryByText('roomsPanel.cliPlaceholder')).not.toBeInTheDocument();
+    expect(onOpenRepeaterOps).toHaveBeenCalledWith(room.node_id);
+    expect(screen.queryByText('roomsPanel.manageHeading')).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('roomsPanel.cliPlaceholder')).not.toBeInTheDocument();
   });
 
   it('shows delivery status badge on own room posts', () => {
@@ -641,6 +733,65 @@ describe('RoomsPanel', () => {
     expect(raw).toContain('Bookmark me');
   });
 
+  it('keeps room post actions visible when alwaysShowMessageActions is set', () => {
+    meshcoreClearAllRoomSessions();
+    const roomId = 0x2003;
+    const room = makeRoom(roomId, 'Always Actions Room');
+    const nodes = new Map<number, MeshNode>([[room.node_id, room]]);
+    meshcoreApplyRoomSession(roomId, {
+      guestPassword: 'hello',
+      adminPassword: '',
+      role: 'readwrite',
+    });
+    const msg = buildMeshcoreRoomIncomingMessage({
+      rawText: 'Always visible',
+      roomServerId: roomId,
+      authorId: 0x11,
+      authorName: 'Author',
+      timestamp: 1_700_000_000_000,
+      receivedVia: 'rf',
+    });
+
+    renderRoomsPanel(nodes, {
+      initialRoomTarget: roomId,
+      messages: [msg],
+      alwaysShowMessageActions: true,
+    });
+
+    const star = screen.getByLabelText('chatPanel.starMessage');
+    const row = star.parentElement;
+    expect(row?.className).toContain('opacity-100');
+    expect(row?.className).not.toMatch(/(?:^|\s)opacity-0(?:\s|$)/);
+  });
+
+  it('uses hover/focus-within visibility for room post actions by default', () => {
+    meshcoreClearAllRoomSessions();
+    const roomId = 0x2004;
+    const room = makeRoom(roomId, 'Hover Actions Room');
+    const nodes = new Map<number, MeshNode>([[room.node_id, room]]);
+    meshcoreApplyRoomSession(roomId, {
+      guestPassword: 'hello',
+      adminPassword: '',
+      role: 'readwrite',
+    });
+    const msg = buildMeshcoreRoomIncomingMessage({
+      rawText: 'Hover me',
+      roomServerId: roomId,
+      authorId: 0x11,
+      authorName: 'Author',
+      timestamp: 1_700_000_000_000,
+      receivedVia: 'rf',
+    });
+
+    renderRoomsPanel(nodes, { initialRoomTarget: roomId, messages: [msg] });
+
+    const star = screen.getByLabelText('chatPanel.starMessage');
+    const row = star.parentElement;
+    expect(row?.className).toMatch(/(?:^|\s)opacity-0(?:\s|$)/);
+    expect(row?.className).toContain('group-focus-within/msg:opacity-100');
+    expect(row?.className).toContain('group-hover/msg:opacity-100');
+  });
+
   it('shows saved passwords section collapsed by default when credentials exist', async () => {
     const room = makeRoom(0x1020, 'Saved List Room');
     const nodes = new Map<number, MeshNode>([[room.node_id, room]]);
@@ -738,6 +889,25 @@ describe('RoomsPanel', () => {
 
     const marker = screen.getByLabelText('roomsPanel.autoLoginFailedAria');
     expect(marker.className).toContain('ring-red-500');
+  });
+
+  it('translates serialized auto-login failure in the sidebar marker', () => {
+    const room = makeRoom(0x1010, 'Serialized Auto Fail Room');
+    const nodes = new Map<number, MeshNode>([[room.node_id, room]]);
+    const serialized = serializeMeshcoreUserMessage({
+      key: 'meshcore.errors.roomLogin.timedOut',
+    });
+    setMeshcoreRoomAutoLoginFailure(room.node_id, serialized);
+
+    renderRoomsPanel(nodes);
+
+    expect(screen.getByLabelText('roomsPanel.autoLoginFailedAria')).toBeInTheDocument();
+    expect(
+      screen.getByTitle(
+        'Auto-login failed: Room login timed out. The room may be out of range or not responding.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(serialized)).not.toBeInTheDocument();
   });
 
   it('clears auto-login failure when re-enabling auto-login on connect', async () => {
@@ -1240,5 +1410,99 @@ describe('RoomsPanel', () => {
     expect(screen.queryByLabelText('roomsPanel.loginAllSavedAria')).not.toBeInTheDocument();
     expect(screen.getByText('CR')).toBeInTheDocument();
     expect(screen.getByLabelText('Collapse Room')).toBeInTheDocument();
+  });
+
+  it('holds room unread while visible but unfocused, then advances watermark on refocus', async () => {
+    meshcoreClearAllRoomSessions();
+    const room = makeRoom(0x1040, 'Focus Room');
+    const nodes = new Map<number, MeshNode>([[room.node_id, room]]);
+    meshcoreApplyRoomSession(room.node_id, {
+      guestPassword: 'hello',
+      adminPassword: '',
+      role: 'readwrite',
+    });
+    const firstTs = 1000;
+    const secondTs = 5000;
+    savePersistedRoomsLastRead(mergeRoomLastReadWatermark({}, room.node_id, firstTs));
+    const readStored = () =>
+      JSON.parse(localStorage.getItem('mesh-client:roomsLastRead:meshcore') ?? '{}') as Record<
+        string,
+        number
+      >;
+    const firstMsg = buildMeshcoreRoomIncomingMessage({
+      rawText: 'first',
+      roomServerId: room.node_id,
+      authorId: 0x200,
+      authorName: 'Alice',
+      timestamp: firstTs,
+      receivedVia: 'rf',
+    });
+    const distSpy = vi.spyOn(chatScrollUtils, 'getDistFromChatBottom').mockReturnValue(0);
+    const hasFocusSpy = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+
+    try {
+      const { rerender } = render(
+        <RoomsPanel
+          nodes={nodes}
+          messages={[firstMsg]}
+          myNodeNum={1}
+          isConnected
+          isActive
+          initialRoomTarget={room.node_id}
+          onLoginRoom={vi.fn().mockResolvedValue(undefined)}
+          onCancelRoomLogin={vi.fn()}
+          onLeaveRoom={vi.fn().mockResolvedValue(undefined)}
+          onSendRoomPost={vi.fn()}
+          onSendRoomAdminCli={vi.fn()}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('first')).toBeInTheDocument();
+      });
+
+      hasFocusSpy.mockReturnValue(false);
+      fireEvent(window, new Event('blur'));
+
+      const secondMsg = buildMeshcoreRoomIncomingMessage({
+        rawText: 'second',
+        roomServerId: room.node_id,
+        authorId: 0x201,
+        authorName: 'Bob',
+        timestamp: secondTs,
+        receivedVia: 'rf',
+      });
+      rerender(
+        <RoomsPanel
+          nodes={nodes}
+          messages={[firstMsg, secondMsg]}
+          myNodeNum={1}
+          isConnected
+          isActive
+          initialRoomTarget={room.node_id}
+          onLoginRoom={vi.fn().mockResolvedValue(undefined)}
+          onCancelRoomLogin={vi.fn()}
+          onLeaveRoom={vi.fn().mockResolvedValue(undefined)}
+          onSendRoomPost={vi.fn()}
+          onSendRoomAdminCli={vi.fn()}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('second')).toBeInTheDocument();
+      });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(readStored()[String(room.node_id)]).toBe(firstTs);
+
+      hasFocusSpy.mockReturnValue(true);
+      fireEvent(window, new Event('focus'));
+
+      await waitFor(() => {
+        expect(readStored()[String(room.node_id)]).toBe(secondTs);
+      });
+    } finally {
+      distSpy.mockRestore();
+      hasFocusSpy.mockRestore();
+    }
   });
 });

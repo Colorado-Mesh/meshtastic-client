@@ -32,9 +32,11 @@ const reticulumSidecarMocks = vi.hoisted(() => ({
   requestReticulumPeerPath: vi.fn(),
   probeReticulumPeer: vi.fn(),
   refreshReticulumPeersFromSidecar: vi.fn(),
+  refreshReticulumPeerRouteFromPaths: vi.fn(),
 }));
 
 vi.mock('react-i18next', () => ({
+  initReactI18next: { type: '3rdParty', init: () => {} },
   useTranslation: () => ({
     t: (key: string, opts?: Record<string, string | number>) => {
       if (opts && 'count' in opts) return `${key}:${String(opts.count)}`;
@@ -70,9 +72,17 @@ vi.mock('@/renderer/lib/reticulum/reticulumSidecarReads', () => ({
   },
 }));
 
+vi.mock('@/renderer/lib/reticulum/reticulumPathMedium', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    refreshReticulumPeerRouteFromPaths: (...args: unknown[]) =>
+      reticulumSidecarMocks.refreshReticulumPeerRouteFromPaths(...args),
+  };
+});
+
 vi.mock('../stores/reticulumPeerStore', async (importOriginal) => {
-  // eslint-disable-next-line @typescript-eslint/consistent-type-imports -- vi.importOriginal needs typeof import()
-  const actual = await importOriginal<typeof import('../stores/reticulumPeerStore')>();
+  const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
     refreshReticulumPeersFromSidecar: reticulumSidecarMocks.refreshReticulumPeersFromSidecar,
@@ -82,6 +92,7 @@ vi.mock('../stores/reticulumPeerStore', async (importOriginal) => {
 import { hydrateAxeThemeColors } from '../lib/a11yTestHelpers';
 import { reticulumHashToNodeId } from '../lib/reticulum/destHash';
 import { useNomadNetworkStore } from '../stores/nomadNetworkStore';
+import { useReticulumIdentityActivityStore } from '../stores/reticulumIdentityActivityStore';
 import { useReticulumPeerStore } from '../stores/reticulumPeerStore';
 import ReticulumPeerListPanel from './ReticulumPeerListPanel';
 import { ToastProvider } from './Toast';
@@ -113,7 +124,10 @@ describe('ReticulumPeerListPanel', () => {
     reticulumSidecarMocks.probeReticulumPeer.mockReset();
     reticulumSidecarMocks.refreshReticulumPeersFromSidecar.mockReset();
     reticulumSidecarMocks.refreshReticulumPeersFromSidecar.mockResolvedValue([]);
+    reticulumSidecarMocks.refreshReticulumPeerRouteFromPaths.mockReset();
+    reticulumSidecarMocks.refreshReticulumPeerRouteFromPaths.mockResolvedValue(false);
     useNomadNetworkStore.setState({ nodes: new Map() });
+    useReticulumIdentityActivityStore.setState({ byDestination: new Map() });
     useReticulumPeerStore.setState({
       peers: new Map([
         [
@@ -142,6 +156,25 @@ describe('ReticulumPeerListPanel', () => {
             destination_hash: 'def',
             display_name: 'Contact Peer',
             last_heard: Date.now() / 1000,
+            is_contact: true,
+          },
+        ],
+      ]),
+      history: new Map([
+        [
+          'def',
+          {
+            destination_hash: 'def',
+            display_name: 'Contact Peer',
+            last_heard: Date.now() / 1000,
+          },
+        ],
+        [
+          'hist1',
+          {
+            destination_hash: 'hist1',
+            display_name: 'History Peer',
+            last_heard: Date.now() / 1000,
           },
         ],
       ]),
@@ -149,6 +182,54 @@ describe('ReticulumPeerListPanel', () => {
       peerAppearanceByHash: new Map(),
       peersRevision: 0,
     });
+  });
+
+  it('labels the hop count with the medium of the active path', () => {
+    useReticulumPeerStore.setState({
+      peers: new Map([
+        [
+          'abc',
+          {
+            destination_hash: 'abc',
+            display_name: 'Alpha Peer',
+            hops: 2,
+            interface: 'TCPInterface[gateway/10.0.0.5:4242]',
+            last_seen: Date.now() / 1000,
+          },
+        ],
+      ]),
+      peersRevision: 1,
+    });
+
+    render(
+      <ReticulumPeerListPanel isConnected={false} onPeerClick={vi.fn()} onSendMessage={vi.fn()} />,
+    );
+
+    expect(screen.getByText('TCP')).toBeTruthy();
+  });
+
+  it('omits the medium badge when the peer has no hop count', () => {
+    useReticulumPeerStore.setState({
+      peers: new Map([
+        [
+          'abc',
+          {
+            destination_hash: 'abc',
+            display_name: 'Alpha Peer',
+            hops: null,
+            interface: 'TCPInterface[gateway/10.0.0.5:4242]',
+            last_seen: Date.now() / 1000,
+          },
+        ],
+      ]),
+      peersRevision: 1,
+    });
+
+    render(
+      <ReticulumPeerListPanel isConnected={false} onPeerClick={vi.fn()} onSendMessage={vi.fn()} />,
+    );
+
+    expect(screen.queryByText('TCP')).toBeNull();
   });
 
   it('renders peer rows with contact badge on peers tab', () => {
@@ -161,6 +242,29 @@ describe('ReticulumPeerListPanel', () => {
     expect(screen.getByText('peerListPanel.contactYes')).toBeInTheDocument();
   });
 
+  it('shows empty outline avatar when peer has no custom icon', () => {
+    render(
+      <ReticulumPeerListPanel isConnected={false} onPeerClick={vi.fn()} onSendMessage={vi.fn()} />,
+    );
+    const label = screen.getByText('Alpha Peer');
+    const rowLabel = label.closest('span.inline-flex');
+    expect(rowLabel?.querySelector('.border-dashed')).toBeTruthy();
+    expect(rowLabel?.querySelector('svg')).toBeNull();
+  });
+
+  it('shows people icon when peer has user appearance', () => {
+    useReticulumPeerStore.setState({
+      peerAppearanceByHash: new Map([['abc', { icon_name: 'user', icon_color: 'green' }]]),
+    });
+    render(
+      <ReticulumPeerListPanel isConnected={false} onPeerClick={vi.fn()} onSendMessage={vi.fn()} />,
+    );
+    const label = screen.getByText('Alpha Peer');
+    const rowLabel = label.closest('span.inline-flex');
+    expect(rowLabel?.querySelector('.border-dashed')).toBeNull();
+    expect(rowLabel?.querySelector('svg')).toBeTruthy();
+  });
+
   it('renders contacts tab with last heard column', async () => {
     const user = userEvent.setup();
     render(
@@ -169,6 +273,53 @@ describe('ReticulumPeerListPanel', () => {
     await user.click(screen.getByRole('tab', { name: 'peerListPanel.tabContacts' }));
     expect(screen.getByText('peerListPanel.colLastHeard')).toBeInTheDocument();
     expect(screen.getByText('Contact Peer')).toBeInTheDocument();
+    expect(screen.queryByText('History Peer')).not.toBeInTheDocument();
+  });
+
+  it('renders favorited history-only peers on Favorites tab', async () => {
+    const user = userEvent.setup();
+    const favHash = 'favhist01'.padEnd(32, '0');
+    useReticulumPeerStore.setState({
+      peers: new Map(),
+      contacts: new Map(),
+      history: new Map([
+        [
+          favHash,
+          {
+            destination_hash: favHash,
+            display_name: 'History Favorite',
+            last_heard: Date.now() / 1000,
+            favorited: true,
+          },
+        ],
+      ]),
+    });
+    render(
+      <ReticulumPeerListPanel isConnected={false} onPeerClick={vi.fn()} onSendMessage={vi.fn()} />,
+    );
+    await user.click(screen.getByRole('tab', { name: 'peerListPanel.tabFavorites' }));
+    expect(screen.getByText('History Favorite')).toBeInTheDocument();
+  });
+
+  it('renders history tab with messaged peers that are not saved contacts', async () => {
+    const user = userEvent.setup();
+    render(
+      <ReticulumPeerListPanel isConnected={false} onPeerClick={vi.fn()} onSendMessage={vi.fn()} />,
+    );
+    await user.click(screen.getByRole('tab', { name: 'peerListPanel.tabHistory' }));
+    expect(screen.getByRole('button', { name: 'peerListPanel.colLastHeard' })).toBeInTheDocument();
+    expect(screen.getByText('History Peer')).toBeInTheDocument();
+    expect(screen.getByText('Contact Peer')).toBeInTheDocument();
+  });
+
+  it('shows empty history state', async () => {
+    useReticulumPeerStore.setState({ history: new Map() });
+    const user = userEvent.setup();
+    render(
+      <ReticulumPeerListPanel isConnected={false} onPeerClick={vi.fn()} onSendMessage={vi.fn()} />,
+    );
+    await user.click(screen.getByRole('tab', { name: 'peerListPanel.tabHistory' }));
+    expect(screen.getByText('peerListPanel.emptyHistory')).toBeInTheDocument();
   });
 
   it('shows empty contacts state', async () => {
@@ -508,6 +659,85 @@ describe('ReticulumPeerListPanel', () => {
       expect(onRefresh).toHaveBeenCalledTimes(1);
     });
     expect(onSoftRefresh).not.toHaveBeenCalled();
+  });
+
+  it('enables Chat after lxmf.delivery activity lands for a telephony-only peer', async () => {
+    const identity = '0f79468863d76b3ba574baa92606ffcb';
+    const lxmf = 'e3359f1314aff4fb6261400a8202149b';
+    const telephony = 'ab1d53d6923d6983dfb4451e3869b878';
+    useReticulumPeerStore.setState({
+      peers: new Map([
+        [
+          telephony,
+          {
+            destination_hash: telephony,
+            display_name: 'Voice Only',
+            identity_hash: identity,
+            hops: 1,
+            last_seen: Date.now() / 1000,
+          },
+        ],
+      ]),
+      contacts: new Map(),
+      history: new Map(),
+      lastRefreshAt: null,
+      peersRevision: 1,
+    });
+    useReticulumIdentityActivityStore.setState({
+      byDestination: new Map([
+        [
+          telephony,
+          [
+            {
+              destination_hash: telephony,
+              aspect: 'lxst.telephony',
+              identity_hash: identity,
+              last_seen: 1,
+            },
+          ],
+        ],
+      ]),
+    });
+
+    render(
+      <ToastProvider>
+        <ReticulumPeerListPanel isConnected onPeerClick={vi.fn()} onSendMessage={vi.fn()} />
+      </ToastProvider>,
+    );
+
+    const chatBtn = await screen.findByRole('button', { name: 'peerListPanel.openChat' });
+    expect(chatBtn).toBeDisabled();
+
+    useReticulumIdentityActivityStore.setState({
+      byDestination: new Map([
+        [
+          telephony,
+          [
+            {
+              destination_hash: telephony,
+              aspect: 'lxst.telephony',
+              identity_hash: identity,
+              last_seen: 1,
+            },
+          ],
+        ],
+        [
+          lxmf,
+          [
+            {
+              destination_hash: lxmf,
+              aspect: 'lxmf.delivery',
+              identity_hash: identity,
+              last_seen: 2,
+            },
+          ],
+        ],
+      ]),
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'peerListPanel.openChat' })).not.toBeDisabled();
+    });
   });
 
   it('has no serious axe violations', async () => {

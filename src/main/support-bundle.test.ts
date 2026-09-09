@@ -42,6 +42,7 @@ import { app } from 'electron';
 import {
   buildSupportBundleZip,
   defaultSupportBundleFilename,
+  extractLxmfOutboundLogSlice,
   isSupportBundleMode,
   readReticulumDeveloperArtifacts,
   redactMnemonicFromStackJson,
@@ -95,6 +96,84 @@ describe('defaultSupportBundleFilename', () => {
   it('uses mode-specific prefixes', () => {
     expect(defaultSupportBundleFilename('github')).toMatch(/^mesh-client-github-report-/);
     expect(defaultSupportBundleFilename('developer')).toMatch(/^mesh-client-developer-bundle-/);
+  });
+});
+
+describe('extractLxmfOutboundLogSlice', () => {
+  it('keeps LXMF outbound / PN cascade lines and drops unrelated noise', () => {
+    const chunk = Buffer.from(
+      [
+        'info hello world',
+        'info target=lxmf-outbound LXMF advancing PN cascade',
+        'warn DeliverPropagated: deferring — PN link busy',
+        'debug peer refresh ok',
+        'info target=propagation-deposit outbound PN deposit Completes',
+        'info target=propagation-retrieve sync transfer progress',
+        'info target=propagation-sync propagation sync aborted — no path to PN',
+        'warn propagation establish failed: NoLinkProof',
+        'warn propagation establish failed: LrproofIdentityMissing',
+        'error PROPAGATION_PATH_UNKNOWN',
+      ].join('\n'),
+      'utf8',
+    );
+    const slice = extractLxmfOutboundLogSlice(chunk).toString('utf8');
+    expect(slice).toContain('LXMF advancing PN cascade');
+    expect(slice).toContain('DeliverPropagated');
+    expect(slice).toContain('propagation-deposit');
+    expect(slice).toContain('propagation-retrieve');
+    expect(slice).toContain('propagation-sync');
+    expect(slice).toContain('propagation establish');
+    expect(slice).toContain('LrproofIdentityMissing');
+    expect(slice).toContain('PROPAGATION_PATH_UNKNOWN');
+    expect(slice).not.toContain('hello world');
+    expect(slice).not.toContain('peer refresh ok');
+  });
+
+  it('keeps Direct Completes and delivery Failed/Rejected lines', () => {
+    const chunk = Buffer.from(
+      [
+        'info target=lxmf-outbound message_hash=abcd outbound Direct Completes',
+        'warn target=lxmf-outbound dest=deadbeef LXMF delivery Failed',
+        'warn target=lxmf-outbound dest=cafebabe LXMF delivery Rejected',
+        'debug unrelated',
+      ].join('\n'),
+      'utf8',
+    );
+    const slice = extractLxmfOutboundLogSlice(chunk).toString('utf8');
+    expect(slice).toContain('outbound Direct Completes');
+    expect(slice).toContain('LXMF delivery Failed');
+    expect(slice).toContain('LXMF delivery Rejected');
+    expect(slice).not.toContain('unrelated');
+  });
+
+  it('truncates long hex ids in kept lines', () => {
+    const dest = 'ab'.repeat(16);
+    const chunk = Buffer.from(
+      `info target=lxmf-outbound dest=${dest} LXMF advancing PN cascade\n`,
+      'utf8',
+    );
+    const slice = extractLxmfOutboundLogSlice(chunk).toString('utf8');
+    expect(slice).toContain('dest=abababab…');
+    expect(slice).not.toContain(dest);
+  });
+
+  it('keeps PN island diagnosis lines (deposit/preferred/sync_target/HaveAll)', () => {
+    const chunk = Buffer.from(
+      [
+        'info deposit_pn=aabb preferred_pn=ccdd sync_target=eeff',
+        'info pn_island mismatch detected',
+        'info HaveAll empty_offer completed',
+        'info unrelated chat toast',
+      ].join('\n'),
+      'utf8',
+    );
+    const slice = extractLxmfOutboundLogSlice(chunk).toString('utf8');
+    expect(slice).toContain('deposit_pn');
+    expect(slice).toContain('preferred_pn');
+    expect(slice).toContain('sync_target');
+    expect(slice).toContain('pn_island');
+    expect(slice).toContain('HaveAll');
+    expect(slice).not.toContain('unrelated chat toast');
   });
 });
 
@@ -265,22 +344,79 @@ describe('buildSupportBundleZip', () => {
     expect(names).toContain('reticulum/config');
   });
 
+  it('developer bundle always includes stack json and lxmf-outbound slice with placeholders', async () => {
+    const userDataDir = path.join(workDir, 'userdata-empty');
+    vi.mocked(app.getPath).mockImplementation((key: string) => {
+      if (key === 'userData') return userDataDir;
+      if (key === 'temp') return path.join(workDir, 'temp');
+      return userDataDir;
+    });
+    // No reticulum artifacts and no matching log lines on disk.
+    const dest = path.join(workDir, 'developer-placeholders.zip');
+    exportDatabase.mockImplementation((destPath: string) => {
+      fs.mkdirSync(path.dirname(destPath), { recursive: true });
+      fs.writeFileSync(destPath, 'sqlite-bytes');
+    });
+
+    await buildSupportBundleZip(dest, 'developer', '{"ok":true}');
+
+    const names = await zipEntryNames(dest);
+    expect(names).toContain('reticulum/mesh_client_stack.json');
+    expect(names).toContain('reticulum/lxmf-outbound.log');
+
+    const buf = await fs.promises.readFile(dest);
+    const zip = await JSZip.loadAsync(buf);
+    const stack = JSON.parse(
+      await zip.file('reticulum/mesh_client_stack.json')!.async('string'),
+    ) as { note?: string };
+    expect(stack.note).toMatch(/not found or unreadable/);
+    const slice = await zip.file('reticulum/lxmf-outbound.log')!.async('string');
+    expect(slice).toMatch(/No LXMF outbound \/ PN cascade lines matched/);
+  });
+
   it('includes rotated log backup when present', async () => {
     await fs.promises.writeFile(path.join(workDir, 'mesh-client.log.1'), 'rotated\n', 'utf8');
     const dest = path.join(workDir, 'github-with-backup.zip');
     await buildSupportBundleZip(dest, 'github', '{"ok":true}');
     const names = await zipEntryNames(dest);
     expect(names).toContain('mesh-client.log.1');
+    const buf = await fs.promises.readFile(dest);
+    const zip = await JSZip.loadAsync(buf);
+    const backup = await zip.file('mesh-client.log.1')!.async('string');
+    expect(backup).toBe('rotated\n');
   });
 
-  it('manifest records github kind', async () => {
+  it('tail-caps oversized backup log to the final 10 MiB', async () => {
+    const tenMiB = 10 * 1024 * 1024;
+    const oversized = Buffer.alloc(tenMiB + 4096, 0x61);
+    // Distinct trailing marker so we can prove the zip holds the end of the file.
+    oversized.write('TAIL-MARKER-END', tenMiB + 4096 - 15);
+    await fs.promises.writeFile(path.join(workDir, 'mesh-client.log.1'), oversized);
+    const dest = path.join(workDir, 'github-backup-tail.zip');
+    await buildSupportBundleZip(dest, 'github', '{"ok":true}');
+    const buf = await fs.promises.readFile(dest);
+    const zip = await JSZip.loadAsync(buf);
+    const entry = await zip.file('mesh-client.log.1')!.async('nodebuffer');
+    expect(entry.byteLength).toBe(tenMiB);
+    expect(entry.subarray(entry.byteLength - 15).toString('utf8')).toBe('TAIL-MARKER-END');
+  });
+
+  it('manifest records github kind and buildChannel', async () => {
     const dest = path.join(workDir, 'manifest.zip');
     await buildSupportBundleZip(dest, 'github', '{"ok":true}');
     const buf = await fs.promises.readFile(dest);
     const zip = await JSZip.loadAsync(buf);
     const manifestRaw = await zip.file('manifest.json')!.async('string');
-    const manifest = JSON.parse(manifestRaw) as { kind: string; appVersion: string };
+    const manifest = JSON.parse(manifestRaw) as {
+      kind: string;
+      appVersion: string;
+      buildChannel: string;
+    };
     expect(manifest.kind).toBe('mesh-client-github-report');
     expect(manifest.appVersion).toBe('9.9.9-test');
+    expect(manifest.buildChannel).toBe('local');
+
+    const readme = await zip.file('README.txt')!.async('string');
+    expect(readme).toContain('Build channel: local');
   });
 });

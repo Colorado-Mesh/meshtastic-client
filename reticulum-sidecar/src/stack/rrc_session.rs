@@ -7,27 +7,33 @@
 //! `RrcSessionInner` (read directly for snapshots — no round trip through the
 //! command channel is needed for status/rooms reads).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rns_identity::identity::Identity;
 use rns_transport::messages::TransportMessage;
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 use tracing::{debug, warn};
 
 use super::rrc_codec::{
-    RRC_IDENTITY_HASH_LEN, RrcEnvelope, RrcWelcomeCapabilities, body_as_text, decode_envelope,
-    encode_envelope, hello_body, msg_type, parse_joined_members, parse_welcome_capabilities,
-    parse_welcome_hub_name, text_body,
+    RRC_IDENTITY_HASH_LEN, RrcEnvelope, RrcResourceEnvelopeMeta, RrcWelcomeCapabilities,
+    RrcWelcomeLimits, apply_advisory_nick, body_as_text, decode_envelope, encode_envelope,
+    hello_body, msg_type, parse_joined_members, parse_resource_envelope_body,
+    parse_welcome_capabilities, parse_welcome_hub_name, parse_welcome_hub_version,
+    parse_welcome_limits, text_body,
 };
-use super::rrc_link::{RrcLinkError, RrcLinkEvent, RrcLinkHandle, open_rrc_link};
+use super::rrc_link::{
+    MAX_CONCURRENT_RRC_RESOURCES, RrcLinkError, RrcLinkEvent, RrcLinkHandle, open_rrc_link,
+};
 
 const CLIENT_NAME: &str = "mesh-client";
 const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 const WELCOME_TIMEOUT: Duration = Duration::from_secs(20);
 const RECONNECT_BASE_MS: u64 = 2_000;
 const RECONNECT_MAX_MS: u64 = 30_000;
@@ -67,13 +73,19 @@ pub struct RrcRoomState {
 struct RrcSessionInner {
     status: RrcSessionStatus,
     hub_name: Option<String>,
+    hub_version: Option<String>,
     nickname: Option<String>,
     rooms: HashMap<String, RrcRoomState>,
     /// Normalized room name → optional join key retained for reconnect.
     desired_rooms: HashMap<String, Option<String>>,
+    /// Wire room + join key queued after involuntary hub PARTED while still desired.
+    pending_rejoins: Vec<(String, Option<String>)>,
     last_error: Option<String>,
     identity_hash: [u8; 16],
     capabilities: RrcWelcomeCapabilities,
+    limits: RrcWelcomeLimits,
+    /// FIFO expectations from `T_RESOURCE_ENVELOPE` until RNS Resource completes.
+    pending_resources: VecDeque<(RrcResourceEnvelopeMeta, Option<String>, Instant)>,
 }
 
 impl RrcSessionInner {
@@ -81,12 +93,16 @@ impl RrcSessionInner {
         Self {
             status: RrcSessionStatus::Disconnected,
             hub_name: None,
+            hub_version: None,
             nickname: None,
             rooms: HashMap::new(),
             desired_rooms: HashMap::new(),
+            pending_rejoins: Vec::new(),
             last_error: None,
             identity_hash,
             capabilities: RrcWelcomeCapabilities::default(),
+            limits: RrcWelcomeLimits::default(),
+            pending_resources: VecDeque::new(),
         }
     }
 
@@ -107,6 +123,26 @@ impl RrcSessionInner {
             }
         }
     }
+
+    /// Queue a silent re-JOIN; dedupe by normalized room name.
+    fn queue_pending_rejoin(&mut self, room: String, join_key: Option<String>) {
+        let key = normalize_room(&room);
+        let already_pending = self
+            .pending_rejoins
+            .iter()
+            .any(|(pending_room, _)| normalize_room(pending_room) == key);
+        if !already_pending {
+            self.pending_rejoins.push((room, join_key));
+        }
+    }
+}
+
+fn reset_hub_metadata(g: &mut RrcSessionInner) {
+    g.hub_name = None;
+    g.hub_version = None;
+    g.capabilities = RrcWelcomeCapabilities::default();
+    g.limits = RrcWelcomeLimits::default();
+    g.pending_resources.clear();
 }
 
 /// Handle to one hub's session task: a command channel for actions that must
@@ -476,6 +512,7 @@ fn session_json(hex: &str, g: &RrcSessionInner) -> serde_json::Value {
         "status": g.status.as_str(),
         "hub_dest_hash": hex,
         "hub_name": g.hub_name,
+        "hub_version": g.hub_version,
         "identity_hash": hex::encode(g.identity_hash),
         "nickname": g.nickname,
         "rooms": rooms_json(&g.rooms),
@@ -484,6 +521,13 @@ fn session_json(hex: &str, g: &RrcSessionInner) -> serde_json::Value {
             "direct_notice": g.capabilities.direct_notice,
             "action": g.capabilities.action,
             "resource_envelope": g.capabilities.resource_envelope,
+        },
+        "limits": {
+            "max_nick_bytes": g.limits.max_nick_bytes,
+            "max_room_name_bytes": g.limits.max_room_name_bytes,
+            "max_msg_body_bytes": g.limits.max_msg_body_bytes,
+            "max_rooms_per_session": g.limits.max_rooms_per_session,
+            "rate_limit_msgs_per_minute": g.limits.rate_limit_msgs_per_minute,
         },
     })
 }
@@ -505,8 +549,8 @@ fn cancel_connect_job(job: &mut Option<ConnectJob>) {
             let _ = reply.send(Err("cancelled".into()));
         }
         // Dropping `fut` aborts establish_session. If a link was already open,
-        // dropping RrcLinkHandle closes cmd_tx so the link task deregisters.
-        // Mid-handshake registration is cleaned by DestinationRegistrationGuard.
+        // dropping RrcLinkHandle closes the LinkSession (cmd channel drop → close).
+        // Mid-handshake cleanup is owned by LinkSession / link_endpoint guards.
     }
 }
 
@@ -602,11 +646,11 @@ async fn session_loop(
                             let mut g = inner.lock().await;
                             g.status = RrcSessionStatus::Connecting;
                             g.nickname = Some(nickname.clone());
-                            g.hub_name = None;
                             g.rooms.clear();
                             g.desired_rooms.clear();
+                            g.pending_rejoins.clear();
                             g.last_error = None;
-                            g.capabilities = RrcWelcomeCapabilities::default();
+                            reset_hub_metadata(&mut g);
                         }
                         emit(
                             &event_tx,
@@ -641,7 +685,8 @@ async fn session_loop(
                             g.status = RrcSessionStatus::Disconnected;
                             g.rooms.clear();
                             g.desired_rooms.clear();
-                            g.hub_name = None;
+                            g.pending_rejoins.clear();
+                            reset_hub_metadata(&mut g);
                         }
                         emit(
                             &event_tx,
@@ -691,15 +736,30 @@ async fn session_loop(
                         let _ = reply.send(result);
                     }
                     SessionCommand::SetNickname { nickname, reply } => {
-                        {
+                        let result = {
                             let mut g = inner.lock().await;
-                            g.nickname = Some(nickname.clone());
-                        }
-                        // Keep reconnect HELLO in sync with the live nickname.
-                        if let Some((_, _, _, nick)) = reconnect_intent.as_mut() {
-                            *nick = nickname;
-                        }
-                        let _ = reply.send(Ok(()));
+                            let nick = nickname.trim().to_string();
+                            if nick.is_empty() {
+                                Err("nickname must not be empty".into())
+                            } else if g
+                                .limits
+                                .max_nick_bytes
+                                .is_some_and(|max| nick.len() as u64 > max)
+                            {
+                                Err(format!(
+                                    "nickname exceeds hub limit ({} bytes)",
+                                    g.limits.max_nick_bytes.unwrap_or(0)
+                                ))
+                            } else {
+                                g.nickname = Some(nick.clone());
+                                // Keep reconnect HELLO in sync with the live nickname.
+                                if let Some((_, _, _, intent_nick)) = reconnect_intent.as_mut() {
+                                    *intent_nick = nick;
+                                }
+                                Ok(())
+                            }
+                        };
+                        let _ = reply.send(result);
                     }
                     SessionCommand::Send {
                         room,
@@ -761,19 +821,14 @@ async fn session_loop(
                             )
                             .await;
                             if let Err(e) = rejoin {
-                                warn!("rrc rejoin {room} failed: {e}");
-                                {
-                                    let mut g = inner.lock().await;
-                                    g.rooms.remove(&normalize_room(&room));
-                                }
-                                emit(
+                                handle_rejoin_failure(
+                                    &inner,
                                     &event_tx,
-                                    "rrc.error",
-                                    json!({
-                                        "message": format!("rejoin {room} failed: {e}"),
-                                        "hub_dest_hash": hub_hex,
-                                    }),
-                                );
+                                    &hub_hex,
+                                    &room,
+                                    &e,
+                                )
+                                .await;
                             }
                         }
                         if let Some(reply) = reply {
@@ -870,10 +925,34 @@ async fn session_loop(
                                             warn!("rrc PONG send failed: {e}");
                                         }
                                     }
-                                    Err(e) => warn!("rrc PONG encode failed: {e}"),
+                                    Err(e) => {
+                                        warn!("rrc PONG encode failed: {e}");
+                                    }
                                 }
                             }
                         }
+                        // True self-PARTED while room still desired (e.g. multi-link
+                        // edge case) — re-JOIN without emitting rrc.room.parted.
+                        let rejoins = {
+                            let mut g = inner.lock().await;
+                            std::mem::take(&mut g.pending_rejoins)
+                        };
+                        for (room, key) in rejoins {
+                            let rejoin = send_room_control(
+                                &mut link,
+                                &inner,
+                                Some(room.clone()),
+                                msg_type::JOIN,
+                                key,
+                            )
+                            .await;
+                            if let Err(e) = rejoin {
+                                handle_rejoin_failure(&inner, &event_tx, &hex, &room, &e).await;
+                            }
+                        }
+                    }
+                    Some(RrcLinkEvent::ResourcePayload { data }) => {
+                        dispatch_resource_payload(&inner, &event_tx, &hex, data).await;
                     }
                     Some(RrcLinkEvent::Closed { reason }) => {
                         link = None;
@@ -989,12 +1068,16 @@ async fn establish_session(
                 };
                 if env.msg_type == msg_type::WELCOME {
                     let hub_name = parse_welcome_hub_name(env.body.as_ref());
+                    let hub_version = parse_welcome_hub_version(env.body.as_ref());
                     let capabilities = parse_welcome_capabilities(env.body.as_ref());
+                    let limits = parse_welcome_limits(env.body.as_ref());
                     {
                         let mut g = inner.lock().await;
                         g.status = RrcSessionStatus::Active;
                         g.hub_name = hub_name.clone();
+                        g.hub_version = hub_version;
                         g.capabilities = capabilities.clone();
+                        g.limits = limits;
                         g.last_error = None;
                     }
                     emit(
@@ -1020,6 +1103,9 @@ async fn establish_session(
                 }
                 // Ignore other frames until WELCOME.
             }
+            Ok(Some(RrcLinkEvent::ResourcePayload { .. })) => {
+                // Greeting resources may arrive around WELCOME; ignore until Active.
+            }
             Ok(Some(RrcLinkEvent::Closed { reason })) => {
                 return Err(format!("link closed before WELCOME: {reason}"));
             }
@@ -1030,6 +1116,37 @@ async fn establish_session(
             }
         }
     }
+}
+
+/// Shared JOIN-failure cleanup for reconnect rejoin and pending_rejoins.
+/// Removes the room from desired + live maps and notifies the renderer.
+async fn handle_rejoin_failure(
+    inner: &Arc<Mutex<RrcSessionInner>>,
+    event_tx: &broadcast::Sender<String>,
+    hub_hex: &str,
+    room: &str,
+    err: &str,
+) {
+    warn!("rrc rejoin {room} failed: {err}");
+    {
+        let mut g = inner.lock().await;
+        let key = normalize_room(room);
+        g.desired_rooms.remove(&key);
+        g.rooms.remove(&key);
+    }
+    emit(
+        event_tx,
+        "rrc.room.parted",
+        json!({ "hub_dest_hash": hub_hex, "room": room }),
+    );
+    emit(
+        event_tx,
+        "rrc.error",
+        json!({
+            "hub_dest_hash": hub_hex,
+            "message": format!("rejoin {room} failed: {err}"),
+        }),
+    );
 }
 
 async fn send_room_control(
@@ -1073,6 +1190,14 @@ async fn send_envelope(
     } else {
         room.map(|r| r.trim().to_string()).filter(|r| !r.is_empty())
     };
+    if let Some(ref b) = body {
+        let max = inner.lock().await.limits.max_msg_body_bytes;
+        if let Some(max) = max {
+            if b.len() as u64 > max {
+                return Err(format!("message exceeds hub limit ({max} bytes)"));
+            }
+        }
+    }
     let env = {
         let g = inner.lock().await;
         let mut envelope = RrcEnvelope::new(
@@ -1106,25 +1231,23 @@ async fn handle_inbound(
         msg_type::JOINED => {
             let room = env.room_name.clone().unwrap_or_default();
             let key = normalize_room(&room);
-            let members = parse_joined_members(env.body.as_ref());
-            {
+            let incoming = apply_advisory_nick(
+                parse_joined_members(env.body.as_ref()),
+                env.nickname.as_deref(),
+            );
+            let members_for_emit = {
                 let mut g = inner.lock().await;
-                g.rooms.insert(
-                    key.clone(),
-                    RrcRoomState {
-                        name: room.clone(),
-                        members: members.clone(),
-                    },
-                );
+                let members = apply_joined_to_room(&mut g, &key, &room, &incoming);
                 g.remember_desired_room(&room, None);
-            }
+                members
+            };
             emit(
                 event_tx,
                 "rrc.room.joined",
                 json!({
                     "hub_dest_hash": hub_dest_hash,
                     "room": room,
-                    "members": members_json(&members),
+                    "members": members_json(&members_for_emit),
                 }),
             );
             None
@@ -1132,15 +1255,70 @@ async fn handle_inbound(
         msg_type::PARTED => {
             let room = env.room_name.clone().unwrap_or_default();
             let key = normalize_room(&room);
-            {
-                let mut g = inner.lock().await;
-                g.rooms.remove(&key);
-            }
-            emit(
-                event_tx,
-                "rrc.room.parted",
-                json!({ "hub_dest_hash": hub_dest_hash, "room": room }),
+            let parting_peers = apply_advisory_nick(
+                parse_joined_members(env.body.as_ref()),
+                env.nickname.as_deref(),
             );
+            let (about_self, auto_rejoin, peer_removed) = {
+                let mut g = inner.lock().await;
+                let our_hash = hex::encode(g.identity_hash);
+                let about_self = parted_concerns_self(
+                    env.body.as_ref(),
+                    env.nickname.as_deref(),
+                    &our_hash,
+                    g.nickname.as_deref(),
+                );
+                if about_self {
+                    g.rooms.remove(&key);
+                    let auto_rejoin = match g.desired_rooms.get(&key).cloned() {
+                        Some(join_key) => {
+                            g.queue_pending_rejoin(room.clone(), join_key);
+                            true
+                        }
+                        None => false,
+                    };
+                    (true, auto_rejoin, Vec::new())
+                } else {
+                    // Fanout: another member left — update roster only.
+                    let mut removed = parting_peers.clone();
+                    if let Some(state) = g.rooms.get_mut(&key) {
+                        if !parting_peers.is_empty() {
+                            for (h, _) in &parting_peers {
+                                state.members.retain(|(mh, _)| !mh.eq_ignore_ascii_case(h));
+                            }
+                        } else if let Some(n) = env.nickname.as_deref() {
+                            let n = n.trim();
+                            let before = state.members.len();
+                            state.members.retain(|(_, mn)| {
+                                mn.as_ref()
+                                    .map(|m| !m.trim().eq_ignore_ascii_case(n))
+                                    .unwrap_or(true)
+                            });
+                            if state.members.len() < before && removed.is_empty() {
+                                removed.push((String::new(), Some(n.to_string())));
+                            }
+                        }
+                    }
+                    (false, false, removed)
+                }
+            };
+            if about_self && !auto_rejoin {
+                emit(
+                    event_tx,
+                    "rrc.room.parted",
+                    json!({ "hub_dest_hash": hub_dest_hash, "room": room }),
+                );
+            } else if !about_self && !peer_removed.is_empty() {
+                emit(
+                    event_tx,
+                    "rrc.room.peer_parted",
+                    json!({
+                        "hub_dest_hash": hub_dest_hash,
+                        "room": room,
+                        "members": members_json(&peer_removed),
+                    }),
+                );
+            }
             None
         }
         msg_type::MSG | msg_type::NOTICE | msg_type::ACTION => {
@@ -1194,14 +1372,34 @@ async fn handle_inbound(
             );
             None
         }
+        msg_type::RESOURCE_ENVELOPE => {
+            let meta = parse_resource_envelope_body(env.body.as_ref());
+            if let Some(meta) = meta {
+                let mut g = inner.lock().await;
+                // Bound pending expectations (rrcd default max_pending=8).
+                while g.pending_resources.len() >= MAX_CONCURRENT_RRC_RESOURCES {
+                    g.pending_resources.pop_front();
+                }
+                g.pending_resources
+                    .push_back((meta, env.room_name.clone(), Instant::now()));
+            }
+            // Offer acceptance runs on the link task; payload arrives as ResourcePayload.
+            None
+        }
         msg_type::WELCOME => {
             let hub_name = parse_welcome_hub_name(env.body.as_ref());
+            let hub_version = parse_welcome_hub_version(env.body.as_ref());
             let capabilities = parse_welcome_capabilities(env.body.as_ref());
+            let limits = parse_welcome_limits(env.body.as_ref());
             let mut g = inner.lock().await;
             if let Some(name) = hub_name {
                 g.hub_name = Some(name);
             }
+            if let Some(ver) = hub_version {
+                g.hub_version = Some(ver);
+            }
             g.capabilities = capabilities;
+            g.limits = limits;
             g.status = RrcSessionStatus::Active;
             None
         }
@@ -1209,8 +1407,188 @@ async fn handle_inbound(
     }
 }
 
+/// EX1: actor JOINED with full list replaces; empty keeps; single-peer fanout merges.
+fn apply_joined_to_room(
+    g: &mut RrcSessionInner,
+    key: &str,
+    room: &str,
+    incoming: &[(String, Option<String>)],
+) -> Vec<(String, Option<String>)> {
+    if let Some(state) = g.rooms.get_mut(key) {
+        if incoming.is_empty() {
+            // Empty JOINED (include_joined_member_list=false) must not wipe roster.
+        } else if incoming.len() == 1 {
+            let (h, n) = &incoming[0];
+            if let Some(slot) = state
+                .members
+                .iter_mut()
+                .find(|(mh, _)| mh.eq_ignore_ascii_case(h))
+            {
+                if n.as_ref().is_some_and(|s| !s.trim().is_empty()) {
+                    slot.1 = n.clone();
+                }
+            } else {
+                state.members.push((h.clone(), n.clone()));
+            }
+            if !room.is_empty() {
+                state.name = room.to_string();
+            }
+        } else {
+            state.members = incoming.to_vec();
+            if !room.is_empty() {
+                state.name = room.to_string();
+            }
+        }
+        return state.members.clone();
+    }
+    let members = incoming.to_vec();
+    g.rooms.insert(
+        key.to_string(),
+        RrcRoomState {
+            name: if room.is_empty() {
+                key.to_string()
+            } else {
+                room.to_string()
+            },
+            members: members.clone(),
+        },
+    );
+    members
+}
+
+fn purge_stale_pending_resources(
+    pending: &mut VecDeque<(RrcResourceEnvelopeMeta, Option<String>, Instant)>,
+) {
+    let now = Instant::now();
+    while pending
+        .front()
+        .is_some_and(|(_, _, t)| now.duration_since(*t) > Duration::from_secs(30))
+    {
+        pending.pop_front();
+    }
+}
+
+/// Match RESOURCE_ENVELOPE metadata to a completed payload by SHA256 (not FIFO).
+fn take_pending_resource_for_digest(
+    pending: &mut VecDeque<(RrcResourceEnvelopeMeta, Option<String>, Instant)>,
+    digest: [u8; 32],
+) -> Option<(RrcResourceEnvelopeMeta, Option<String>)> {
+    purge_stale_pending_resources(pending);
+    if let Some(idx) = pending
+        .iter()
+        .position(|(meta, _, _)| meta.sha256 == Some(digest))
+    {
+        let (meta, room, _) = pending.remove(idx)?;
+        return Some((meta, room));
+    }
+    None
+}
+
+async fn dispatch_resource_payload(
+    inner: &Arc<Mutex<RrcSessionInner>>,
+    event_tx: &broadcast::Sender<String>,
+    hub_dest_hash: &str,
+    data: Vec<u8>,
+) {
+    let digest: [u8; 32] = Sha256::digest(&data).into();
+    let expectation = {
+        let mut g = inner.lock().await;
+        take_pending_resource_for_digest(&mut g.pending_resources, digest)
+    };
+    let Some((meta, room)) = expectation else {
+        debug!(
+            "rrc resource payload with no matching envelope hub={} bytes={}",
+            hub_dest_hash,
+            data.len()
+        );
+        return;
+    };
+    if let Some(expected) = meta.sha256 {
+        if expected != digest {
+            warn!(
+                "rrc resource sha256 mismatch hub={} kind={} size={}",
+                hub_dest_hash,
+                meta.kind,
+                data.len()
+            );
+            return;
+        }
+    }
+    if meta.kind == "blob" {
+        debug!(
+            "rrc resource blob ignored hub={} bytes={}",
+            hub_dest_hash,
+            data.len()
+        );
+        return;
+    }
+    if meta.kind != "notice" && meta.kind != "motd" {
+        debug!(
+            "rrc resource unknown kind={} hub={}",
+            meta.kind, hub_dest_hash
+        );
+        return;
+    }
+    let room = room.unwrap_or_default();
+    let Ok(text) = String::from_utf8(data) else {
+        warn!("rrc resource payload is not utf-8 hub={hub_dest_hash}");
+        return;
+    };
+    let text = text.trim();
+    if text.is_empty() {
+        return;
+    }
+    emit(
+        event_tx,
+        "rrc.message",
+        json!({
+            "id": format!("rrc-res-{}", uuid::Uuid::new_v4().simple()),
+            "room": room,
+            "kind": "notice",
+            "body": text,
+            "sender_hash": hub_dest_hash,
+            "nickname": serde_json::Value::Null,
+            "timestamp": std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0),
+            "hub_dest_hash": hub_dest_hash,
+            "dst_hash": serde_json::Value::Null,
+        }),
+    );
+}
+
 fn normalize_room(room: &str) -> String {
     room.trim().to_lowercase()
+}
+
+/// Decide whether an inbound PARTED means *we* left the room.
+///
+/// Stock rrcd:
+/// - Actor-facing PART ack: no `K_NICK`; optional body `[our_hash]`.
+/// - Member fanout when someone else leaves: `K_NICK` = their nick; optional
+///   body `[their_hash]`.
+///
+/// Treating fanout as self-leave made busy rooms look like constant hub kicks.
+fn parted_concerns_self(
+    body: Option<&ciborium::value::Value>,
+    nick: Option<&str>,
+    our_hash_hex: &str,
+    our_nick: Option<&str>,
+) -> bool {
+    let peers = parse_joined_members(body);
+    if !peers.is_empty() {
+        return peers
+            .iter()
+            .any(|(h, _)| h.eq_ignore_ascii_case(our_hash_hex));
+    }
+    match nick.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(n) => our_nick
+            .map(|o| o.trim().eq_ignore_ascii_case(n))
+            .unwrap_or(false),
+        // No body hashes and no nick → actor-facing self PARTED.
+        None => true,
+    }
 }
 
 async fn resolve_reconnect_nickname(
@@ -1283,5 +1661,142 @@ mod tests {
     #[test]
     fn normalize_room_trims_and_lowercases() {
         assert_eq!(normalize_room("  #General "), "#general");
+    }
+
+    #[test]
+    fn involuntary_parted_queues_rejoin_when_desired() {
+        let mut inner = RrcSessionInner::new([0u8; 16]);
+        inner.remember_desired_room("general", None);
+        inner.rooms.insert(
+            "general".into(),
+            RrcRoomState {
+                name: "general".into(),
+                members: vec![],
+            },
+        );
+        let key = normalize_room("general");
+        inner.rooms.remove(&key);
+        match inner.desired_rooms.get(&key) {
+            Some(join_key) => {
+                inner.queue_pending_rejoin("general".into(), join_key.clone());
+            }
+            None => panic!("expected desired room"),
+        }
+        assert_eq!(inner.pending_rejoins.len(), 1);
+        assert!(inner.desired_rooms.contains_key("general"));
+        // Duplicate involuntary PART (case / whitespace variants) must not queue twice.
+        inner.queue_pending_rejoin("  General ".into(), None);
+        assert_eq!(inner.pending_rejoins.len(), 1);
+        // Voluntary PART removes desired first — no rejoin queue.
+        inner.desired_rooms.remove("general");
+        inner.pending_rejoins.clear();
+        assert!(!inner.desired_rooms.contains_key("general"));
+    }
+
+    #[test]
+    fn parted_fanout_other_nick_is_not_self() {
+        assert!(!parted_concerns_self(
+            None,
+            Some("pmow"),
+            "128eb883f0c94439bdb2069947319022",
+            Some("valerius"),
+        ));
+    }
+
+    #[test]
+    fn parted_actor_ack_without_nick_is_self() {
+        assert!(parted_concerns_self(
+            None,
+            None,
+            "128eb883f0c94439bdb2069947319022",
+            Some("me"),
+        ));
+    }
+
+    #[test]
+    fn parted_matching_nick_is_self() {
+        assert!(parted_concerns_self(
+            None,
+            Some("Me"),
+            "128eb883f0c94439bdb2069947319022",
+            Some("me"),
+        ));
+    }
+
+    #[test]
+    fn parted_body_hash_distinguishes_self() {
+        use ciborium::value::Value;
+        let our = hex::decode("128eb883f0c94439bdb2069947319022").unwrap();
+        let other = hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap();
+        let self_body = Value::Array(vec![Value::Bytes(our)]);
+        let other_body = Value::Array(vec![Value::Bytes(other)]);
+        assert!(parted_concerns_self(
+            Some(&self_body),
+            Some("ignored-when-body"),
+            "128eb883f0c94439bdb2069947319022",
+            Some("me"),
+        ));
+        assert!(!parted_concerns_self(
+            Some(&other_body),
+            Some("pmow"),
+            "128eb883f0c94439bdb2069947319022",
+            Some("me"),
+        ));
+    }
+
+    #[test]
+    fn connect_reset_clears_hub_metadata() {
+        let mut inner = RrcSessionInner::new([0u8; 16]);
+        inner.hub_version = Some("0.3.2".into());
+        inner.limits.max_nick_bytes = Some(32);
+        inner.pending_resources.push_back((
+            RrcResourceEnvelopeMeta {
+                id: None,
+                kind: "notice".into(),
+                size: 1,
+                sha256: Some([1u8; 32]),
+                encoding: "utf-8".into(),
+            },
+            Some("general".into()),
+            Instant::now(),
+        ));
+        reset_hub_metadata(&mut inner);
+        assert!(inner.hub_version.is_none());
+        assert!(inner.limits.max_nick_bytes.is_none());
+        assert!(inner.pending_resources.is_empty());
+    }
+
+    #[test]
+    fn take_pending_resource_matches_by_sha256_not_fifo() {
+        let mut pending = VecDeque::new();
+        let hash_a = [0xAAu8; 32];
+        let hash_b = [0xBBu8; 32];
+        pending.push_back((
+            RrcResourceEnvelopeMeta {
+                id: None,
+                kind: "notice".into(),
+                size: 1,
+                sha256: Some(hash_a),
+                encoding: "utf-8".into(),
+            },
+            Some("room-a".into()),
+            Instant::now(),
+        ));
+        pending.push_back((
+            RrcResourceEnvelopeMeta {
+                id: None,
+                kind: "notice".into(),
+                size: 2,
+                sha256: Some(hash_b),
+                encoding: "utf-8".into(),
+            },
+            Some("room-b".into()),
+            Instant::now(),
+        ));
+        let second = take_pending_resource_for_digest(&mut pending, hash_b).expect("match b");
+        assert_eq!(second.1.as_deref(), Some("room-b"));
+        assert_eq!(pending.len(), 1);
+        assert!(take_pending_resource_for_digest(&mut pending, [0xCCu8; 32]).is_none());
+        assert_eq!(pending.len(), 1);
     }
 }

@@ -1,7 +1,21 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
 import { formatRelativeOrIsoDate } from '@/renderer/lib/formatRelativeOrIsoDate';
+import {
+  startPropagationSyncSingleTarget,
+  startPropagationSyncWithTarget,
+} from '@/renderer/lib/reticulum/reticulumPropagationAutoApply';
+import {
+  configuredPropagationDestinationHashes,
+  hasPropagationCascadeCandidate,
+  isPropagationHashAutoBlacklisted,
+  isReticulumPropagationMode,
+  propagationAutoBlacklistSet,
+  resolvePropagationSyncTargetId,
+  type ReticulumPropagationMode,
+} from '@/renderer/lib/reticulum/reticulumPropagationMode';
 import { RETICULUM_PROPAGATION_REFRESH_MIN_VISIBLE_MS } from '@/renderer/lib/reticulum/reticulumPropagationSync';
 import {
   type DiscoveredPropagationRow,
@@ -13,7 +27,9 @@ import {
 } from '@/shared/reticulumPropagationAutoSync';
 
 import { ConfirmModal } from './ConfirmModal';
+import { ReticulumPropagationEstablishRecoveryCallout } from './ReticulumPropagationEstablishRecoveryCallout';
 import {
+  getReticulumPropagationSyncTargetName,
   ReticulumPropagationLastRefreshed,
   ReticulumPropagationRefreshButton,
   ReticulumPropagationSyncProgress,
@@ -24,6 +40,7 @@ const PROPAGATION_NODE_STATUS_KEYS = new Set([
   'active',
   'idle',
   'known',
+  'loading',
   'pending',
   'unknown',
   'online',
@@ -39,17 +56,38 @@ function formatPropagationNodeStatus(status: string, t: (key: string) => string)
 interface DiscoveredPropagationListProps {
   discovered: DiscoveredPropagationRow[];
   configuredHashes: ReadonlySet<string>;
+  autoBlacklist: ReadonlySet<string>;
   onAdd: (destinationHash: string, prefer?: boolean) => void;
+  onIgnoreForAuto: (destinationHash: string) => void;
+  onAllowForAuto: (destinationHash: string) => void;
+  adding?: boolean;
+  ignoreBusy?: boolean;
 }
 
 function DiscoveredPropagationList({
   discovered,
   configuredHashes,
+  autoBlacklist,
   onAdd,
+  onIgnoreForAuto,
+  onAllowForAuto,
+  adding = false,
+  ignoreBusy = false,
 }: Readonly<DiscoveredPropagationListProps>) {
   const { t } = useTranslation();
   const visibleDiscovered = discovered.filter(
     (d) => !configuredHashes.has(d.destination_hash.toLowerCase()),
+  );
+  const activeRows = visibleDiscovered.filter(
+    (d) => !autoBlacklist.has(d.destination_hash.toLowerCase()),
+  );
+  const ignoredFromDiscovered = visibleDiscovered.filter((d) =>
+    autoBlacklist.has(d.destination_hash.toLowerCase()),
+  );
+  const ignoredOrphanHashes = [...autoBlacklist].filter(
+    (hash) =>
+      !configuredHashes.has(hash) &&
+      !visibleDiscovered.some((d) => d.destination_hash.toLowerCase() === hash),
   );
 
   return (
@@ -57,11 +95,11 @@ function DiscoveredPropagationList({
       <h4 className="text-xs font-medium text-gray-300">
         {t('reticulumPropagation.discoveredTitle')}
       </h4>
-      {visibleDiscovered.length === 0 ? (
+      {activeRows.length === 0 ? (
         <p className="text-muted mt-1 text-xs">{t('reticulumPropagation.discoveredEmpty')}</p>
       ) : (
         <ul className="mt-2 space-y-2 text-sm">
-          {visibleDiscovered.map((row) => {
+          {activeRows.map((row) => {
             const label = row.display_name?.trim() || row.destination_hash.slice(0, 8);
             return (
               <li
@@ -92,7 +130,8 @@ function DiscoveredPropagationList({
                 <div className="flex flex-wrap gap-1">
                   <button
                     type="button"
-                    className="rounded border border-amber-600 px-2 py-0.5 text-xs text-amber-300"
+                    disabled={adding}
+                    className="rounded border border-amber-600 px-2 py-0.5 text-xs text-amber-300 disabled:opacity-40"
                     aria-label={t('reticulumPropagation.discoveredAddAria', { name: label })}
                     onClick={() => {
                       onAdd(row.destination_hash);
@@ -102,7 +141,8 @@ function DiscoveredPropagationList({
                   </button>
                   <button
                     type="button"
-                    className="rounded border border-amber-500 bg-amber-900/30 px-2 py-0.5 text-xs text-amber-200"
+                    disabled={adding}
+                    className="rounded border border-amber-500 bg-amber-900/30 px-2 py-0.5 text-xs text-amber-200 disabled:opacity-40"
                     aria-label={t('reticulumPropagation.discoveredAddPreferAria', {
                       name: label,
                     })}
@@ -112,12 +152,93 @@ function DiscoveredPropagationList({
                   >
                     {t('reticulumPropagation.discoveredAddPrefer')}
                   </button>
+                  <button
+                    type="button"
+                    disabled={ignoreBusy}
+                    className="rounded border border-gray-600 px-2 py-0.5 text-xs text-gray-300 disabled:opacity-40"
+                    aria-label={t('reticulumPropagation.ignoreForAutoAria', { name: label })}
+                    onClick={() => {
+                      onIgnoreForAuto(row.destination_hash);
+                    }}
+                  >
+                    {t('reticulumPropagation.ignoreForAuto')}
+                  </button>
                 </div>
               </li>
             );
           })}
         </ul>
       )}
+      {ignoredFromDiscovered.length > 0 || ignoredOrphanHashes.length > 0 ? (
+        <div className="mt-3">
+          <h5 className="text-muted text-[11px] font-medium tracking-wide uppercase">
+            {t('reticulumPropagation.ignoredForAutoTitle')}
+          </h5>
+          <p className="text-muted mt-0.5 text-[11px]">
+            {t('reticulumPropagation.ignoredForAutoHint')}
+          </p>
+          <ul className="mt-2 space-y-2 text-sm">
+            {ignoredFromDiscovered.map((row) => {
+              const label = row.display_name?.trim() || row.destination_hash.slice(0, 8);
+              return (
+                <li
+                  key={row.destination_hash}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded border border-gray-800/80 bg-slate-950/40 px-2 py-1.5 opacity-80"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-gray-400">{label}</div>
+                    <div className="text-muted font-mono text-[11px]">
+                      {t('reticulumPropagation.discoveredHash', {
+                        hash: row.destination_hash.slice(0, 12),
+                      })}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={ignoreBusy}
+                    className="rounded border border-gray-600 px-2 py-0.5 text-xs text-gray-300 disabled:opacity-40"
+                    aria-label={t('reticulumPropagation.allowForAutoAria', { name: label })}
+                    onClick={() => {
+                      onAllowForAuto(row.destination_hash);
+                    }}
+                  >
+                    {t('reticulumPropagation.allowForAuto')}
+                  </button>
+                </li>
+              );
+            })}
+            {ignoredOrphanHashes.map((hash) => {
+              const label = hash.slice(0, 8);
+              return (
+                <li
+                  key={hash}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded border border-gray-800/80 bg-slate-950/40 px-2 py-1.5 opacity-80"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-gray-400">{label}</div>
+                    <div className="text-muted font-mono text-[11px]">
+                      {t('reticulumPropagation.discoveredHash', {
+                        hash: hash.slice(0, 12),
+                      })}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={ignoreBusy}
+                    className="rounded border border-gray-600 px-2 py-0.5 text-xs text-gray-300 disabled:opacity-40"
+                    aria-label={t('reticulumPropagation.allowForAutoAria', { name: label })}
+                    onClick={() => {
+                      onAllowForAuto(hash);
+                    }}
+                  >
+                    {t('reticulumPropagation.allowForAuto')}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -125,40 +246,151 @@ function DiscoveredPropagationList({
 export interface ReticulumPropagationSectionProps {
   onRefresh?: () => void;
   embedded?: boolean;
+  /** Navigate to Connection → Interfaces (dual-TCP recovery). */
+  onOpenInterfaces?: () => void;
 }
 
 export default function ReticulumPropagationSection({
   onRefresh,
   embedded = false,
+  onOpenInterfaces,
 }: ReticulumPropagationSectionProps) {
   const { t } = useTranslation();
   const { addToast } = useToast();
   const nodes = useReticulumPropagationStore((s) => s.nodes);
   const discovered = useReticulumPropagationStore((s) => s.discovered);
+  const autoBlacklistRows = useReticulumPropagationStore((s) => s.autoBlacklist);
   const preferredId = useReticulumPropagationStore((s) => s.preferredId);
   const autoSyncIntervalSec = useReticulumPropagationStore((s) => s.autoSyncIntervalSec);
   const lastPropagationSyncAt = useReticulumPropagationStore((s) => s.lastPropagationSyncAt);
   const sync = useReticulumPropagationStore((s) => s.sync);
   const lastSyncError = useReticulumPropagationStore((s) => s.lastSyncError);
+  const syncTargetId = useReticulumPropagationStore((s) => s.syncTargetId);
+  const chatNoticeDismissed = useReticulumPropagationStore((s) => s.chatNoticeDismissed);
+  const setChatNoticeDismissed = useReticulumPropagationStore((s) => s.setChatNoticeDismissed);
   const refreshFromSidecar = useReticulumPropagationStore((s) => s.refreshFromSidecar);
   const setPreferredOnSidecar = useReticulumPropagationStore((s) => s.setPreferredOnSidecar);
   const setAutoSyncIntervalOnSidecar = useReticulumPropagationStore(
     (s) => s.setAutoSyncIntervalOnSidecar,
   );
-  const startSync = useReticulumPropagationStore((s) => s.startSync);
+  const setModeOnSidecar = useReticulumPropagationStore((s) => s.setModeOnSidecar);
+  const mode = useReticulumPropagationStore((s) => s.propagationMode);
+  const setPropagationMode = useReticulumPropagationStore((s) => s.setPropagationMode);
   const addPropagationNode = useReticulumPropagationStore((s) => s.addPropagationNode);
   const addFromDiscovered = useReticulumPropagationStore((s) => s.addFromDiscovered);
   const removePropagationNode = useReticulumPropagationStore((s) => s.removePropagationNode);
   const renamePropagationNode = useReticulumPropagationStore((s) => s.renamePropagationNode);
+  const addAutoBlacklist = useReticulumPropagationStore((s) => s.addAutoBlacklist);
+  const removeAutoBlacklist = useReticulumPropagationStore((s) => s.removeAutoBlacklist);
+  const autoBlacklist = propagationAutoBlacklistSet(autoBlacklistRows);
   const [addHash, setAddHash] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
+  const [pendingEnableLocal, setPendingEnableLocal] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [syncStarting, setSyncStarting] = useState(false);
+  const [ignoreBusy, setIgnoreBusy] = useState(false);
+
+  const handleSyncNow = (targetId: string, opts?: { singleTargetOnly?: boolean }) => {
+    if (syncStarting || sync.active) return;
+    setSyncStarting(true);
+    const run = opts?.singleTargetOnly
+      ? startPropagationSyncSingleTarget(targetId)
+      : startPropagationSyncWithTarget(targetId);
+    void run
+      .then((ok) => {
+        setSyncStarting(false);
+        const name = getReticulumPropagationSyncTargetName(t('reticulumPropagation.localHostName'));
+        if (!ok) {
+          const errKey =
+            useReticulumPropagationStore.getState().lastSyncError ??
+            'reticulumPropagation.syncFailed';
+          addToast(
+            name
+              ? t('reticulumPropagation.syncErrorWithTarget', { name, message: t(errKey) })
+              : t(errKey),
+            'error',
+          );
+          return;
+        }
+        // The cascade waits for the attempt to settle, so success names whichever node
+        // actually completed — a discovered/configured remote or the local inbox.
+        addToast(
+          name
+            ? t('reticulumPropagation.syncLocalSettledFor', { name })
+            : t('reticulumPropagation.syncLocalSettled'),
+          'success',
+        );
+      })
+      .catch((err: unknown) => {
+        setSyncStarting(false);
+        console.warn('[ReticulumPropagationSection] sync cascade rejected', err);
+        addToast(t('reticulumPropagation.syncFailed'), 'error');
+      });
+  };
 
   useEffect(() => {
     void refreshFromSidecar();
   }, [refreshFromSidecar]);
+
+  const handleModeChange = (next: ReticulumPropagationMode) => {
+    if (!isReticulumPropagationMode(next)) return;
+    setPropagationMode(next);
+    // Sidecar gates its outbound Direct→PN cascade on the same mode.
+    void setModeOnSidecar(next)
+      .then((ok) => {
+        if (!ok) {
+          console.warn('[ReticulumPropagationSection] setModeOnSidecar failed', next);
+        }
+      })
+      .catch((err: unknown) => {
+        console.warn('[ReticulumPropagationSection] setModeOnSidecar rejected', err);
+      });
+    if (next !== 'auto') return;
+    // Auto: kick discovered hash sync → configured → local (no Add, no Preferred).
+    if (!hasPropagationCascadeCandidate('auto', nodes, discovered, autoBlacklist)) return;
+    const target = resolvePropagationSyncTargetId(
+      'auto',
+      nodes,
+      preferredId,
+      discovered,
+      autoBlacklist,
+    );
+    if (target == null) return;
+    handleSyncNow(target);
+  };
+
+  const handleIgnoreForAuto = (destinationHash: string) => {
+    if (ignoreBusy) return;
+    setIgnoreBusy(true);
+    void addAutoBlacklist(destinationHash)
+      .then((ok) => {
+        setIgnoreBusy(false);
+        if (!ok) addToast(t('reticulumPropagation.ignoreForAutoFailed'), 'error');
+      })
+      .catch((err: unknown) => {
+        setIgnoreBusy(false);
+        console.warn('[ReticulumPropagationSection] ignoreForAuto rejected', err);
+        addToast(t('reticulumPropagation.ignoreForAutoFailed'), 'error');
+      });
+  };
+
+  const handleAllowForAuto = (destinationHash: string) => {
+    if (ignoreBusy) return;
+    setIgnoreBusy(true);
+    void removeAutoBlacklist(destinationHash)
+      .then((ok) => {
+        setIgnoreBusy(false);
+        if (!ok) addToast(t('reticulumPropagation.allowForAutoFailed'), 'error');
+      })
+      .catch((err: unknown) => {
+        setIgnoreBusy(false);
+        console.warn('[ReticulumPropagationSection] allowForAuto rejected', err);
+        addToast(t('reticulumPropagation.allowForAutoFailed'), 'error');
+      });
+  };
 
   const handleRefresh = async () => {
     if (refreshing) return;
@@ -180,16 +412,49 @@ export default function ReticulumPropagationSection({
   };
 
   const handleAddFromDiscovered = (destinationHash: string, prefer = false) => {
-    void addFromDiscovered(destinationHash, prefer ? { prefer: true } : undefined).then((ok) => {
-      if (!ok) addToast(t('reticulumPropagation.addFailed'), 'error');
-    });
+    if (adding) return;
+    setAdding(true);
+    void addFromDiscovered(destinationHash, prefer ? { prefer: true } : undefined)
+      .then((ok) => {
+        setAdding(false);
+        if (!ok) {
+          const errKey =
+            useReticulumPropagationStore.getState().lastAddError ??
+            'reticulumPropagation.addFailed';
+          addToast(t(errKey), 'error');
+        }
+      })
+      .catch((err: unknown) => {
+        setAdding(false);
+        console.warn('[ReticulumPropagationSection] addFromDiscovered rejected', err);
+        addToast(t('reticulumPropagation.addFailed'), 'error');
+      });
   };
 
-  const configuredHashes = new Set(
-    nodes
-      .map((n) => n.destination_hash?.toLowerCase())
-      .filter((h): h is string => typeof h === 'string' && h.length > 0),
+  const configuredHashes = configuredPropagationDestinationHashes(nodes);
+
+  const modeHelpKey =
+    mode === 'auto'
+      ? 'reticulumPropagation.modeHelpAuto'
+      : mode === 'manual'
+        ? 'reticulumPropagation.modeHelpManual'
+        : 'reticulumPropagation.modeHelpOff';
+
+  const bottomSyncTargetId = resolvePropagationSyncTargetId(
+    mode,
+    nodes,
+    preferredId,
+    discovered,
+    autoBlacklist,
   );
+  // Manual resolves Preferred, else a picked remote, else local settle; Off disables Sync.
+  // Auto Sync (bottom or per-row) runs the full cascade — ignore firstTargetId.
+  const bottomSyncDisabled =
+    sync.active ||
+    syncStarting ||
+    mode === 'off' ||
+    (mode === 'manual' && !bottomSyncTargetId) ||
+    (mode === 'auto' && !hasPropagationCascadeCandidate('auto', nodes, discovered, autoBlacklist));
 
   const body = (
     <>
@@ -213,6 +478,21 @@ export default function ReticulumPropagationSection({
           }}
         />
       )}
+      <div className="space-y-1">
+        <label className="flex items-center gap-2 text-xs text-gray-300">
+          <input
+            type="checkbox"
+            checked={!chatNoticeDismissed}
+            onChange={(e) => {
+              setChatNoticeDismissed(!e.target.checked);
+            }}
+            className="accent-brand-green"
+            aria-label={t('reticulumPropagation.showChatNoticeAria')}
+          />
+          {t('reticulumPropagation.showChatNotice')}
+        </label>
+        <p className="text-muted text-xs">{t('reticulumPropagation.showChatNoticeHint')}</p>
+      </div>
       <ReticulumPropagationLastRefreshed />
       <ReticulumPropagationSyncProgress
         cancelLabel={t('reticulumPropagation.cancelSync')}
@@ -224,7 +504,13 @@ export default function ReticulumPropagationSection({
       >
         {nodes.map((node) => {
           const isLocal = node.id === 'local-prop';
+          const isLoading = node.status === 'loading';
           const isRenaming = renamingId === node.id;
+          const destHash = node.destination_hash ?? null;
+          const ignoredForAuto =
+            !isLocal && destHash != null
+              ? isPropagationHashAutoBlacklisted(destHash, autoBlacklist)
+              : false;
           return (
             <li
               key={node.id}
@@ -249,14 +535,21 @@ export default function ReticulumPropagationSection({
                       disabled={!renameDraft.trim()}
                       aria-label={t('reticulumPropagation.renameSaveAria')}
                       onClick={() => {
-                        void renamePropagationNode(node.id, renameDraft.trim()).then((ok) => {
-                          if (ok) {
-                            setRenamingId(null);
-                            setRenameDraft('');
-                          } else {
+                        void renamePropagationNode(node.id, renameDraft.trim())
+                          .then((ok) => {
+                            if (ok) {
+                              setRenamingId(null);
+                              setRenameDraft('');
+                            } else {
+                              addToast(t('reticulumPropagation.renameFailed'), 'error');
+                            }
+                          })
+                          .catch((e: unknown) => {
+                            console.warn(
+                              '[ReticulumPropagationSection] rename ' + errLikeToLogString(e),
+                            );
                             addToast(t('reticulumPropagation.renameFailed'), 'error');
-                          }
-                        });
+                          });
                       }}
                     >
                       {t('reticulumPropagation.renameSave')}
@@ -275,11 +568,11 @@ export default function ReticulumPropagationSection({
                   </label>
                 ) : (
                   <>
-                    {isLocal ? t('reticulumPropagation.localInboxName') : node.name} (
+                    {isLocal ? t('reticulumPropagation.localHostName') : node.name} (
                     {formatPropagationNodeStatus(node.status, t)})
                     {isLocal && node.message_count != null ? (
                       <span className="text-muted ml-1 text-xs">
-                        {t('reticulumPropagation.localInboxStats', {
+                        {t('reticulumPropagation.localHostStats', {
                           count: node.message_count,
                           bytes: node.storage_bytes ?? 0,
                         })}
@@ -296,7 +589,7 @@ export default function ReticulumPropagationSection({
               <span className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  className="text-xs text-amber-400 hover:underline"
+                  className="text-xs text-amber-400 hover:underline disabled:opacity-40"
                   onClick={() => {
                     void setPreferredOnSidecar(node.id)
                       .then((ok) => {
@@ -306,7 +599,8 @@ export default function ReticulumPropagationSection({
                           addToast(t('reticulumPropagation.setPreferredFailed'), 'error');
                         }
                       })
-                      .catch(() => {
+                      .catch((err: unknown) => {
+                        console.warn('[ReticulumPropagationSection] setPreferred rejected', err);
                         addToast(t('reticulumPropagation.setPreferredFailed'), 'error');
                       });
                   }}
@@ -317,25 +611,46 @@ export default function ReticulumPropagationSection({
                 <button
                   type="button"
                   className="text-xs text-amber-400 hover:underline disabled:opacity-40"
-                  disabled={sync.active}
+                  // Local inbox cannot settle until its messagestore finishes loading.
+                  disabled={sync.active || syncStarting || mode === 'off' || isLoading}
                   onClick={() => {
-                    void startSync(node.id);
+                    handleSyncNow(node.id);
                   }}
                   aria-label={t('reticulumPropagation.syncNowFor', { name: node.name })}
                 >
-                  {t('reticulumPropagation.syncNow')}
+                  {syncStarting
+                    ? t('reticulumPropagation.syncStarting')
+                    : t('reticulumPropagation.syncNow')}
                 </button>
                 <button
                   type="button"
                   className="text-xs text-amber-400 hover:underline"
-                  onClick={() =>
+                  onClick={() => {
+                    if (isLocal && !node.enabled) {
+                      setPendingEnableLocal(true);
+                      return;
+                    }
                     void window.electronAPI.reticulum
                       .proxyPost(
                         `/api/v1/propagation/${node.id}/${node.enabled ? 'disable' : 'enable'}`,
                         {},
                       )
                       .then(handleRefresh)
-                  }
+                      .catch((err: unknown) => {
+                        console.warn(
+                          '[ReticulumPropagationSection] enable/disable proxyPost rejected',
+                          err,
+                        );
+                        addToast(
+                          t(
+                            node.enabled
+                              ? 'reticulumPropagation.disableFailed'
+                              : 'reticulumPropagation.enableFailed',
+                          ),
+                          'error',
+                        );
+                      });
+                  }}
                   aria-label={
                     node.enabled
                       ? t('reticulumPropagation.disableAria', { name: node.name })
@@ -346,6 +661,29 @@ export default function ReticulumPropagationSection({
                     ? t('connectionPanel.reticulumPropagation.disable')
                     : t('connectionPanel.reticulumPropagation.enable')}
                 </button>
+                {!isLocal && destHash ? (
+                  <button
+                    type="button"
+                    className="text-xs text-gray-400 hover:underline disabled:opacity-40"
+                    disabled={ignoreBusy}
+                    onClick={() => {
+                      if (ignoredForAuto) handleAllowForAuto(destHash);
+                      else handleIgnoreForAuto(destHash);
+                    }}
+                    aria-label={t(
+                      ignoredForAuto
+                        ? 'reticulumPropagation.allowForAutoAria'
+                        : 'reticulumPropagation.ignoreForAutoAria',
+                      { name: node.name },
+                    )}
+                  >
+                    {t(
+                      ignoredForAuto
+                        ? 'reticulumPropagation.allowForAuto'
+                        : 'reticulumPropagation.ignoreForAuto',
+                    )}
+                  </button>
+                ) : null}
                 {!isLocal && !isRenaming ? (
                   <>
                     <button
@@ -377,6 +715,35 @@ export default function ReticulumPropagationSection({
         })}
       </ul>
       <div className="mt-3 space-y-1">
+        <label htmlFor="reticulum-propagation-mode" className="text-muted text-xs">
+          {t('reticulumPropagation.modeLabel')}
+        </label>
+        <select
+          id="reticulum-propagation-mode"
+          value={mode}
+          disabled={sync.active}
+          onChange={(e) => {
+            handleModeChange(e.target.value as ReticulumPropagationMode);
+          }}
+          className="bg-deep-black focus:border-brand-green w-full max-w-md rounded border border-gray-600 px-2 py-1.5 text-sm text-gray-200 focus:outline-none disabled:opacity-40"
+          aria-label={t('reticulumPropagation.modeAria')}
+          aria-describedby="reticulum-propagation-mode-help"
+        >
+          <option value="off" title={t('reticulumPropagation.modeHelpOff')}>
+            {t('reticulumPropagation.modeOff')}
+          </option>
+          <option value="auto" title={t('reticulumPropagation.modeHelpAuto')}>
+            {t('reticulumPropagation.modeAuto')}
+          </option>
+          <option value="manual" title={t('reticulumPropagation.modeHelpManual')}>
+            {t('reticulumPropagation.modeManual')}
+          </option>
+        </select>
+        <p id="reticulum-propagation-mode-help" className="text-muted text-xs">
+          {t(modeHelpKey)}
+        </p>
+      </div>
+      <div className="mt-3 space-y-1">
         <label htmlFor="reticulum-propagation-auto-sync" className="text-muted text-xs">
           {t('reticulumPropagation.autoSyncIntervalLabel')}
         </label>
@@ -386,7 +753,21 @@ export default function ReticulumPropagationSection({
           disabled={sync.active}
           onChange={(e) => {
             const sec = Number(e.target.value);
-            void setAutoSyncIntervalOnSidecar(sec);
+            void setAutoSyncIntervalOnSidecar(sec)
+              .then((ok) => {
+                if (!ok) {
+                  console.warn(
+                    '[ReticulumPropagationSection] setAutoSyncIntervalOnSidecar failed',
+                    sec,
+                  );
+                }
+              })
+              .catch((err: unknown) => {
+                console.warn(
+                  '[ReticulumPropagationSection] setAutoSyncIntervalOnSidecar rejected',
+                  err,
+                );
+              });
           }}
           className="bg-deep-black focus:border-brand-green w-full max-w-md rounded border border-gray-600 px-2 py-1.5 text-sm text-gray-200 focus:outline-none disabled:opacity-40"
           aria-label={t('reticulumPropagation.autoSyncIntervalAria')}
@@ -408,27 +789,48 @@ export default function ReticulumPropagationSection({
       <div className="mt-3 flex flex-wrap gap-2">
         <button
           type="button"
-          disabled={!preferredId || sync.active}
+          disabled={bottomSyncDisabled}
           className="rounded border border-amber-600 px-2 py-1 text-xs text-amber-300 disabled:opacity-40"
           aria-label={t('reticulumPropagation.syncNowPreferredAria')}
+          aria-busy={syncStarting}
           onClick={() => {
-            void startSync();
+            handleSyncNow(bottomSyncTargetId ?? 'local-prop');
           }}
         >
-          {t('reticulumPropagation.syncNow')}
+          {syncStarting
+            ? t('reticulumPropagation.syncStarting')
+            : t('reticulumPropagation.syncNow')}
         </button>
       </div>
-      <p className="text-muted mt-1 text-xs">{t('reticulumPropagation.localInboxHint')}</p>
+      <p className="text-muted mt-1 text-xs">{t('reticulumPropagation.localHostHint')}</p>
       <p className="text-muted mt-1 text-xs">{t('reticulumPropagation.syncPathHint')}</p>
-      {lastSyncError === 'reticulumPropagation.syncEstablishNoLinkProof' ? (
-        <output className="mt-1 block text-xs text-amber-300/90">
-          {t('reticulumPropagation.syncEstablishNoLinkProof')}
+      <ReticulumPropagationEstablishRecoveryCallout
+        lastSyncError={lastSyncError}
+        retryTargetId={
+          syncTargetId && syncTargetId !== 'local-prop'
+            ? syncTargetId
+            : (preferredId ?? bottomSyncTargetId)
+        }
+        syncBusy={sync.active || syncStarting}
+        onRetrySync={(targetId) => {
+          handleSyncNow(targetId, { singleTargetOnly: true });
+        }}
+        onOpenInterfaces={onOpenInterfaces}
+      />
+      {adding ? (
+        <output className="text-muted mt-1 block text-xs">
+          {t('reticulumPropagation.addProbing')}
         </output>
       ) : null}
       <DiscoveredPropagationList
         discovered={discovered}
         configuredHashes={configuredHashes}
+        autoBlacklist={autoBlacklist}
         onAdd={handleAddFromDiscovered}
+        onIgnoreForAuto={handleIgnoreForAuto}
+        onAllowForAuto={handleAllowForAuto}
+        adding={adding}
+        ignoreBusy={ignoreBusy}
       />
       <div className="mt-3 flex flex-wrap items-end gap-2">
         <label className="flex min-w-[12rem] flex-1 flex-col gap-1 text-xs">
@@ -442,24 +844,37 @@ export default function ReticulumPropagationSection({
             placeholder={t('reticulumPropagation.addNodePlaceholder')}
             className="rounded border border-gray-700 bg-slate-900 px-2 py-1 text-sm text-gray-200"
             aria-label={t('reticulumPropagation.addNodeLabel')}
+            disabled={adding}
           />
         </label>
         <button
           type="button"
-          disabled={!addHash.trim()}
+          disabled={!addHash.trim() || adding}
           className="rounded border border-amber-600 px-2 py-1 text-xs text-amber-300 disabled:opacity-40"
           onClick={() => {
-            void addPropagationNode(addHash.trim()).then((ok) => {
-              if (ok) {
-                setAddHash('');
-                void handleRefresh();
-              } else {
+            if (adding) return;
+            setAdding(true);
+            void addPropagationNode(addHash.trim())
+              .then((ok) => {
+                setAdding(false);
+                if (ok) {
+                  setAddHash('');
+                  void handleRefresh();
+                } else {
+                  const errKey =
+                    useReticulumPropagationStore.getState().lastAddError ??
+                    'reticulumPropagation.addFailed';
+                  addToast(t(errKey), 'error');
+                }
+              })
+              .catch((err: unknown) => {
+                setAdding(false);
+                console.warn('[ReticulumPropagationSection] addPropagationNode rejected', err);
                 addToast(t('reticulumPropagation.addFailed'), 'error');
-              }
-            });
+              });
           }}
         >
-          {t('reticulumPropagation.addNode')}
+          {adding ? t('reticulumPropagation.addProbing') : t('reticulumPropagation.addNode')}
         </button>
       </div>
       {pendingDelete ? (
@@ -470,16 +885,45 @@ export default function ReticulumPropagationSection({
           danger
           onConfirm={() => {
             const id = pendingDelete.id;
-            void removePropagationNode(id).then((ok) => {
-              if (ok) {
-                setPendingDelete(null);
-              } else {
+            void removePropagationNode(id)
+              .then((ok) => {
+                if (ok) {
+                  setPendingDelete(null);
+                } else {
+                  addToast(t('reticulumPropagation.deleteFailed'), 'error');
+                }
+              })
+              .catch((e: unknown) => {
+                console.warn('[ReticulumPropagationSection] remove ' + errLikeToLogString(e));
                 addToast(t('reticulumPropagation.deleteFailed'), 'error');
-              }
-            });
+              });
           }}
           onCancel={() => {
             setPendingDelete(null);
+          }}
+        />
+      ) : null}
+      {pendingEnableLocal ? (
+        <ConfirmModal
+          title={t('reticulumPropagation.enableLocalHostConfirmTitle')}
+          message={t('reticulumPropagation.enableLocalHostConfirmBody')}
+          confirmLabel={t('reticulumPropagation.enableLocalHostConfirm')}
+          danger
+          onConfirm={() => {
+            setPendingEnableLocal(false);
+            void window.electronAPI.reticulum
+              .proxyPost('/api/v1/propagation/local-prop/enable', {})
+              .then(handleRefresh)
+              .catch((err: unknown) => {
+                console.warn(
+                  '[ReticulumPropagationSection] local-prop enable proxyPost rejected',
+                  err,
+                );
+                addToast(t('reticulumPropagation.enableFailed'), 'error');
+              });
+          }}
+          onCancel={() => {
+            setPendingEnableLocal(false);
           }}
         />
       ) : null}

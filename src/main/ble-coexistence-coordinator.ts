@@ -14,6 +14,8 @@ export interface BleRegisteredConnection {
 export interface BleCoexistenceState {
   connections: BleRegisteredConnection[];
   scanOwner: BleScanOwner | null;
+  /** See shared BleCoexistenceState.nobleYieldDecisionPending. */
+  nobleYieldDecisionPending?: boolean;
 }
 
 export class BlePeripheralConflictError extends Error {
@@ -49,8 +51,13 @@ export { normalizeBleMac };
 export class BleCoexistenceCoordinator {
   private connections = new Map<string, BlePeripheralOwner>();
   private scanOwner: BleScanOwner | null = null;
+  /** Nested same-owner acquires (e.g. Noble yield + RSSI poll) — release only at 0. */
+  private scanOwnerDepth = 0;
+  /** Serializes first-time acquire (Noble pause + ownership) across concurrent callers. */
+  private scanAcquireInFlight: Promise<void> | null = null;
   private nobleManager: NobleBleManager | null = null;
   private nobleScanPausedForExternal = false;
+  private nobleYieldDecisionPending = false;
 
   setNobleManager(manager: NobleBleManager): void {
     this.nobleManager = manager;
@@ -60,7 +67,13 @@ export class BleCoexistenceCoordinator {
     return {
       connections: [...this.connections.entries()].map(([mac, owner]) => ({ mac, owner })),
       scanOwner: this.scanOwner,
+      nobleYieldDecisionPending: this.nobleYieldDecisionPending,
     };
+  }
+
+  /** Mark that a Reticulum BLE Noble yield is about to run (before status emit / RF unblock). */
+  setNobleYieldDecisionPending(pending: boolean): void {
+    this.nobleYieldDecisionPending = pending;
   }
 
   register(mac: string, owner: BlePeripheralOwner): void {
@@ -98,19 +111,43 @@ export class BleCoexistenceCoordinator {
   }
 
   async acquireScan(owner: BleScanOwner): Promise<void> {
-    if (this.scanOwner === owner) return;
+    if (this.scanAcquireInFlight) {
+      await this.scanAcquireInFlight;
+      return this.acquireScan(owner);
+    }
+
+    if (this.scanOwner === owner) {
+      this.scanOwnerDepth += 1;
+      return;
+    }
     if (this.scanOwner !== null) {
       throw new BleScanBusyError(this.scanOwner);
     }
-    if (owner === 'reticulum' && this.nobleManager) {
-      await this.nobleManager.pauseScanningForExternalScan();
-      this.nobleScanPausedForExternal = true;
+
+    let releaseInFlight!: () => void;
+    this.scanAcquireInFlight = new Promise<void>((resolve) => {
+      releaseInFlight = resolve;
+    });
+    try {
+      if (owner === 'reticulum' && this.nobleManager) {
+        await this.nobleManager.pauseScanningForExternalScan();
+        this.nobleScanPausedForExternal = true;
+      }
+      this.scanOwner = owner;
+      this.scanOwnerDepth = 1;
+    } finally {
+      this.scanAcquireInFlight = null;
+      releaseInFlight();
     }
-    this.scanOwner = owner;
   }
 
   releaseScan(owner: BleScanOwner): void {
     if (this.scanOwner !== owner) return;
+    if (this.scanOwnerDepth > 1) {
+      this.scanOwnerDepth -= 1;
+      return;
+    }
+    this.scanOwnerDepth = 0;
     this.scanOwner = null;
     if (owner === 'reticulum' && this.nobleScanPausedForExternal && this.nobleManager) {
       this.nobleScanPausedForExternal = false;

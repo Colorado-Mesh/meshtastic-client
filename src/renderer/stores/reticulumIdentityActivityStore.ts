@@ -5,6 +5,7 @@ import {
   MAX_RETICULUM_IDENTITY_DESTINATIONS,
   trimMapToMaxSize,
 } from '@/renderer/lib/sessionMemoryCaps';
+import { canonicalizeReticulumDestinationHash } from '@/shared/reticulumDestinationHash';
 
 export interface ReticulumIdentityActivityRow {
   destination_hash: string;
@@ -17,6 +18,7 @@ export interface ReticulumIdentityActivityRow {
 interface ReticulumIdentityActivityStoreState {
   byDestination: Map<string, ReticulumIdentityActivityRow[]>;
   loadForDestination: (destinationHash: string) => Promise<ReticulumIdentityActivityRow[]>;
+  loadForIdentity: (identityHash: string) => Promise<ReticulumIdentityActivityRow[]>;
   upsertActivity: (row: ReticulumIdentityActivityRow) => Promise<void>;
   getActivity: (destinationHash: string) => ReticulumIdentityActivityRow[];
 }
@@ -27,9 +29,39 @@ function normalizeHash(hash: string): string {
 
 const ACTIVITY_BATCH_FLUSH_MS = 500;
 const ACTIVITY_BATCH_MAX = 50;
+/** Cap pending unknown-aspect rows while announce-bus pressure is active. */
+const ACTIVITY_STORM_UNKNOWN_PENDING_MAX = 20;
 
 let pendingActivityByKey = new Map<string, ReticulumIdentityActivityRow>();
 let activityFlushTimer: ReturnType<typeof setTimeout> | null = null;
+/** When true, skip/cap unknown-aspect SQLite activity writes (announce storms). */
+let announceBusPressureActive = false;
+
+/** Gate unknown identity-activity SQLite writes during announce-bus pressure. */
+export function setReticulumAnnounceBusPressureActive(active: boolean): void {
+  announceBusPressureActive = active;
+  if (!active) return;
+  // Drop excess unknown pending rows so IPC cannot backlog under pressure.
+  if (pendingActivityByKey.size <= ACTIVITY_STORM_UNKNOWN_PENDING_MAX) return;
+  const next = new Map<string, ReticulumIdentityActivityRow>();
+  for (const [key, row] of pendingActivityByKey) {
+    if (row.aspect === 'unknown') continue;
+    next.set(key, row);
+  }
+  // Keep a small unknown sample if space remains.
+  let unknownKept = 0;
+  for (const [key, row] of pendingActivityByKey) {
+    if (row.aspect !== 'unknown') continue;
+    if (unknownKept >= ACTIVITY_STORM_UNKNOWN_PENDING_MAX) break;
+    next.set(key, row);
+    unknownKept += 1;
+  }
+  pendingActivityByKey = next;
+}
+
+export function isReticulumAnnounceBusPressureActive(): boolean {
+  return announceBusPressureActive;
+}
 
 function activityBatchKey(row: ReticulumIdentityActivityRow): string {
   return `${row.destination_hash}\0${row.aspect}`;
@@ -64,6 +96,7 @@ function scheduleActivityFlush(): void {
 /** Test helper — reset activity IPC batch buffer. */
 export function resetReticulumIdentityActivityBatchForTests(): void {
   pendingActivityByKey = new Map();
+  announceBusPressureActive = false;
   if (activityFlushTimer != null) {
     clearTimeout(activityFlushTimer);
     activityFlushTimer = null;
@@ -92,6 +125,57 @@ export const useReticulumIdentityActivityStore = create<ReticulumIdentityActivit
       }
     },
 
+    loadForIdentity: async (identityHash) => {
+      const id = canonicalizeReticulumDestinationHash(identityHash);
+      if (!id) return [];
+      try {
+        const rows = (await window.electronAPI.db.getReticulumIdentityActivityByIdentity(
+          id,
+        )) as ReticulumIdentityActivityRow[];
+        set((s) => {
+          const next = new Map(s.byDestination);
+          for (const row of rows) {
+            const dest = canonicalizeReticulumDestinationHash(row.destination_hash);
+            if (!dest) continue;
+            const normalized: ReticulumIdentityActivityRow = {
+              ...row,
+              destination_hash: dest,
+              aspect: row.aspect.slice(0, 128),
+              identity_hash: row.identity_hash
+                ? canonicalizeReticulumDestinationHash(row.identity_hash)
+                : null,
+            };
+            const prev = next.get(dest) ?? [];
+            const hasNamedAspect = prev.some((r) => r.aspect !== 'unknown');
+            // Never reintroduce a persisted unknown placeholder once a named aspect exists.
+            if (normalized.aspect === 'unknown' && hasNamedAspect) {
+              continue;
+            }
+            const dropUnknown = normalized.aspect !== 'unknown';
+            const filtered = prev.filter(
+              (r) => r.aspect !== normalized.aspect && !(dropUnknown && r.aspect === 'unknown'),
+            );
+            next.set(dest, [normalized, ...filtered]);
+          }
+          return { byDestination: trimMapToMaxSize(next, MAX_RETICULUM_IDENTITY_DESTINATIONS) };
+        });
+        return rows.flatMap((row) => {
+          const dest = canonicalizeReticulumDestinationHash(row.destination_hash);
+          if (!dest) return [];
+          return [
+            {
+              ...row,
+              destination_hash: dest,
+              aspect: row.aspect.slice(0, 128),
+            },
+          ];
+        });
+      } catch (e) {
+        console.debug('[reticulumIdentityActivityStore] loadForIdentity ' + errLikeToLogString(e));
+        return [];
+      }
+    },
+
     upsertActivity: (row) => {
       const key = normalizeHash(row.destination_hash);
       const normalized: ReticulumIdentityActivityRow = {
@@ -99,6 +183,17 @@ export const useReticulumIdentityActivityStore = create<ReticulumIdentityActivit
         destination_hash: key,
         aspect: row.aspect.slice(0, 128),
       };
+      // Announce storms: skip unknown-aspect SQLite writes; keep named aspects.
+      if (announceBusPressureActive && normalized.aspect === 'unknown') {
+        set((s) => {
+          const next = new Map(s.byDestination);
+          const prev = next.get(key) ?? [];
+          const filtered = prev.filter((r) => r.aspect !== normalized.aspect);
+          next.set(key, [normalized, ...filtered]);
+          return { byDestination: trimMapToMaxSize(next, MAX_RETICULUM_IDENTITY_DESTINATIONS) };
+        });
+        return Promise.resolve();
+      }
       pendingActivityByKey.set(activityBatchKey(normalized), normalized);
       if (pendingActivityByKey.size >= ACTIVITY_BATCH_MAX) {
         if (activityFlushTimer != null) {
@@ -112,7 +207,11 @@ export const useReticulumIdentityActivityStore = create<ReticulumIdentityActivit
       set((s) => {
         const next = new Map(s.byDestination);
         const prev = next.get(key) ?? [];
-        const filtered = prev.filter((r) => r.aspect !== normalized.aspect);
+        // Named aspects replace the legacy "unknown" placeholder for this destination.
+        const dropUnknown = normalized.aspect !== 'unknown';
+        const filtered = prev.filter(
+          (r) => r.aspect !== normalized.aspect && !(dropUnknown && r.aspect === 'unknown'),
+        );
         next.set(key, [normalized, ...filtered]);
         return { byDestination: trimMapToMaxSize(next, MAX_RETICULUM_IDENTITY_DESTINATIONS) };
       });
@@ -125,9 +224,7 @@ export const useReticulumIdentityActivityStore = create<ReticulumIdentityActivit
   }),
 );
 
-export function parseAnnounceActivityRows(payload: unknown): ReticulumIdentityActivityRow[] {
-  if (!payload || typeof payload !== 'object') return [];
-  const p = payload as Record<string, unknown>;
+function parseOneAnnounceActivityRow(p: Record<string, unknown>): ReticulumIdentityActivityRow[] {
   const destinationHash =
     typeof p.destination_hash === 'string'
       ? p.destination_hash
@@ -152,7 +249,8 @@ export function parseAnnounceActivityRows(payload: unknown): ReticulumIdentityAc
       if (typeof a === 'string' && a.trim()) aspects.push(a.trim());
     }
   }
-  if (aspects.length === 0) aspects.push('unknown');
+  // No aspect → no identity-activity rows (do not invent "unknown").
+  if (aspects.length === 0) return [];
   return aspects.map((aspect) => ({
     destination_hash: destinationHash,
     aspect,
@@ -160,4 +258,19 @@ export function parseAnnounceActivityRows(payload: unknown): ReticulumIdentityAc
     last_seen: lastSeen,
     hops,
   }));
+}
+
+/** Parse single-legacy or batched `{ announces: [...] }` announce.received payloads. */
+export function parseAnnounceActivityRows(payload: unknown): ReticulumIdentityActivityRow[] {
+  if (!payload || typeof payload !== 'object') return [];
+  const p = payload as Record<string, unknown>;
+  if (Array.isArray(p.announces)) {
+    const out: ReticulumIdentityActivityRow[] = [];
+    for (const row of p.announces) {
+      if (!row || typeof row !== 'object') continue;
+      out.push(...parseOneAnnounceActivityRow(row as Record<string, unknown>));
+    }
+    return out;
+  }
+  return parseOneAnnounceActivityRow(p);
 }

@@ -1,8 +1,16 @@
-import type { BrowserWindow } from 'electron';
+import type { BrowserWindow, IpcMainInvokeEvent } from 'electron';
 import { app, ipcMain, shell } from 'electron';
 import type { AppUpdater } from 'electron-updater';
 
+import { fetchAllGithubReleases } from '@/shared/fetchGithubReleases';
+import {
+  type GithubReleaseRow,
+  pickLatestPublishedRelease,
+  semverGt,
+} from '@/shared/githubReleaseVersion';
+
 import { sanitizeLogMessage } from './log-service';
+import { assertIpcSender } from './validate-ipc-sender';
 
 // electron-updater is a runtime dependency only in the packaged app path
 // We do a dynamic require so the dev path still works without it installed
@@ -22,30 +30,25 @@ export function getCheckNowFromMenu(): (() => void) | null {
 
 const REPO = 'Colorado-Mesh/mesh-client';
 const RELEASES_URL = `https://github.com/${REPO}/releases`;
-const API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
-
-function semverGt(remote: string, local: string): boolean {
-  const parse = (v: string) =>
-    v
-      .replace(/^v/, '')
-      .split('.')
-      .map((n) => parseInt(n, 10) || 0);
-  const [rMaj, rMin, rPat] = parse(remote);
-  const [lMaj, lMin, lPat] = parse(local);
-  if (rMaj !== lMaj) return rMaj > lMaj;
-  if (rMin !== lMin) return rMin > lMin;
-  return rPat > lPat;
-}
 
 type SendFn = (channel: string, payload?: unknown) => void;
+
+function releaseUrlForVersion(version: string): string {
+  return `${RELEASES_URL}/tag/v${version}`;
+}
+
+async function fetchGithubReleases(): Promise<GithubReleaseRow[]> {
+  return fetchAllGithubReleases(REPO, `mesh-client/${app.getVersion()}`);
+}
 
 async function openAppReleasePage(send: SendFn): Promise<void> {
   try {
     await shell.openExternal(lastAppReleaseUrl ?? RELEASES_URL);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.warn('[updater] open release page failed:', sanitizeLogMessage(msg));
-    send('update:error', { message: msg });
+    const safe = sanitizeLogMessage(msg);
+    console.warn('[updater] open release page failed:', safe);
+    send('update:error', { message: safe });
   }
 }
 
@@ -57,25 +60,14 @@ function registerGithubReleaseApiHandlers(send: SendFn, uiReportsPackaged: boole
   const doCheck = async () => {
     lastAppReleaseUrl = null;
     try {
-      const res = await fetch(API_URL, {
-        headers: { 'User-Agent': `mesh-client/${app.getVersion()}` },
-      });
-      if (!res.ok) {
-        console.warn('[updater] GitHub API responded with', String(res.status));
-        send('update:error', { message: 'Update check failed — check network connection' });
-        return;
-      }
-      if (res.redirected) {
-        console.warn('[updater] GitHub API redirected to', res.url, '— API_URL may need updating');
-      }
-      const data = (await res.json()) as { tag_name: string; html_url: string };
-      const remoteVersion = data.tag_name.replace(/^v/, '');
+      const releases = await fetchGithubReleases();
+      const latest = pickLatestPublishedRelease(releases);
       const localVersion = app.getVersion();
-      if (semverGt(remoteVersion, localVersion)) {
-        lastAppReleaseUrl = data.html_url;
+      if (latest && semverGt(latest.version, localVersion)) {
+        lastAppReleaseUrl = latest.releaseUrl;
         send('update:available', {
-          version: remoteVersion,
-          releaseUrl: data.html_url,
+          version: latest.version,
+          releaseUrl: latest.releaseUrl,
           isPackaged: uiReportsPackaged,
           isMac: process.platform === 'darwin',
         });
@@ -99,17 +91,20 @@ function registerGithubReleaseApiHandlers(send: SendFn, uiReportsPackaged: boole
     void doCheck();
   };
 
-  ipcMain.handle('update:check', async () => {
+  ipcMain.handle('update:check', async (event: IpcMainInvokeEvent) => {
+    assertIpcSender(event, 'update:check');
     send('update:checking', { notifyOnSettled: false });
     await doCheck();
   });
 
-  ipcMain.handle('update:download', async () => {
+  ipcMain.handle('update:download', async (event: IpcMainInvokeEvent) => {
+    assertIpcSender(event, 'update:download');
     if (!uiReportsPackaged) return;
     await openAppReleasePage(send);
   });
 
-  ipcMain.handle('update:install', () => {
+  ipcMain.handle('update:install', (event: IpcMainInvokeEvent) => {
+    assertIpcSender(event, 'update:install');
     /* no-op — no downloaded artifact in this path */
   });
 }
@@ -118,7 +113,7 @@ function registerElectronUpdaterHandlers(send: SendFn): boolean {
   let updater: AppUpdater;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    updater = require('electron-updater').autoUpdater as AppUpdater;
+    updater = (require('electron-updater') as { autoUpdater: AppUpdater }).autoUpdater;
   } catch (e) {
     console.error(
       '[updater] electron-updater not available:',
@@ -127,11 +122,13 @@ function registerElectronUpdaterHandlers(send: SendFn): boolean {
     return false;
   }
 
-  updater.autoDownload = false;
+  // Download in the background after every startup/periodic check. Installation
+  // stays user-controlled so active radio sessions are never interrupted.
+  updater.autoDownload = true;
   updater.autoInstallOnAppQuit = false;
 
   updater.on('update-available', (info: { version: string }) => {
-    const releaseUrl = `${RELEASES_URL}/tag/v${info.version}`;
+    const releaseUrl = releaseUrlForVersion(info.version);
     lastAppReleaseUrl = releaseUrl;
     send('update:available', {
       version: info.version,
@@ -139,6 +136,26 @@ function registerElectronUpdaterHandlers(send: SendFn): boolean {
       isPackaged: true,
       isMac: process.platform === 'darwin',
     });
+    void (async () => {
+      try {
+        const releases = await fetchGithubReleases();
+        const match = pickLatestPublishedRelease(releases);
+        if (match?.version === info.version) {
+          lastAppReleaseUrl = match.releaseUrl;
+          send('update:available', {
+            version: match.version,
+            releaseUrl: match.releaseUrl,
+            isPackaged: true,
+            isMac: process.platform === 'darwin',
+          });
+        }
+      } catch (e: unknown) {
+        console.debug(
+          '[updater] release URL enrichment skipped:',
+          sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+        );
+      }
+    })();
   });
 
   updater.on('update-not-available', () => {
@@ -154,8 +171,9 @@ function registerElectronUpdaterHandlers(send: SendFn): boolean {
   });
 
   updater.on('error', (err: Error) => {
+    const safe = sanitizeLogMessage(err.message);
     console.error('[updater] error:', sanitizeLogMessage(err.message));
-    send('update:error', { message: err.message });
+    send('update:error', { message: safe });
   });
 
   const doCheck = async () => {
@@ -163,8 +181,9 @@ function registerElectronUpdaterHandlers(send: SendFn): boolean {
       await updater.checkForUpdates();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      console.warn('[updater] checkForUpdates failed:', sanitizeLogMessage(msg));
-      send('update:error', { message: msg });
+      const safe = sanitizeLogMessage(msg);
+      console.warn('[updater] checkForUpdates failed:', safe);
+      send('update:error', { message: safe });
     }
   };
 
@@ -176,27 +195,26 @@ function registerElectronUpdaterHandlers(send: SendFn): boolean {
     void doCheck();
   };
 
-  ipcMain.handle('update:check', async () => {
+  ipcMain.handle('update:check', async (event: IpcMainInvokeEvent) => {
+    assertIpcSender(event, 'update:check');
     send('update:checking', { notifyOnSettled: false });
     await doCheck();
   });
 
-  ipcMain.handle('update:download', async () => {
-    if (process.platform === 'darwin') {
-      await openAppReleasePage(send);
-      return;
-    }
+  ipcMain.handle('update:download', async (event: IpcMainInvokeEvent) => {
+    assertIpcSender(event, 'update:download');
     try {
       await updater.downloadUpdate();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      console.warn('[updater] update:download failed:', sanitizeLogMessage(msg));
-      send('update:error', { message: msg });
+      const safe = sanitizeLogMessage(msg);
+      console.warn('[updater] update:download failed:', safe);
+      send('update:error', { message: safe });
     }
   });
 
-  ipcMain.handle('update:install', () => {
-    if (process.platform === 'darwin') return;
+  ipcMain.handle('update:install', (event: IpcMainInvokeEvent) => {
+    assertIpcSender(event, 'update:install');
     updater.quitAndInstall(false, true);
   });
 
@@ -222,7 +240,8 @@ export function initUpdater(win: BrowserWindow): void {
   const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
   setInterval(() => checkNow?.(), CHECK_INTERVAL_MS).unref();
 
-  ipcMain.handle('update:open-releases', async (_event, url?: string) => {
+  ipcMain.handle('update:open-releases', async (event: IpcMainInvokeEvent, url?: string) => {
+    assertIpcSender(event, 'update:open-releases');
     try {
       console.debug('[IPC] update:open-releases');
       let parsedUrl: URL | null = null;

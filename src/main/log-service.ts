@@ -5,6 +5,7 @@ import { app } from 'electron';
 import fs from 'fs';
 import path from 'path';
 
+import { formatBuildInfoLogFragment } from '../shared/buildInfo';
 import { formatLogFileTimestamp } from '../shared/formatLogTimestamp';
 import {
   sanitizeForConsoleEcho,
@@ -23,7 +24,7 @@ export function formatRuntimeLogTag(): string {
       : 'unknown';
   const packaged =
     typeof app !== 'undefined' && typeof app.isPackaged === 'boolean' ? app.isPackaged : false;
-  return `platform=${process.platform} arch=${process.arch} os=${osRelease()} electron=${process.versions.electron} node=${process.versions.node} app=${appVersion} packaged=${packaged}`;
+  return `platform=${process.platform} arch=${process.arch} os=${osRelease()} electron=${process.versions.electron} node=${process.versions.node} app=${appVersion} packaged=${packaged} ${formatBuildInfoLogFragment()}`;
 }
 
 /**
@@ -88,15 +89,56 @@ function getLogFilePath(): string {
 }
 
 /**
- * Truncate log on app start; call from app.whenReady before other heavy init.
+ * Start a fresh session log. If the previous run left a non-empty `mesh-client.log`,
+ * rename it to {@link LOG_BACKUP_FILENAME} first so restart-then-export still keeps
+ * the hung/prior session (size rotation alone only kicks in at {@link LOG_MAX_BYTES}).
+ * Call from app.whenReady before other heavy init.
  */
 export function initLogFile(): void {
   recentEntries.length = 0;
   const p = getLogFilePath();
+  const backup = path.join(path.dirname(p), LOG_BACKUP_FILENAME);
+  /** When true, prior session bytes remain on `p` after a failed promote+restore — do not wipe. */
+  let skipFreshTruncate = false;
   try {
-    fs.writeFileSync(p, '', { encoding: 'utf8' });
+    if (fs.existsSync(p)) {
+      const { size } = fs.statSync(p);
+      if (size > 0) {
+        // Rename current → temp first so a failed replace cannot leave us with neither
+        // current nor prior backup.
+        const staging = `${backup}.staging-${process.pid}-${Date.now()}`;
+        fs.renameSync(p, staging);
+        try {
+          if (fs.existsSync(backup)) {
+            fs.unlinkSync(backup);
+          }
+          fs.renameSync(staging, backup);
+        } catch (e) {
+          debugLogService('[log-service] initLogFile promote staging backup failed', e);
+          try {
+            if (!fs.existsSync(p) && fs.existsSync(staging)) {
+              fs.renameSync(staging, p);
+              skipFreshTruncate = true;
+            }
+          } catch (restoreErr) {
+            debugLogService('[log-service] initLogFile restore staging failed', restoreErr);
+          }
+        }
+      }
+    }
   } catch (e) {
-    debugLogService('[log-service] initLogFile truncate failed', e);
+    debugLogService('[log-service] initLogFile preserve previous session failed', e);
+  }
+  if (!skipFreshTruncate) {
+    try {
+      fs.writeFileSync(p, '', { encoding: 'utf8' });
+    } catch (e) {
+      debugLogService('[log-service] initLogFile truncate failed', e);
+    }
+  } else {
+    console.debug(
+      '[log-service] initLogFile skipped truncate; prior session log restored on current path',
+    );
   }
   flushPendingBuffer();
 }
@@ -343,6 +385,53 @@ export function patchMainConsole(): void {
 }
 
 /**
+ * Failure-context markers used by Foreign LoRa detection (see
+ * `src/renderer/lib/foreignLoraDetection.ts`). A TRACE line containing any of these
+ * is preserved so overheard decode-failure frames still reach the renderer.
+ */
+const SDK_FAILURE_CONTEXT_REGEX =
+  /packet.?dropped|crc.?err|crc.?fail|crc.?bad|bad.?crc|decode.?fail|decode.?error|corrupt.?packet|bad.?packet|invalid.?packet|preamble|rx.?error|lora.?err/i;
+
+/**
+ * True for high-volume `@meshtastic/core` console noise with no triage value:
+ * routine `TRACE [iMeshDevice]` chatter, periodic `DEBUG [iMeshDevice] Ping`
+ * heartbeats, and DEBUG encrypted-packet ignores (other channel / PKI we cannot
+ * decrypt; no RSSI/SNR/hex for Foreign LoRa). INFO/WARN/ERROR and decode-failure
+ * TRACE lines are kept.
+ */
+export function isDroppableMeshtasticSdkLogLine(message: string): boolean {
+  if (/\bDEBUG \[iMeshDevice\] Ping\b/.test(message)) return true;
+  if (
+    /\bDEBUG \[iMeshDevice\]/.test(message) &&
+    /encrypted data packet/i.test(message) &&
+    /ignor/i.test(message)
+  ) {
+    return true;
+  }
+  if (/\bTRACE \[iMeshDevice\]/.test(message) && !SDK_FAILURE_CONTEXT_REGEX.test(message)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Chromium ResizeObserver loop warnings — harmless, logged as error by the renderer.
+ * Keep real application errors.
+ */
+export function isDroppableRendererConsoleNoise(message: string): boolean {
+  let text = message.trim();
+  const violationPrefix = '[violation] ';
+  if (text.toLowerCase().startsWith(violationPrefix)) {
+    text = text.slice(violationPrefix.length).trim();
+  }
+  const body = (text.endsWith('.') ? text.slice(0, -1) : text).toLowerCase();
+  return (
+    body === 'resizeobserver loop completed with undelivered notifications' ||
+    body === 'resizeobserver loop limit exceeded'
+  );
+}
+
+/**
  * Renderer console-message (Electron 40+): single event object with message, level, lineNumber, sourceId.
  * level is 'info' | 'warning' | 'error' | 'debug'.
  */
@@ -364,5 +453,7 @@ export function forwardRendererConsoleMessage(details: {
     ? sanitizeLogMessage(`renderer:${path.basename(details.sourceId)}:${line}`)
     : 'renderer';
   const msg = sanitizeLogMessage(stripConsoleStyles(details.message));
+  if (isDroppableMeshtasticSdkLogLine(msg)) return;
+  if (isDroppableRendererConsoleNoise(msg)) return;
   appendLine(mapped, src, msg);
 }

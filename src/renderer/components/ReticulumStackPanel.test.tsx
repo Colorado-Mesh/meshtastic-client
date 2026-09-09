@@ -1,5 +1,8 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { axe } from 'vitest-axe';
+
+import { hydrateAxeThemeColors } from '@/renderer/lib/a11yTestHelpers';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -21,6 +24,10 @@ vi.mock('react-i18next', () => ({
       return key;
     },
   }),
+}));
+
+vi.mock('@/renderer/lib/reticulum/reticulumGamesSession', () => ({
+  refreshGamesSessions: vi.fn(async () => {}),
 }));
 
 vi.mock('@/renderer/lib/sessions/reticulumSession', () => ({
@@ -85,6 +92,33 @@ describe('ReticulumStackPanel', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('uses accessible colors for the disconnected status and start action', async () => {
+    vi.mocked(window.electronAPI.reticulum.getStatus).mockResolvedValue({
+      running: false,
+      port: 0,
+      pid: null,
+      interfaceIssueAlert: null,
+    });
+
+    const { container } = render(
+      <ReticulumStackPanel
+        connecting={false}
+        onStartStack={async () => {}}
+        onStopStack={async () => {}}
+      />,
+    );
+
+    const status = await screen.findByText('● connectionPanel.disconnected');
+    const startButton = screen.getByRole('button', {
+      name: 'connectionPanel.reticulumStartStack',
+    });
+
+    expect(status).toHaveClass('text-gray-300');
+    expect(startButton).toHaveClass('bg-amber-700', 'text-white', 'hover:bg-amber-800');
+    hydrateAxeThemeColors(container);
+    expect(await axe(container)).toHaveNoViolations();
   });
 
   it('shows local interface alert when serial port is stale', async () => {
@@ -274,6 +308,35 @@ describe('ReticulumStackPanel', () => {
     vi.mocked(window.electronAPI.reticulum.syncInterfaceIssueScope).mockResolvedValue(
       statusWithAlert,
     );
+    window.electronAPI.reticulum.proxyGet = vi.fn().mockImplementation((path: string) => {
+      if (path === '/api/v1/interfaces') {
+        return Promise.resolve({
+          interfaces: [
+            {
+              id: 'ham',
+              name: 'RNS HAM RADIO',
+              type: 'tcpclient',
+              enabled: true,
+              status: 'down',
+              host: '135.125.238.229',
+              port: 4242,
+            },
+          ],
+        });
+      }
+      if (path === '/api/v1/serial/ports') {
+        return Promise.resolve({ ports: [] });
+      }
+      if (path === '/api/v1/stack/settings') {
+        return Promise.resolve({
+          enable_transport: true,
+          share_instance: false,
+          loglevel: 4,
+          announce_interval_sec: 3600,
+        });
+      }
+      return Promise.resolve({});
+    });
     let statusCb:
       | ((status: {
           running: boolean;
@@ -307,6 +370,96 @@ describe('ReticulumStackPanel', () => {
     expect(
       screen.getByText('connectionPanel.reticulumSidecarIssues.tcpConnectFailed:RNS HAM RADIO'),
     ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByText('connectionPanel.reticulumSidecarIssues.txQueueDropsHint'),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it('shows BLE TX-drop hint when interfaces include a ble:// RNode', async () => {
+    const issueAlert = {
+      tcpConnectFailed: [],
+      txQueueDrops: [{ name: 'RNode 41F4', dropCount: 512 }],
+      linkDeliveryTimeouts: [],
+      bleBondRemoved: [],
+      blePairingTimedOut: [],
+      transportSaturatedCount: 0,
+      slowTransportQueryCount: 0,
+      suppressedCount: 0,
+      lastAtMs: Date.now(),
+    };
+    const statusWithAlert = {
+      running: true,
+      port: 19437,
+      pid: 1,
+      interfaceIssueAlert: issueAlert,
+    };
+    vi.mocked(window.electronAPI.reticulum.getStatus).mockResolvedValue(statusWithAlert);
+    vi.mocked(window.electronAPI.reticulum.syncInterfaceIssueScope).mockResolvedValue(
+      statusWithAlert,
+    );
+    window.electronAPI.reticulum.proxyGet = vi.fn().mockImplementation((path: string) => {
+      if (path === '/api/v1/interfaces') {
+        return Promise.resolve({
+          interfaces: [
+            {
+              id: 'rnode-41f4',
+              name: 'RNode 41F4',
+              type: 'rnode',
+              enabled: true,
+              status: 'down',
+              serial_port: 'ble://eccf2847-e1fd-3f5f-0811-064db1639a3d',
+            },
+          ],
+        });
+      }
+      if (path === '/api/v1/serial/ports') {
+        return Promise.resolve({ ports: [] });
+      }
+      if (path === '/api/v1/stack/settings') {
+        return Promise.resolve({
+          enable_transport: true,
+          share_instance: false,
+          loglevel: 4,
+          announce_interval_sec: 3600,
+        });
+      }
+      return Promise.resolve({});
+    });
+    let statusCb:
+      | ((status: {
+          running: boolean;
+          port: number;
+          pid: number | null;
+          interfaceIssueAlert?: typeof issueAlert | null;
+        }) => void)
+      | null = null;
+    window.electronAPI.reticulum.onStatus = vi.fn((cb) => {
+      statusCb = cb;
+      return () => {};
+    });
+
+    render(
+      <ReticulumStackPanel
+        connecting={false}
+        onStartStack={async () => {}}
+        onStopStack={async () => {}}
+      />,
+    );
+
+    act(() => {
+      statusCb?.(statusWithAlert);
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('connectionPanel.reticulumSidecarIssues.txQueueDropsHintBle'),
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByText('connectionPanel.reticulumSidecarIssues.txQueueDropsHint'),
+    ).not.toBeInTheDocument();
   });
 
   it('syncs enabled interface names into main issue scope after hydrate', async () => {

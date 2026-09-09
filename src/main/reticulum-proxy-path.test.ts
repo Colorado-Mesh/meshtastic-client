@@ -52,28 +52,25 @@ describe('assertReticulumProxyPath', () => {
 });
 
 describe('reticulumProxyGetTimeoutMs', () => {
-  it('uses meshchat-aligned timeout for TCP nomad page fetches', () => {
+  it('uses flat Nomad proxy cap for page fetches (ignores stale hops/egress)', () => {
     expect(
       reticulumProxyGetTimeoutMs(
-        '/api/v1/nomadnetwork/page/abc?path=%2Fpage%2Findex.mu&hops=8&egress=tcp',
+        '/api/v1/nomadnetwork/page/abc?path=%2Fpage%2Findex.mu&hops=1&egress=tcp',
       ),
-    ).toBe(101_000);
-  });
-
-  it('uses longer RF timeout from hops and egress', () => {
+    ).toBe(185_000);
     expect(
       reticulumProxyGetTimeoutMs(
         '/api/v1/nomadnetwork/page/abc?path=%2Fpage%2Findex.mu&hops=8&egress=rf',
       ),
-    ).toBe(101_000);
+    ).toBe(185_000);
   });
 
-  it('uses nomad timeout for file fetches', () => {
+  it('uses flat Nomad proxy cap for file fetches', () => {
     expect(
       reticulumProxyGetTimeoutMs(
         '/api/v1/nomadnetwork/file/abc?path=%2Ffile%2Freadme.txt&hops=8&egress=rf',
       ),
-    ).toBe(101_000);
+    ).toBe(185_000);
   });
 
   it('uses default timeout for other GET routes', () => {
@@ -85,5 +82,6 @@ describe('reticulumProxyGetTimeoutMs', () => {
     expect(reticulumProxyGetTimeoutMs('/api/v1/interfaces')).toBe(30_000);
     expect(reticulumProxyGetTimeoutMs('/api/v1/topology')).toBe(30_000);
     expect(reticulumProxyGetTimeoutMs('/api/v1/packets?limit=500')).toBe(30_000);
+    expect(reticulumProxyGetTimeoutMs('/api/v1/lxmf/recent?limit=200')).toBe(30_000);
   });
 });

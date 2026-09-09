@@ -1,3 +1,5 @@
+import { pushAppToast } from '@/renderer/components/Toast';
+import i18n from '@/renderer/lib/i18n';
 import {
   persistReticulumOutboundRecord,
   resolveReticulumOutboundSenderHash,
@@ -21,19 +23,41 @@ import {
   useMessageStore,
 } from '@/renderer/stores/messageStore';
 import { reticulumHashForNodeId } from '@/renderer/stores/reticulumPeerStore';
-import { parseReticulumDeliveryMethod } from '@/shared/reticulumDeliveryMethod';
+import { RETICULUM_MESSAGE_TOO_LARGE_FOR_PROPAGATION } from '@/shared/reticulum-voice-memo-types';
+import {
+  isPnCascadeDeliveryMethod,
+  parseReticulumDeliveryMethod,
+} from '@/shared/reticulumDeliveryMethod';
+
+/** Cap for sidecar `delivery_attempts` before store/SQLite patch. */
+export const MAX_RETICULUM_DELIVERY_ATTEMPTS = 64;
+
+function notifyTooLargeForPropagation(): void {
+  pushAppToast(i18n.t('chatPanel.voiceMemo.tooLargeForPropagation'), 'info');
+}
 
 /** Map sidecar `lxmf_outbound_status` wire status to UI store status. Unknown → null. */
 export function mapLxmfOutboundWireStatus(wireStatus: string): MessageStatus | null {
-  if (wireStatus === 'delivered') return 'acked';
+  if (wireStatus === 'delivered' || wireStatus === 'stored_locally') return 'acked';
   if (wireStatus === 'failed') return 'failed';
   if (wireStatus === 'sending') return 'sending';
   return null;
 }
 
+function clampDeliveryAttempts(value: number): number {
+  return Math.min(MAX_RETICULUM_DELIVERY_ATTEMPTS, Math.max(0, Math.trunc(value)));
+}
+
+/** Resolve LXMF peer dest hash from a chat node id (peer store, then dest registry). */
+export function resolveReticulumOutboundDestHash(
+  toNodeId: number | undefined | null,
+): string | null {
+  if (toNodeId == null) return null;
+  return reticulumHashForNodeId(toNodeId) ?? resolveReticulumDestinationHash(toNodeId);
+}
+
 function resolveOutboundPeerHash(record: MessageRecord): string | null {
-  if (record.to == null) return null;
-  return reticulumHashForNodeId(record.to) ?? resolveReticulumDestinationHash(record.to);
+  return resolveReticulumOutboundDestHash(record.to);
 }
 
 function resolveOutboundSenderHash(record: MessageRecord): string | null {
@@ -59,7 +83,14 @@ const PENDING_DELIVERY_STATUS_TTL_MS = 60_000;
 const PENDING_DELIVERY_STATUS_MAX = 64;
 const pendingDeliveryByKey = new Map<
   string,
-  { wireStatus: string; sentVia?: string; deliveryMethod?: string; receivedAt: number }
+  {
+    wireStatus: string;
+    sentVia?: string;
+    deliveryMethod?: string;
+    deliveryAttempts?: number;
+    error?: string;
+    receivedAt: number;
+  }
 >();
 
 function pendingDeliveryKey(identityId: IdentityId, messageHash: string): string {
@@ -85,12 +116,16 @@ function bufferPendingDeliveryStatus(
   wireStatus: string,
   sentVia?: string,
   deliveryMethod?: string,
+  deliveryAttempts?: number,
+  error?: string,
 ): void {
   prunePendingDeliveryStatuses();
   pendingDeliveryByKey.set(pendingDeliveryKey(identityId, messageHash), {
     wireStatus,
     sentVia,
     deliveryMethod,
+    deliveryAttempts,
+    error,
     receivedAt: Date.now(),
   });
 }
@@ -111,15 +146,25 @@ export function flushPendingReticulumOutboundDeliveryStatus(
     pendingDeliveryByKey.delete(key);
     return false;
   }
+  const errorMessage =
+    mapped === 'failed' && pending.error === RETICULUM_MESSAGE_TOO_LARGE_FOR_PROPAGATION
+      ? RETICULUM_MESSAGE_TOO_LARGE_FOR_PROPAGATION
+      : undefined;
   const applied = persistReticulumOutboundMessageStatus(
     identityId,
     messageHash,
     mapped,
-    undefined,
+    errorMessage,
     parseWireSentVia(pending.sentVia),
     parseReticulumDeliveryMethod(pending.deliveryMethod),
+    pending.deliveryAttempts,
   );
-  if (applied) pendingDeliveryByKey.delete(key);
+  if (applied) {
+    pendingDeliveryByKey.delete(key);
+    if (errorMessage === RETICULUM_MESSAGE_TOO_LARGE_FOR_PROPAGATION) {
+      notifyTooLargeForPropagation();
+    }
+  }
   return applied;
 }
 
@@ -141,9 +186,43 @@ export function persistReticulumOutboundMessageStatus(
   errorMessage?: string,
   sentVia?: MessageTransport,
   deliveryMethod?: MessageRecord['reticulumDeliveryMethod'],
+  deliveryAttempts?: number,
 ): boolean {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Identity bucket may be absent at runtime.
   const before = useMessageStore.getState().messages[identityId]?.[messageId];
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Runtime guard protects external or callback-mutated state.
   if (!before) return false;
+  // Link-timeout failure bridge can mark Failed before WS Direct→PN fallback arrives.
+  // Authoritative sending+propagated/stored_locally must revive so the badge is not stuck as PN ✗.
+  if (
+    before.status === 'failed' &&
+    status === 'sending' &&
+    isPnCascadeDeliveryMethod(deliveryMethod)
+  ) {
+    const revived: MessageRecord = {
+      ...before,
+      status: 'sending',
+      error: undefined,
+      reticulumDeliveryMethod: deliveryMethod,
+      ...(sentVia != null ? { receivedVia: sentVia } : {}),
+      ...(deliveryAttempts != null
+        ? { reticulumDeliveryAttempts: clampDeliveryAttempts(deliveryAttempts) }
+        : {}),
+    };
+    upsertMessage(identityId, revived);
+    const senderHash = resolveOutboundSenderHash(revived);
+    if (senderHash) {
+      persistReticulumOutboundRecord(
+        identityId,
+        revived,
+        senderHash,
+        revived.senderName ?? '',
+        resolveOutboundPeerHash(revived),
+        'sending',
+      );
+    }
+    return true;
+  }
   // Do not regress a terminal Completes/Fails back to sending — still allow via/method patches.
   if (isTerminalStatus(before.status ?? 'sending') && status === 'sending') {
     const viaChanged = sentVia != null && sentVia !== before.receivedVia;
@@ -171,11 +250,10 @@ export function persistReticulumOutboundMessageStatus(
     return true;
   }
   updateMessageStatus(identityId, messageId, status, errorMessage);
-  let record = useMessageStore.getState().messages[identityId]?.[messageId] ?? {
-    ...before,
-    status,
-    ...(errorMessage !== undefined ? { error: errorMessage } : {}),
-  };
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Identity bucket may be absent at runtime.
+  let record = useMessageStore.getState().messages[identityId]?.[messageId];
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Store state may be externally mutated between reads.
+  if (!record) return false;
   let patched = false;
   if (sentVia != null && sentVia !== record.receivedVia) {
     record = { ...record, receivedVia: sentVia };
@@ -183,6 +261,14 @@ export function persistReticulumOutboundMessageStatus(
   }
   if (deliveryMethod != null && deliveryMethod !== record.reticulumDeliveryMethod) {
     record = { ...record, reticulumDeliveryMethod: deliveryMethod };
+    patched = true;
+  }
+  if (
+    deliveryAttempts != null &&
+    Number.isFinite(deliveryAttempts) &&
+    clampDeliveryAttempts(deliveryAttempts) !== record.reticulumDeliveryAttempts
+  ) {
+    record = { ...record, reticulumDeliveryAttempts: clampDeliveryAttempts(deliveryAttempts) };
     patched = true;
   }
   if (patched) {
@@ -220,6 +306,9 @@ export function persistReticulumOutboundMessageStatus(
 export interface ApplyReticulumOutboundDeliveryStatusOpts {
   sentVia?: string | null;
   deliveryMethod?: string | null;
+  deliveryAttempts?: number | null;
+  /** Sidecar terminal error code (e.g. message_too_large_for_propagation). */
+  error?: string | null;
 }
 
 /** Apply sidecar Completes/Fails (and optional egress `sent_via`): store + SQLite. */
@@ -245,26 +334,45 @@ export function applyReticulumOutboundDeliveryStatus(
   }
   const sentVia = parseWireSentVia(opts?.sentVia);
   const deliveryMethod = parseReticulumDeliveryMethod(opts?.deliveryMethod);
+  const deliveryAttempts =
+    opts?.deliveryAttempts != null && Number.isFinite(opts.deliveryAttempts)
+      ? clampDeliveryAttempts(opts.deliveryAttempts)
+      : undefined;
+  const errorMessage =
+    status === 'failed' && opts?.error === RETICULUM_MESSAGE_TOO_LARGE_FOR_PROPAGATION
+      ? RETICULUM_MESSAGE_TOO_LARGE_FOR_PROPAGATION
+      : undefined;
   const applied = persistReticulumOutboundMessageStatus(
     identityId,
     normalizedHash,
     status,
-    undefined,
+    errorMessage,
     sentVia,
     deliveryMethod,
+    deliveryAttempts,
   );
   if (applied) {
     pendingDeliveryByKey.delete(pendingDeliveryKey(identityId, normalizedHash));
+    if (errorMessage === RETICULUM_MESSAGE_TOO_LARGE_FOR_PROPAGATION) {
+      notifyTooLargeForPropagation();
+    }
     return;
   }
   // Terminal status, or egress/method upgrade before rekey for later flush.
-  if (isTerminalStatus(status) || sentVia != null || deliveryMethod != null) {
+  if (
+    isTerminalStatus(status) ||
+    sentVia != null ||
+    deliveryMethod != null ||
+    deliveryAttempts != null
+  ) {
     bufferPendingDeliveryStatus(
       identityId,
       normalizedHash,
       wireStatus,
       opts?.sentVia ?? undefined,
       opts?.deliveryMethod ?? undefined,
+      deliveryAttempts,
+      opts?.error ?? undefined,
     );
   }
 }

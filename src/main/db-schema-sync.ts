@@ -19,7 +19,7 @@ import { sanitizeLogMessage } from './log-service';
 import { ensureMessageFtsTables } from './messageFts';
 
 /** Bumped when ensureSchema behavior changes in a non-idempotent way (rare). */
-export const CURRENT_SCHEMA_VERSION = 47;
+export const CURRENT_SCHEMA_VERSION = 49;
 
 /** Thrown when on-disk `user_version` exceeds this build's {@link CURRENT_SCHEMA_VERSION}. */
 export class DatabaseSchemaTooNewError extends Error {
@@ -195,6 +195,7 @@ export const CANONICAL_TABLES_DDL = `
         display_name     TEXT,
         last_heard       INTEGER,
         favorited        INTEGER DEFAULT 0,
+        is_contact       INTEGER DEFAULT 0,
         icon_name        TEXT,
         icon_color       TEXT,
         verified         INTEGER DEFAULT 0,
@@ -227,6 +228,14 @@ export const CANONICAL_TABLES_DDL = `
         body            TEXT NOT NULL,
         timestamp       INTEGER NOT NULL,
         UNIQUE(hub_hash, room, message_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS rrc_nicks (
+        hub_hash        TEXT NOT NULL,
+        identity_hash   TEXT NOT NULL,
+        nickname        TEXT NOT NULL,
+        last_seen       INTEGER NOT NULL,
+        PRIMARY KEY (hub_hash, identity_hash)
       );
 
       CREATE TABLE IF NOT EXISTS blocked_contacts (
@@ -319,6 +328,7 @@ export const INDEX_DDLS: readonly string[] = [
   'CREATE INDEX IF NOT EXISTS idx_rrc_messages_hub_room ON rrc_messages(hub_hash, room, timestamp)',
   'CREATE INDEX IF NOT EXISTS idx_blocked_contacts_lookup ON blocked_contacts(protocol, identity_id)',
   'CREATE INDEX IF NOT EXISTS idx_reticulum_activity_dest ON reticulum_identity_activity(destination_hash)',
+  'CREATE INDEX IF NOT EXISTS idx_reticulum_activity_identity ON reticulum_identity_activity(identity_hash)',
   'CREATE INDEX IF NOT EXISTS idx_reticulum_dest_last_heard ON reticulum_destinations(last_heard)',
   'CREATE INDEX IF NOT EXISTS idx_mc_msgs_ts ON meshcore_messages(timestamp)',
   'CREATE INDEX IF NOT EXISTS idx_mc_msgs_channel_id ON meshcore_messages(channel_idx, id DESC)',
@@ -444,6 +454,8 @@ export const DESIRED_COLUMNS: Readonly<Record<string, Readonly<Record<string, st
     delivery_attempts: 'INTEGER DEFAULT 0',
     next_delivery_attempt_at: 'INTEGER',
     attachment_path: 'TEXT',
+    audio_mode: 'INTEGER',
+    audio_duration_sec: 'REAL',
   },
   rrc_messages: {
     message_id: 'TEXT NOT NULL',
@@ -502,6 +514,7 @@ export const DESIRED_COLUMNS: Readonly<Record<string, Readonly<Record<string, st
     display_name: 'TEXT',
     last_heard: 'INTEGER',
     favorited: 'INTEGER DEFAULT 0',
+    is_contact: 'INTEGER DEFAULT 0',
     icon_name: 'TEXT',
     icon_color: 'TEXT',
     verified: 'INTEGER DEFAULT 0',
@@ -829,8 +842,7 @@ function repairMeshtasticInboundNullStatus(db: NodeSqliteDB): void {
   if (!tableExists(db, 'messages')) return;
   db.prepare(
     `UPDATE messages SET status = 'acked'
-     WHERE status IS NULL
-       AND (received_via IS NOT NULL OR packet_id IS NOT NULL)`,
+     WHERE status IS NULL`,
   ).run();
 }
 
@@ -945,7 +957,7 @@ function repairReticulumDestinationHashCasing(db: NodeSqliteDB): void {
 
   const rows = db
     .prepare(
-      `SELECT destination_hash, display_name, last_heard, favorited, icon_name, icon_color
+      `SELECT destination_hash, display_name, last_heard, favorited, is_contact, icon_name, icon_color
        FROM reticulum_destinations`,
     )
     .all() as {
@@ -953,6 +965,7 @@ function repairReticulumDestinationHashCasing(db: NodeSqliteDB): void {
     display_name: string | null;
     last_heard: number | null;
     favorited: number | null;
+    is_contact: number | null;
     icon_name: string | null;
     icon_color: string | null;
   }[];
@@ -971,8 +984,8 @@ function repairReticulumDestinationHashCasing(db: NodeSqliteDB): void {
   const del = db.prepare('DELETE FROM reticulum_destinations WHERE destination_hash = ?');
   const upsert = db.prepare(
     `INSERT INTO reticulum_destinations
-       (destination_hash, display_name, last_heard, favorited, icon_name, icon_color)
-     VALUES (?, ?, ?, ?, ?, ?)
+       (destination_hash, display_name, last_heard, favorited, is_contact, icon_name, icon_color)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(destination_hash) DO UPDATE SET
        display_name = COALESCE(excluded.display_name, reticulum_destinations.display_name),
        last_heard = CASE
@@ -986,6 +999,10 @@ function repairReticulumDestinationHashCasing(db: NodeSqliteDB): void {
          WHEN excluded.favorited = 1 OR reticulum_destinations.favorited = 1 THEN 1
          ELSE 0
        END,
+       is_contact = CASE
+         WHEN excluded.is_contact = 1 OR reticulum_destinations.is_contact = 1 THEN 1
+         ELSE 0
+       END,
        icon_name = COALESCE(excluded.icon_name, reticulum_destinations.icon_name),
        icon_color = COALESCE(excluded.icon_color, reticulum_destinations.icon_color)`,
   );
@@ -997,6 +1014,7 @@ function repairReticulumDestinationHashCasing(db: NodeSqliteDB): void {
     let displayName: string | null = null;
     let lastHeard: number | null = null;
     let favorited = 0;
+    let isContact = 0;
     let iconName: string | null = null;
     let iconColor: string | null = null;
     for (const r of group) {
@@ -1009,6 +1027,7 @@ function repairReticulumDestinationHashCasing(db: NodeSqliteDB): void {
         lastHeard = Math.trunc(heard);
       }
       if (r.favorited === 1) favorited = 1;
+      if (r.is_contact === 1) isContact = 1;
       if (iconName == null && r.icon_name != null) iconName = r.icon_name;
       if (iconColor == null && r.icon_color != null) iconColor = r.icon_color;
     }
@@ -1016,8 +1035,24 @@ function repairReticulumDestinationHashCasing(db: NodeSqliteDB): void {
     for (const r of group) {
       if (r.destination_hash !== canonical) del.run(r.destination_hash);
     }
-    upsert.run(canonical, displayName, lastHeard, favorited, iconName, iconColor);
+    upsert.run(canonical, displayName, lastHeard, favorited, isContact, iconName, iconColor);
   }
+}
+
+/**
+ * v48: prior auto-contacts used last_heard as membership. Promote those rows to
+ * explicit is_contact so they stay on Contacts after History/Contacts split.
+ * Only run when upgrading from schema versions below 48 (not on every startup).
+ */
+function backfillReticulumIsContactFromLastHeard(db: NodeSqliteDB): void {
+  if (!tableExists(db, 'reticulum_destinations')) return;
+  if (!getColumnNames(db, 'reticulum_destinations').has('is_contact')) return;
+  db.prepare(
+    `UPDATE reticulum_destinations
+     SET is_contact = 1
+     WHERE last_heard IS NOT NULL
+       AND (is_contact IS NULL OR is_contact = 0)`,
+  ).run();
 }
 
 function structuralUpgrades(db: NodeSqliteDB): void {
@@ -1049,6 +1084,10 @@ export function runSchemaUpgrade(db: NodeSqliteDB): void {
   try {
     ensureTablesOnly(db);
     ensureColumns(db);
+    // One-time: legacy last_heard-only rows were Contacts before the History split.
+    if (cur < 48) {
+      backfillReticulumIsContactFromLastHeard(db);
+    }
     structuralUpgrades(db);
     ensureIndexes(db);
     seedAppSettings(db);

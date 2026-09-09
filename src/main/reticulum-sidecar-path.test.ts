@@ -1,4 +1,5 @@
 import { app } from 'electron';
+import { EventEmitter } from 'events';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -20,15 +21,19 @@ const spawnMock = vi.fn();
 
 vi.mock('child_process', () => ({
   spawn: (...args: unknown[]) => spawnMock(...args),
+  spawnSync: vi.fn(() => ({ status: 0, stdout: '', stderr: '' })),
 }));
 
 import {
+  ensureDevSidecarBinary,
   findReticulumSidecarProjectDir,
   formatReticulumCargoBuildError,
-  hasRnsStackSiblings,
+  hasRsstackWorkspace,
   newestReticulumSidecarSourceMtimeMs,
   resolveSidecarBinaryPath,
+  RETICULUM_SIDECAR_CARGO_BUILD_TIMEOUT_MS,
   reticulumCargoStderrMissingPacketTap,
+  runCargoBuildForTests,
   sidecarBinaryIsStale,
   sidecarBinaryLacksRnsBle,
   sidecarBinaryLacksRnsStack,
@@ -42,6 +47,7 @@ describe('reticulum-sidecar-path', () => {
   afterEach(() => {
     spawnMock.mockReset();
     vi.mocked(app.getAppPath).mockReturnValue('/virtual/app');
+    vi.useRealTimers();
     if (tmpDir) {
       fs.rmSync(tmpDir, { recursive: true, force: true });
       tmpDir = '';
@@ -101,23 +107,35 @@ describe('reticulum-sidecar-path', () => {
     );
   });
 
-  it('sidecarCargoBuildArgs uses rns-stack when Ratspeak siblings exist', () => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-reticulum-siblings-'));
+  it('sidecarCargoBuildArgs uses rns-stack when the repo-local .rsstack exists', () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-reticulum-rsstack-'));
     const meshRoot = path.join(tmpDir, 'mesh-client');
     const projectDir = path.join(meshRoot, 'reticulum-sidecar');
-    fs.mkdirSync(path.join(tmpDir, 'rsReticulum', 'crates', 'rns-runtime'), { recursive: true });
-    fs.mkdirSync(path.join(tmpDir, 'rsLXMF', 'crates', 'lxmf-core'), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, 'rsReticulum/crates/rns-runtime/Cargo.toml'), '[package]\n');
-    fs.writeFileSync(path.join(tmpDir, 'rsLXMF/crates/lxmf-core/Cargo.toml'), '[package]\n');
+    const stackRoot = path.join(meshRoot, '.rsstack');
+    fs.mkdirSync(path.join(stackRoot, 'rsReticulum', 'crates', 'rns-runtime'), { recursive: true });
+    fs.mkdirSync(path.join(stackRoot, 'rsLXMF', 'crates', 'lxmf-core'), { recursive: true });
+    fs.writeFileSync(
+      path.join(stackRoot, 'rsReticulum/crates/rns-runtime/Cargo.toml'),
+      '[package]\n',
+    );
+    fs.writeFileSync(path.join(stackRoot, 'rsLXMF/crates/lxmf-core/Cargo.toml'), '[package]\n');
     fs.mkdirSync(projectDir, { recursive: true });
     fs.writeFileSync(path.join(projectDir, 'Cargo.toml'), '[package]\nname = "test"\n');
 
-    expect(hasRnsStackSiblings(projectDir)).toBe(true);
+    expect(hasRsstackWorkspace(projectDir)).toBe(true);
     expect(sidecarCargoBuildArgs(projectDir)).toEqual([
       'build',
       '--features',
       'rns-stack,rns-ble,rns-rnode-tcp',
     ]);
+  });
+
+  it('hasRsstackWorkspace is false without repo-local .rsstack', () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-reticulum-nostack-'));
+    const projectDir = path.join(tmpDir, 'mesh-client', 'reticulum-sidecar');
+    fs.mkdirSync(projectDir, { recursive: true });
+    expect(hasRsstackWorkspace(projectDir)).toBe(false);
+    expect(sidecarCargoBuildArgs(projectDir)).toEqual(['build']);
   });
 
   it('sidecarBinaryLacksRnsBle detects sidecars built without rns-ble', () => {
@@ -154,6 +172,100 @@ describe('reticulum-sidecar-path', () => {
     );
     expect(msg).toContain('RETICULUM_RNS_PATCH_MISSING');
     expect(msg).toContain('pnpm run reticulum:sidecar:build');
+  });
+
+  it('resolveDevSidecarEnsureAction awaits mtime-stale full builds in dev', async () => {
+    const { resolveDevSidecarEnsureAction } = await import('./reticulum-sidecar-path');
+    expect(
+      resolveDevSidecarEnsureAction({
+        missing: false,
+        stale: true,
+        lacksRnsStack: false,
+        lacksRnsBle: false,
+      }),
+    ).toBe('await-build');
+    expect(
+      resolveDevSidecarEnsureAction({
+        missing: true,
+        stale: false,
+        lacksRnsStack: false,
+        lacksRnsBle: false,
+      }),
+    ).toBe('await-build');
+    expect(
+      resolveDevSidecarEnsureAction({
+        missing: false,
+        stale: false,
+        lacksRnsStack: false,
+        lacksRnsBle: false,
+      }),
+    ).toBe('noop');
+  });
+
+  it('ensureDevSidecarBinary stays pending until injected build resolves', async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-reticulum-ensure-'));
+    const projectDir = path.join(tmpDir, 'reticulum-sidecar');
+    const binary = path.join(projectDir, 'target', 'debug', sidecarBinaryName());
+    fs.mkdirSync(path.dirname(binary), { recursive: true });
+    fs.writeFileSync(path.join(projectDir, 'Cargo.toml'), '[package]\nname = "test"\n');
+
+    let releaseBuild!: () => void;
+    const heldBuild = new Promise<void>((resolve) => {
+      releaseBuild = resolve;
+    });
+    let buildStarted = false;
+    const ensurePromise = ensureDevSidecarBinary(binary, {
+      projectDir,
+      runBuild: async () => {
+        buildStarted = true;
+        await heldBuild;
+        fs.writeFileSync(binary, 'built');
+      },
+    });
+
+    await Promise.resolve();
+    expect(buildStarted).toBe(true);
+    const pending = await Promise.race([
+      ensurePromise.then(() => 'done' as const),
+      new Promise<'pending'>((resolve) =>
+        setTimeout(() => {
+          resolve('pending');
+        }, 30),
+      ),
+    ]);
+    expect(pending).toBe('pending');
+
+    releaseBuild();
+    await ensurePromise;
+    expect(fs.existsSync(binary)).toBe(true);
+  });
+
+  it('runCargoBuild terminates hung cargo and propagates timeout', async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-reticulum-cargo-timeout-'));
+    const projectDir = path.join(tmpDir, 'reticulum-sidecar');
+    fs.mkdirSync(projectDir, { recursive: true });
+    fs.writeFileSync(path.join(projectDir, 'Cargo.toml'), '[package]\nname = "test"\n');
+
+    vi.useFakeTimers();
+    const proc = new EventEmitter() as EventEmitter & {
+      kill: ReturnType<typeof vi.fn>;
+      stdout: EventEmitter;
+      stderr: EventEmitter;
+    };
+    proc.kill = vi.fn();
+    proc.stdout = new EventEmitter();
+    proc.stderr = new EventEmitter();
+    spawnMock.mockReturnValue(proc);
+
+    const buildPromise = runCargoBuildForTests(projectDir);
+    await Promise.resolve();
+    expect(spawnMock).toHaveBeenCalled();
+
+    const expectation = expect(buildPromise).rejects.toThrow(/RETICULUM_CARGO_BUILD_TIMEOUT/);
+    await vi.advanceTimersByTimeAsync(RETICULUM_SIDECAR_CARGO_BUILD_TIMEOUT_MS);
+    await expectation;
+    expect(proc.kill).toHaveBeenCalled();
+    vi.useRealTimers();
   });
 
   it('formatReticulumCargoBuildError keeps generic RETICULUM_CARGO_BUILD_FAILED for other errors', () => {

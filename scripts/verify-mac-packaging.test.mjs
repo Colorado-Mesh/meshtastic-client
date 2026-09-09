@@ -1,15 +1,46 @@
 // @vitest-environment node
-import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync, mkdirSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  assertApplicationsSymlink,
+  assertDualArchMacArchives,
+  assertDmgInstallNotice,
+  assertLipoArchsMatch,
+  assertMacCodeSignatureIfDeveloperId,
+  assertMacMinimumSystemVersion,
+  assertSiblingFrameworkSymlinks,
+  classifyMacArchiveArch,
+  expectedLipoArchsForMacArch,
+  isDeveloperIdApplicationAuthority,
+  resolveExpectedMacArch,
   VerificationFailure,
   fail,
   isCompleteAppBundle,
   pickPrimaryArchive,
 } from './verify-mac-packaging.mjs';
+
+const DEVELOPER_ID_CODESIGN_DV = [
+  'Executable=/Applications/Mesh-client.app/Contents/MacOS/Mesh-client',
+  'Identifier=com.mesh-client.app',
+  'Format=app bundle with Mach-O thin (arm64)',
+  'Authority=Developer ID Application: Example Developer (ABCD123456)',
+  'Authority=Developer ID Certification Authority',
+  'Authority=Apple Root CA',
+  'TeamIdentifier=ABCD123456',
+  'Runtime Version=26.5.0',
+].join('\n');
+
+const ADHOC_CODESIGN_DV = [
+  'Executable=/tmp/Mesh-client.app/Contents/MacOS/Mesh-client',
+  'Identifier=com.mesh-client.app',
+  'Signature=adhoc',
+  'TeamIdentifier=not set',
+].join('\n');
+
+const UNSIGNED_CODESIGN_DV = '/tmp/Mesh-client.app: code object is not signed at all\n';
 
 describe('verify-mac-packaging helpers', () => {
   it('fail throws VerificationFailure for finally detach cleanup', () => {
@@ -42,7 +73,309 @@ describe('verify-mac-packaging helpers', () => {
     }
   });
 
+  it('classifyMacArchiveArch uses path and file-name markers', () => {
+    expect(classifyMacArchiveArch('/r/mac-arm64/Mesh-client-1.0.0-arm64.dmg')).toBe('arm64');
+    expect(classifyMacArchiveArch('/r/mac-x64/Mesh-client-1.0.0-x64.dmg')).toBe('x64');
+    expect(classifyMacArchiveArch('/r/Mesh-client-1.0.0-arm64-mac.zip')).toBe('arm64');
+    expect(classifyMacArchiveArch('/r/Mesh-client-1.0.0-x64-mac.zip')).toBe('x64');
+    expect(classifyMacArchiveArch('/r/mac-universal/Mesh-client-1.0.0-universal.dmg')).toBe(
+      'universal',
+    );
+    expect(classifyMacArchiveArch('/r/Mesh-client-1.0.0.dmg')).toBe('unknown');
+  });
+
+  it('assertDualArchMacArchives requires both arches', () => {
+    expect(() =>
+      assertDualArchMacArchives(
+        [
+          '/r/mac-arm64/Mesh-client-1.0.0-arm64.dmg',
+          '/r/mac-arm64/Mesh-client-1.0.0-arm64-mac.zip',
+        ],
+        '.dmg',
+      ),
+    ).toThrow(/Expected both x64 and arm64 macOS \.dmg/);
+
+    expect(() =>
+      assertDualArchMacArchives(
+        ['/r/mac-arm64/Mesh-client-1.0.0-arm64.dmg', '/r/mac-x64/Mesh-client-1.0.0-x64.dmg'],
+        '.dmg',
+      ),
+    ).not.toThrow();
+
+    expect(() =>
+      assertDualArchMacArchives(
+        [
+          '/r/mac-arm64/Mesh-client-1.0.0-arm64-mac.zip',
+          '/r/mac-x64/Mesh-client-1.0.0-x64-mac.zip',
+        ],
+        '.zip',
+      ),
+    ).not.toThrow();
+
+    // Unscoped Intel name counts as x64 when arm64 sibling exists.
+    expect(() =>
+      assertDualArchMacArchives(
+        ['/r/Mesh-client-1.0.0-arm64.dmg', '/r/Mesh-client-1.0.0.dmg'],
+        '.dmg',
+      ),
+    ).not.toThrow();
+  });
+
+  it('assertDualArchMacArchives fails when a format is missing an arch', () => {
+    // A mixed release (arm64 DMG + x64 ZIP only) looks dual-arch if lists are combined,
+    // but each format must be dual-arch on its own.
+    expect(() =>
+      assertDualArchMacArchives(['/r/mac-arm64/Mesh-client-1.0.0-arm64.dmg'], '.dmg'),
+    ).toThrow(/Expected both x64 and arm64 macOS \.dmg/);
+
+    expect(() =>
+      assertDualArchMacArchives(['/r/mac-x64/Mesh-client-1.0.0-x64-mac.zip'], '.zip'),
+    ).toThrow(/Expected both x64 and arm64 macOS \.zip/);
+
+    expect(() =>
+      assertDualArchMacArchives(['/r/mac-arm64/Mesh-client-1.0.0-arm64-mac.zip'], '.zip'),
+    ).toThrow(/Expected both x64 and arm64 macOS \.zip/);
+  });
+
+  it('resolveExpectedMacArch maps labels and defaults unscoped to x64', () => {
+    expect(resolveExpectedMacArch('/r/mac-arm64/Mesh-client.app')).toBe('arm64');
+    expect(resolveExpectedMacArch('/r/Mesh-client-1.0.0-x64.dmg')).toBe('x64');
+    expect(resolveExpectedMacArch('/r/Mesh-client-1.0.0.dmg')).toBe('x64');
+    expect(expectedLipoArchsForMacArch('arm64')).toEqual(['arm64']);
+    expect(expectedLipoArchsForMacArch('x64')).toEqual(['x86_64']);
+    expect(expectedLipoArchsForMacArch('universal')).toEqual(['arm64', 'x86_64']);
+  });
+
+  it('assertLipoArchsMatch rejects filename/binary architecture disagreement', () => {
+    // arm64-labeled archive whose launcher is actually Intel.
+    expect(() =>
+      assertLipoArchsMatch('zip:Mesh-client-1.0.0-arm64-mac.zip', 'launcher', ['x86_64'], 'arm64'),
+    ).toThrow(/launcher Mach-O archs \[x86_64\] do not match expected arm64 \[arm64\]/);
+
+    // x64-labeled archive whose framework is arm64-only.
+    expect(() =>
+      assertLipoArchsMatch('dmg:Mesh-client-1.0.0-x64.dmg', 'Electron Framework', ['arm64'], 'x64'),
+    ).toThrow(/Electron Framework Mach-O archs \[arm64\] do not match expected x64 \[x86_64\]/);
+
+    expect(() =>
+      assertLipoArchsMatch('zip:Mesh-client-1.0.0-x64-mac.zip', 'launcher', ['x86_64'], 'x64'),
+    ).not.toThrow();
+
+    expect(() =>
+      assertLipoArchsMatch(
+        'zip:Mesh-client-1.0.0-universal-mac.zip',
+        'launcher',
+        ['x86_64', 'arm64'],
+        'universal',
+      ),
+    ).not.toThrow();
+  });
+
   it('isCompleteAppBundle returns false for missing launcher paths', () => {
     expect(isCompleteAppBundle('/nonexistent/Mesh-client.app')).toBe(false);
+  });
+
+  it('assertApplicationsSymlink accepts Applications → /Applications', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'verify-mac-apps-link-'));
+    try {
+      symlinkSync('/Applications', join(dir, 'Applications'));
+      expect(() => assertApplicationsSymlink(dir)).not.toThrow();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('assertApplicationsSymlink rejects missing or wrong-target links', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'verify-mac-apps-link-bad-'));
+    try {
+      expect(() => assertApplicationsSymlink(dir)).toThrow(VerificationFailure);
+
+      writeFileSync(join(dir, 'Applications'), 'not-a-symlink');
+      expect(() => assertApplicationsSymlink(dir)).toThrow(/must be a symlink/);
+
+      rmSync(join(dir, 'Applications'));
+      symlinkSync('/tmp', join(dir, 'Applications'));
+      expect(() => assertApplicationsSymlink(dir)).toThrow(/must target \/Applications/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('assertDmgInstallNotice requires IMPORTANT-Read-Me.txt', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'verify-mac-dmg-notice-'));
+    try {
+      expect(() => assertDmgInstallNotice(dir)).toThrow(VerificationFailure);
+      writeFileSync(join(dir, 'IMPORTANT-Read-Me.txt'), 'macOS install notice '.repeat(8));
+      expect(() => assertDmgInstallNotice(dir)).not.toThrow();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('assertMacMinimumSystemVersion requires LSMinimumSystemVersion >= 13.0.0', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'verify-mac-min-os-'));
+    const bundle = join(dir, 'Mesh-client.app');
+    const plistPath = join(bundle, 'Contents', 'Info.plist');
+    try {
+      mkdirSync(join(bundle, 'Contents'), { recursive: true });
+      expect(() => assertMacMinimumSystemVersion(bundle, 'test')).toThrow(
+        /Missing test Info\.plist/,
+      );
+
+      writeFileSync(plistPath, '<?xml version="1.0"?><plist><dict></dict></plist>');
+      expect(() => assertMacMinimumSystemVersion(bundle, 'test')).toThrow(
+        /missing LSMinimumSystemVersion/,
+      );
+
+      writeFileSync(
+        plistPath,
+        [
+          '<?xml version="1.0"?>',
+          '<plist><dict>',
+          '<key>LSMinimumSystemVersion</key><string>12.0</string>',
+          '</dict></plist>',
+        ].join('\n'),
+      );
+      expect(() => assertMacMinimumSystemVersion(bundle, 'test')).toThrow(/need >= 13\.0\.0/);
+
+      writeFileSync(
+        plistPath,
+        [
+          '<?xml version="1.0"?>',
+          '<plist><dict>',
+          '<key>LSMinimumSystemVersion</key><string>13.0.0</string>',
+          '</dict></plist>',
+        ].join('\n'),
+      );
+      expect(() => assertMacMinimumSystemVersion(bundle, 'test')).not.toThrow();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('assertSiblingFrameworkSymlinks rejects flattened Squirrel.framework root link', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'verify-mac-squirrel-'));
+    const bundle = join(dir, 'Mesh-client.app');
+    const fwRoot = join(bundle, 'Contents', 'Frameworks', 'Squirrel.framework');
+    try {
+      mkdirSync(join(fwRoot, 'Versions', 'A'), { recursive: true });
+      writeFileSync(join(fwRoot, 'Versions', 'A', 'Squirrel'), 'x'.repeat(2048));
+      writeFileSync(join(fwRoot, 'Squirrel'), 'not-a-symlink');
+      symlinkSync('A', join(fwRoot, 'Versions', 'Current'));
+      expect(() =>
+        assertSiblingFrameworkSymlinks(bundle, 'test', {
+          dir: 'Squirrel.framework',
+          binary: 'Squirrel',
+          minBytes: 1024,
+        }),
+      ).toThrow(/must be a symlink/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('isDeveloperIdApplicationAuthority detects Developer ID Application lines', () => {
+    expect(isDeveloperIdApplicationAuthority(DEVELOPER_ID_CODESIGN_DV)).toBe(true);
+    expect(isDeveloperIdApplicationAuthority(ADHOC_CODESIGN_DV)).toBe(false);
+    expect(isDeveloperIdApplicationAuthority(UNSIGNED_CODESIGN_DV)).toBe(false);
+    expect(isDeveloperIdApplicationAuthority('')).toBe(false);
+  });
+
+  it('assertMacCodeSignatureIfDeveloperId skips unsigned and ad-hoc displays', () => {
+    const calls = { deep: 0, staple: 0, sidecar: 0 };
+    const skipDeps = {
+      readDisplay: () => ({ status: 1, text: UNSIGNED_CODESIGN_DV }),
+      verifyDeepStrict: () => {
+        calls.deep += 1;
+        return { status: 0, text: '' };
+      },
+      staplerValidate: () => {
+        calls.staple += 1;
+        return { status: 0, text: '' };
+      },
+      verifyStrict: () => {
+        calls.sidecar += 1;
+        return { status: 0, text: '' };
+      },
+      resolveSidecarPath: () => '/tmp/mesh-client-reticulum',
+    };
+
+    expect(() =>
+      assertMacCodeSignatureIfDeveloperId('/tmp/Mesh-client.app', 'unsigned', skipDeps),
+    ).not.toThrow();
+    expect(() =>
+      assertMacCodeSignatureIfDeveloperId('/tmp/Mesh-client.app', 'adhoc', {
+        ...skipDeps,
+        readDisplay: () => ({ status: 0, text: ADHOC_CODESIGN_DV }),
+      }),
+    ).not.toThrow();
+    expect(calls).toEqual({ deep: 0, staple: 0, sidecar: 0 });
+  });
+
+  it('assertMacCodeSignatureIfDeveloperId enforces deep strict, stapler, and sidecar', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'verify-mac-codesign-'));
+    const sidecarPath = join(dir, 'mesh-client-reticulum');
+    writeFileSync(sidecarPath, 'x');
+    const seen = /** @type {string[]} */ ([]);
+    try {
+      expect(() =>
+        assertMacCodeSignatureIfDeveloperId('/tmp/Mesh-client.app', 'signed', {
+          readDisplay: () => ({ status: 0, text: DEVELOPER_ID_CODESIGN_DV }),
+          verifyDeepStrict: (target) => {
+            seen.push(`deep:${target}`);
+            return { status: 0, text: 'valid on disk\n' };
+          },
+          staplerValidate: (target) => {
+            seen.push(`staple:${target}`);
+            return { status: 0, text: 'The validate action worked!\n' };
+          },
+          verifyStrict: (target) => {
+            seen.push(`sidecar:${target}`);
+            return { status: 0, text: 'valid on disk\n' };
+          },
+          resolveSidecarPath: () => sidecarPath,
+        }),
+      ).not.toThrow();
+      expect(seen).toEqual([
+        'deep:/tmp/Mesh-client.app',
+        'staple:/tmp/Mesh-client.app',
+        `sidecar:${sidecarPath}`,
+      ]);
+
+      expect(() =>
+        assertMacCodeSignatureIfDeveloperId('/tmp/Mesh-client.app', 'broken', {
+          readDisplay: () => ({ status: 0, text: DEVELOPER_ID_CODESIGN_DV }),
+          verifyDeepStrict: () => ({
+            status: 1,
+            text: 'invalid signature (code or signature have been modified)\n',
+          }),
+          staplerValidate: () => ({ status: 0, text: '' }),
+          verifyStrict: () => ({ status: 0, text: '' }),
+          resolveSidecarPath: () => sidecarPath,
+        }),
+      ).toThrow(/codesign --verify --deep --strict failed/);
+
+      expect(() =>
+        assertMacCodeSignatureIfDeveloperId('/tmp/Mesh-client.app', 'unstapled', {
+          readDisplay: () => ({ status: 0, text: DEVELOPER_ID_CODESIGN_DV }),
+          verifyDeepStrict: () => ({ status: 0, text: '' }),
+          staplerValidate: () => ({ status: 1, text: 'Error: no ticket\n' }),
+          verifyStrict: () => ({ status: 0, text: '' }),
+          resolveSidecarPath: () => sidecarPath,
+        }),
+      ).toThrow(/stapler validate failed/);
+
+      expect(() =>
+        assertMacCodeSignatureIfDeveloperId('/tmp/Mesh-client.app', 'bad-sidecar', {
+          readDisplay: () => ({ status: 0, text: DEVELOPER_ID_CODESIGN_DV }),
+          verifyDeepStrict: () => ({ status: 0, text: '' }),
+          staplerValidate: () => ({ status: 0, text: '' }),
+          verifyStrict: () => ({ status: 1, text: 'code object is not signed at all\n' }),
+          resolveSidecarPath: () => sidecarPath,
+        }),
+      ).toThrow(/sidecar codesign --verify --strict failed/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

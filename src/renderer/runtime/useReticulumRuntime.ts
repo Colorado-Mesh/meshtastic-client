@@ -1,12 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { isReticulumAutostartEnabled } from '@/renderer/lib/appSettingsStorage';
+import { sanitizeLogMessage } from '@/main/sanitize-log-message';
+import { pushAppToast } from '@/renderer/components/Toast';
+import {
+  applyRncpReceiveDestShareFromLxmf,
+  rncpReceiveDestShareSavedToastMessage,
+} from '@/renderer/lib/applyRncpReceiveDestShare';
+import {
+  isReticulumAutoResendOnAnnounceEnabled,
+  isReticulumAutostartEnabled,
+  isRrcUnreadAllRoomMessagesEnabled,
+} from '@/renderer/lib/appSettingsStorage';
 import { BatchedRingBufferAppender } from '@/renderer/lib/batchedRingBufferAppender';
 import { requestChatOutboxDrain } from '@/renderer/lib/chatOutboxDrain';
 import { loadMutedViews } from '@/renderer/lib/chatPanelProtocolStorage';
 import {
   buildReticulumDiagnosticRows,
   mergeReticulumDiagnosticRows,
+  shouldEmitAnnounceBusPressure,
 } from '@/renderer/lib/diagnostics/ReticulumDiagnosticEngine';
 import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
 import i18n from '@/renderer/lib/i18n';
@@ -18,10 +29,12 @@ import {
   MAX_RAW_PACKET_LOG_ENTRIES,
   type ReticulumRawPacketEntry,
 } from '@/renderer/lib/rawPacketLogConstants';
+import { announceDestinationHashes } from '@/renderer/lib/reticulum/announceDestinationHashes';
 import {
   applyReticulumOutboundDeliveryStatus,
   flushPendingReticulumOutboundDeliveryStatus,
 } from '@/renderer/lib/reticulum/applyReticulumOutboundDeliveryStatus';
+import { catchUpRecentInboundLxmf as runInboundLxmfCatchUp } from '@/renderer/lib/reticulum/catchUpRecentInboundLxmf';
 import {
   resolveReticulumOutboundViaFromPath,
   reticulumViaToMessageTransport,
@@ -37,25 +50,55 @@ import {
   markStaleReticulumOutboundMessages,
   RETICULUM_STALE_OUTBOUND_MS,
 } from '@/renderer/lib/reticulum/markStaleReticulumOutbound';
+import { resendFailedReticulumForDestination } from '@/renderer/lib/reticulum/resendFailedReticulumForDestination';
+import {
+  getHotReticulumPeerInterface,
+  recordReticulumPeerInterfaceSamplesFromPeersUpdated,
+} from '@/renderer/lib/reticulum/reticulumAnnounceIfaceAttribution';
 import { cacheReticulumInboundAttachment } from '@/renderer/lib/reticulum/reticulumAttachmentCache';
+import { cacheReticulumInboundAudio } from '@/renderer/lib/reticulum/reticulumAudioAttachmentCache';
+import { isReticulumBleRnodeInterfaceRow } from '@/renderer/lib/reticulum/reticulumBleAdapterConflict';
+import { releaseReticulumBleRnodeConnect } from '@/renderer/lib/reticulum/reticulumBleAdapterLease';
+import { setReticulumBleBondDesyncActive } from '@/renderer/lib/reticulum/reticulumBleBondDesync';
 import { fetchReticulumConfigAudit } from '@/renderer/lib/reticulum/reticulumConfigAudit';
+import { RETICULUM_CONFIGURED_EVENT } from '@/renderer/lib/reticulum/reticulumConfiguredEvent';
+import { maybeNotifyInboundGamesChallenge } from '@/renderer/lib/reticulum/reticulumGamesNotifications';
+import { refreshGamesSessions } from '@/renderer/lib/reticulum/reticulumGamesSession';
+import {
+  advanceReticulumInboundCatchUpWatermark,
+  getReticulumInboundLxmfDiagnostics,
+  noteReticulumEventsLagged,
+  noteReticulumInboundCatchUp,
+} from '@/renderer/lib/reticulum/reticulumInboundLxmfDiagnostics';
+import {
+  isReticulumIpcSendTimeout,
+  withReticulumIpcSendDeadline,
+} from '@/renderer/lib/reticulum/reticulumIpcDeadline';
 import {
   logReticulumInterfaceStateEvent,
   logReticulumLocalInterfaceHealthChanges,
 } from '@/renderer/lib/reticulum/reticulumLocalInterfaceLogging';
 import {
   pickReticulumLocalHealthPollMs,
+  RETICULUM_LOCAL_HEALTH_POLL_MS,
   scheduleReticulumLocalInterfaceBurst,
 } from '@/renderer/lib/reticulum/reticulumLocalInterfaceRefresh';
 import {
   isReticulumManualStackStopSuppress,
   setReticulumManualStackStopSuppress,
 } from '@/renderer/lib/reticulum/reticulumManualStackStopSuppress';
-import { failReticulumSendingOutboundToDestHash } from '@/renderer/lib/reticulum/reticulumOutboundFailureBridge';
+import {
+  failReticulumSendingOutboundToDestHash,
+  shouldApplyLinkDeliveryTimeoutFailureBridge,
+} from '@/renderer/lib/reticulum/reticulumOutboundFailureBridge';
+import { shouldDeletePriorReticulumOutboundHash } from '@/renderer/lib/reticulum/reticulumOutboundRetry';
+import { readReticulumPropagationMode } from '@/renderer/lib/reticulum/reticulumPropagationMode';
 import {
   applyPropagationSyncEvent,
+  normalizePropagationSyncProgress,
   RETICULUM_PROPAGATION_SYNC_STALL_MS,
 } from '@/renderer/lib/reticulum/reticulumPropagationSync';
+import { reticulumProxyErrorToI18nKey } from '@/renderer/lib/reticulum/reticulumProxyErrorHumanize';
 import { reticulumWireRowToEntry } from '@/renderer/lib/reticulum/reticulumRawPacketLog';
 import {
   resolveReticulumSelfFullLabel,
@@ -74,13 +117,42 @@ import {
   fetchReticulumSerialPorts,
   getCachedReticulumEffectivePrimaryLocalSerialInterfaceId,
   invalidateReticulumInterfacesCache,
+  isReticulumSidecarRateLimitError,
   type ReticulumSidecarInterfaceRow,
 } from '@/renderer/lib/reticulum/reticulumSidecarReads';
 import { parseReticulumStackSettingsPayload } from '@/renderer/lib/reticulum/reticulumStackSettings';
+import { aggregateReticulumLocalRfTxQueue } from '@/renderer/lib/reticulum/reticulumTxQueueAggregate';
 import { useReticulumNobleBleYieldWatcher } from '@/renderer/lib/reticulum/useReticulumNobleBleYieldWatcher';
 import { useReticulumPropagationAutoSync } from '@/renderer/lib/reticulum/useReticulumPropagationAutoSync';
-import { isRrcRoomMuted } from '@/renderer/lib/rrcMention';
-import { LARGE_MESH_NODE_THRESHOLD } from '@/renderer/lib/sessionMemoryCaps';
+import { persistReticulumSelfLxmfHash } from '@/renderer/lib/reticulumLastSelfLxmfHash';
+import { reconcileRncpListenerFromSidecar } from '@/renderer/lib/rncpListenerApply';
+import {
+  commitRncpLxmfControlHandled,
+  releaseRncpLxmfControlHandled,
+  resolveRncpLxmfControlMessageHash,
+  takeRncpLxmfControlRetryAllowed,
+  tryMarkRncpLxmfControlHandled,
+  tryReserveRncpLxmfControlHandled,
+} from '@/renderer/lib/rncpLxmfControlSideEffectDedup';
+import { consumeRncpReceiveDestSharePending } from '@/renderer/lib/rncpReceiveDestSharePending';
+import { applyRrcDirectMessageRoom } from '@/renderer/lib/rrcDirectMessageRoute';
+import {
+  clearRrcHubAutoJoinBackoff,
+  isRrcAutoJoinBackoffWorthyReason,
+  recordRrcHubAutoJoinFailure,
+} from '@/renderer/lib/rrcHubAutoJoinBackoff';
+import { isRrcRoomMuted, resolveRrcAlertType } from '@/renderer/lib/rrcMention';
+import {
+  resolveRrcHubScopedNoticeRoom,
+  resolveRrcInboundChatRoom,
+  shouldDropEmptyRrcInbound,
+} from '@/renderer/lib/rrcMessageDisplay';
+import { applyRrcWhoInboundNotice } from '@/renderer/lib/rrcWhoInbound';
+import {
+  LARGE_MESH_NODE_THRESHOLD,
+  MEGA_MESH_FULL_PEER_REFRESH_MAX_AGE_MS,
+  MEGA_MESH_NODE_THRESHOLD,
+} from '@/renderer/lib/sessionMemoryCaps';
 import { registerReticulumSession } from '@/renderer/lib/sessions/reticulumSession';
 import {
   nodeRecordsToMeshNodeMap,
@@ -91,17 +163,28 @@ import {
   useReticulumIdentityStore,
 } from '@/renderer/stores/reticulumIdentityStore';
 import { useReticulumPropagationStore } from '@/renderer/stores/reticulumPropagationStore';
-import type { ReticulumSidecarEvent, ReticulumWirePacketRow } from '@/shared/reticulum-types';
-import { lxmfBodyContainsRncpRequestEnable } from '@/shared/rncpRequestEnable';
+import type {
+  ReticulumContact,
+  ReticulumSidecarEvent,
+  ReticulumWirePacketRow,
+} from '@/shared/reticulum-types';
+import {
+  lxmfBodyContainsRncpRequestEnable,
+  parseRncpReceiveDestShare,
+} from '@/shared/rncpRequestEnable';
+import { touch } from '@/shared/touch';
+import { parseVoiceAudioRequest } from '@/shared/voice-types';
 
 import { getIdentityIdForProtocol } from '../lib/identityByProtocol';
 import { getOfflineIdentityIdForProtocol } from '../lib/offlineProtocolIdentities';
+import { decodeF32LeBase64 } from '../lib/reticulumVoiceAudio';
+import { handleReticulumVoiceTerminal } from '../lib/reticulumVoiceSession';
+import { resolveRrcInvoluntaryPartBannerKey } from '../lib/rrcInvoluntaryPartBanner';
 import {
   isRrcJoinInfoNotice,
   isRrcModerationLanguage,
   parseRrcListNotice,
   parseRrcTopicNotice,
-  parseRrcWhoNotice,
 } from '../lib/rrcNoticeParsers';
 import { rrcRoomsMatch } from '../lib/rrcRoomName';
 import type { DeviceState, MeshNode } from '../lib/types';
@@ -110,16 +193,28 @@ import { setConnection, useConnectionStore } from '../stores/connectionStore';
 import { useDiagnosticsStore } from '../stores/diagnosticsStore';
 import { useIdentityStore } from '../stores/identityStore';
 import {
+  mergeMessageRecordsFromDbForIdentity,
   renameMessageId,
   replaceMessageRecordsForIdentity,
   updateMessageStatus,
   useMessageStore,
 } from '../stores/messageStore';
-import { upsertNodeRecord, upsertNodeRecordsForIdentity, useNodeStore } from '../stores/nodeStore';
+import {
+  type NodeRecord,
+  upsertNodeRecord,
+  upsertNodeRecordsForIdentity,
+  useNodeStore,
+} from '../stores/nodeStore';
 import { useNomadNetworkStore } from '../stores/nomadNetworkStore';
-import { useReticulumDiscoveryMapStore } from '../stores/reticulumDiscoveryMapStore';
+import { useNomadPageViewerStore } from '../stores/nomadPageViewerStore';
+import {
+  normalizeRmapDiscoveryRows,
+  useReticulumDiscoveryMapStore,
+} from '../stores/reticulumDiscoveryMapStore';
+import { useReticulumGamesStore } from '../stores/reticulumGamesStore';
 import {
   parseAnnounceActivityRows,
+  setReticulumAnnounceBusPressureActive,
   useReticulumIdentityActivityStore,
 } from '../stores/reticulumIdentityActivityStore';
 import { useReticulumPacketStore } from '../stores/reticulumPacketStore';
@@ -133,19 +228,18 @@ import {
   reticulumSelfIdentityToNodeRecord,
   useReticulumPeerStore,
 } from '../stores/reticulumPeerStore';
+import { useReticulumVoiceStore } from '../stores/reticulumVoiceStore';
 import { useRncpEnableRequestStore } from '../stores/rncpEnableRequestStore';
 import { useRncpTransferStore } from '../stores/rncpTransferStore';
 import { useRnshSessionStore } from '../stores/rnshSessionStore';
 import { useRrcHubStore } from '../stores/rrcHubStore';
-import {
-  RRC_HUB_STREAM_ROOM,
-  RRC_WHISPERS_ROOM,
-  useRrcSessionStore,
-} from '../stores/rrcSessionStore';
+import { RRC_HUB_STREAM_ROOM, useRrcSessionStore } from '../stores/rrcSessionStore';
 import type { ProtocolRuntime } from './protocolRuntime';
 
-/** Safety poll interval when the path table is large. */
-const RETICULUM_PEER_REFRESH_LARGE_MS = 60_000;
+/** Safety poll interval when the path table is large (>2k peers). */
+const RETICULUM_PEER_REFRESH_LARGE_MS = 120_000;
+/** Periodic inbound LXMF ring catch-up (same cadence at all mesh sizes). */
+const RETICULUM_INBOUND_LXMF_CATCHUP_MS = 60_000;
 
 const INITIAL_STATE: DeviceState = {
   status: 'disconnected',
@@ -161,10 +255,16 @@ function resolveRrcHubView(hubHash: string | undefined): {
   hub: string | null;
   activeRoom: string | null;
   partIntentRooms: Set<string>;
+  status: string | null;
 } {
   const s = useRrcSessionStore.getState();
   if (!hubHash) {
-    return { hub: s.focusedHubHash, activeRoom: s.activeRoom, partIntentRooms: s.partIntentRooms };
+    return {
+      hub: s.focusedHubHash,
+      activeRoom: s.activeRoom,
+      partIntentRooms: s.partIntentRooms,
+      status: s.status,
+    };
   }
   const hub = hubHash.toLowerCase();
   const session = s.sessionsByHub.get(hub);
@@ -172,6 +272,7 @@ function resolveRrcHubView(hubHash: string | undefined): {
     hub,
     activeRoom: session?.activeRoom ?? null,
     partIntentRooms: session?.partIntentRooms ?? new Set<string>(),
+    status: session?.status ?? null,
   };
 }
 
@@ -185,6 +286,7 @@ export function useReticulumRuntime(): ProtocolRuntime {
   useReticulumPropagationAutoSync(state.status === 'configured');
   const [selfLxmfHash, setSelfLxmfHash] = useState<string | null>(null);
   const [rawPackets, setRawPackets] = useState<ReticulumRawPacketEntry[]>([]);
+  const [queueStatus, setQueueStatus] = useState<ProtocolRuntime['queueStatus']>(null);
   const rawPacketAppenderRef = useRef<BatchedRingBufferAppender<ReticulumRawPacketEntry> | null>(
     null,
   );
@@ -193,11 +295,18 @@ export function useReticulumRuntime(): ProtocolRuntime {
     MAX_RAW_PACKET_LOG_ENTRIES,
   );
   const unsubEventRef = useRef<(() => void) | null>(null);
-  const connectRef = useRef<(() => Promise<void>) | null>(null);
+  const unsubVoiceAudioRef = useRef<(() => void) | null>(null);
+  const connectRef = useRef<((opts?: { reuseIfRunning?: boolean }) => Promise<void>) | null>(null);
   const restartStackRef = useRef<(() => Promise<void>) | null>(null);
+  /** sendMessage is defined below the event handler; announce auto-resend calls it via ref. */
+  const sendMessageRef = useRef<
+    ((text: string, to: number | string, replyToHash?: string, pendingId?: string) => void) | null
+  >(null);
   const connectInFlightRef = useRef(false);
   const connectInFlightDoneRef = useRef<Promise<void> | null>(null);
   const suppressReconnectRef = useRef(false);
+  /** Set on power-suspend when an enabled BLE RNode was configured — wake must not reuseIfRunning. */
+  const powerSuspendHadBleRnodeRef = useRef(false);
   /**
    * Bumped on every power-suspend so a `connect()` flight started before an earlier suspend
    * (and still in flight when a *later* suspend/resume pair fires) can detect it has been
@@ -206,6 +315,8 @@ export function useReticulumRuntime(): ProtocolRuntime {
    * whether an already-in-flight connect's result is still safe to apply.
    */
   const resumeGenerationRef = useRef(0);
+  /** Bumped on disconnect/teardown so delayed interface refreshes cannot stamp stale queueStatus. */
+  const queueRefreshGenerationRef = useRef(0);
   const peerRefreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const diagnosticsRefreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localInterfaceBurstCancelRef = useRef<(() => void) | null>(null);
@@ -213,6 +324,11 @@ export function useReticulumRuntime(): ProtocolRuntime {
   const stateRef = useRef(state);
   const localInterfacesRef = useRef<ReticulumSidecarInterfaceRow[]>([]);
   const processedLinkTimeoutDestsRef = useRef(new Set<string>());
+  /** Defer link-timeout failure bridge until first propagation store refresh completes. */
+  const propagationHydratedForBridgeRef = useRef(false);
+  /** Bumped on identity change / tearDown / disconnect to abort stale bridge IIFEs. */
+  const linkTimeoutBridgeGenerationRef = useRef(0);
+  const identityIdRef = useRef(identityId);
   const nodeStoreSlice = useNodeStore((s) => (identityId ? s.nodes[identityId] : undefined));
 
   // Include `connecting`: main suspends Noble at sidecar start before status reaches
@@ -228,6 +344,16 @@ export function useReticulumRuntime(): ProtocolRuntime {
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  useEffect(() => {
+    identityIdRef.current = identityId;
+  }, [identityId]);
+
+  useEffect(() => {
+    processedLinkTimeoutDestsRef.current.clear();
+    propagationHydratedForBridgeRef.current = false;
+    linkTimeoutBridgeGenerationRef.current += 1;
+  }, [identityId]);
 
   const selfNodeId = useMemo(
     () => (selfLxmfHash ? reticulumHashToNodeId(selfLxmfHash) : null),
@@ -254,21 +380,28 @@ export function useReticulumRuntime(): ProtocolRuntime {
   const applyContactNodesFromStore = useCallback(() => {
     if (!identityId) return;
     const dismissed = useReticulumPeerStore.getState().dismissedContactHashes;
-    const contacts = useReticulumPeerStore.getState().contacts;
+    const { contacts, history } = useReticulumPeerStore.getState();
     const priorNodes = useNodeStore.getState().nodes[identityId] ?? {};
-    const records = [];
+    const records: NodeRecord[] = [];
     const keepNodeIds = new Set<number>();
+    const seenHashes = new Set<string>();
     if (selfNodeId != null) keepNodeIds.add(selfNodeId);
 
-    for (const contact of contacts.values()) {
+    const consider = (contact: ReticulumContact, skipIfDismissed: boolean) => {
       const hash = contact.destination_hash.replace(/[^0-9a-f]/gi, '').toLowerCase();
-      if (dismissed.has(hash)) continue;
+      if (seenHashes.has(hash)) return;
+      if (skipIfDismissed && dismissed.has(hash)) return;
+      seenHashes.add(hash);
       const nodeId = reticulumHashToNodeId(contact.destination_hash);
       records.push(reticulumContactToNodeRecordPreservingLabel(contact, priorNodes[nodeId]));
       keepNodeIds.add(nodeId);
-    }
+    };
 
-    // Drop path-table peers previously synced into nodeStore; keep self + LXMF contacts only.
+    // Contacts first (saved labels win), then History so messaged peers keep Chat/nodeStore rows.
+    for (const contact of contacts.values()) consider(contact, true);
+    for (const contact of history.values()) consider(contact, false);
+
+    // Drop path-table peers previously synced into nodeStore; keep self + History/Contacts.
     useNodeStore.setState((s) => {
       const prior = s.nodes[identityId] ?? {};
       const next = Object.fromEntries(
@@ -283,7 +416,7 @@ export function useReticulumRuntime(): ProtocolRuntime {
   }, [identityId, selfNodeId]);
 
   const refreshContactsFromSidecar = useCallback(
-    async (opts?: { forceRefresh?: boolean }) => {
+    async (opts?: { forceRefresh?: boolean; skipNomad?: boolean }) => {
       await refreshReticulumPeersFromSidecar(opts);
       applyContactNodesFromStore();
     },
@@ -334,6 +467,7 @@ export function useReticulumRuntime(): ProtocolRuntime {
       };
       useReticulumIdentityStore.getState().setIdentity(nextIdentity);
       setSelfLxmfHash(status.lxmfHash);
+      persistReticulumSelfLxmfHash(status.lxmfHash);
       syncSelfNodeFromIdentityStatus(status.lxmfHash, status.displayName);
       return status.lxmfHash;
     },
@@ -364,64 +498,79 @@ export function useReticulumRuntime(): ProtocolRuntime {
   }, [identityId, selfLxmfHash, syncSelfNodeFromIdentityStatus]);
 
   const refreshLocalInterfacesFromSidecar = useCallback(async () => {
-    invalidateReticulumInterfacesCache();
+    const generation = queueRefreshGenerationRef.current;
     const [interfaces, osSerialPorts] = await Promise.all([
       fetchReticulumInterfaces(),
       fetchReticulumSerialPorts(),
     ]);
+    if (generation !== queueRefreshGenerationRef.current) {
+      return { interfaces, osSerialPorts };
+    }
     localInterfacesRef.current = interfaces;
     logReticulumLocalInterfaceHealthChanges(interfaces, osSerialPorts);
+    setQueueStatus(aggregateReticulumLocalRfTxQueue(interfaces));
     return { interfaces, osSerialPorts };
   }, []);
 
-  const syncDiagnosticsFromSidecar = useCallback(async () => {
-    try {
-      const [snapshot, health, auditIssues, sidecarStatus, stackRaw] = await Promise.all([
-        window.electronAPI.reticulum.proxyGet('/api/v1/diagnostics') as Promise<
-          Parameters<typeof buildReticulumDiagnosticRows>[0]
-        >,
-        refreshLocalInterfacesFromSidecar(),
-        fetchReticulumConfigAudit().catch((e: unknown) => {
-          console.debug('[useReticulumRuntime] config audit failed ' + String(e));
-          return [];
-        }),
-        window.electronAPI.reticulum.getStatus(),
-        window.electronAPI.reticulum.proxyGet('/api/v1/stack/settings').catch(() => {
-          // catch-no-log-ok optional stack settings
-          return null;
-        }),
-      ]);
-      const { interfaces, osSerialPorts } = health;
-      const selfNodeId = selfLxmfHash ? reticulumHashToNodeId(selfLxmfHash) : 0;
-      const shareInstanceEnabled =
-        stackRaw != null ? parseReticulumStackSettingsPayload(stackRaw).share_instance : false;
-      const propState = useReticulumPropagationStore.getState();
-      const rows = buildReticulumDiagnosticRows(snapshot, {
-        selfNodeId,
-        interfaces,
-        osSerialPorts,
-        auditIssues,
-        autoBeaconAlert: sidecarStatus.autoBeaconAlert ?? null,
-        interfaceIssueAlert: sidecarStatus.interfaceIssueAlert ?? null,
-        shareInstanceEnabled,
-        sidecarRunning: sidecarStatus.running,
-        sidecarHealthy: sidecarStatus.healthy,
-        sidecarUnhealthySince: sidecarStatus.unhealthySince,
-        propagation: {
-          syncActive: propState.sync.active,
-          syncProgress: propState.sync.progress,
-          lastSyncError: propState.lastSyncError,
-          lastAttemptAt:
-            propState.activePropagationSyncAttemptAt ?? propState.lastPropagationSyncAttemptAt,
-        },
-      });
-      useDiagnosticsStore.setState((s) => ({
-        diagnosticRows: mergeReticulumDiagnosticRows(s.diagnosticRows, rows),
-      }));
-    } catch (e) {
-      console.debug('[useReticulumRuntime] diagnostics ' + errLikeToLogString(e));
-    }
-  }, [refreshLocalInterfacesFromSidecar, selfLxmfHash]);
+  const syncDiagnosticsFromSidecar = useCallback(
+    async (prefetchedHealth?: Awaited<ReturnType<typeof refreshLocalInterfacesFromSidecar>>) => {
+      try {
+        const [snapshot, health, auditIssues, sidecarStatus, stackRaw] = await Promise.all([
+          window.electronAPI.reticulum.proxyGet('/api/v1/diagnostics') as Promise<
+            Parameters<typeof buildReticulumDiagnosticRows>[0]
+          >,
+          prefetchedHealth
+            ? Promise.resolve(prefetchedHealth)
+            : refreshLocalInterfacesFromSidecar(),
+          fetchReticulumConfigAudit().catch((e: unknown) => {
+            console.debug('[useReticulumRuntime] config audit failed ' + String(e));
+            return [];
+          }),
+          window.electronAPI.reticulum.getStatus(),
+          window.electronAPI.reticulum.proxyGet('/api/v1/stack/settings').catch(() => {
+            // catch-no-log-ok optional stack settings
+            return null;
+          }),
+        ]);
+        const { interfaces, osSerialPorts } = health;
+        const selfNodeId = selfLxmfHash ? reticulumHashToNodeId(selfLxmfHash) : 0;
+        const shareInstanceEnabled =
+          stackRaw != null ? parseReticulumStackSettingsPayload(stackRaw).share_instance : false;
+        const propState = useReticulumPropagationStore.getState();
+        const inboundLxmf = getReticulumInboundLxmfDiagnostics();
+        const announcePressure = shouldEmitAnnounceBusPressure(snapshot.announce_ws, inboundLxmf);
+        setReticulumAnnounceBusPressureActive(announcePressure);
+        const rows = buildReticulumDiagnosticRows(snapshot, {
+          selfNodeId,
+          interfaces,
+          osSerialPorts,
+          auditIssues,
+          autoBeaconAlert: sidecarStatus.autoBeaconAlert ?? null,
+          interfaceIssueAlert: sidecarStatus.interfaceIssueAlert ?? null,
+          stackFastFlapSuspected: sidecarStatus.stackFastFlapSuspected === true,
+          shareInstanceEnabled,
+          sidecarRunning: sidecarStatus.running,
+          sidecarHealthy: sidecarStatus.healthy,
+          sidecarUnhealthySince: sidecarStatus.unhealthySince,
+          inboundLxmf,
+          hotPeerInterface: getHotReticulumPeerInterface(),
+          propagation: {
+            syncActive: propState.sync.active,
+            syncProgress: propState.sync.progress,
+            lastSyncError: propState.lastSyncError,
+            lastAttemptAt:
+              propState.activePropagationSyncAttemptAt ?? propState.lastPropagationSyncAttemptAt,
+          },
+        });
+        useDiagnosticsStore.setState((s) => ({
+          diagnosticRows: mergeReticulumDiagnosticRows(s.diagnosticRows, rows),
+        }));
+      } catch (e) {
+        console.debug('[useReticulumRuntime] diagnostics ' + errLikeToLogString(e));
+      }
+    },
+    [refreshLocalInterfacesFromSidecar, selfLxmfHash],
+  );
 
   const scheduleLocalInterfaceStatusBurst = useCallback(() => {
     localInterfaceBurstCancelRef.current?.();
@@ -433,7 +582,9 @@ export function useReticulumRuntime(): ProtocolRuntime {
   const scheduleFullPeerRefresh = useCallback(() => {
     const peerCount = useReticulumPeerStore.getState().peers.size;
     const onRefresh = () => {
-      void refreshContactsFromSidecar();
+      void refreshContactsFromSidecar().catch(() => {
+        // catch-no-log-ok rate-limit rethrow from peer store — already debug-logged
+      });
       void syncDiagnosticsFromSidecar();
     };
     if (peerCount > LARGE_MESH_NODE_THRESHOLD) {
@@ -523,52 +674,177 @@ export function useReticulumRuntime(): ProtocolRuntime {
       if (!identityId) return;
       void (async () => {
         let attachmentPath: string | null = null;
+        let attachmentKind: 'image' | 'audio' | undefined;
+        let audioMode: number | null = null;
         if (p.attachment?.data_base64 && p.direction !== 'outbound') {
           attachmentPath = await cacheReticulumInboundAttachment(p.attachment);
+          if (attachmentPath) attachmentKind = 'image';
+        } else if (p.audio?.data_base64) {
+          // Cache inbound always. For outbound echoes, fill a path when the optimistic
+          // row lost the race with an early Completes (rename used to drop pending path).
+          const known = p.message_hash
+            ? useMessageStore.getState().messages[identityId]?.[p.message_hash]
+            : undefined;
+          if (!known?.reticulumAttachmentPath) {
+            attachmentPath = await cacheReticulumInboundAudio(p.audio);
+            if (attachmentPath) {
+              attachmentKind = 'audio';
+              audioMode = p.audio.mode;
+            }
+          }
         }
+        // Already-known rows (DB hydrate / prior session) must not re-fire RNCP
+        // control side effects after a cold start clears the in-memory dedup map.
+        const controlHashForKnown = resolveRncpLxmfControlMessageHash(p);
+        const knownBucket = useMessageStore.getState().messages[identityId] as
+          Record<string, unknown> | undefined;
+        const alreadyKnownControl = Boolean(
+          controlHashForKnown && knownBucket && Object.hasOwn(knownBucket, controlHashForKnown),
+        );
         ingestReticulumLxmfPayloadWithSideEffects(identityId, p, {
           selfLxmfHash: selfLxmfHash ?? undefined,
           attachmentPath,
+          ...(attachmentKind ? { attachmentKind } : {}),
+          ...(audioMode != null ? { audioMode } : {}),
         });
+        // Keep periodic catch-up cursor ahead of live traffic so older ring rows do not loop.
+        if (
+          p.direction !== 'outbound' &&
+          typeof p.timestamp === 'number' &&
+          Number.isFinite(p.timestamp)
+        ) {
+          advanceReticulumInboundCatchUpWatermark(
+            p.timestamp,
+            typeof p.ring_seq === 'number' ? p.ring_seq : null,
+          );
+        }
         if (
           p.direction !== 'outbound' &&
           p.sender_hash &&
           lxmfBodyContainsRncpRequestEnable(p.text)
         ) {
-          useRncpEnableRequestStore.getState().enqueue({
-            peerHash: p.sender_hash,
-            peerLabel: p.sender_name ?? null,
-            receivedAt: Date.now(),
-          });
+          // Catch-up / WS duplicates must not re-open the enable modal or auto-share.
+          const controlHash = controlHashForKnown;
+          if (
+            !alreadyKnownControl &&
+            (!controlHash || tryMarkRncpLxmfControlHandled(controlHash))
+          ) {
+            useRncpEnableRequestStore.getState().enqueue({
+              peerHash: p.sender_hash,
+              peerLabel: p.sender_name ?? null,
+              receivedAt: Date.now(),
+            });
+          }
         }
-      })();
+        if (p.direction !== 'outbound' && p.sender_hash && parseRncpReceiveDestShare(p.text)) {
+          // Hydrated rows already in messageStore must not re-apply after cold start (empty
+          // dedup map). upsert_failed releases leave a one-shot retry token so catch-up can
+          // still re-apply even though ingest already stored the chat row.
+          const controlHash = controlHashForKnown;
+          if (alreadyKnownControl) {
+            const retryAllowed =
+              controlHash != null && takeRncpLxmfControlRetryAllowed(controlHash);
+            if (!retryAllowed) {
+              if (controlHash) tryMarkRncpLxmfControlHandled(controlHash);
+              return;
+            }
+          }
+          // Reservation dedup (not messageStore): upsert_failed must be allowed to retry.
+          const reservation = controlHash ? tryReserveRncpLxmfControlHandled(controlHash) : null;
+          if (controlHash && !reservation) {
+            return;
+          }
+          // Prefer request-enable pending (consumes the slot). Older peers may paste the
+          // share sentinel into chat without that round-trip — still apply so Chat can autofill.
+          const hadPending = consumeRncpReceiveDestSharePending(p.sender_hash);
+          if (!hadPending) {
+            console.debug(
+              '[useReticulumRuntime] applying rncp receive-dest share without pending request-enable',
+            );
+          }
+          const share = await applyRncpReceiveDestShareFromLxmf({
+            senderHash: p.sender_hash,
+            senderName: p.sender_name,
+            text: p.text,
+          });
+          if (reservation) {
+            // Commit success + terminal invalid; release upsert_failed so catch-up can retry.
+            if (share.ok || share.reason === 'no_share' || share.reason === 'invalid_sender') {
+              commitRncpLxmfControlHandled(reservation);
+            } else {
+              releaseRncpLxmfControlHandled(reservation);
+            }
+          }
+          if (share.ok) {
+            const peer = p.sender_name?.trim() || share.lxmfPeerHash.slice(0, 12);
+            pushAppToast(rncpReceiveDestShareSavedToastMessage(peer), 'success');
+          } else if (share.reason !== 'no_share') {
+            console.warn(
+              '[useReticulumRuntime] rncp receive-dest share failed reason=' + share.reason,
+            );
+            pushAppToast(i18n.t('reticulumRemote.transfer.receiveDestShareFailed'), 'error');
+          }
+        }
+      })().catch((e: unknown) => {
+        console.warn('[useReticulumRuntime] ingestLxmfPayload failed ' + errLikeToLogString(e));
+      });
     },
     [identityId, selfLxmfHash],
   );
 
-  const refreshMessagesFromDb = useCallback(async () => {
-    if (!identityId) return;
-    try {
-      const rows = (await window.electronAPI.db.getReticulumMessages(identityId, 500)) as {
-        sender_id: string;
-        sender_name?: string;
-        payload: string;
-        timestamp: number;
-        to_hash?: string | null;
-        reply_to_hash?: string | null;
-        message_hash?: string | null;
-        received_via?: string | null;
-        delivery_status?: string | null;
-        attachment_path?: string | null;
-      }[];
-      replaceMessageRecordsForIdentity(
+  const catchUpRecentInboundLxmf = useCallback(
+    async (opts?: { sinceTs?: number; sinceSeq?: number; reason?: string }) => {
+      if (!identityId) return null;
+      const outcome = await runInboundLxmfCatchUp({
         identityId,
-        rows.map((row) => reticulumDbRowToMessageRecord(row)),
-      );
-    } catch (e) {
-      console.warn('[useReticulumRuntime] refresh messages ' + errLikeToLogString(e));
-    }
-  }, [identityId]);
+        ingest: ingestLxmfPayload,
+        ...(opts?.sinceTs != null ? { sinceTs: opts.sinceTs } : {}),
+        ...(opts?.sinceSeq != null ? { sinceSeq: opts.sinceSeq } : {}),
+        ...(opts?.reason != null ? { reason: opts.reason } : {}),
+      });
+      if (!outcome) return null;
+      noteReticulumInboundCatchUp(outcome.count);
+      if (outcome.watermarkTs != null) {
+        advanceReticulumInboundCatchUpWatermark(outcome.watermarkTs, outcome.watermarkSeq);
+      }
+      return outcome;
+    },
+    [identityId, ingestLxmfPayload],
+  );
+
+  const loadMessagesFromDb = useCallback(
+    async (mode: 'replace' | 'merge') => {
+      if (!identityId) return;
+      try {
+        const rows = (await window.electronAPI.db.getReticulumMessages(identityId, 500)) as {
+          sender_id: string;
+          sender_name?: string;
+          payload: string;
+          timestamp: number;
+          to_hash?: string | null;
+          reply_to_hash?: string | null;
+          message_hash?: string | null;
+          received_via?: string | null;
+          delivery_status?: string | null;
+          attachment_path?: string | null;
+        }[];
+        const records = rows.map((row) => reticulumDbRowToMessageRecord(row));
+        if (mode === 'merge') {
+          mergeMessageRecordsFromDbForIdentity(identityId, records);
+        } else {
+          replaceMessageRecordsForIdentity(identityId, records);
+        }
+      } catch (e) {
+        console.warn('[useReticulumRuntime] refresh messages ' + errLikeToLogString(e));
+      }
+    },
+    [identityId],
+  );
+
+  /** Full replace — prune / manual reload. Connect uses merge via loadMessagesFromDb. */
+  const refreshMessagesFromDb = useCallback(async () => {
+    await loadMessagesFromDb('replace');
+  }, [loadMessagesFromDb]);
 
   const recordAnnounceActivity = useCallback((payload: unknown, defaultAspect?: string) => {
     const rows = parseAnnounceActivityRows(payload);
@@ -602,17 +878,51 @@ export function useReticulumRuntime(): ProtocolRuntime {
       if (evt.type === 'resource.received' && evt.payload && typeof evt.payload === 'object') {
         ingestLxmfPayload(evt.payload);
       }
+      if (evt.type === 'events_lagged') {
+        const skipped =
+          evt.payload && typeof evt.payload === 'object'
+            ? (evt.payload as { skipped?: number }).skipped
+            : undefined;
+        noteReticulumEventsLagged(skipped);
+        // Gate unknown identity-activity SQLite writes as soon as lag indicates pressure.
+        if (shouldEmitAnnounceBusPressure(undefined, getReticulumInboundLxmfDiagnostics())) {
+          setReticulumAnnounceBusPressureActive(true);
+        }
+        console.warn(
+          `[useReticulumRuntime] sidecar WS lagged skipped=${skipped ?? '?'} — catching up inbound LXMF`,
+        );
+        void catchUpRecentInboundLxmf({ reason: 'events_lagged' }).catch((e: unknown) => {
+          console.warn(
+            '[useReticulumRuntime] catch-up after events_lagged failed ' + errLikeToLogString(e),
+          );
+        });
+      }
+      if (evt.type === 'ws_connected' && evt.payload && typeof evt.payload === 'object') {
+        const reconnect = (evt.payload as { reconnect?: boolean }).reconnect === true;
+        if (reconnect) {
+          console.debug('[useReticulumRuntime] sidecar WS reconnected — catching up inbound LXMF');
+          void catchUpRecentInboundLxmf({ reason: 'ws_reconnect' }).catch((e: unknown) => {
+            console.warn(
+              '[useReticulumRuntime] catch-up after ws_reconnect failed ' + errLikeToLogString(e),
+            );
+          });
+        }
+      }
       if (evt.type === 'lxmf_outbound_status' && evt.payload && typeof evt.payload === 'object') {
         const p = evt.payload as {
           message_hash?: string;
           status?: string;
           sent_via?: string;
           delivery_method?: string;
+          delivery_attempts?: number;
+          error?: string;
         };
         if (identityId && p.message_hash && p.status) {
           applyReticulumOutboundDeliveryStatus(identityId, p.message_hash, p.status, {
             sentVia: p.sent_via,
             deliveryMethod: p.delivery_method,
+            deliveryAttempts: p.delivery_attempts,
+            error: p.error,
           });
         }
       }
@@ -622,8 +932,36 @@ export function useReticulumRuntime(): ProtocolRuntime {
         typeof evt.payload === 'object'
       ) {
         const p = evt.payload as { progress?: number; active?: boolean; message?: string | null };
+        const wasSyncActive = useReticulumPropagationStore.getState().sync.active;
         applyPropagationSyncEvent(p);
         scheduleDebouncedDiagnosticsRefresh();
+        // Sync Completes can leave inbound LXMF only in the sidecar ring until the next
+        // periodic catch-up — pull immediately so Chat updates without waiting ~60s.
+        const normalizedProgress = normalizePropagationSyncProgress(
+          typeof p.progress === 'number' ? p.progress : 0,
+        );
+        if (
+          wasSyncActive &&
+          p.active === false &&
+          normalizedProgress >= 100 &&
+          (p.message == null || p.message === '')
+        ) {
+          void catchUpRecentInboundLxmf({ reason: 'propagation_sync' })
+            .then((outcome) => {
+              // null = empty ring / no watermark advance (HaveAll with no new mail).
+              const count = outcome?.count ?? 0;
+              console.debug(
+                `[useReticulumRuntime] propagation-retrieve catch-up after sync Completes count=${count}${
+                  outcome == null ? ' (empty ring)' : ''
+                }`,
+              );
+            })
+            .catch((e: unknown) => {
+              console.warn(
+                '[useReticulumRuntime] propagation_sync catch-up failed ' + errLikeToLogString(e),
+              );
+            });
+        }
       }
       if (evt.type === 'propagation.discovered' && evt.payload && typeof evt.payload === 'object') {
         const p = evt.payload as {
@@ -635,6 +973,7 @@ export function useReticulumRuntime(): ProtocolRuntime {
           last_seen?: number | null;
           node_state?: boolean;
           peering_cost?: number;
+          medium?: string | null;
         };
         if (typeof p.destination_hash === 'string') {
           useReticulumPropagationStore.getState().upsertDiscovered({
@@ -646,18 +985,24 @@ export function useReticulumRuntime(): ProtocolRuntime {
             last_seen: p.last_seen,
             node_state: p.node_state !== false,
             peering_cost: typeof p.peering_cost === 'number' ? p.peering_cost : 0,
+            medium: p.medium === 'rf' || p.medium === 'network' ? p.medium : null,
           });
         }
       }
       if (evt.type === 'rmap.discovery' && evt.payload && typeof evt.payload === 'object') {
         const p = evt.payload as { discovered?: unknown };
         if (Array.isArray(p.discovered)) {
-          useReticulumDiscoveryMapStore.getState().setDiscovered(p.discovered);
+          useReticulumDiscoveryMapStore
+            .getState()
+            .setDiscovered(normalizeRmapDiscoveryRows(p.discovered));
         }
       }
       if (evt.type === 'nomadnetwork.node') {
         void useNomadNetworkStore.getState().refreshFromSidecar();
         recordAnnounceActivity(evt.payload, 'nomadnetwork.node');
+      }
+      if (evt.type === 'nomad.page_progress' && evt.payload && typeof evt.payload === 'object') {
+        useNomadPageViewerStore.getState().applyPageProgress(evt.payload);
       }
       if (evt.type === 'rrc.hub' && evt.payload && typeof evt.payload === 'object') {
         const p = evt.payload as {
@@ -699,6 +1044,7 @@ export function useReticulumRuntime(): ProtocolRuntime {
         useRrcSessionStore.getState().applyStatus(st, hubDestHash ?? null, p.hub_name ?? null);
         if (st === 'active') {
           useRrcSessionStore.getState().setError(null, hubDestHash);
+          if (hubDestHash) clearRrcHubAutoJoinBackoff(hubDestHash);
         }
         if (p.capabilities) {
           useRrcSessionStore.getState().setCapabilities(
@@ -751,11 +1097,29 @@ export function useReticulumRuntime(): ProtocolRuntime {
           const hubSession = session.sessionsByHub.get(hubDestHash.toLowerCase());
           const disconnectIntentForHub = hubSession?.disconnectIntent ?? false;
           const willReconnect = p.will_reconnect === true;
+          console.debug(
+            '[useReticulumRuntime] rrc.disconnected hub=' +
+              sanitizeLogMessage(hubDestHash) +
+              ' reason=' +
+              sanitizeLogMessage(p.reason ?? '') +
+              ' will_reconnect=' +
+              String(p.will_reconnect) +
+              ' disconnectIntent=' +
+              String(disconnectIntentForHub),
+          );
           if (
             p.reason === 'local_disconnect' ||
             disconnectIntentForHub ||
             p.will_reconnect === false
           ) {
+            if (
+              p.will_reconnect === false &&
+              !disconnectIntentForHub &&
+              isRrcAutoJoinBackoffWorthyReason(p.reason)
+            ) {
+              // Initial handshake failed — back off hub auto-join so we do not thrash every ~21s.
+              recordRrcHubAutoJoinFailure(hubDestHash);
+            }
             session.clearHubSession(hubDestHash);
           } else if (willReconnect || p.will_reconnect === undefined) {
             // Sidecar auto-reconnects unintended drops; keep volatile rooms until reconnect settles.
@@ -778,6 +1142,32 @@ export function useReticulumRuntime(): ProtocolRuntime {
           useRrcSessionStore.getState().roomJoined(p.room, p.members, p.hub_dest_hash ?? undefined);
         }
       }
+      if (evt.type === 'rrc.room.peer_parted' && evt.payload && typeof evt.payload === 'object') {
+        const p = evt.payload as {
+          room?: string;
+          members?: { identity_hash: string; nickname?: string | null }[];
+          hub_dest_hash?: string | null;
+        };
+        if (typeof p.room === 'string' && Array.isArray(p.members)) {
+          const validMembers = p.members.flatMap((m) => {
+            if (m == null || typeof m !== 'object') return [];
+            const identity_hash = (m as { identity_hash?: unknown }).identity_hash;
+            if (typeof identity_hash !== 'string' || identity_hash.length === 0) return [];
+            const nickname = (m as { nickname?: unknown }).nickname;
+            return [
+              {
+                identity_hash,
+                nickname: typeof nickname === 'string' ? nickname : null,
+              },
+            ];
+          });
+          if (validMembers.length > 0) {
+            useRrcSessionStore
+              .getState()
+              .removeRoomMembers(p.room, validMembers, p.hub_dest_hash ?? undefined);
+          }
+        }
+      }
       if (evt.type === 'rrc.room.parted' && evt.payload && typeof evt.payload === 'object') {
         const p = evt.payload as { room?: string; hub_dest_hash?: string | null };
         if (typeof p.room === 'string') {
@@ -785,14 +1175,30 @@ export function useReticulumRuntime(): ProtocolRuntime {
           const view = resolveRrcHubView(hubDestHash);
           const session = useRrcSessionStore.getState();
           const voluntary = [...view.partIntentRooms].some((k) => rrcRoomsMatch(k, p.room!));
+          const bannerKey = resolveRrcInvoluntaryPartBannerKey({
+            voluntary,
+            sessionStatus: view.status,
+          });
+          console.debug(
+            '[useReticulumRuntime] rrc.room.parted hub=' +
+              sanitizeLogMessage(hubDestHash ?? '') +
+              ' room=' +
+              sanitizeLogMessage(p.room) +
+              ' voluntary=' +
+              String(voluntary) +
+              ' status=' +
+              sanitizeLogMessage(view.status ?? '') +
+              ' banner=' +
+              sanitizeLogMessage(bannerKey ?? 'none'),
+          );
           if (!voluntary) {
-            session.setModerationBanner('rrc.moderation.removedFromRoom', hubDestHash);
+            if (bannerKey) session.setModerationBanner(bannerKey, hubDestHash);
             session.addMessage(
               {
                 id: `part-${Date.now()}`,
                 room: view.activeRoom ?? RRC_HUB_STREAM_ROOM,
                 kind: 'system',
-                body: `Removed from ${p.room}`,
+                body: i18n.t('rrc.moderation.removedFromRoomSystem', { room: p.room }),
                 timestamp: Date.now(),
               },
               { hubDestHash },
@@ -822,28 +1228,86 @@ export function useReticulumRuntime(): ProtocolRuntime {
               ? p.kind
               : 'msg';
           const isDirect = Boolean(p.dst_hash);
-          const room = isDirect
-            ? RRC_WHISPERS_ROOM
-            : typeof p.room === 'string' && p.room.trim()
-              ? p.room
-              : (view.activeRoom ?? RRC_HUB_STREAM_ROOM);
+          let room: string;
+          if (isDirect) {
+            room = applyRrcDirectMessageRoom({
+              dst_hash: typeof p.dst_hash === 'string' ? p.dst_hash : null,
+              sender_hash: typeof p.sender_hash === 'string' ? p.sender_hash : null,
+              nickname: typeof p.nickname === 'string' ? p.nickname : null,
+              localIdentityHash: session.localIdentityHash,
+              hubDestHash,
+              fallbackRoom: view.activeRoom ?? RRC_HUB_STREAM_ROOM,
+              openDm: (peer, hub, openOpts) => {
+                session.openDm(peer, hub, openOpts);
+              },
+            });
+          } else {
+            room = resolveRrcInboundChatRoom(typeof p.room === 'string' ? p.room : undefined);
+          }
 
           if (kind === 'notice') {
             const listed = parseRrcListNotice(p.body);
             if (listed) session.setListedRooms(listed, hubDestHash);
-            const who = parseRrcWhoNotice(p.body);
-            // Full roster snapshot — replace so departed nicks disappear.
-            if (who) session.mergeRoomMembers(who.room, who.members, 'replace', hubDestHash);
+            const hubKey = hubDestHash?.toLowerCase();
+            const hubSession = hubKey ? session.sessionsByHub.get(hubKey) : undefined;
+            // Materialize Map.keys() — one-shot iterators must not be re-walked.
+            const joinedRooms = hubDestHash
+              ? [...(hubSession?.rooms.keys() ?? [])]
+              : [...session.rooms.keys()];
+            const whoResult = applyRrcWhoInboundNotice(p.body, joinedRooms, {
+              hubDestHash,
+              mergeRoomMembers: (whoRoom, members, mode, hub) => {
+                session.mergeRoomMembers(whoRoom, members, mode, hub);
+              },
+              consumeWhoTranscriptSlot: (whoRoom, hub) =>
+                session.consumeWhoTranscriptSlot(whoRoom, hub),
+            });
             const topic = parseRrcTopicNotice(p.body);
             if (topic) session.setRoomTopic(topic.room, topic.topic || null, hubDestHash);
             // rrcd may emit join-info NOTICE without a usable JOINED member list —
             // treat it as membership so JOINED UI + `/who` can run.
-            if (isRrcJoinInfoNotice(p.body) && topic) {
+            // Never treat synthetic `[hub]` / `@dm` names as hub JOIN targets.
+            if (
+              isRrcJoinInfoNotice(p.body) &&
+              topic &&
+              !topic.room.startsWith('[') &&
+              !topic.room.startsWith('@')
+            ) {
               session.roomJoined(topic.room, undefined, hubDestHash);
+              // When actor JOINED with full roster is dropped (oversize MDU), join-info
+              // still means we are in-room — seed ourselves so the nicklist is not blank.
+              const selfHash = session.localIdentityHash;
+              if (selfHash && selfHash.length >= 8) {
+                session.mergeRoomMembers(
+                  topic.room,
+                  [{ identity_hash: selfHash, nickname: session.nickname || null }],
+                  'merge',
+                  hubDestHash,
+                );
+              }
             }
             if (isRrcModerationLanguage(p.body)) {
-              session.setModerationBanner(p.body, hubDestHash);
+              // Reserve kick/ban banner copy for moderation notices; transcript keeps hub text.
+              session.setModerationBanner('rrc.moderation.removedFromRoom', hubDestHash);
             }
+            // Unmatched / nicklist-only `/who` must not reach addMessage or [hub] persistence.
+            if (whoResult.action === 'unjoined' || whoResult.action === 'nicklist-only') {
+              return;
+            }
+            if (whoResult.action === 'transcript') {
+              room = whoResult.room;
+            } else if (!isDirect) {
+              // Hub-global slash replies (/list, usage, not authorized) use empty K_ROOM.
+              room = resolveRrcHubScopedNoticeRoom(
+                typeof p.room === 'string' ? p.room : undefined,
+                view.activeRoom,
+              );
+            }
+          } else if ((kind === 'error' || kind === 'system') && !isDirect) {
+            room = resolveRrcHubScopedNoticeRoom(
+              typeof p.room === 'string' ? p.room : undefined,
+              view.activeRoom,
+            );
           }
 
           // Opportunistic nicklist: room chat reveals senders even before `/who`.
@@ -853,7 +1317,8 @@ export function useReticulumRuntime(): ProtocolRuntime {
             typeof p.sender_hash === 'string' &&
             p.sender_hash.length >= 8 &&
             typeof room === 'string' &&
-            !room.startsWith('[')
+            !room.startsWith('[') &&
+            !room.startsWith('@')
           ) {
             session.mergeRoomMembers(
               room,
@@ -866,6 +1331,11 @@ export function useReticulumRuntime(): ProtocolRuntime {
               'merge',
               hubDestHash,
             );
+          }
+
+          // Empty notice/system/error would render as a lone IRC `*` — skip transcript.
+          if (shouldDropEmptyRrcInbound(kind, p.body)) {
+            return;
           }
 
           session.addMessage(
@@ -881,7 +1351,13 @@ export function useReticulumRuntime(): ProtocolRuntime {
             },
             {
               bumpUnread:
-                Boolean(view.hub) && !isRrcRoomMuted(view.hub!, room, loadMutedViews('reticulum')),
+                Boolean(view.hub) &&
+                resolveRrcAlertType({
+                  msg: { body: p.body, room, kind, dst_hash: p.dst_hash },
+                  nickname: session.nickname,
+                  notifyMode: isRrcUnreadAllRoomMessagesEnabled() ? 'all' : 'mentions',
+                  muted: isRrcRoomMuted(view.hub!, room, loadMutedViews('reticulum')),
+                }) != null,
               hubDestHash,
             },
           );
@@ -896,13 +1372,13 @@ export function useReticulumRuntime(): ProtocolRuntime {
           // Keep raw message; panel humanizes for display. Do not freeze UI on timeouts.
           session.setError(p.message, hubDestHash);
           if (isRrcModerationLanguage(p.message)) {
-            session.setModerationBanner(p.message, hubDestHash);
+            session.setModerationBanner('rrc.moderation.removedFromRoom', hubDestHash);
           }
           if (view.hub) {
             session.addMessage(
               {
                 id: `err-${Date.now()}`,
-                room: view.activeRoom ?? RRC_HUB_STREAM_ROOM,
+                room: resolveRrcHubScopedNoticeRoom(undefined, view.activeRoom),
                 kind: 'error',
                 body: p.message,
                 timestamp: Date.now(),
@@ -951,6 +1427,48 @@ export function useReticulumRuntime(): ProtocolRuntime {
             .applyError(p.session_id, p.reason_key ?? 'error', p.message ?? '');
         }
       }
+      if (evt.type === 'voice.update' && evt.payload && typeof evt.payload === 'object') {
+        useReticulumVoiceStore.getState().applyUpdate(evt.payload);
+      }
+      if (evt.type === 'voice.incoming' && evt.payload && typeof evt.payload === 'object') {
+        useReticulumVoiceStore.getState().applyIncoming(evt.payload);
+      }
+      if (evt.type === 'voice.stats' && evt.payload && typeof evt.payload === 'object') {
+        useReticulumVoiceStore.getState().applyStats(evt.payload);
+      }
+      if (evt.type === 'voice.terminated' && evt.payload && typeof evt.payload === 'object') {
+        const p = evt.payload as { link_id?: string; reason?: string | null };
+        handleReticulumVoiceTerminal({
+          linkId: p.link_id ?? null,
+          reason: p.reason ?? null,
+          callGeneration: useReticulumVoiceStore.getState().callGeneration,
+        });
+      }
+      if (evt.type === 'voice.error' && evt.payload && typeof evt.payload === 'object') {
+        const p = evt.payload as {
+          message?: string;
+          link_id?: string;
+          remote_identity?: string;
+        };
+        handleReticulumVoiceTerminal({
+          linkId: typeof p.link_id === 'string' ? p.link_id : null,
+          errorMessage: typeof p.message === 'string' && p.message.trim() ? p.message : 'failed',
+          remoteIdentity: typeof p.remote_identity === 'string' ? p.remote_identity : null,
+          callGeneration: useReticulumVoiceStore.getState().callGeneration,
+        });
+      }
+      if (evt.type === 'games.update' && evt.payload && typeof evt.payload === 'object') {
+        useReticulumGamesStore.getState().applyGamesUpdate(evt.payload);
+        maybeNotifyInboundGamesChallenge(evt.payload);
+      }
+      if (evt.type === 'games.action_result' && evt.payload && typeof evt.payload === 'object') {
+        const p = evt.payload as { ok?: boolean };
+        useReticulumGamesStore.getState().applyActionResult(evt.payload);
+        // Sidecar may have rolled back state on failure — refresh so boards match.
+        if (p.ok === false) {
+          void refreshGamesSessions();
+        }
+      }
       if (evt.type === 'rncp.progress' && evt.payload && typeof evt.payload === 'object') {
         const p = evt.payload as { transfer_id?: string; progress?: number };
         if (p.transfer_id && typeof p.progress === 'number') {
@@ -986,6 +1504,19 @@ export function useReticulumRuntime(): ProtocolRuntime {
           destination_hash?: string;
           identity_hash?: string | null;
         };
+        const errPart =
+          typeof p.error === 'string' && p.error.trim() ? sanitizeLogMessage(p.error.trim()) : '';
+        const reasonPart =
+          typeof p.reason === 'string' && p.reason.trim()
+            ? ' reason=' + sanitizeLogMessage(p.reason.trim())
+            : '';
+        const destPart =
+          typeof p.destination_hash === 'string' && p.destination_hash.trim()
+            ? ' dest=' + sanitizeLogMessage(p.destination_hash.trim().slice(0, 32))
+            : '';
+        console.warn(
+          `[useReticulumRuntime] rncp.failed${errPart ? ' ' + errPart : ''}${reasonPart}${destPart}`,
+        );
         useRncpTransferStore.getState().applyFailed(p);
       }
       if (evt.type === 'rncp.cancelled' && evt.payload && typeof evt.payload === 'object') {
@@ -1012,7 +1543,9 @@ export function useReticulumRuntime(): ProtocolRuntime {
             identity_hash: p.identity_hash,
           });
           // Toast so offers are visible even when the user is not on Remote/Chat DM.
-          console.debug(`[useReticulumRuntime] rncp.offer ${p.file_name}`);
+          console.debug(
+            `[useReticulumRuntime] rncp.offer ${sanitizeLogMessage(p.file_name.slice(0, 200))}`,
+          );
           try {
             window.dispatchEvent(
               new CustomEvent('mesh-client:rncp-offer', {
@@ -1041,8 +1574,23 @@ export function useReticulumRuntime(): ProtocolRuntime {
         applyReticulumAnnounceReceivedOptimistic(evt.payload);
         recordAnnounceActivity(evt.payload);
         requestChatOutboxDrain('reticulum');
+        // Opt-in: a fresh announce means failed sends to that peer are worth one retry.
+        const autoResendEnabled = isReticulumAutoResendOnAnnounceEnabled();
+        if (autoResendEnabled) {
+          for (const destinationHash of announceDestinationHashes(evt.payload)) {
+            resendFailedReticulumForDestination({
+              identityId,
+              destinationHash,
+              enabled: autoResendEnabled,
+              send: (text, destination, retryOfStoreId) => {
+                sendMessageRef.current?.(text, destination, undefined, retryOfStoreId);
+              },
+            });
+          }
+        }
       }
       if (evt.type === 'peers_updated' && refreshActions.peerPatches) {
+        recordReticulumPeerInterfaceSamplesFromPeersUpdated(evt.payload);
         if (peersUpdatedRequiresFullRefresh(evt.payload)) {
           scheduleFullPeerRefresh();
         } else {
@@ -1059,6 +1607,7 @@ export function useReticulumRuntime(): ProtocolRuntime {
       appendRawPacket,
       identityId,
       ingestLxmfPayload,
+      catchUpRecentInboundLxmf,
       recordAnnounceActivity,
       refreshLocalInterfacesFromSidecar,
       scheduleDebouncedDiagnosticsRefresh,
@@ -1066,35 +1615,155 @@ export function useReticulumRuntime(): ProtocolRuntime {
     ],
   );
 
+  const subscribeSidecarEventBridges = useCallback(() => {
+    unsubEventRef.current?.();
+    unsubVoiceAudioRef.current?.();
+    unsubEventRef.current = window.electronAPI.reticulum.onEvent(handleSidecarEvent);
+    unsubVoiceAudioRef.current = window.electronAPI.reticulum.onVoiceAudio((evt) => {
+      if (evt.type !== 'voice.audio' || !evt.payload || typeof evt.payload !== 'object') return;
+      const p = evt.payload as { link_id?: string; channels?: number; samples_b64?: string };
+      const parsed = parseVoiceAudioRequest({
+        channels: p.channels,
+        samples_b64: p.samples_b64,
+      });
+      if ('error' in parsed) return;
+      const active = useReticulumVoiceStore.getState().activeCall;
+      const status = active?.status;
+      if (status !== 'established' && status !== 'connecting') return;
+      const eventLink = typeof p.link_id === 'string' ? p.link_id.trim().toLowerCase() : '';
+      const activeLink = (active?.link_id ?? '').trim().toLowerCase();
+      // After establish, require an exact link_id match (drop stale/malformed frames).
+      if (status === 'established') {
+        if (!eventLink || !activeLink || eventLink !== activeLink) return;
+      } else if (eventLink && activeLink && eventLink !== activeLink) {
+        return;
+      }
+      const samples = decodeF32LeBase64(parsed.samples_b64);
+      useReticulumVoiceStore.getState().emitAudio(parsed.channels, samples);
+    });
+  }, [handleSidecarEvent]);
+
   const tearDownFromSidecarStop = useCallback(() => {
     unsubEventRef.current?.();
     unsubEventRef.current = null;
+    unsubVoiceAudioRef.current?.();
+    unsubVoiceAudioRef.current = null;
     localInterfacesRef.current = [];
+    queueRefreshGenerationRef.current += 1;
+    setQueueStatus(null);
     setSelfLxmfHash(null);
     rawPacketAppenderRef.current?.clearPending();
     setRawPackets([]);
     clearReticulumSessionStores();
     processedLinkTimeoutDestsRef.current.clear();
+    propagationHydratedForBridgeRef.current = false;
+    linkTimeoutBridgeGenerationRef.current += 1;
+    setReticulumBleBondDesyncActive(false);
+    setReticulumAnnounceBusPressureActive(false);
     setState(INITIAL_STATE);
     syncConnectionStore(INITIAL_STATE);
   }, [syncConnectionStore]);
 
   useEffect(() => {
     const unsubStatus = window.electronAPI.reticulum.onStatus((status) => {
+      const bondRemoved = status.interfaceIssueAlert?.bleBondRemoved ?? [];
+      // Sticky: set true when latched; clear only on sidecar stop / tearDown (not empty alert).
+      if (bondRemoved.length > 0) {
+        setReticulumBleBondDesyncActive(true);
+        void releaseReticulumBleRnodeConnect().catch((e: unknown) => {
+          console.debug(
+            '[useReticulumRuntime] release Noble after bleBondRemoved ' + errLikeToLogString(e),
+          );
+        });
+      }
       if (status.interfaceIssueAlert || status.autoBeaconAlert || status.healthy === false) {
         void syncDiagnosticsFromSidecar();
         const timeouts = status.interfaceIssueAlert?.linkDeliveryTimeouts;
         if (identityId && timeouts?.length) {
-          for (const { destinationHash } of timeouts) {
-            const norm = destinationHash.replace(/[^0-9a-f]/gi, '').toLowerCase();
-            if (!norm || processedLinkTimeoutDestsRef.current.has(norm)) continue;
-            processedLinkTimeoutDestsRef.current.add(norm);
-            failReticulumSendingOutboundToDestHash(
-              identityId,
-              norm,
-              i18n.t('chatPanel.reticulumSendFailed'),
+          const bridgeIdentityId = identityId;
+          const bridgeGeneration = linkTimeoutBridgeGenerationRef.current;
+          void (async () => {
+            if (!propagationHydratedForBridgeRef.current) {
+              const stampBefore = useReticulumPropagationStore.getState().lastRefreshedAt;
+              try {
+                await useReticulumPropagationStore.getState().refreshFromSidecar();
+              } catch (e: unknown) {
+                console.debug(
+                  '[useReticulumRuntime] propagation hydrate for link-timeout bridge ' +
+                    errLikeToLogString(e),
+                );
+              }
+              if (
+                identityIdRef.current !== bridgeIdentityId ||
+                linkTimeoutBridgeGenerationRef.current !== bridgeGeneration
+              ) {
+                console.debug(
+                  '[useReticulumRuntime] link-timeout bridge abort — generation stale after hydrate',
+                );
+                return;
+              }
+              const stampAfter = useReticulumPropagationStore.getState().lastRefreshedAt;
+              const hydratedOk = stampAfter != null && stampAfter !== stampBefore;
+              if (!hydratedOk) {
+                console.debug(
+                  '[useReticulumRuntime] link-timeout bridge skip — propagation hydrate failed/uncertain',
+                );
+                return;
+              }
+              propagationHydratedForBridgeRef.current = true;
+            }
+            if (
+              identityIdRef.current !== bridgeIdentityId ||
+              linkTimeoutBridgeGenerationRef.current !== bridgeGeneration
+            ) {
+              return;
+            }
+            const propState = useReticulumPropagationStore.getState();
+            // Empty + no preferred + never refreshed: cascade capacity unknown — do not fail DMs.
+            if (
+              propState.nodes.length === 0 &&
+              propState.preferredId == null &&
+              propState.lastRefreshedAt == null
+            ) {
+              console.debug(
+                '[useReticulumRuntime] link-timeout bridge skip — propagation state uncertain',
+              );
+              return;
+            }
+            const applyBridge = shouldApplyLinkDeliveryTimeoutFailureBridge(
+              propState.nodes,
+              propState.preferredId,
+              readReticulumPropagationMode(),
+              propState.discovered,
+              propState.autoBlacklist,
             );
-          }
+            console.debug(
+              `[useReticulumRuntime] link-timeout bridge apply=${applyBridge} preferred=${propState.preferredId ?? 'none'} nodes=${propState.nodes.length}`,
+            );
+            for (const { destinationHash } of timeouts) {
+              if (
+                identityIdRef.current !== bridgeIdentityId ||
+                linkTimeoutBridgeGenerationRef.current !== bridgeGeneration
+              ) {
+                return;
+              }
+              const norm = destinationHash.replace(/[^0-9a-f]/gi, '').toLowerCase();
+              if (!norm || processedLinkTimeoutDestsRef.current.has(norm)) continue;
+              // PN cascade (remote or local-prop): sidecar owns outcome via WS.
+              if (!applyBridge) {
+                console.debug(
+                  `[useReticulumRuntime] link-timeout bridge skip dest=${norm.slice(0, 8)}… (cascade eligible)`,
+                );
+                continue;
+              }
+              processedLinkTimeoutDestsRef.current.add(norm);
+              failReticulumSendingOutboundToDestHash(
+                bridgeIdentityId,
+                norm,
+                i18n.t('chatPanel.reticulumSendFailed'),
+              );
+            }
+          })();
         }
       }
       if (status.running) return;
@@ -1133,6 +1802,8 @@ export function useReticulumRuntime(): ProtocolRuntime {
       }
       unsubEventRef.current?.();
       unsubEventRef.current = null;
+      unsubVoiceAudioRef.current?.();
+      unsubVoiceAudioRef.current = null;
       // Dev HMR remounts App without an explicit disconnect — keep the sidecar alive.
       if (!import.meta.env.DEV) {
         void window.electronAPI.reticulum.stop().catch((e: unknown) => {
@@ -1142,89 +1813,124 @@ export function useReticulumRuntime(): ProtocolRuntime {
     };
   }, []);
 
-  const connect = useCallback(async () => {
-    if (connectInFlightRef.current) {
-      const pending = connectInFlightDoneRef.current;
-      if (pending) {
-        await pending.catch(() => {});
+  const connect = useCallback(
+    async (opts?: { reuseIfRunning?: boolean }) => {
+      if (connectInFlightRef.current) {
+        const pending = connectInFlightDoneRef.current;
+        if (pending) {
+          await pending.catch((e: unknown) => {
+            console.debug(
+              '[useReticulumRuntime] coalesced connect waited on failed in-flight attempt ' +
+                errLikeToLogString(e),
+            );
+          });
+          // Fresh-start callers (e.g. BLE RNode power-resume) must not reuse the settled flight —
+          // fall through so this invocation starts a new connect (in-flight flag cleared in finally).
+          if (opts?.reuseIfRunning !== false) {
+            return;
+          }
+        } else {
+          throw new Error('Reticulum connect already in progress');
+        }
+      }
+      // Defense in depth: AutostartCoordinator (or any stale caller) must not defeat Stop.
+      // Intentional Start clears this via notifyManualStackStart / clear helpers first.
+      if (isReticulumManualStackStopSuppress()) {
+        console.debug('[useReticulumRuntime] connect skipped — manual stack stop suppress');
         return;
       }
-      throw new Error('Reticulum connect already in progress');
-    }
-    // Defense in depth: AutostartCoordinator (or any stale caller) must not defeat Stop.
-    // Intentional Start clears this via notifyManualStackStart / clear helpers first.
-    if (isReticulumManualStackStopSuppress()) {
-      console.debug('[useReticulumRuntime] connect skipped — manual stack stop suppress');
-      return;
-    }
-    // Intentional Start / reconnect clears sticky user-disconnect suppress.
-    suppressReconnectRef.current = false;
-    connectInFlightRef.current = true;
-    const generation = resumeGenerationRef.current;
-    const flight = (async () => {
-      setState((s) => ({ ...s, status: 'connecting', connectionType: null }));
-      syncConnectionStore({ status: 'connecting', connectionType: null });
-      await window.electronAPI.reticulum.start({ reuseIfRunning: true });
-      unsubEventRef.current?.();
-      unsubEventRef.current = window.electronAPI.reticulum.onEvent(handleSidecarEvent);
-      const lxmfHash = await refreshIdentityFromSidecar();
-      const connectedNodeId = lxmfHash ? reticulumHashToNodeId(lxmfHash) : 0;
-      if (connectedNodeId > 0) {
-        syncConnectionStore({ myNodeNum: connectedNodeId });
+      // Intentional Start / reconnect clears sticky user-disconnect suppress.
+      suppressReconnectRef.current = false;
+      connectInFlightRef.current = true;
+      const generation = resumeGenerationRef.current;
+      const reuseIfRunning = opts?.reuseIfRunning ?? true;
+      const flight = (async () => {
+        setState((s) => ({ ...s, status: 'connecting', connectionType: null }));
+        syncConnectionStore({ status: 'connecting', connectionType: null });
+        await window.electronAPI.reticulum.start({ reuseIfRunning });
+        subscribeSidecarEventBridges();
+        const lxmfHash = await refreshIdentityFromSidecar();
+        const connectedNodeId = lxmfHash ? reticulumHashToNodeId(lxmfHash) : 0;
+        if (connectedNodeId > 0) {
+          syncConnectionStore({ myNodeNum: connectedNodeId });
+        }
+        // Mark usable as soon as the sidecar HTTP API is up + identity is known.
+        // Peer/DB hydration and live RNS/BLE attach continue in the background so
+        // Chat/RRC/Nomad are not gated on a large path table or BLE RNode.
+        if (resumeGenerationRef.current !== generation) {
+          console.debug(
+            '[useReticulumRuntime] connect superseded by newer power-suspend generation — skip applying stale configured state',
+          );
+          return;
+        }
+        setState({ status: 'configured', myNodeNum: connectedNodeId, connectionType: null });
+        syncConnectionStore({
+          status: 'configured',
+          connectionType: null,
+          myNodeNum: connectedNodeId,
+        });
+        scheduleLocalInterfaceStatusBurst();
+        void reconcileRncpListenerFromSidecar().catch((e: unknown) => {
+          console.debug('[useReticulumRuntime] rncp reconcile ' + errLikeToLogString(e));
+        });
+        window.dispatchEvent(new CustomEvent(RETICULUM_CONFIGURED_EVENT));
+        void (async () => {
+          try {
+            await refreshContactsFromSidecar();
+            if (resumeGenerationRef.current !== generation) return;
+            await refreshLocalInterfacesFromSidecar();
+            if (resumeGenerationRef.current !== generation) return;
+            await syncDiagnosticsFromSidecar();
+            if (resumeGenerationRef.current !== generation) return;
+            await hydrateRawPackets();
+            if (resumeGenerationRef.current !== generation) return;
+            if (identityId) {
+              await markStaleReticulumOutboundMessages(identityId, RETICULUM_STALE_OUTBOUND_MS);
+              if (resumeGenerationRef.current !== generation) return;
+              markStaleReticulumOutboundInStore(identityId, RETICULUM_STALE_OUTBOUND_MS);
+              await loadMessagesFromDb('merge');
+              if (resumeGenerationRef.current !== generation) return;
+            }
+            await catchUpRecentInboundLxmf({ reason: 'connect' });
+          } catch (e: unknown) {
+            console.debug(
+              '[useReticulumRuntime] background connect hydrate ' + errLikeToLogString(e),
+            );
+          }
+        })();
+      })();
+      connectInFlightDoneRef.current = flight;
+      try {
+        await flight;
+      } catch (e) {
+        console.error('[useReticulumRuntime] connect failed ' + errLikeToLogString(e));
+        setState(INITIAL_STATE);
+        syncConnectionStore(INITIAL_STATE);
+        throw e instanceof Error ? e : new Error(String(e));
+      } finally {
+        connectInFlightRef.current = false;
+        connectInFlightDoneRef.current = null;
       }
-      await refreshContactsFromSidecar();
-      await refreshLocalInterfacesFromSidecar();
-      await syncDiagnosticsFromSidecar();
-      await hydrateRawPackets();
-      if (identityId) {
-        await markStaleReticulumOutboundMessages(identityId, RETICULUM_STALE_OUTBOUND_MS);
-        markStaleReticulumOutboundInStore(identityId, RETICULUM_STALE_OUTBOUND_MS);
-        await refreshMessagesFromDb();
-      }
-      if (resumeGenerationRef.current !== generation) {
-        // A later power-suspend fired while this connect attempt was still in flight — the
-        // sidecar keeps running (no RF link to go stale), but a fresher resume/suspend cycle
-        // now owns the UI state; applying this stale "configured" result could clobber it.
-        console.debug(
-          '[useReticulumRuntime] connect superseded by newer power-suspend generation — skip applying stale configured state',
-        );
-        return;
-      }
-      setState({ status: 'configured', myNodeNum: connectedNodeId, connectionType: null });
-      syncConnectionStore({
-        status: 'configured',
-        connectionType: null,
-        myNodeNum: connectedNodeId,
-      });
-      scheduleLocalInterfaceStatusBurst();
-    })();
-    connectInFlightDoneRef.current = flight;
-    try {
-      await flight;
-    } catch (e) {
-      console.error('[useReticulumRuntime] connect failed ' + errLikeToLogString(e));
-      setState(INITIAL_STATE);
-      syncConnectionStore(INITIAL_STATE);
-      throw e instanceof Error ? e : new Error(String(e));
-    } finally {
-      connectInFlightRef.current = false;
-      connectInFlightDoneRef.current = null;
-    }
-  }, [
-    handleSidecarEvent,
-    refreshContactsFromSidecar,
-    refreshIdentityFromSidecar,
-    refreshLocalInterfacesFromSidecar,
-    refreshMessagesFromDb,
-    syncDiagnosticsFromSidecar,
-    hydrateRawPackets,
-    identityId,
-    syncConnectionStore,
-    scheduleLocalInterfaceStatusBurst,
-  ]);
+    },
+    [
+      subscribeSidecarEventBridges,
+      refreshContactsFromSidecar,
+      refreshIdentityFromSidecar,
+      refreshLocalInterfacesFromSidecar,
+      loadMessagesFromDb,
+      syncDiagnosticsFromSidecar,
+      hydrateRawPackets,
+      catchUpRecentInboundLxmf,
+      identityId,
+      syncConnectionStore,
+      scheduleLocalInterfaceStatusBurst,
+    ],
+  );
 
   const disconnect = useCallback(async () => {
     suppressReconnectRef.current = true;
+    // Invalidate in-flight connect hydrate / configured apply across stop paths.
+    resumeGenerationRef.current += 1;
     // Same latch as Stop button — covers any disconnect path (panel, protocol facade, etc.).
     setReticulumManualStackStopSuppress(true);
     if (peerRefreshDebounceRef.current) {
@@ -1237,13 +1943,25 @@ export function useReticulumRuntime(): ProtocolRuntime {
     }
     unsubEventRef.current?.();
     unsubEventRef.current = null;
-    await window.electronAPI.reticulum.stop();
+    unsubVoiceAudioRef.current?.();
+    unsubVoiceAudioRef.current = null;
+    try {
+      await window.electronAPI.reticulum.stop();
+    } catch (e) {
+      console.warn('[useReticulumRuntime] disconnect stop failed ' + errLikeToLogString(e));
+    }
     localInterfacesRef.current = [];
+    queueRefreshGenerationRef.current += 1;
+    setQueueStatus(null);
     setSelfLxmfHash(null);
     rawPacketAppenderRef.current?.clearPending();
     setRawPackets([]);
     clearReticulumSessionStores();
     processedLinkTimeoutDestsRef.current.clear();
+    propagationHydratedForBridgeRef.current = false;
+    linkTimeoutBridgeGenerationRef.current += 1;
+    setReticulumBleBondDesyncActive(false);
+    setReticulumAnnounceBusPressureActive(false);
     setState(INITIAL_STATE);
     syncConnectionStore(INITIAL_STATE);
   }, [syncConnectionStore]);
@@ -1252,7 +1970,12 @@ export function useReticulumRuntime(): ProtocolRuntime {
     if (connectInFlightRef.current) {
       const pending = connectInFlightDoneRef.current;
       if (pending) {
-        await pending.catch(() => {});
+        await pending.catch((e: unknown) => {
+          console.debug(
+            '[useReticulumRuntime] restart waited on failed in-flight connect ' +
+              errLikeToLogString(e),
+          );
+        });
       }
       if (connectInFlightRef.current) {
         throw new Error('Reticulum stack operation already in progress');
@@ -1267,9 +1990,11 @@ export function useReticulumRuntime(): ProtocolRuntime {
       syncConnectionStore({ status: 'connecting', connectionType: null });
       unsubEventRef.current?.();
       unsubEventRef.current = null;
+      unsubVoiceAudioRef.current?.();
+      unsubVoiceAudioRef.current = null;
       await window.electronAPI.reticulum.stop();
       await window.electronAPI.reticulum.start({ reuseIfRunning: false });
-      unsubEventRef.current = window.electronAPI.reticulum.onEvent(handleSidecarEvent);
+      subscribeSidecarEventBridges();
       const lxmfHash = await refreshIdentityFromSidecar();
       const connectedNodeId = lxmfHash ? reticulumHashToNodeId(lxmfHash) : 0;
       await refreshContactsFromSidecar();
@@ -1279,8 +2004,9 @@ export function useReticulumRuntime(): ProtocolRuntime {
       if (identityId) {
         await markStaleReticulumOutboundMessages(identityId, RETICULUM_STALE_OUTBOUND_MS);
         markStaleReticulumOutboundInStore(identityId, RETICULUM_STALE_OUTBOUND_MS);
-        await refreshMessagesFromDb();
+        await loadMessagesFromDb('merge');
       }
+      await catchUpRecentInboundLxmf({ reason: 'restartStack' });
       setState({ status: 'configured', myNodeNum: connectedNodeId, connectionType: null });
       syncConnectionStore({
         status: 'configured',
@@ -1288,6 +2014,9 @@ export function useReticulumRuntime(): ProtocolRuntime {
         myNodeNum: connectedNodeId,
       });
       scheduleLocalInterfaceStatusBurst();
+      void reconcileRncpListenerFromSidecar().catch((e: unknown) => {
+        console.debug('[useReticulumRuntime] rncp reconcile ' + errLikeToLogString(e));
+      });
     })();
     connectInFlightDoneRef.current = flight;
     try {
@@ -1302,14 +2031,15 @@ export function useReticulumRuntime(): ProtocolRuntime {
       connectInFlightDoneRef.current = null;
     }
   }, [
-    handleSidecarEvent,
+    subscribeSidecarEventBridges,
     refreshContactsFromSidecar,
     refreshIdentityFromSidecar,
     refreshLocalInterfacesFromSidecar,
-    refreshMessagesFromDb,
+    loadMessagesFromDb,
     syncConnectionStore,
     syncDiagnosticsFromSidecar,
     hydrateRawPackets,
+    catchUpRecentInboundLxmf,
     identityId,
     tearDownFromSidecarStop,
     scheduleLocalInterfaceStatusBurst,
@@ -1324,16 +2054,35 @@ export function useReticulumRuntime(): ProtocolRuntime {
     if (state.status !== 'configured' && state.status !== 'connected' && state.status !== 'stale') {
       return;
     }
-    void refreshContactsFromSidecar();
+    void refreshContactsFromSidecar().catch(() => {
+      // catch-no-log-ok rate-limit rethrow from peer store — already debug-logged
+    });
     void refreshSelfNodeDisplayNameFromSidecar();
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     const scheduleNext = () => {
+      const peerCount = useReticulumPeerStore.getState().peers.size;
       const ms =
-        useReticulumPeerStore.getState().peers.size > LARGE_MESH_NODE_THRESHOLD
+        peerCount > LARGE_MESH_NODE_THRESHOLD
           ? RETICULUM_PEER_REFRESH_LARGE_MS
           : RETICULUM_PEER_REFRESH_MS;
       timeoutId = setTimeout(() => {
-        void refreshContactsFromSidecar();
+        const store = useReticulumPeerStore.getState();
+        const count = store.peers.size;
+        const lastRefreshAt = store.lastRefreshAt ?? 0;
+        if (
+          count > MEGA_MESH_NODE_THRESHOLD &&
+          lastRefreshAt > 0 &&
+          Date.now() - lastRefreshAt < MEGA_MESH_FULL_PEER_REFRESH_MAX_AGE_MS
+        ) {
+          void refreshSelfNodeDisplayNameFromSidecar();
+          scheduleNext();
+          return;
+        }
+        void refreshContactsFromSidecar({
+          skipNomad: count > LARGE_MESH_NODE_THRESHOLD,
+        }).catch(() => {
+          // catch-no-log-ok rate-limit rethrow from peer store — already debug-logged
+        });
         void refreshSelfNodeDisplayNameFromSidecar();
         scheduleNext();
       }, ms);
@@ -1343,6 +2092,35 @@ export function useReticulumRuntime(): ProtocolRuntime {
       if (timeoutId != null) clearTimeout(timeoutId);
     };
   }, [state.status, refreshContactsFromSidecar, refreshSelfNodeDisplayNameFromSidecar]);
+
+  /** Watermarked ring catch-up — safety net when WS lag notices are missed (O(1) work). */
+  useEffect(() => {
+    if (state.status !== 'configured' && state.status !== 'connected' && state.status !== 'stale') {
+      return;
+    }
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const scheduleNext = () => {
+      timeoutId = setTimeout(() => {
+        const diag = getReticulumInboundLxmfDiagnostics();
+        const sinceTs = diag.inboundCatchUpWatermarkTs ?? undefined;
+        const sinceSeq = diag.inboundCatchUpWatermarkSeq ?? undefined;
+        void catchUpRecentInboundLxmf({
+          ...(sinceTs != null ? { sinceTs } : {}),
+          ...(sinceSeq != null ? { sinceSeq } : {}),
+          reason: 'periodic',
+        }).catch((e: unknown) => {
+          console.warn(
+            '[useReticulumRuntime] periodic inbound LXMF catch-up failed ' + errLikeToLogString(e),
+          );
+        });
+        scheduleNext();
+      }, RETICULUM_INBOUND_LXMF_CATCHUP_MS);
+    };
+    scheduleNext();
+    return () => {
+      if (timeoutId != null) clearTimeout(timeoutId);
+    };
+  }, [state.status, catchUpRecentInboundLxmf]);
 
   /** Keep nodeStore longName in sync when Network panel updates identity display_name. */
   useEffect(() => {
@@ -1357,6 +2135,7 @@ export function useReticulumRuntime(): ProtocolRuntime {
       }
       if (!next?.lxmf_hash) return;
       setSelfLxmfHash(next.lxmf_hash);
+      persistReticulumSelfLxmfHash(next.lxmf_hash);
       syncSelfNodeFromIdentityStatus(next.lxmf_hash, next.display_name?.trim() || null);
       const nodeId = reticulumHashToNodeId(next.lxmf_hash);
       if (nodeId > 0 && identityId) {
@@ -1389,10 +2168,39 @@ export function useReticulumRuntime(): ProtocolRuntime {
     };
 
     const tick = async () => {
-      const health = await refreshLocalInterfacesFromSidecar();
-      if (cancelled) return;
-      void syncDiagnosticsFromSidecar();
-      scheduleNextPoll(pickReticulumLocalHealthPollMs(health.interfaces, health.osSerialPorts));
+      try {
+        // Propagate rate-limit so we can back off; other refreshLocalInterfaces
+        // callers keep the cached-fallback default.
+        const generation = queueRefreshGenerationRef.current;
+        const [interfaces, osSerialPorts] = await Promise.all([
+          fetchReticulumInterfaces({ propagateRateLimit: true }),
+          fetchReticulumSerialPorts({ propagateRateLimit: true }),
+        ]);
+        if (cancelled || generation !== queueRefreshGenerationRef.current) {
+          return;
+        }
+        localInterfacesRef.current = interfaces;
+        logReticulumLocalInterfaceHealthChanges(interfaces, osSerialPorts);
+        const queueAgg = aggregateReticulumLocalRfTxQueue(interfaces);
+        setQueueStatus(queueAgg);
+        const health = { interfaces, osSerialPorts };
+        const peerCount = useReticulumPeerStore.getState().peers.size;
+        // Large meshes: rely on WS-debounced diagnostics; avoid pairing a heavy
+        // diagnostics bundle with every interface health tick.
+        if (peerCount <= LARGE_MESH_NODE_THRESHOLD) {
+          void syncDiagnosticsFromSidecar(health);
+        }
+        scheduleNextPoll(pickReticulumLocalHealthPollMs(health.interfaces, health.osSerialPorts));
+      } catch (e) {
+        if (cancelled) return;
+        if (isReticulumSidecarRateLimitError(e)) {
+          console.debug('[useReticulumRuntime] local interface poll rate-limited — backing off');
+          scheduleNextPoll(RETICULUM_LOCAL_HEALTH_POLL_MS);
+          return;
+        }
+        console.debug('[useReticulumRuntime] local interface poll ' + errLikeToLogString(e));
+        scheduleNextPoll(RETICULUM_LOCAL_HEALTH_POLL_MS);
+      }
     };
 
     void tick();
@@ -1406,7 +2214,7 @@ export function useReticulumRuntime(): ProtocolRuntime {
       localInterfaceBurstCancelRef.current?.();
       localInterfaceBurstCancelRef.current = null;
     };
-  }, [state.status, refreshLocalInterfacesFromSidecar, syncDiagnosticsFromSidecar]);
+  }, [state.status, syncDiagnosticsFromSidecar]);
 
   const connectAutomatic = useCallback(async () => {
     await connect();
@@ -1450,7 +2258,9 @@ export function useReticulumRuntime(): ProtocolRuntime {
         body.reply_preview_text = quote;
       }
       try {
-        const res = (await window.electronAPI.reticulum.proxyPost('/api/v1/lxmf/send', body)) as {
+        const res = (await withReticulumIpcSendDeadline(
+          window.electronAPI.reticulum.proxyPost('/api/v1/lxmf/send', body),
+        )) as {
           ok?: boolean;
           error?: string;
           message?: ReticulumLxmfPayload;
@@ -1468,9 +2278,21 @@ export function useReticulumRuntime(): ProtocolRuntime {
         if (lxmfPayload) {
           const hash = lxmfPayload.message_hash;
           const outboundStatus = 'sending' as const;
+          // Sync ingest on the send path so Completes cannot race behind a demoting echo.
+          const ingestOutboundSend = () => {
+            ingestReticulumLxmfPayloadWithSideEffects(identityId, lxmfPayload, {
+              selfLxmfHash: selfLxmfHash ?? undefined,
+            });
+          };
           if (pendingId && hash) {
             renameMessageId(identityId, pendingId, hash);
-            ingestLxmfPayload(lxmfPayload);
+            const replacesMessageHash = shouldDeletePriorReticulumOutboundHash(pendingId, hash)
+              ? pendingId
+              : undefined;
+            ingestReticulumLxmfPayloadWithSideEffects(identityId, lxmfPayload, {
+              selfLxmfHash: selfLxmfHash ?? undefined,
+              replacesMessageHash,
+            });
             // Terminal WS may have arrived before rename; apply buffered Completes/Fails.
             flushPendingReticulumOutboundDeliveryStatus(identityId, hash);
             const afterFlush = useMessageStore.getState().messages[identityId]?.[hash]?.status;
@@ -1478,7 +2300,7 @@ export function useReticulumRuntime(): ProtocolRuntime {
               updateMessageStatus(identityId, hash, outboundStatus);
             }
           } else {
-            ingestLxmfPayload(lxmfPayload);
+            ingestOutboundSend();
             if (hash) {
               flushPendingReticulumOutboundDeliveryStatus(identityId, hash);
             }
@@ -1497,20 +2319,33 @@ export function useReticulumRuntime(): ProtocolRuntime {
       } catch (e) {
         if (pendingId) {
           const errStr = errLikeToLogString(e);
+          const proxyKey = reticulumProxyErrorToI18nKey(errStr);
           const userMessage = errStr.includes('no_propagation_node')
             ? i18n.t('chatPanel.reticulumNoPropagationNode')
-            : i18n.t('chatPanel.reticulumSendFailed');
+            : proxyKey
+              ? i18n.t(proxyKey)
+              : isReticulumIpcSendTimeout(e)
+                ? i18n.t('chatPanel.reticulumSendTimeout')
+                : i18n.t('chatPanel.reticulumSendFailed');
           updateMessageStatus(identityId, pendingId, 'failed', userMessage);
         }
         throw e;
       }
     },
-    [identityId, ingestLxmfPayload],
+    [identityId, selfLxmfHash],
   );
+
+  useEffect(() => {
+    sendMessageRef.current = (text, to, replyToHash, pendingId) => {
+      void sendMessage(text, to, replyToHash, pendingId).catch((e: unknown) => {
+        console.warn('[useReticulumRuntime] auto-resend send failed ' + errLikeToLogString(e));
+      });
+    };
+  }, [sendMessage]);
 
   const sendReaction = useCallback(
     async (glyph: string, replyId: number, channel: number) => {
-      void channel;
+      touch(channel);
       if (!identityId) return;
       const storeMessages = Object.values(useMessageStore.getState().messages[identityId] ?? {});
       const targetMsg = storeMessages.find(
@@ -1522,11 +2357,16 @@ export function useReticulumRuntime(): ProtocolRuntime {
           ? resolveReticulumDestinationHash(targetMsg.to)
           : targetMsg.reticulumSenderHash;
       if (!peerHash) return;
-      const res = (await window.electronAPI.reticulum.proxyPost('/api/v1/lxmf/reaction', {
-        destination_hash: peerHash,
-        target_hash: targetMsg.reticulumMessageHash,
-        emoji: glyph,
-      })) as { ok?: boolean; message?: ReticulumLxmfPayload };
+      const res = (await withReticulumIpcSendDeadline(
+        window.electronAPI.reticulum.proxyPost('/api/v1/lxmf/reaction', {
+          destination_hash: peerHash,
+          target_hash: targetMsg.reticulumMessageHash,
+          emoji: glyph,
+        }),
+      )) as { ok?: boolean; message?: ReticulumLxmfPayload; error?: string };
+      if (res?.ok === false) {
+        throw new Error(res.error ?? 'LXMF reaction failed');
+      }
       if (res?.message) {
         const payload = extractLxmfPayloadFromSendResponse(res) ?? res.message;
         if (payload) ingestLxmfPayload(payload);
@@ -1606,6 +2446,18 @@ export function useReticulumRuntime(): ProtocolRuntime {
     // Pause shell auto-reconnect / transfer retry storms while the machine sleeps.
     useRnshSessionStore.getState().clearAll();
     useRncpTransferStore.getState().clearAll();
+    const hadBleRnode = localInterfacesRef.current.some(
+      (row) => row.enabled && isReticulumBleRnodeInterfaceRow(row),
+    );
+    powerSuspendHadBleRnodeRef.current = hadBleRnode;
+    if (!hadBleRnode) {
+      return;
+    }
+    // Stop the sidecar so CoreBluetooth/btleplug does not keep a zombie BLE RNode session
+    // across sleep (macOS tears GATT without a cooperative detach).
+    void window.electronAPI.reticulum.stop().catch((e: unknown) => {
+      console.debug('[useReticulumRuntime] power suspend stop ' + errLikeToLogString(e));
+    });
   }, []);
 
   const onPowerResume = useCallback(() => {
@@ -1613,10 +2465,17 @@ export function useReticulumRuntime(): ProtocolRuntime {
       console.debug('[useReticulumRuntime] power resume — skip reconnect (user disconnect)');
       return;
     }
-    void connect().catch((e: unknown) => {
+    const forceFresh = powerSuspendHadBleRnodeRef.current;
+    powerSuspendHadBleRnodeRef.current = false;
+    void connect({ reuseIfRunning: !forceFresh }).catch((e: unknown) => {
       console.warn('[useReticulumRuntime] power resume reconnect failed ' + errLikeToLogString(e));
     });
   }, [connect]);
+
+  const resolvedQueueStatus =
+    state.status === 'configured' || state.status === 'connected' || state.status === 'stale'
+      ? queueStatus
+      : null;
 
   const runtime = useMemo(
     () => ({
@@ -1631,7 +2490,8 @@ export function useReticulumRuntime(): ProtocolRuntime {
       deviceLogs: [],
       rawPackets,
       clearRawPackets,
-      queueStatus: null,
+      hydrateRawPackets,
+      queueStatus: resolvedQueueStatus,
       ourPosition: null,
       gpsLoading: false,
       telemetry: null,
@@ -1682,7 +2542,9 @@ export function useReticulumRuntime(): ProtocolRuntime {
       onPowerSuspend,
       onPowerResume,
       clearRawPackets,
+      hydrateRawPackets,
       rawPackets,
+      resolvedQueueStatus,
       sendMessage,
       sendReaction,
       resolveOutboundVia,

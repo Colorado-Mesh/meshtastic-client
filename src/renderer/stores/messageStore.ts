@@ -2,6 +2,11 @@ import { create } from 'zustand';
 
 import type { ReticulumDeliveryMethod } from '@/shared/reticulumDeliveryMethod';
 
+import {
+  clearHeardRepeatWindowIfMessage,
+  renameHeardRepeatWindowMessageId,
+} from '../lib/meshcore/heardRepeatTracker';
+import { useRelayCoverageStore } from '../lib/relayCoverage/relayCoverageStore';
 import type { IdentityId } from '../lib/types';
 import { omitRecordKey } from './storeUtils';
 
@@ -18,6 +23,7 @@ export type MessageTransport =
   | 'both'
   | 'tcp'
   | 'network'
+  | 'paper'
   | `${'rf' | 'ble' | 'tcp' | 'network'}+${string}`;
 
 export interface MessageRecord {
@@ -50,10 +56,18 @@ export interface MessageRecord {
   reticulumSenderHash?: string;
   /** Reticulum reply target message hash (hex). */
   reticulumReplyToHash?: string;
-  /** Reticulum LXMF delivery method when queued (direct / propagated / opportunistic / paper). */
+  /** Reticulum LXMF delivery method when queued (direct / propagated / opportunistic / paper / stored_locally). */
   reticulumDeliveryMethod?: ReticulumDeliveryMethod;
+  /** Sidecar outbound delivery_attempts (for triage dumps; optional). */
+  reticulumDeliveryAttempts?: number;
   /** Saved attachment path on disk (local saves). */
   reticulumAttachmentPath?: string;
+  /** Kind of inbound attachment saved at reticulumAttachmentPath. */
+  reticulumAttachmentKind?: 'image' | 'audio';
+  /** LXMF FIELD_AUDIO mode (16 = AM_OPUS_OGG). */
+  reticulumAudioMode?: number;
+  /** Estimated audio duration in seconds (decoded client-side; optional). */
+  reticulumAudioDurationSec?: number;
   /** Message was replayed from a Store & Forward server (Meshtastic only). */
   viaStoreForward?: boolean;
 }
@@ -94,7 +108,11 @@ const MESSAGE_RECORD_KEYS: (keyof MessageRecord)[] = [
   'reticulumSenderHash',
   'reticulumReplyToHash',
   'reticulumDeliveryMethod',
+  'reticulumDeliveryAttempts',
   'reticulumAttachmentPath',
+  'reticulumAttachmentKind',
+  'reticulumAudioMode',
+  'reticulumAudioDurationSec',
   'viaStoreForward',
 ];
 
@@ -210,6 +228,36 @@ export function replaceMessageRecordsForIdentity(
   });
 }
 
+/**
+ * Union DB snapshot into the in-memory bucket without dropping live rows that are
+ * not yet persisted (connect-time race with fire-and-forget SQLite writes).
+ * DB rows win on id collision when fields differ.
+ */
+export function mergeMessageRecordsFromDbForIdentity(
+  identityId: IdentityId,
+  records: MessageRecord[],
+): void {
+  useMessageStore.setState((s) => {
+    const prior = s.messages[identityId] ?? {};
+    const byIdentity: Record<string, MessageRecord> = { ...prior };
+    let changed = false;
+    for (const message of records) {
+      const existing = byIdentity[message.id];
+      if (!existing) {
+        byIdentity[message.id] = message;
+        changed = true;
+        continue;
+      }
+      if (!messageRecordFieldsEqual(existing, message)) {
+        byIdentity[message.id] = message;
+        changed = true;
+      }
+    }
+    if (!changed) return s;
+    return mergeIdentityMessages(s, identityId, byIdentity);
+  });
+}
+
 /** Remove all store messages matching a cleared SQLite channel index. */
 export function pruneMessageRecordsForIdentityByChannel(
   identityId: IdentityId,
@@ -235,15 +283,66 @@ export function pruneMessageRecordsForIdentityByChannel(
 /**
  * Re-key a message (used when the optimistic provisional id is replaced by the
  * SDK-assigned packetId on send completion).
+ *
+ * When `toId` already holds a Completes (`acked`) row, keep that row and drop
+ * `fromId` instead of overwriting — Reticulum retries must not turn an unrelated
+ * delivered bubble into ⏳ via hash collision / rename races.
  */
 export function renameMessageId(identityId: IdentityId, fromId: string, toId: string): void {
+  const before = useMessageStore.getState().messages[identityId];
+  const fromExisting = before?.[fromId];
+  const dropOntoAckedCompletes =
+    fromId !== toId && fromExisting != null && before?.[toId]?.status === 'acked';
+
   useMessageStore.setState((s) => {
     const byIdentity = s.messages[identityId];
     const existing = byIdentity?.[fromId];
     if (!existing) return s;
+    if (fromId === toId) {
+      const updated = { ...existing, id: toId };
+      if (messageRecordFieldsEqual(existing, updated)) return s;
+      return mergeIdentityMessages(s, identityId, { ...byIdentity, [toId]: updated });
+    }
     const rest = omitRecordKey(byIdentity, fromId);
+    const target = byIdentity[toId];
+    if (target?.status === 'acked') {
+      // Keep Completes text/status, but carry forward local attachment metadata from the
+      // optimistic row (voice memos cache Ogg before the LXMF hash is known).
+      const merged: MessageRecord = {
+        ...target,
+        ...(existing.reticulumAttachmentPath && !target.reticulumAttachmentPath
+          ? {
+              reticulumAttachmentPath: existing.reticulumAttachmentPath,
+              reticulumAttachmentKind:
+                existing.reticulumAttachmentKind ?? target.reticulumAttachmentKind,
+            }
+          : {}),
+        ...(existing.reticulumAudioMode != null && target.reticulumAudioMode == null
+          ? { reticulumAudioMode: existing.reticulumAudioMode }
+          : {}),
+        ...(existing.reticulumAudioDurationSec != null && target.reticulumAudioDurationSec == null
+          ? { reticulumAudioDurationSec: existing.reticulumAudioDurationSec }
+          : {}),
+      };
+      if (messageRecordFieldsEqual(target, merged)) {
+        return mergeIdentityMessages(s, identityId, rest);
+      }
+      return mergeIdentityMessages(s, identityId, { ...rest, [toId]: merged });
+    }
     return mergeIdentityMessages(s, identityId, { ...rest, [toId]: { ...existing, id: toId } });
   });
+
+  // Keep in-memory relay coverage keyed to the same bubble id ChatPanel looks up.
+  // When dropping onto an already-acked Completes target, discard `fromId` coverage only —
+  // do not merge/rename onto the delivered bubble (hash-collision retries).
+  if (fromId === toId || fromExisting == null) return;
+  if (dropOntoAckedCompletes) {
+    useRelayCoverageStore.getState().remove(identityId, fromId);
+    clearHeardRepeatWindowIfMessage(identityId, fromId);
+    return;
+  }
+  useRelayCoverageStore.getState().renameMessage(identityId, fromId, toId);
+  renameHeardRepeatWindowMessageId(identityId, fromId, toId);
 }
 
 export function updateMessageStatus(
@@ -256,6 +355,8 @@ export function updateMessageStatus(
     const byIdentity = s.messages[identityId];
     const existing = byIdentity?.[messageId];
     if (!existing) return s;
+    // Completes must not regress to in-flight (retry / echo races).
+    if (existing.status === 'acked' && status === 'sending') return s;
     const updated: MessageRecord = { ...existing, status };
     if (error !== undefined) {
       updated.error = error;

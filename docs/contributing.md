@@ -14,7 +14,13 @@ contributor guide lives in the repository at
 
 ## Quality Checks
 
-Run these before opening a PR:
+For the comprehensive local gate, run **`pnpm run check:pr`** before opening a PR (lint + typecheck + `typecheck:strict-shared` + full `test:run`, plus path-aware sidecar checks when relevant):
+
+```bash
+pnpm run check:pr
+```
+
+Or run pieces individually:
 
 ```bash
 pnpm run test:run
@@ -42,4 +48,4 @@ Reticulum-specific docs: [reticulum.md](reticulum.md), [reticulum-sidecar-ipc.md
 - Link related issues when relevant.
 - Follow coding and security notes in the full
   [CONTRIBUTING.md](https://github.com/Colorado-Mesh/mesh-client/blob/main/CONTRIBUTING.md).
-  For locale auto-fill (`pnpm run i18n:auto-translate`, including pre-commit), runs are incremental vs `HEAD` English unless you pass **`--all`** / **`I18N_TRANSLATE_ALL=1`**; MyMemory defaults to contact **info@coloradomesh.org** unless **`MYMEMORY_EMAIL`** is set — see [AGENTS.md](https://github.com/Colorado-Mesh/mesh-client/blob/main/AGENTS.md) (i18n / Localization).
+  For locale auto-fill (`pnpm run i18n:auto-translate`, including pre-commit), runs are incremental vs `HEAD` English unless you pass **`--all`** / **`I18N_TRANSLATE_ALL=1`**; MyMemory defaults to contact **info@coloradomesh.org** unless **`MYMEMORY_EMAIL`** is set — see [docs/agents/i18n.md](https://github.com/Colorado-Mesh/mesh-client/blob/main/docs/agents/i18n.md).

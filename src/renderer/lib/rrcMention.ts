@@ -3,8 +3,8 @@
  */
 
 import type { ChatNotificationType } from '@/renderer/lib/chatNotifications';
+import { isRrcDmRoom, isRrcLegacyWhispersRoom } from '@/renderer/lib/rrcDmRoom';
 import { rrcRoomsMatch } from '@/renderer/lib/rrcRoomName';
-import { RRC_WHISPERS_ROOM } from '@/renderer/stores/rrcSessionStore';
 import type { RrcChatMessage } from '@/shared/rrc-types';
 
 /** Strip a leading `@` from `/msg` targets so `@nv0n` resolves like `nv0n`. */
@@ -72,8 +72,9 @@ export function bodyMentionsRrcNick(body: string, nickname: string): boolean {
   return findNextRrcNickMention(body, nickname) != null;
 }
 
+/** True for per-peer `@hash` DMs or the legacy `[whispers]` inbox. */
 export function isRrcWhisperRoom(room: string | null | undefined): boolean {
-  return (room ?? '').trim().toLowerCase() === RRC_WHISPERS_ROOM;
+  return isRrcDmRoom(room) || isRrcLegacyWhispersRoom(room);
 }
 
 export function isRrcDirectMessage(msg: Pick<RrcChatMessage, 'room' | 'dst_hash'>): boolean {
@@ -92,8 +93,35 @@ export function classifyRrcNotificationType(
   if (msg.kind === 'system' || msg.kind === 'error') return null;
   if (isRrcDirectMessage(msg)) return 'dm';
   if (bodyMentionsRrcNick(msg.body, nickname)) return 'dm';
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Runtime guard protects external or callback-mutated state.
   if (msg.kind === 'msg' || msg.kind === 'action' || msg.kind === 'notice') return 'channel';
   return null;
+}
+
+/** Global (or effective per-room) RRC notify level: all chat lines vs IRC-style mention/DM. */
+export type RrcNotifyMode = 'all' | 'mentions';
+
+export interface ResolveRrcAlertTypeArgs {
+  msg: Pick<RrcChatMessage, 'body' | 'room' | 'dst_hash' | 'kind'>;
+  nickname: string;
+  notifyMode: RrcNotifyMode;
+  muted: boolean;
+}
+
+/**
+ * Shared badge + sound gate. Mute and IRC-style mention mode drop channel traffic;
+ * non-direct hub notice/system/error never alert (even with @nick). Direct NOTICE
+ * whispers stay eligible. Room `msg`/`action` @nick stay `dm` in both modes.
+ */
+export function resolveRrcAlertType(args: ResolveRrcAlertTypeArgs): ChatNotificationType | null {
+  if (args.muted) return null;
+  if (args.msg.kind !== 'msg' && args.msg.kind !== 'action' && !isRrcDirectMessage(args.msg)) {
+    return null;
+  }
+  const type = classifyRrcNotificationType(args.msg, args.nickname);
+  if (!type) return null;
+  if (type === 'dm') return 'dm';
+  return args.notifyMode === 'all' ? 'channel' : null;
 }
 
 /** Mute storage key used by RrcPanel (`rrc:${hubHash}:${room}`). */

@@ -1,9 +1,33 @@
 import type { BrowserWindow } from 'electron';
 import { ipcMain, shell } from 'electron';
 
-import type { ReticulumSidecarStatus } from '../../shared/reticulum-types';
+import { isGamesApiPath, parseGamesActionRequest } from '../../shared/games-types';
+import type {
+  ReticulumSidecarStartOptions,
+  ReticulumSidecarStatus,
+} from '../../shared/reticulum-types';
+import {
+  isVoiceMemoApiPath,
+  parseVoiceMemoAudioRequest,
+  parseVoiceMemoSessionRequest,
+  VOICE_MEMO_AUDIO_API_PATH,
+  VOICE_MEMO_CANCEL_API_PATH,
+  VOICE_MEMO_DATA_BASE64_MAX,
+  VOICE_MEMO_START_API_PATH,
+  VOICE_MEMO_STOP_API_PATH,
+} from '../../shared/reticulum-voice-memo-types';
 import { canonicalizeReticulumDestinationHash } from '../../shared/reticulumDestinationHash';
+import {
+  isExpectedReticulumProxyError,
+  type ReticulumProxyIpcErrorEnvelope,
+  reticulumProxyIpcErrorEnvelope,
+} from '../../shared/reticulumProxyIpcError';
+import { MS_PER_MINUTE } from '../../shared/timeConstants';
+import { parseVoiceAudioRequest, VOICE_AUDIO_API_PATH } from '../../shared/voice-types';
+import { createIpcRateLimiter } from '../ipcRateLimit';
 import { sanitizeLogMessage } from '../log-service';
+import type { BlocklistExportResult, BlocklistImportFileResult } from '../reticulum-blocklist-file';
+import { readBlocklistFromFile, saveBlocklistToFile } from '../reticulum-blocklist-file';
 import {
   isAllowedNomadContentSourcePath,
   isNomadContentSourceApiPath,
@@ -13,7 +37,11 @@ import {
   showReticulumConfigImportDialog,
 } from '../reticulum-config-paths';
 import { validateReticulumUserConfig } from '../reticulum-config-validate';
-import { showReticulumIdentityImportDialog } from '../reticulum-identity-import';
+import {
+  saveReticulumIdentityExportDialog,
+  showReticulumIdentityBackupImportDialog,
+  showReticulumIdentityImportDialog,
+} from '../reticulum-identity-import';
 import {
   isAllowedRncpRevealPath,
   isAllowedRncpSaveDirectoryPath,
@@ -25,6 +53,62 @@ import {
 import type { ReticulumSidecarManager } from '../reticulum-sidecar-manager';
 import { parseEnabledInterfaceNames } from '../reticulumInterfaceIssueScope';
 import { assertIpcSender } from '../validate-ipc-sender';
+import { isLxmfRecentApiPath } from './reticulumLxmfRecentPath';
+
+/** Shared rolling window for all reticulum proxy verbs (Get/Post/Put/Delete). */
+const reticulumProxyIpcRateLimit = createIpcRateLimiter({
+  max: 900,
+  windowMs: MS_PER_MINUTE,
+  label: 'reticulum:proxy',
+});
+
+/**
+ * Inbound LXMF catch-up (`GET /api/v1/lxmf/recent`). Own bucket so WS-lag recovery
+ * cannot be starved by peer/interface polls — and cannot monopolize the shared ceiling.
+ */
+const reticulumLxmfRecentIpcRateLimit = createIpcRateLimiter({
+  max: 120,
+  windowMs: MS_PER_MINUTE,
+  label: 'reticulum:lxmfRecent',
+});
+
+/**
+ * Realtime LXST PCM ingest: QualityHigh is ~16.7 frames/s (~1000/min).
+ * Separate from the shared 900/min proxy bucket so calls do not starve mesh control IPC.
+ */
+const reticulumVoiceAudioIpcRateLimit = createIpcRateLimiter({
+  max: 2000,
+  windowMs: MS_PER_MINUTE,
+  label: 'reticulum:voiceSendAudio',
+});
+
+/**
+ * LRGP games control/poll traffic. Own bucket so session polls + moves do not
+ * starve the shared 900/min reticulum proxy ceiling.
+ */
+const reticulumGamesIpcRateLimit = createIpcRateLimiter({
+  max: 600,
+  windowMs: MS_PER_MINUTE,
+  label: 'reticulum:games',
+});
+
+/** Blocklist import/export file dialogs — same ceiling as other export dialogs. */
+const reticulumBlocklistFileIpcRateLimit = createIpcRateLimiter({
+  max: 5,
+  windowMs: MS_PER_MINUTE,
+  label: 'reticulum:blocklistFile',
+});
+
+function isVoiceAudioApiPath(apiPath: string): boolean {
+  return apiPath === VOICE_AUDIO_API_PATH;
+}
+
+function assertGamesSessionId(sessionId: unknown): string | { error: string } {
+  if (typeof sessionId !== 'string' || sessionId.length === 0 || sessionId.length > 128) {
+    return { error: 'invalid_session_id' };
+  }
+  return sessionId;
+}
 
 export interface ReticulumIpcDeps {
   idleStatus: ReticulumSidecarStatus;
@@ -33,22 +117,41 @@ export interface ReticulumIpcDeps {
   getMainWindow: () => BrowserWindow | null;
 }
 
-function isExpectedReticulumProxyError(message: string): boolean {
-  const lower = message.toLowerCase();
-  return (
-    lower.includes('not running') ||
-    message.includes('404') ||
-    lower.includes('fetch failed') ||
-    lower.includes('aborted') ||
-    lower.includes('timeout')
-  );
+function parseReticulumStartOptions(opts: unknown): ReticulumSidecarStartOptions {
+  if (opts == null) return {};
+  if (typeof opts !== 'object' || Array.isArray(opts)) {
+    throw new Error('reticulum:start options must be an object');
+  }
+  const reuseIfRunning = (opts as Record<string, unknown>).reuseIfRunning;
+  if (reuseIfRunning != null && typeof reuseIfRunning !== 'boolean') {
+    throw new Error('reticulum:start reuseIfRunning must be boolean');
+  }
+  return reuseIfRunning == null ? {} : { reuseIfRunning };
 }
 
 function logReticulumProxyFailure(method: string, err: unknown, apiPath?: string): void {
   const message = err instanceof Error ? err.message : String(err);
-  const log = isExpectedReticulumProxyError(message) ? console.debug : console.error;
+  const log = isExpectedReticulumProxyError(err) ? console.debug : console.error;
   const pathSuffix = apiPath ? ` path=${apiPath}` : '';
   log(`[ReticulumIPC] ${method} failed${pathSuffix}:`, sanitizeLogMessage(message));
+}
+
+/**
+ * Expected restart/transient failures: return an envelope (preload rethrows) so
+ * Electron does not emit `[error] Error occurred in handler for 'reticulum:proxy*'`.
+ * Unexpected failures still throw.
+ */
+function settleReticulumProxyFailure(
+  method: string,
+  err: unknown,
+  apiPath?: string,
+): ReticulumProxyIpcErrorEnvelope {
+  logReticulumProxyFailure(method, err, apiPath);
+  const message = err instanceof Error ? err.message : String(err);
+  if (isExpectedReticulumProxyError(err)) {
+    return reticulumProxyIpcErrorEnvelope(sanitizeLogMessage(message));
+  }
+  throw err;
 }
 
 function assertProxyApiPath(apiPath: unknown): string {
@@ -100,12 +203,12 @@ function validateRncpListenerDirs(opts: {
 export function registerReticulumIpcHandlers(deps: ReticulumIpcDeps): void {
   const { idleStatus, ensureManager, getManager } = deps;
 
-  ipcMain.handle('reticulum:start', async (event, opts) => {
+  ipcMain.handle('reticulum:start', async (event, opts: unknown) => {
     assertIpcSender(event, 'reticulum:start');
     try {
       console.debug('[ReticulumIPC] start');
       const m = ensureManager();
-      return await m.start(opts ?? {});
+      return await m.start(parseReticulumStartOptions(opts));
     } catch (err) {
       console.error(
         '[ReticulumIPC] start failed:',
@@ -117,8 +220,16 @@ export function registerReticulumIpcHandlers(deps: ReticulumIpcDeps): void {
 
   ipcMain.handle('reticulum:stop', async (event) => {
     assertIpcSender(event, 'reticulum:stop');
-    console.debug('[ReticulumIPC] stop');
-    await getManager()?.stop();
+    try {
+      console.debug('[ReticulumIPC] stop');
+      await getManager()?.stop();
+    } catch (err) {
+      console.error(
+        '[ReticulumIPC] stop failed:',
+        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+      );
+      throw err;
+    }
   });
 
   ipcMain.handle('reticulum:getStatus', (event) => {
@@ -137,12 +248,23 @@ export function registerReticulumIpcHandlers(deps: ReticulumIpcDeps): void {
   ipcMain.handle('reticulum:proxyGet', async (event, apiPath: unknown) => {
     assertIpcSender(event, 'reticulum:proxyGet');
     const pathArg = assertProxyApiPath(apiPath);
+    if (isGamesApiPath(pathArg)) {
+      throw new Error('LRGP games require reticulum:games* IPC channels');
+    }
     try {
+      // Rate-limit inside try so checkOrThrow settles as an expected soft envelope
+      // (avoids Electron `[error] Error occurred in handler` spam).
+      if (isLxmfRecentApiPath(pathArg)) {
+        reticulumLxmfRecentIpcRateLimit.checkOrThrow();
+      } else {
+        reticulumProxyIpcRateLimit.checkOrThrow();
+      }
       const m = ensureManager();
-      return await m.proxyGet(pathArg);
+      const body = await m.proxyGet(pathArg);
+      return body;
     } catch (err) {
-      logReticulumProxyFailure('proxyGet', err, pathArg);
-      throw err;
+      // catch-no-log-ok settleReticulumProxyFailure logs expected failures / rethrows unexpected
+      return settleReticulumProxyFailure('proxyGet', err, pathArg);
     }
   });
 
@@ -154,12 +276,123 @@ export function registerReticulumIpcHandlers(deps: ReticulumIpcDeps): void {
         'rncp send/fetch/listener changes require reticulum:rncpSend/rncpFetch/setRncpListener (picker-backed)',
       );
     }
+    if (isVoiceAudioApiPath(pathArg)) {
+      throw new Error('voice PCM ingest requires reticulum:voiceSendAudio');
+    }
+    if (isVoiceMemoApiPath(pathArg)) {
+      throw new Error('voice memo requires reticulum:voiceMemo* IPC channels');
+    }
+    if (isGamesApiPath(pathArg)) {
+      throw new Error('LRGP games require reticulum:games* IPC channels');
+    }
+    try {
+      reticulumProxyIpcRateLimit.checkOrThrow();
+      const m = ensureManager();
+      const result = await m.proxyPost(pathArg, body);
+      return result;
+    } catch (err) {
+      // catch-no-log-ok settleReticulumProxyFailure logs expected failures / rethrows unexpected
+      return settleReticulumProxyFailure('proxyPost', err, pathArg);
+    }
+  });
+
+  /**
+   * LXMF voice memo PCM ingest. Separate bucket from live LXST voice so memo
+   * recording does not starve live-call TX or the shared proxy ceiling.
+   * 2000/min matches the live-voice bucket (QualityHigh ~16.7 frames/s).
+   */
+  const reticulumVoiceMemoAudioIpcRateLimit = createIpcRateLimiter({
+    max: 2000,
+    windowMs: MS_PER_MINUTE,
+    label: 'reticulum:voiceMemoSendAudio',
+  });
+
+  /**
+   * Realtime LXST PCM frames. Uses a dedicated rate limit (not the shared 900/min
+   * proxy ceiling) so voice TX does not starve control-plane proxy IPC.
+   */
+  ipcMain.handle('reticulum:voiceSendAudio', async (event, opts: unknown) => {
+    assertIpcSender(event, 'reticulum:voiceSendAudio');
+    reticulumVoiceAudioIpcRateLimit.checkOrThrow();
+    const parsed = parseVoiceAudioRequest(opts);
+    if ('error' in parsed) {
+      return { ok: false, error: parsed.error };
+    }
     try {
       const m = ensureManager();
-      return await m.proxyPost(pathArg, body);
+      return await m.proxyPost(VOICE_AUDIO_API_PATH, parsed);
     } catch (err) {
-      logReticulumProxyFailure('proxyPost', err, pathArg);
-      throw err;
+      // catch-no-log-ok settleReticulumProxyFailure logs expected failures / rethrows unexpected
+      return settleReticulumProxyFailure('voiceSendAudio', err, VOICE_AUDIO_API_PATH);
+    }
+  });
+
+  ipcMain.handle('reticulum:voiceMemoStart', async (event, opts: unknown) => {
+    assertIpcSender(event, 'reticulum:voiceMemoStart');
+    const body = opts != null && typeof opts === 'object' && !Array.isArray(opts) ? opts : {};
+    try {
+      const m = ensureManager();
+      return await m.proxyPost(VOICE_MEMO_START_API_PATH, body);
+    } catch (err) {
+      // catch-no-log-ok settleReticulumProxyFailure logs expected failures / rethrows unexpected
+      return settleReticulumProxyFailure('voiceMemoStart', err, VOICE_MEMO_START_API_PATH);
+    }
+  });
+
+  ipcMain.handle('reticulum:voiceMemoSendAudio', async (event, opts: unknown) => {
+    assertIpcSender(event, 'reticulum:voiceMemoSendAudio');
+    reticulumVoiceMemoAudioIpcRateLimit.checkOrThrow();
+    const parsed = parseVoiceMemoAudioRequest(opts);
+    if ('error' in parsed) {
+      return { ok: false, error: parsed.error };
+    }
+    try {
+      const m = ensureManager();
+      return await m.proxyPost(VOICE_MEMO_AUDIO_API_PATH, parsed);
+    } catch (err) {
+      // catch-no-log-ok settleReticulumProxyFailure logs expected failures / rethrows unexpected
+      return settleReticulumProxyFailure('voiceMemoSendAudio', err, VOICE_MEMO_AUDIO_API_PATH);
+    }
+  });
+
+  ipcMain.handle('reticulum:voiceMemoStop', async (event, opts: unknown) => {
+    assertIpcSender(event, 'reticulum:voiceMemoStop');
+    const parsed = parseVoiceMemoSessionRequest(opts);
+    if ('error' in parsed) {
+      return { ok: false, error: parsed.error };
+    }
+    try {
+      const m = ensureManager();
+      const result = await m.proxyPost(VOICE_MEMO_STOP_API_PATH, parsed);
+      if (
+        result &&
+        typeof result === 'object' &&
+        !Array.isArray(result) &&
+        typeof (result as Record<string, unknown>).ogg_base64 === 'string' &&
+        ((result as Record<string, unknown>).ogg_base64 as string).length >
+          VOICE_MEMO_DATA_BASE64_MAX
+      ) {
+        return { ok: false, error: 'ogg_base64_too_large' };
+      }
+      return result;
+    } catch (err) {
+      // catch-no-log-ok settleReticulumProxyFailure logs expected failures / rethrows unexpected
+      return settleReticulumProxyFailure('voiceMemoStop', err, VOICE_MEMO_STOP_API_PATH);
+    }
+  });
+
+  ipcMain.handle('reticulum:voiceMemoCancel', async (event, opts: unknown) => {
+    assertIpcSender(event, 'reticulum:voiceMemoCancel');
+    const parsed = parseVoiceMemoSessionRequest(opts);
+    if ('error' in parsed) {
+      return { ok: false, error: parsed.error };
+    }
+    try {
+      const m = ensureManager();
+      return await m.proxyPost(VOICE_MEMO_CANCEL_API_PATH, parsed);
+    } catch (err) {
+      // catch-no-log-ok settleReticulumProxyFailure logs expected failures / rethrows unexpected
+      return settleReticulumProxyFailure('voiceMemoCancel', err, VOICE_MEMO_CANCEL_API_PATH);
     }
   });
 
@@ -184,23 +417,145 @@ export function registerReticulumIpcHandlers(deps: ReticulumIpcDeps): void {
       );
     }
     try {
+      reticulumProxyIpcRateLimit.checkOrThrow();
       const m = ensureManager();
       return await m.proxyPut(pathArg, body);
     } catch (err) {
-      logReticulumProxyFailure('proxyPut', err, pathArg);
-      throw err;
+      // catch-no-log-ok settleReticulumProxyFailure logs expected failures / rethrows unexpected
+      return settleReticulumProxyFailure('proxyPut', err, pathArg);
     }
   });
 
   ipcMain.handle('reticulum:proxyDelete', async (event, apiPath: unknown) => {
     assertIpcSender(event, 'reticulum:proxyDelete');
     const pathArg = assertProxyApiPath(apiPath);
+    if (isGamesApiPath(pathArg)) {
+      throw new Error('LRGP games require reticulum:games* IPC channels');
+    }
     try {
+      reticulumProxyIpcRateLimit.checkOrThrow();
       const m = ensureManager();
       return await m.proxyDelete(pathArg);
     } catch (err) {
-      logReticulumProxyFailure('proxyDelete', err, pathArg);
-      throw err;
+      // catch-no-log-ok settleReticulumProxyFailure logs expected failures / rethrows unexpected
+      return settleReticulumProxyFailure('proxyDelete', err, pathArg);
+    }
+  });
+
+  /** Dedicated LRGP games channels — blocked on generic proxyGet/Post/Delete. */
+  ipcMain.handle('reticulum:gamesStatus', async (event) => {
+    assertIpcSender(event, 'reticulum:gamesStatus');
+    reticulumGamesIpcRateLimit.checkOrThrow();
+    try {
+      return await ensureManager().proxyGet('/api/v1/games/status');
+    } catch (err) {
+      // catch-no-log-ok settleReticulumProxyFailure logs expected failures / rethrows unexpected
+      return settleReticulumProxyFailure('gamesStatus', err, '/api/v1/games/status');
+    }
+  });
+
+  ipcMain.handle('reticulum:gamesApps', async (event) => {
+    assertIpcSender(event, 'reticulum:gamesApps');
+    reticulumGamesIpcRateLimit.checkOrThrow();
+    try {
+      return await ensureManager().proxyGet('/api/v1/games/apps');
+    } catch (err) {
+      // catch-no-log-ok settleReticulumProxyFailure logs expected failures / rethrows unexpected
+      return settleReticulumProxyFailure('gamesApps', err, '/api/v1/games/apps');
+    }
+  });
+
+  ipcMain.handle('reticulum:gamesSessions', async (event, peer: unknown) => {
+    assertIpcSender(event, 'reticulum:gamesSessions');
+    reticulumGamesIpcRateLimit.checkOrThrow();
+    const q =
+      typeof peer === 'string' && peer.length > 0
+        ? `/api/v1/games/sessions?peer=${encodeURIComponent(peer)}`
+        : '/api/v1/games/sessions';
+    try {
+      return await ensureManager().proxyGet(q);
+    } catch (err) {
+      // catch-no-log-ok settleReticulumProxyFailure logs expected failures / rethrows unexpected
+      return settleReticulumProxyFailure('gamesSessions', err, q);
+    }
+  });
+
+  ipcMain.handle('reticulum:gamesSessionDetail', async (event, sessionId: unknown) => {
+    assertIpcSender(event, 'reticulum:gamesSessionDetail');
+    reticulumGamesIpcRateLimit.checkOrThrow();
+    const idOrErr = assertGamesSessionId(sessionId);
+    if (typeof idOrErr !== 'string') {
+      return { ok: false, error: idOrErr.error };
+    }
+    const path = `/api/v1/games/sessions/${encodeURIComponent(idOrErr)}`;
+    try {
+      return await ensureManager().proxyGet(path);
+    } catch (err) {
+      // catch-no-log-ok settleReticulumProxyFailure logs expected failures / rethrows unexpected
+      return settleReticulumProxyFailure('gamesSessionDetail', err, path);
+    }
+  });
+
+  ipcMain.handle('reticulum:gamesAction', async (event, opts: unknown) => {
+    assertIpcSender(event, 'reticulum:gamesAction');
+    reticulumGamesIpcRateLimit.checkOrThrow();
+    const parsed = parseGamesActionRequest(opts);
+    if ('error' in parsed) {
+      return { ok: false, error: parsed.error };
+    }
+    try {
+      return await ensureManager().proxyPost('/api/v1/games/action', parsed);
+    } catch (err) {
+      // catch-no-log-ok settleReticulumProxyFailure logs expected failures / rethrows unexpected
+      return settleReticulumProxyFailure('gamesAction', err, '/api/v1/games/action');
+    }
+  });
+
+  ipcMain.handle('reticulum:gamesResend', async (event, sessionId: unknown) => {
+    assertIpcSender(event, 'reticulum:gamesResend');
+    reticulumGamesIpcRateLimit.checkOrThrow();
+    const idOrErr = assertGamesSessionId(sessionId);
+    if (typeof idOrErr !== 'string') {
+      return { ok: false, error: idOrErr.error };
+    }
+    const path = `/api/v1/games/sessions/${encodeURIComponent(idOrErr)}/resend`;
+    try {
+      return await ensureManager().proxyPost(path, {});
+    } catch (err) {
+      // catch-no-log-ok settleReticulumProxyFailure logs expected failures / rethrows unexpected
+      return settleReticulumProxyFailure('gamesResend', err, path);
+    }
+  });
+
+  ipcMain.handle('reticulum:gamesMarkRead', async (event, sessionId: unknown) => {
+    assertIpcSender(event, 'reticulum:gamesMarkRead');
+    reticulumGamesIpcRateLimit.checkOrThrow();
+    const idOrErr = assertGamesSessionId(sessionId);
+    if (typeof idOrErr !== 'string') {
+      return { ok: false, error: idOrErr.error };
+    }
+    const path = `/api/v1/games/sessions/${encodeURIComponent(idOrErr)}/read`;
+    try {
+      return await ensureManager().proxyPost(path, {});
+    } catch (err) {
+      // catch-no-log-ok settleReticulumProxyFailure logs expected failures / rethrows unexpected
+      return settleReticulumProxyFailure('gamesMarkRead', err, path);
+    }
+  });
+
+  ipcMain.handle('reticulum:gamesDeleteSession', async (event, sessionId: unknown) => {
+    assertIpcSender(event, 'reticulum:gamesDeleteSession');
+    reticulumGamesIpcRateLimit.checkOrThrow();
+    const idOrErr = assertGamesSessionId(sessionId);
+    if (typeof idOrErr !== 'string') {
+      return { ok: false, error: idOrErr.error };
+    }
+    const path = `/api/v1/games/sessions/${encodeURIComponent(idOrErr)}`;
+    try {
+      return await ensureManager().proxyDelete(path);
+    } catch (err) {
+      // catch-no-log-ok settleReticulumProxyFailure logs expected failures / rethrows unexpected
+      return settleReticulumProxyFailure('gamesDeleteSession', err, path);
     }
   });
 
@@ -211,17 +566,107 @@ export function registerReticulumIpcHandlers(deps: ReticulumIpcDeps): void {
 
   ipcMain.handle('reticulum:showConfigImportDialog', async (event) => {
     assertIpcSender(event, 'reticulum:showConfigImportDialog');
-    return showReticulumConfigImportDialog();
+    try {
+      return await showReticulumConfigImportDialog();
+    } catch (err) {
+      console.error(
+        '[ReticulumIPC] showConfigImportDialog failed:',
+        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+      );
+      throw err;
+    }
   });
 
   ipcMain.handle('reticulum:showIdentityImportDialog', async (event) => {
     assertIpcSender(event, 'reticulum:showIdentityImportDialog');
-    return showReticulumIdentityImportDialog();
+    try {
+      return await showReticulumIdentityImportDialog();
+    } catch (err) {
+      console.error(
+        '[ReticulumIPC] showIdentityImportDialog failed:',
+        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+      );
+      throw err;
+    }
   });
+
+  ipcMain.handle('reticulum:showIdentityBackupImportDialog', async (event) => {
+    assertIpcSender(event, 'reticulum:showIdentityBackupImportDialog');
+    try {
+      return await showReticulumIdentityBackupImportDialog();
+    } catch (err) {
+      console.error(
+        '[ReticulumIPC] showIdentityBackupImportDialog failed:',
+        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+      );
+      throw err;
+    }
+  });
+
+  ipcMain.handle(
+    'reticulum:saveIdentityExportDialog',
+    async (event, opts: { defaultPath: string; contentBase64: string }) => {
+      assertIpcSender(event, 'reticulum:saveIdentityExportDialog');
+      try {
+        return await saveReticulumIdentityExportDialog(opts);
+      } catch (err) {
+        console.error(
+          '[ReticulumIPC] saveIdentityExportDialog failed:',
+          sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        );
+        throw err;
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'reticulum:saveBlocklistDialog',
+    async (event, hashes: unknown): Promise<BlocklistExportResult> => {
+      assertIpcSender(event, 'reticulum:saveBlocklistDialog');
+      reticulumBlocklistFileIpcRateLimit.checkOrThrow();
+      if (!Array.isArray(hashes)) {
+        return { path: null, error: 'invalid_opts' };
+      }
+      try {
+        return await saveBlocklistToFile(hashes.filter((h): h is string => typeof h === 'string'));
+      } catch (err) {
+        console.error(
+          '[ReticulumIPC] saveBlocklistDialog failed:',
+          sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        );
+        throw err;
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'reticulum:openBlocklistDialog',
+    async (event): Promise<BlocklistImportFileResult> => {
+      assertIpcSender(event, 'reticulum:openBlocklistDialog');
+      reticulumBlocklistFileIpcRateLimit.checkOrThrow();
+      try {
+        return await readBlocklistFromFile();
+      } catch (err) {
+        console.error(
+          '[ReticulumIPC] openBlocklistDialog failed:',
+          sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        );
+        throw err;
+      }
+    },
+  );
 
   ipcMain.handle('reticulum:showNomadContentSourceDialog', async (event) => {
     assertIpcSender(event, 'reticulum:showNomadContentSourceDialog');
-    return showNomadContentSourceDialog();
+    try {
+      return await showNomadContentSourceDialog();
+    } catch (err) {
+      console.error(
+        '[ReticulumIPC] showNomadContentSourceDialog failed:',
+        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+      );
+      throw err;
+    }
   });
 
   /**
@@ -269,12 +714,28 @@ export function registerReticulumIpcHandlers(deps: ReticulumIpcDeps): void {
 
   ipcMain.handle('reticulum:showRncpOpenFileDialog', async (event) => {
     assertIpcSender(event, 'reticulum:showRncpOpenFileDialog');
-    return showRncpOpenFileDialog();
+    try {
+      return await showRncpOpenFileDialog();
+    } catch (err) {
+      console.error(
+        '[ReticulumIPC] showRncpOpenFileDialog failed:',
+        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+      );
+      throw err;
+    }
   });
 
   ipcMain.handle('reticulum:showRncpSaveDirectoryDialog', async (event) => {
     assertIpcSender(event, 'reticulum:showRncpSaveDirectoryDialog');
-    return showRncpSaveDirectoryDialog();
+    try {
+      return await showRncpSaveDirectoryDialog();
+    } catch (err) {
+      console.error(
+        '[ReticulumIPC] showRncpSaveDirectoryDialog failed:',
+        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+      );
+      throw err;
+    }
   });
 
   ipcMain.handle('reticulum:revealInFolder', (event, pathArg: unknown) => {
@@ -300,6 +761,7 @@ export function registerReticulumIpcHandlers(deps: ReticulumIpcDeps): void {
    */
   ipcMain.handle('reticulum:rncpSend', async (event, opts: unknown) => {
     assertIpcSender(event, 'reticulum:rncpSend');
+    reticulumProxyIpcRateLimit.checkOrThrow();
     if (!opts || typeof opts !== 'object') {
       throw new TypeError('rncpSend: opts must be an object');
     }
@@ -338,6 +800,7 @@ export function registerReticulumIpcHandlers(deps: ReticulumIpcDeps): void {
    */
   ipcMain.handle('reticulum:rncpFetch', async (event, opts: unknown) => {
     assertIpcSender(event, 'reticulum:rncpFetch');
+    reticulumProxyIpcRateLimit.checkOrThrow();
     if (!opts || typeof opts !== 'object') {
       throw new TypeError('rncpFetch: opts must be an object');
     }
@@ -382,6 +845,7 @@ export function registerReticulumIpcHandlers(deps: ReticulumIpcDeps): void {
    */
   ipcMain.handle('reticulum:setRncpListener', async (event, opts: unknown) => {
     assertIpcSender(event, 'reticulum:setRncpListener');
+    reticulumProxyIpcRateLimit.checkOrThrow();
     if (!opts || typeof opts !== 'object') {
       throw new TypeError('setRncpListener: opts must be an object');
     }
@@ -425,6 +889,11 @@ export function wireReticulumSidecarBridge(
     const win = getMainWindow();
     if (!win || win.isDestroyed()) return;
     win.webContents.send('reticulum:event', evt);
+  });
+  manager.on('voiceAudio', (evt) => {
+    const win = getMainWindow();
+    if (!win || win.isDestroyed()) return;
+    win.webContents.send('reticulum:voiceAudio', evt);
   });
   manager.on('status', (status) => {
     const win = getMainWindow();

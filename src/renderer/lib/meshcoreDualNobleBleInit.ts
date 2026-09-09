@@ -11,7 +11,8 @@ import type { MeshProtocol } from './types';
 
 /** True when the renderer uses Noble IPC for BLE (macOS / Windows), not Web Bluetooth. */
 export function isRendererNobleBlePlatform(): boolean {
-  if (typeof window !== 'undefined' && window.electronAPI?.getPlatform) {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Runtime guard protects external or callback-mutated state.
+  if (typeof window !== 'undefined' && window.electronAPI.getPlatform) {
     return window.electronAPI.getPlatform() !== 'linux';
   }
   try {
@@ -20,7 +21,7 @@ export function isRendererNobleBlePlatform(): boolean {
     // catch-no-log-ok process may be unavailable in some renderer bundles
   }
   if (typeof navigator === 'undefined') return true;
-  const ua = navigator.userAgent ?? '';
+  const ua = navigator.userAgent;
   if (/Linux/i.test(ua)) return false;
   const plat = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData
     ?.platform;
@@ -30,12 +31,13 @@ export function isRendererNobleBlePlatform(): boolean {
 }
 
 /**
- * USB serial and Linux Web Bluetooth share single-flight companion RPC + WritableStream
+ * USB serial, TCP, and Linux Web Bluetooth share single-flight companion RPC + WritableStream
  * writes; init must run getSelfInfo → getContacts → getChannels before post-init side effects.
- * Noble BLE (macOS/Windows) and TCP keep parallel overlap.
+ * Noble BLE (macOS/Windows) keeps parallel overlap.
  */
 export function needsSequentialMeshcoreRadioInit(transport: 'ble' | 'serial' | 'tcp'): boolean {
-  return transport === 'serial' || (transport === 'ble' && !isRendererNobleBlePlatform());
+  // serial/tcp always sequential; Noble BLE (macOS/Windows) keeps parallel overlap.
+  return transport !== 'ble' || !isRendererNobleBlePlatform();
 }
 
 function nobleBleConfigureBusyForProtocolType(protocolType: MeshProtocol): boolean {
@@ -137,7 +139,7 @@ export function initNobleBleDualRadioStartup(): void {
     nobleBlePrimaryAutoConnectSettledPromise = Promise.resolve();
     resolveNobleBlePrimaryAutoConnectSettled = null;
   }
-  notifyNobleBleMutexListeners();
+  refreshNobleBleMutexSnapshot();
 }
 
 /** Primary protocol auto-connect finished (success or failure) — unblocks secondary. */
@@ -146,7 +148,7 @@ export function notifyNobleBlePrimaryAutoConnectSettled(): void {
   nobleBlePrimaryAutoConnectSettled = true;
   resolveNobleBlePrimaryAutoConnectSettled?.();
   resolveNobleBlePrimaryAutoConnectSettled = null;
-  notifyNobleBleMutexListeners();
+  refreshNobleBleMutexSnapshot();
 }
 
 /**
@@ -248,6 +250,15 @@ function buildNobleBleMutexSnapshot(
 function setNobleBleMutexSnapshot(next: NobleBleConnectMutexSnapshot): void {
   nobleBleMutexSnapshot = next;
   notifyNobleBleMutexListeners();
+}
+
+function refreshNobleBleMutexSnapshot(): void {
+  setNobleBleMutexSnapshot(
+    buildNobleBleMutexSnapshot({
+      queued: nobleBleMutexSnapshot.queued,
+      active: nobleBleMutexSnapshot.active,
+    }),
+  );
 }
 
 export function getNobleBleConnectMutexSnapshot(): NobleBleConnectMutexSnapshot {

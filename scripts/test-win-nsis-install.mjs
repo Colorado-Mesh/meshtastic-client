@@ -10,12 +10,21 @@
  *   node scripts/test-win-nsis-install.mjs --arch arm64 [--probe-7z]
  */
 import { spawnSync } from 'child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { findAppArchive } from './find-nsis-app-archive.mjs';
 import { assertBundledReticulumSidecarInBundle } from './assert-bundled-reticulum-sidecar.mjs';
+import { findWinSetupInstaller } from './win-setup-installer-names.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
@@ -27,18 +36,15 @@ const MIN_EXE_BYTES = 50 * 1024 * 1024;
 /** @param {string} msg */
 function fail(msg) {
   console.error(`[test-win-nsis-install] ${msg}`);
-  process.exit(1);
+  // Throw so try/finally cleanup around mkdtemp dirs still runs (process.exit skips finally).
+  const err = new Error(msg);
+  err.name = 'TestFail';
+  throw err;
 }
 
 function readVersion() {
   const packageJson = JSON.parse(readFileSync(path.join(projectRoot, 'package.json'), 'utf-8'));
   return packageJson.version;
-}
-
-/** @param {'x64' | 'arm64'} arch */
-function installerName(version, arch) {
-  const base = `Mesh-client Setup ${version}`;
-  return arch === 'arm64' ? `${base}-arm64.exe` : `${base}.exe`;
 }
 
 /** @param {string} label @param {string} filePath */
@@ -107,9 +113,7 @@ function probe7zExtract(installerPath, outDir, arch) {
     fail(`--probe-7z requires 7-Zip at ${sevenZ}`);
   }
 
-  rmSync(outDir, { recursive: true, force: true });
-  mkdirSync(outDir, { recursive: true });
-
+  // Caller supplies a unique mkdtemp directory — do not delete/recreate it.
   console.debug(`[test-win-nsis-install] Probing 7z extract from installer → ${outDir}`);
   const extractInstaller = run(sevenZ, ['x', `-o${outDir}`, installerPath, '-y']);
   if (extractInstaller !== 0) {
@@ -151,14 +155,26 @@ function main(arch, probe7z) {
   }
 
   const version = readVersion();
-  const installer = installerName(version, arch);
-  const installerPath = path.join(releaseDir, installer);
-  if (!existsSync(installerPath)) {
-    fail(`Installer not found: ${installerPath}`);
+  if (!existsSync(releaseDir)) {
+    fail(`Missing release directory: ${releaseDir}`);
   }
+  /** @type {string} */
+  let installer;
+  try {
+    installer = findWinSetupInstaller(version, arch, readdirSync(releaseDir));
+  } catch (e) {
+    dumpDir('release dir (installer missing)', releaseDir, 2);
+    fail(e instanceof Error ? e.message : String(e));
+  }
+  const installerPath = path.join(releaseDir, installer);
 
   if (probe7z) {
-    probe7zExtract(installerPath, path.join(tmpdir(), 'mesh-client-7z-probe'), arch);
+    const probeDir = mkdtempSync(path.join(tmpdir(), 'mesh-client-7z-probe-'));
+    try {
+      probe7zExtract(installerPath, probeDir, arch);
+    } finally {
+      rmSync(probeDir, { recursive: true, force: true });
+    }
   }
 
   const localAppData = process.env.LOCALAPPDATA;
@@ -166,42 +182,46 @@ function main(arch, probe7z) {
     fail('LOCALAPPDATA is not set');
   }
   const instDir = path.join(localAppData, 'Programs', 'Mesh-client');
-  const logPath = path.join(tmpdir(), `mesh-client-install-${arch}.log`);
+  const workDir = mkdtempSync(path.join(tmpdir(), 'mesh-client-install-'));
+  try {
+    const logPath = path.join(workDir, `mesh-client-install-${arch}.log`);
 
-  rmSync(instDir, { recursive: true, force: true });
-  rmSync(logPath, { force: true });
+    rmSync(instDir, { recursive: true, force: true });
 
-  console.debug(`[test-win-nsis-install] Installing ${installer} → ${instDir}`);
-  const installStatus = run(installerPath, ['/S', `/LOG=${logPath}`]);
-  if (installStatus !== 0) {
-    if (existsSync(logPath)) {
-      console.error('[test-win-nsis-install] --- NSIS install log ---');
-      console.error(readFileSync(logPath, 'utf-8'));
+    console.debug(`[test-win-nsis-install] Installing ${installer} → ${instDir}`);
+    const installStatus = run(installerPath, ['/S', `/LOG=${logPath}`]);
+    if (installStatus !== 0) {
+      if (existsSync(logPath)) {
+        console.error('[test-win-nsis-install] --- NSIS install log ---');
+        console.error(readFileSync(logPath, 'utf-8'));
+      }
+      dumpDir('install dir after failed installer', instDir);
+      fail(`Installer exited ${installStatus}`);
     }
-    dumpDir('install dir after failed installer', instDir);
-    fail(`Installer exited ${installStatus}`);
-  }
 
-  const exePath = path.join(instDir, APP_EXE);
-  if (!existsSync(exePath)) {
-    if (existsSync(logPath)) {
-      console.error('[test-win-nsis-install] --- NSIS install log ---');
-      console.error(readFileSync(logPath, 'utf-8'));
+    const exePath = path.join(instDir, APP_EXE);
+    if (!existsSync(exePath)) {
+      if (existsSync(logPath)) {
+        console.error('[test-win-nsis-install] --- NSIS install log ---');
+        console.error(readFileSync(logPath, 'utf-8'));
+      }
+      dumpDir('install dir (exe missing)', instDir);
+      fail(`${APP_EXE} missing after silent install (log: ${logPath})`);
     }
-    dumpDir('install dir (exe missing)', instDir);
-    fail(`${APP_EXE} missing after silent install (log: ${logPath})`);
-  }
 
-  assertExe(`installed ${APP_EXE}`, exePath);
-  assertBundledReticulumSidecarInBundle({
-    label: `installed ${arch} Reticulum sidecar`,
-    platform: 'win32',
-    bundleRoot: instDir,
-    fail,
-  });
-  console.debug(
-    `[test-win-nsis-install] OK — ${arch} NSIS install left ${exePath} with bundled Reticulum sidecar`,
-  );
+    assertExe(`installed ${APP_EXE}`, exePath);
+    assertBundledReticulumSidecarInBundle({
+      label: `installed ${arch} Reticulum sidecar`,
+      platform: 'win32',
+      bundleRoot: instDir,
+      fail,
+    });
+    console.debug(
+      `[test-win-nsis-install] OK — ${arch} NSIS install left ${exePath} with bundled Reticulum sidecar`,
+    );
+  } finally {
+    rmSync(workDir, { recursive: true, force: true });
+  }
 }
 
 const args = process.argv.slice(2);
@@ -217,6 +237,9 @@ if (archArg !== 'x64' && archArg !== 'arm64') {
 try {
   main(archArg, probe7z);
 } catch (e) {
+  if (e instanceof Error && e.name === 'TestFail') {
+    process.exit(1);
+  }
   console.error('[test-win-nsis-install] Unexpected error:', e);
   process.exit(1);
 }

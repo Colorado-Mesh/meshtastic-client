@@ -17,6 +17,214 @@ print_success() { echo -e "${GREEN}$1${NC}"; }
 print_warning() { echo -e "${YELLOW}$1${NC}"; }
 print_error() { echo -e "${RED}$1${NC}"; }
 
+# Hoisted nodeLinker (`pnpm-workspace.yaml`) + `pnpm dedupe --check` is unsafe: the
+# check moves packages into node_modules/.ignored (claiming a "different package
+# manager") and leaves dangling/missing .bin links (vitest, prettier, eslint).
+# Plain `pnpm dedupe` does not do that. Prefer lockfile re-dedupe stability instead.
+assert_lockfile_deduped() {
+  local before after
+  before=$(shasum -a 256 pnpm-lock.yaml | awk '{print $1}')
+  pnpm dedupe
+  after=$(shasum -a 256 pnpm-lock.yaml | awk '{print $1}')
+  if [ "$before" != "$after" ]; then
+    print_error "Dependency deduplication check failed. Lockfile changed on re-dedupe; run 'pnpm dedupe' and commit the lockfile."
+    return 1
+  fi
+  return 0
+}
+
+# Fail fast if release CLIs were removed/broken (dangling .bin after .ignored moves,
+# or bin targets without the execute bit).
+assert_release_clis() {
+  local missing
+  missing=$(
+    python3 - << 'PY'
+import os
+missing = []
+for cmd in ("prettier", "vitest", "eslint"):
+    link = os.path.join("node_modules", ".bin", cmd)
+    if not os.path.lexists(link):
+        missing.append(cmd)
+        continue
+    target = os.path.realpath(link)
+    if not os.path.isfile(target) or not os.access(target, os.X_OK):
+        missing.append(cmd)
+print(" ".join(missing))
+PY
+  )
+  if [ -n "$missing" ]; then
+    print_error "Release CLI(s) missing or broken in node_modules/.bin: $missing"
+    print_error "With nodeLinker=hoisted, repair with: rm -rf node_modules && pnpm install"
+    return 1
+  fi
+  return 0
+}
+
+METAINFO_FILE="flatpak/org.coloradomesh.MeshClient.metainfo.xml"
+
+read_package_version() {
+  node -p "require('./package.json').version"
+}
+
+assert_release_semver() {
+  local version="$1"
+  if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    print_error "Invalid release version \"$version\" — expected X.Y.Z from package.json (never trust pnpm version stdout)."
+    return 1
+  fi
+  return 0
+}
+
+sync_metainfo_release() {
+  local version="$1"
+  local today
+  today=$(date +"%Y-%m-%d")
+  if [ ! -f "$METAINFO_FILE" ]; then
+    print_warning "MetaInfo file missing ($METAINFO_FILE); skipping release entry."
+    return 0
+  fi
+  node scripts/prepend-metainfo-release.mjs "$version" "$today"
+}
+
+# Non-interactive confirmations: --yes / -y or MESH_CLIENT_RELEASE_YES=1|true.
+confirm_or_yes() {
+  local prompt="$1"
+  if [ "${RELEASE_YES}" = true ]; then
+    print_warning "Non-interactive (--yes): ${prompt} → yes"
+    return 0
+  fi
+  echo ""
+  echo -e "${BOLD}${prompt}${NC} [y/N]"
+  local reply
+  read -r reply
+  if [ "$reply" != "y" ] && [ "$reply" != "Y" ]; then
+    return 1
+  fi
+  return 0
+}
+
+print_release_usage() {
+  echo "Usage: pnpm run release [patch|minor|major|x.x.x|--auto|--finish] [--yes] [--skip-dep-update]"
+  echo "       pnpm run release               # Auto-detect from commits"
+  echo "       pnpm run release --auto         # Explicit auto-detect"
+  echo "       pnpm run release minor          # Force minor release"
+  echo "       pnpm run release 2.0.0          # Force specific version"
+  echo "       pnpm run release --finish       # Complete mid-release (no re-bump)"
+  echo "       pnpm run release --yes          # Skip confirmation prompts"
+  echo "       pnpm run release --skip-dep-update  # Skip pnpm update/dedupe"
+  echo "       MESH_CLIENT_RELEASE_YES=1 pnpm run release   # Same as --yes"
+  echo "       (Bare -- from \`pnpm run release -- …\` is ignored; pnpm 11 forwards it.)"
+}
+
+# Rebase the local release tip onto origin/main when main advanced during the long
+# pre-flight (Cut release ~20m). Recreate the annotated tag on the rebased tip each
+# attempt so the tag SHA matches what we push. Retries cover a second concurrent push.
+push_release_main_with_rebase() {
+  local new_version="$1"
+  local max_attempts="${2:-5}"
+  local attempt=1
+
+  while [ "$attempt" -le "$max_attempts" ]; do
+    git fetch origin main
+    if ! git merge-base --is-ancestor origin/main HEAD; then
+      print_warning "origin/main advanced during release; rebasing (attempt ${attempt}/${max_attempts})..."
+      if ! git rebase origin/main; then
+        # Do not swallow abort stderr — a failed abort leaves the repo mid-rebase.
+        if ! git rebase --abort; then
+          print_error "Rebase onto origin/main failed, and git rebase --abort also failed (repo may be mid-rebase). Fix the working tree, then: pnpm run release --finish"
+          return 2
+        fi
+        print_error "Rebase onto origin/main failed (conflicts). Resolve, then: pnpm run release --finish"
+        return 1
+      fi
+    fi
+
+    # Point the release tag at HEAD after any rebase (drop a stale local tag first).
+    if git rev-parse "$new_version" > /dev/null 2>&1; then
+      git tag -d "$new_version"
+    fi
+    git tag -a "$new_version" -m "Release $new_version"
+
+    if git push origin main; then
+      return 0
+    fi
+    if [ "$attempt" -eq "$max_attempts" ]; then
+      print_error "Failed to push main after ${max_attempts} rebase/push attempts."
+      return 1
+    fi
+    print_warning "Push rejected; fetching and retrying..."
+    attempt=$((attempt + 1))
+    sleep "$attempt"
+  done
+  return 1
+}
+
+commit_tag_and_push_release() {
+  local new_version="$1"
+  git add package.json pnpm-lock.yaml org.coloradomesh.MeshClient.yml
+  [ -f "$METAINFO_FILE" ] && git add "$METAINFO_FILE"
+  git commit -m "chore: release $new_version"
+
+  print_header "Creating tag $new_version and pushing to GitHub..."
+  if ! push_release_main_with_rebase "$new_version" 5; then
+    exit 1
+  fi
+  git push origin "$new_version"
+
+  print_success "--------------------------------------------------------"
+  print_success "Success! $new_version has been pushed."
+  print_success "GitHub Actions will now begin building the distributables."
+  echo "Check progress at: https://github.com/Colorado-Mesh/mesh-client/actions"
+  print_warning "Releases are created as drafts — review artifacts, then publish on GitHub."
+  print_success "--------------------------------------------------------"
+}
+
+# Complete a mid-release bump (package.json already at the new version; no re-bump).
+finish_pending_release() {
+  print_header "Finishing pending release (no version bump)..."
+
+  local last_tag clean_version new_version last_tag_version
+  last_tag=$(git describe --tags --abbrev=0 2> /dev/null || echo "")
+  if [ -z "$last_tag" ]; then
+    print_error "Error: No tags found. Cannot finish a release without a previous tag."
+    exit 1
+  fi
+
+  clean_version=$(read_package_version)
+  if ! assert_release_semver "$clean_version"; then
+    exit 1
+  fi
+  new_version="v${clean_version}"
+  last_tag_version="${last_tag#v}"
+
+  if [ "$clean_version" = "$last_tag_version" ]; then
+    print_error "package.json version ($clean_version) equals latest tag ($last_tag). Nothing to finish."
+    exit 1
+  fi
+
+  if git rev-parse "$new_version" > /dev/null 2>&1; then
+    print_error "Tag $new_version already exists. Nothing to finish (or delete the bad tag first)."
+    exit 1
+  fi
+
+  echo "Verifying Flatpak MetaInfo matches package.json..."
+  if ! pnpm run check:flatpak; then
+    print_error "MetaInfo does not match package.json."
+    print_error "Do NOT re-run \`pnpm run release\` (that would bump again)."
+    print_error "Fix flatpak/org.coloradomesh.MeshClient.metainfo.xml top <release version=\"$clean_version\">, then: pnpm run release --finish"
+    exit 1
+  fi
+
+  generate_release_notes "$last_tag" "$new_version"
+
+  if ! confirm_or_yes "package.json is already at $clean_version. Commit, tag $new_version, and push?"; then
+    print_warning "Release finish cancelled."
+    exit 0
+  fi
+
+  commit_tag_and_push_release "$new_version"
+}
+
 # ====================== NEW: Generate nice copy-paste release notes ======================
 generate_release_notes() {
   local last_tag="$1"
@@ -65,9 +273,34 @@ EOF
   fi
 
   echo ""
+  echo "### macOS install"
+  echo "- **Recommended:** open the **\`.dmg\`** and drag **Mesh-client** to **Applications**."
+  echo "- If you use the **\`.zip\`**: extract with **[Keka](https://www.keka.io/en/)** or \`ditto -xk\` — **do not use 7-Zip** (or Finder Archive Utility); they break framework symlinks and can crash at launch with \`Library not loaded: Squirrel.framework\`."
+  echo "- See docs/troubleshooting.md (macOS Squirrel.framework) if the app will not open after a ZIP extract."
+
+  echo ""
   echo "### Breaking Changes"
-  if printf '%s\n' "$commit_logs" | grep -qE "(BREAKING CHANGE|!)"; then
-    printf '%s\n' "$commit_logs" | grep -E "(BREAKING CHANGE|!)" | sed 's/^/* /'
+  # Supported type!: / type(scope)!: subjects (via detectReleaseBump.mjs) plus
+  # line-anchored BREAKING CHANGE / BREAKING-CHANGE footers.
+  local commit_bodies breaking_lines
+  commit_bodies=$(git log "$last_tag"..HEAD --pretty=format:"%B" 2> /dev/null || true)
+  breaking_lines=$(
+    {
+      printf '%s\n' "$commit_logs" | node --input-type=module -e "
+        import { isSupportedBreakingSubject } from './scripts/detectReleaseBump.mjs';
+        let s = '';
+        process.stdin.on('data', (d) => { s += d; });
+        process.stdin.on('end', () => {
+          for (const line of s.split('\\n')) {
+            if (line && isSupportedBreakingSubject(line)) process.stdout.write(line + '\\n');
+          }
+        });
+      " || true
+      printf '%s\n' "$commit_bodies" | grep -E '^[ \t]*BREAKING[- ]CHANGE[ \t]*:' || true
+    } | sed '/^$/d'
+  )
+  if [ -n "$breaking_lines" ]; then
+    printf '%s\n' "$breaking_lines" | sed 's/^/* /' | sed 's/^\* \* /* /'
   else
     echo "*(None)*"
   fi
@@ -81,68 +314,103 @@ EOF
   echo "-> Copy the text above and paste it into your GitHub Release"
 }
 
-# Function to detect version bump from conventional commits
+# Function to detect version bump from conventional commits (scoped + unscoped).
+# Implementation lives in scripts/detectReleaseBump.mjs (unit-tested) so squash
+# titles like feat(rrc): … count as minor — the old bash regex missed scopes.
 detect_version_bump() {
   local last_tag="$1"
-  local commits
-  commits=$(git log "$last_tag"..HEAD --pretty=format:"%s%n%b" 2> /dev/null || echo "")
-
-  if [ -z "$commits" ]; then
-    echo "none"
-    return
-  fi
-
-  local has_breaking=false
-  local has_feat=false
-  local has_other=false
-
-  if echo "$commits" | grep -q "BREAKING CHANGE:"; then
-    has_breaking=true
-  fi
-
-  if echo "$commits" | grep -qE "^(feat|fix|chore|docs|refactor|test|style|perf|build|ci)!:"; then
-    has_breaking=true
-  fi
-
-  if echo "$commits" | grep -qE "^feat[[:space:]]*:"; then
-    has_feat=true
-  fi
-
-  if echo "$commits" | grep -qE "^(feat|fix|chore|docs|refactor|test|style|perf|build|ci)[[:space:]]*:"; then
-    has_other=true
-  fi
-
-  if [ "$has_breaking" = true ]; then
-    echo "major"
-  elif [ "$has_feat" = true ]; then
-    echo "minor"
-  elif [ "$has_other" = true ]; then
-    echo "patch"
-  else
-    echo "patch"
-  fi
+  local current json
+  current=$(read_package_version)
+  # Avoid a pipe so detector non-zero exits are not masked (no pipefail required here).
+  json=$(node scripts/detectReleaseBump.mjs --since "$last_tag" --current "$current") || return 1
+  node -e "process.stdout.write(JSON.parse(process.argv[1]).bump)" "$json"
 }
 
-# 1. Check if a version argument was provided or auto-detect
+# 1. Parse version / finish / non-interactive flags (order-independent).
 VERSION_TYPE=""
 AUTO_DETECT=false
+FINISH_ONLY=false
+SKIP_DEP_UPDATE=false
+RELEASE_YES=false
+if [ "${MESH_CLIENT_RELEASE_YES:-}" = "1" ] || [ "${MESH_CLIENT_RELEASE_YES:-}" = "true" ]; then
+  RELEASE_YES=true
+fi
 
-if [ -z "$1" ] || [ "$1" = "--auto" ]; then
-  AUTO_DETECT=true
-elif [ "$1" = "patch" ] || [ "$1" = "minor" ] || [ "$1" = "major" ]; then
-  VERSION_TYPE="$1"
-elif [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  VERSION_TYPE="$1"
-else
-  echo "Usage: pnpm run release [patch|minor|major|x.x.x|--auto]"
-  echo "       pnpm run release               # Auto-detect from commits"
-  echo "       pnpm run release --auto         # Explicit auto-detect"
-  echo "       pnpm run release minor          # Force minor release"
-  echo "       pnpm run release 2.0.0          # Force specific version"
+POSITIONAL_COUNT=0
+for arg in "$@"; do
+  case "$arg" in
+    # pnpm 11+ forwards the run-script separator: `pnpm run release -- minor`
+    # becomes argv `-- minor`. Treat bare `--` as a no-op so CI/docs stay valid.
+    --) ;;
+    --yes | -y)
+      RELEASE_YES=true
+      ;;
+    --skip-dep-update)
+      SKIP_DEP_UPDATE=true
+      ;;
+    --finish)
+      FINISH_ONLY=true
+      ;;
+    --auto)
+      AUTO_DETECT=true
+      ;;
+    patch | minor | major)
+      VERSION_TYPE="$arg"
+      POSITIONAL_COUNT=$((POSITIONAL_COUNT + 1))
+      ;;
+    *)
+      if [[ "$arg" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        VERSION_TYPE="$arg"
+        POSITIONAL_COUNT=$((POSITIONAL_COUNT + 1))
+      else
+        print_release_usage
+        exit 1
+      fi
+      ;;
+  esac
+done
+
+if [ "$FINISH_ONLY" = true ] && { [ -n "$VERSION_TYPE" ] || [ "$AUTO_DETECT" = true ]; }; then
+  print_error "--finish cannot be combined with a version bump argument."
+  print_release_usage
   exit 1
 fi
 
-# 2. Ensure we are on the main branch and up to date
+if [ "$AUTO_DETECT" = true ] && [ -n "$VERSION_TYPE" ]; then
+  print_error "--auto cannot be combined with patch|minor|major|x.x.x."
+  print_release_usage
+  exit 1
+fi
+
+if [ "$POSITIONAL_COUNT" -gt 1 ]; then
+  print_error "Specify at most one of patch|minor|major|x.x.x."
+  print_release_usage
+  exit 1
+fi
+
+if [ "$FINISH_ONLY" = false ] && [ -z "$VERSION_TYPE" ] && [ "$AUTO_DETECT" = false ]; then
+  # No bump arg and no --auto → same as historical bare `pnpm run release`.
+  AUTO_DETECT=true
+fi
+
+# Test hook: dump parsed flags and exit before git/network side effects.
+# Block under GitHub Actions unless MESH_CLIENT_ALLOW_PARSE_ONLY_IN_CI=1 (unit tests).
+# A repo/org Actions variable left at PARSE_ONLY=1 would otherwise green-succeed Cut release.
+if [ "${MESH_CLIENT_RELEASE_PARSE_ONLY:-}" = "1" ]; then
+  if [ "${GITHUB_ACTIONS:-}" = "true" ] && [ "${MESH_CLIENT_ALLOW_PARSE_ONLY_IN_CI:-}" != "1" ]; then
+    print_error "MESH_CLIENT_RELEASE_PARSE_ONLY is a local/test hook and cannot run under GitHub Actions."
+    print_error "Unset the variable (Cut release clears it) or set MESH_CLIENT_ALLOW_PARSE_ONLY_IN_CI=1 for tests."
+    exit 1
+  fi
+  printf 'RELEASE_YES=%s\n' "$RELEASE_YES"
+  printf 'SKIP_DEP_UPDATE=%s\n' "$SKIP_DEP_UPDATE"
+  printf 'FINISH_ONLY=%s\n' "$FINISH_ONLY"
+  printf 'AUTO_DETECT=%s\n' "$AUTO_DETECT"
+  printf 'VERSION_TYPE=%s\n' "$VERSION_TYPE"
+  exit 0
+fi
+
+# 2. Ensure we are on the main branch
 print_header "Checking git status..."
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 if [ "$CURRENT_BRANCH" != "main" ]; then
@@ -151,15 +419,24 @@ if [ "$CURRENT_BRANCH" != "main" ]; then
   exit 1
 fi
 
+if [ "$FINISH_ONLY" = true ]; then
+  finish_pending_release
+  exit 0
+fi
+
 git pull origin main
 
-# 3. Update dependencies
-print_header "Updating dependencies..."
-pnpm update
+# 3. Update dependencies (optional skip for CI cut-release / already-updated trees)
+if [ "$SKIP_DEP_UPDATE" = true ]; then
+  print_warning "Skipping pnpm update/dedupe (--skip-dep-update)."
+else
+  print_header "Updating dependencies..."
+  pnpm update
 
-# Ensure lockfile is deduped after update
-print_header "Deduplicating dependencies..."
-pnpm dedupe
+  # Ensure lockfile is deduped after update
+  print_header "Deduplicating dependencies..."
+  pnpm dedupe
+fi
 
 print_header "Syncing Flatpak Electron vendored archives..."
 node scripts/sync-flatpak-electron.mjs
@@ -246,11 +523,7 @@ else
   echo -e "${GREEN}  -> This is a patch release${NC}"
 fi
 
-echo ""
-echo -e "${BOLD}Continue with pre-flight validation?${NC} [y/N]"
-read -r CONFIRM
-
-if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ]; then
+if ! confirm_or_yes "Continue with pre-flight validation?"; then
   print_warning "Release cancelled."
   exit 0
 fi
@@ -261,6 +534,11 @@ print_header "Running pre-flight validation..."
 echo "Checking development environment..."
 if ! pnpm run check:environment; then
   print_error "Environment check failed. Fix required failures from 'pnpm run check:environment'."
+  exit 1
+fi
+
+echo "Verifying release CLIs (prettier/vitest/eslint)..."
+if ! assert_release_clis; then
   exit 1
 fi
 
@@ -335,6 +613,11 @@ if ! pnpm run check:reticulum-interface-modes; then
   exit 1
 fi
 
+if ! pnpm run check:pn-hosting-policy; then
+  print_error "PN hosting policy catalog check failed."
+  exit 1
+fi
+
 if ! pnpm run check:reticulum-decommissioned-hubs; then
   print_error "Reticulum decommissioned hub catalog check failed."
   exit 1
@@ -391,9 +674,10 @@ if ! pnpm run check:flatpak-offline-pnpm; then
 fi
 
 # Dependency checks
-echo "Checking dependencies..."
-if ! pnpm dedupe --check; then
-  print_error "Dependency deduplication check failed. Run 'pnpm dedupe' to fix."
+# Do NOT use `pnpm dedupe --check` here: with nodeLinker=hoisted it mutates
+# node_modules (moves packages to .ignored) and breaks .bin (vitest not found).
+echo "Checking dependencies (re-dedupe lockfile stability)..."
+if ! assert_lockfile_deduped; then
   exit 1
 fi
 
@@ -438,7 +722,12 @@ if ! yamllint -f github -s .; then
 fi
 
 # Full Vitest suite — never use the pre-commit staged subset or --changed filters here.
-# Pre-commit may run a staged subset; release must match PR CI coverage of all tests.
+# Pre-commit and pull-request CI may run affected subsets; release must match
+# protected merge-queue CI coverage of all tests.
+echo "Verifying Vitest CLI before full suite..."
+if ! assert_release_clis; then
+  exit 1
+fi
 echo "Running full Vitest suite (pnpm run test:run)..."
 if ! pnpm run test:run; then
   print_error "Tests failed."
@@ -458,11 +747,7 @@ fi
 
 print_success "All pre-flight checks passed!"
 
-echo ""
-echo -e "${BOLD}All validations passed. Proceed with actual release?${NC} [y/N]"
-read -r FINAL_CONFIRM
-
-if [ "$FINAL_CONFIRM" != "y" ] && [ "$FINAL_CONFIRM" != "Y" ]; then
+if ! confirm_or_yes "All validations passed. Proceed with actual release?"; then
   print_warning "Release cancelled after successful validation."
   exit 0
 fi
@@ -470,36 +755,23 @@ fi
 # ====================== Generate release notes ======================
 generate_release_notes "$LAST_TAG" "v$NEW_VERSION_PREVIEW"
 
-# 10. Bump version
+# 10. Bump version — never use `pnpm version` stdout as the version string (pnpm 11
+# prints a multi-line success banner that corrupted Flatpak MetaInfo).
 print_header "Bumping version..."
-NEW_VERSION=$(pnpm version "$VERSION_TYPE" --no-git-tag-version)
+pnpm version "$VERSION_TYPE" --no-git-tag-version > /dev/null
+CLEAN_VERSION=$(read_package_version)
+if ! assert_release_semver "$CLEAN_VERSION"; then
+  exit 1
+fi
+if [ "$CLEAN_VERSION" != "$NEW_VERSION_PREVIEW" ]; then
+  print_error "package.json version ($CLEAN_VERSION) does not match release preview ($NEW_VERSION_PREVIEW)."
+  exit 1
+fi
+NEW_VERSION="v${CLEAN_VERSION}"
 
 # 10a. Prepend a new <release> entry to the Flatpak MetaInfo file
-METAINFO_FILE="flatpak/org.coloradomesh.MeshClient.metainfo.xml"
-if [ -f "$METAINFO_FILE" ]; then
-  CLEAN_VERSION="${NEW_VERSION#v}"
-  TODAY=$(date +"%Y-%m-%d")
-  perl -i -pe "s|(<releases>)|\$1\n    <release version=\"${CLEAN_VERSION}\" date=\"${TODAY}\"/>|" "$METAINFO_FILE"
-  print_success "Updated $METAINFO_FILE with release $CLEAN_VERSION ($TODAY)"
-fi
+sync_metainfo_release "$CLEAN_VERSION"
+print_success "Updated $METAINFO_FILE with release $CLEAN_VERSION"
 
-# 11. Commit the version bump
-git add package.json pnpm-lock.yaml org.coloradomesh.MeshClient.yml
-[ -f "$METAINFO_FILE" ] && git add "$METAINFO_FILE"
-git commit -m "chore: release $NEW_VERSION"
-
-# 12. Create the git tag
-print_header "Creating tag $NEW_VERSION..."
-git tag -a "$NEW_VERSION" -m "Release $NEW_VERSION"
-
-# 13. Push to GitHub
-print_header "Pushing to GitHub..."
-git push origin main
-git push origin "$NEW_VERSION"
-
-print_success "--------------------------------------------------------"
-print_success "Success! $NEW_VERSION has been pushed."
-print_success "GitHub Actions will now begin building the distributables."
-echo "Check progress at: https://github.com/Colorado-Mesh/mesh-client/actions"
-print_warning "Releases are created as drafts — review artifacts, then publish on GitHub."
-print_success "--------------------------------------------------------"
+# 11–13. Commit, tag, push
+commit_tag_and_push_release "$NEW_VERSION"

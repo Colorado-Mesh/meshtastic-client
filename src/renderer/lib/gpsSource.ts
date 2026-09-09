@@ -1,3 +1,4 @@
+import { isShareMyLocationEnabled } from '@/renderer/lib/appSettingsStorage';
 import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
 import { parseStoredJson } from '@/renderer/lib/parseStoredJson';
 
@@ -8,16 +9,45 @@ export type GpsSource = 'device' | 'browser' | 'ip' | 'static';
 interface StoredGpsSettings {
   staticLat?: number;
   staticLon?: number;
+  refreshInterval?: number;
+}
+
+function readStoredGpsSettings(): StoredGpsSettings {
+  if (typeof localStorage === 'undefined') return {};
+  return (
+    parseStoredJson<StoredGpsSettings>(
+      localStorage.getItem(GPS_SETTINGS_STORAGE_KEY),
+      'gpsSource readStoredGpsSettings',
+    ) ?? {}
+  );
+}
+
+/** Host GPS poll interval in seconds (0 = disabled). Respects share-my-location privacy. */
+export function readGpsRefreshIntervalSecs(): number {
+  if (!isShareMyLocationEnabled()) return 0;
+  const interval = readStoredGpsSettings().refreshInterval;
+  return typeof interval === 'number' && Number.isFinite(interval) && interval > 0 ? interval : 0;
+}
+
+/** Persist static coordinates while preserving other GPS settings keys. */
+export function persistStoredStaticGps(lat: number, lon: number): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    const existing = readStoredGpsSettings();
+    const refreshInterval =
+      typeof existing.refreshInterval === 'number' ? existing.refreshInterval : 0;
+    localStorage.setItem(
+      GPS_SETTINGS_STORAGE_KEY,
+      JSON.stringify({ ...existing, staticLat: lat, staticLon: lon, refreshInterval }),
+    );
+  } catch {
+    // catch-no-log-ok localStorage quota or private mode
+  }
 }
 
 /** User-configured static coordinates from App tab GPS settings. */
 export function readStoredStaticGps(): { lat: number; lon: number } | null {
-  if (typeof localStorage === 'undefined') return null;
-  const s =
-    parseStoredJson<StoredGpsSettings>(
-      localStorage.getItem(GPS_SETTINGS_STORAGE_KEY),
-      'gpsSource readStoredStaticGps',
-    ) ?? {};
+  const s = readStoredGpsSettings();
   const { staticLat: lat, staticLon: lon } = s;
   if (
     typeof lat === 'number' &&
@@ -87,13 +117,17 @@ export async function resolveOurPosition(
     return { lat: staticLat, lon: staticLon, source: 'static' };
   }
 
+  // 3–4. Host GPS — skipped when user disabled share-my-location (privacy)
+  if (!isShareMyLocationEnabled()) {
+    return null;
+  }
+
   // 3. Native OS geolocation via main process (bypasses Chromium permission issues)
-  if (typeof window !== 'undefined' && (window as any).electronAPI?.getGpsFix) {
+  if (typeof window !== 'undefined') {
     try {
-      const result = await (window as any).electronAPI.getGpsFix();
+      const result = await window.electronAPI.getGpsFix();
       if (
-        result.status !== 'error' &&
-        !('error' in result) &&
+        !('status' in result) &&
         typeof result.lat === 'number' &&
         typeof result.lon === 'number' &&
         Number.isFinite(result.lat) &&
@@ -116,8 +150,15 @@ export async function resolveOurPosition(
     const res = await fetch('https://ipapi.co/json/', { signal: controller.signal });
     clearTimeout(timer);
     if (res.ok) {
-      const data = await res.json();
-      if (typeof data.latitude === 'number' && typeof data.longitude === 'number') {
+      const data: unknown = await res.json();
+      if (
+        typeof data === 'object' &&
+        data != null &&
+        'latitude' in data &&
+        'longitude' in data &&
+        typeof data.latitude === 'number' &&
+        typeof data.longitude === 'number'
+      ) {
         return { lat: data.latitude, lon: data.longitude, source: 'ip' };
       }
     }

@@ -1,6 +1,14 @@
 import type { ForceEdge } from './forceDirectedGraphLayout';
 import { nodeHealthScore, type NodeHealthTier, nodeHealthTier } from './nodeHealthScore';
+import { effectiveLastHeardMs } from './nodeStatus';
 import { MS_PER_HOUR } from './timeConstants';
+import {
+  MESH_TOPOLOGY_NEARBY_MAX_HOPS,
+  TOPOLOGY_GRAPH_DISTANT_NODE_CAP,
+  TOPOLOGY_GRAPH_NEARBY_NODE_CAP,
+  topologyGraphVisibleNodeCap,
+  topologyPeerPassesHopFilters,
+} from './topologyGraphLimits';
 import type { MeshNode } from './types';
 
 export type MeshPeerGraphNodeKind = 'self' | 'relay' | 'peer';
@@ -31,7 +39,10 @@ export interface MeshPeerTopologyGraph {
 }
 
 export interface MeshPeerTopologyFilterOptions {
-  /** When true (default), include multi-hop peers reachable via relay attachment. */
+  /**
+   * When false and Max hops is All, hide hops above the Mesh nearby ceiling (1).
+   * Numeric Max hops is not gated by this checkbox.
+   */
   includeDistantPeers?: boolean;
   /** When set, hide peers whose hop count exceeds this value. */
   maxHops?: number | null;
@@ -46,8 +57,10 @@ export interface BuildMeshPeerTopologyGraphOptions {
   nowMs?: number;
 }
 
-/** Default visible node budget — tuned for readable force layout without label pile-up. */
-export const MESH_PEER_MAX_VISIBLE_NODES = 48;
+/** Default visible node budget when distant peers are hidden. */
+export const MESH_PEER_MAX_VISIBLE_NODES = TOPOLOGY_GRAPH_NEARBY_NODE_CAP;
+/** Visible node budget when distant peers are shown. */
+export const MESH_PEER_MAX_VISIBLE_NODES_UNFILTERED = TOPOLOGY_GRAPH_DISTANT_NODE_CAP;
 /** Max relay hubs with thick self spokes; excess direct peers render as compact leaf dots. */
 export const MESH_PEER_MAX_RELAY_HUBS = 20;
 export const MESH_PEER_UNASSIGNED_RELAY_ID = -1;
@@ -61,14 +74,16 @@ function effectiveHops(node: MeshNode): number | null {
 export function isMeshPeerOnline(node: MeshNode, nowMs: number = Date.now()): boolean {
   const hops = effectiveHops(node);
   if (hops != null && hops >= 0) return true;
-  const lastHeard = node.last_heard ?? 0;
+  const lastHeard = node.last_heard;
   if (lastHeard <= 0) return false;
-  return nowMs - lastHeard < MS_PER_HOUR;
+  const effectiveMs = effectiveLastHeardMs(lastHeard, nowMs);
+  if (!effectiveMs) return false;
+  return nowMs - effectiveMs < MS_PER_HOUR;
 }
 
 function nodeLabel(node: MeshNode): string {
   return (
-    node.short_name?.trim() || node.long_name?.trim() || `!${node.node_id.toString(16).slice(-4)}`
+    node.short_name.trim() || node.long_name.trim() || `!${node.node_id.toString(16).slice(-4)}`
   );
 }
 
@@ -112,6 +127,7 @@ export function isMeshRelayHubCandidate(node: MeshNode, distantChildCount: numbe
 function relayHubScore(node: MeshNode, distantChildCount: number, nowMs: number): number {
   const health = nodeHealthScore(node, nowMs).total;
   const recency =
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Runtime guard protects external or callback-mutated state.
     node.last_heard != null && node.last_heard > 0
       ? Math.max(0, 100 - (nowMs - node.last_heard) / MS_PER_HOUR)
       : 0;
@@ -125,14 +141,15 @@ function filterMeshPeers(
   const includeDistant = opts?.includeDistantPeers !== false;
   const maxHops = opts?.maxHops ?? null;
 
-  let filtered = peers.filter((peer) => {
-    const hops = effectiveHops(peer);
-    if (maxHops != null && hops != null && hops > maxHops) return false;
-    if (!includeDistant && hops != null && hops > 1) return false;
-    return true;
-  });
+  let filtered = peers.filter((peer) =>
+    topologyPeerPassesHopFilters(effectiveHops(peer), {
+      includeDistantPeers: includeDistant,
+      maxHops,
+      nearbyMaxHops: MESH_TOPOLOGY_NEARBY_MAX_HOPS,
+    }),
+  );
 
-  const peerBudget = Math.max(0, MESH_PEER_MAX_VISIBLE_NODES - 1);
+  const peerBudget = Math.max(0, topologyGraphVisibleNodeCap() - 1);
   const hiddenCount = Math.max(0, filtered.length - peerBudget);
   if (filtered.length > peerBudget) {
     filtered = [...filtered]

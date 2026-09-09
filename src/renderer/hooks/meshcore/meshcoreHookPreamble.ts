@@ -2,7 +2,9 @@ import { sanitizeLogMessage } from '@/main/sanitize-log-message';
 
 import { isValidLatLon } from '../../../shared/geoCoords';
 import { meshcoreContactDisplayName } from '../../../shared/meshcoreContactSanitize';
+import { withTimeout } from '../../../shared/withTimeout';
 import { MAX_IN_MEMORY_CHAT_MESSAGES, trimChatMessagesToMax } from '../../lib/chatInMemoryBuffer';
+import { errLikeToLogString } from '../../lib/errLikeToLogString';
 import type {
   MeshCoreConnection,
   MeshcoreContactDbRow,
@@ -18,6 +20,10 @@ import {
   meshcorePayloadIsTapbackEmojiOnly,
   normalizeMeshcoreIncomingText,
 } from '../../lib/meshcoreChannelText';
+import {
+  isMeshcoreLocallyDeletedContact,
+  shouldApplyMeshcoreContact,
+} from '../../lib/meshcoreLocallyDeletedContacts';
 import {
   CONTACT_TYPE_LABELS,
   isMeshcoreTransportStatusChatLine,
@@ -172,6 +178,8 @@ export function messageToDbRow(
 export const MESHCORE_INIT_TIMEOUT_MS = 60_000;
 /** Companion Ok/Err for `sendFloodAdvert` — meshcore.js has no internal timeout. */
 export const MESHCORE_SEND_FLOOD_ADVERT_TIMEOUT_MS = 25_000;
+/** Companion Ok/Err for `removeContact` — meshcore.js has no internal timeout. */
+export const MESHCORE_REMOVE_CONTACT_TIMEOUT_MS = 25_000;
 /** Base wait for PathUpdated (129) after a flood advert when priming trace route. */
 export const MESHCORE_TRACE_PRIME_WAIT_BASE_MS = 15_000;
 /** Per-hop add-on for {@link computeMeshcoreTracePrimeWaitMs}. */
@@ -546,12 +554,11 @@ function meshcoreRoomServerIdForDedup(msg: ChatMessage): number | undefined {
 }
 
 /**
- * Same room, author, and body within a clock-skew window (RF echo / dual ingress).
- * Separate from chat tapback echo and cross-transport dedup; when tuning skew windows,
- * keep `MESHCORE_ROOM_POST_DEDUP_WINDOW_MS` aligned with chat tapback/optimistic constants
- * where behavior should match (see `timeConstants.ts`).
+ * Same room and body within a clock-skew window (no sender check).
+ * Used to gather candidates before deciding whether an Unknown row may safely
+ * attach to a uniquely resolved twin.
  */
-export function meshcoreRoomPostMatch(
+function meshcoreRoomPostContentMatch(
   existing: ChatMessage,
   incoming: ChatMessage,
   windowMs: number = MESHCORE_ROOM_POST_DEDUP_WINDOW_MS,
@@ -560,7 +567,6 @@ export function meshcoreRoomPostMatch(
   const incomingRoom = meshcoreRoomServerIdForDedup(incoming);
   if (existingRoom == null || incomingRoom == null) return false;
   if (existingRoom !== incomingRoom) return false;
-  if (!meshcoreSenderMatchesForDedup(existing, incoming)) return false;
   const existingBody = existing.meshcoreDedupeKey ?? existing.payload;
   const incomingBody = incoming.meshcoreDedupeKey ?? incoming.payload;
   if (existingBody !== incomingBody && existing.payload !== incoming.payload) return false;
@@ -568,17 +574,69 @@ export function meshcoreRoomPostMatch(
   return true;
 }
 
+/**
+ * Same room, author, and body within a clock-skew window (RF echo / dual ingress).
+ * Separate from chat tapback echo and cross-transport dedup; when tuning skew windows,
+ * keep `MESHCORE_ROOM_POST_DEDUP_WINDOW_MS` aligned with chat tapback/optimistic constants
+ * where behavior should match (see `timeConstants.ts`).
+ * Strict sender match only — Unknown↔named bridging is handled by
+ * {@link findMeshcoreRoomPostDuplicate} when exactly one resolved candidate exists.
+ */
+export function meshcoreRoomPostMatch(
+  existing: ChatMessage,
+  incoming: ChatMessage,
+  windowMs: number = MESHCORE_ROOM_POST_DEDUP_WINDOW_MS,
+): boolean {
+  if (!meshcoreRoomPostContentMatch(existing, incoming, windowMs)) return false;
+  return meshcoreSenderMatchesForDedup(existing, incoming);
+}
+
+/**
+ * Find a room post duplicate to merge with `incoming`.
+ * Ambiguous Unknown/`sender_id` 0 may attach to a resolved twin only when content
+ * matches and there is exactly one unique resolved sender among candidates —
+ * never pick an arbitrary latest row when multiple speakers share room/body/time.
+ */
 export function findMeshcoreRoomPostDuplicate(
   messages: readonly ChatMessage[],
   incoming: ChatMessage,
   windowMs: number = MESHCORE_ROOM_POST_DEDUP_WINDOW_MS,
 ): ChatMessage | undefined {
   const start = Math.max(0, messages.length - MESHCORE_CROSS_TRANSPORT_SCAN_LIMIT);
-  for (let i = messages.length - 1; i >= start; i--) {
+  const contentMatches: ChatMessage[] = [];
+  for (let i = start; i < messages.length; i++) {
     const existing = messages[i];
-    if (meshcoreRoomPostMatch(existing, incoming, windowMs)) {
-      return existing;
+    if (existing && meshcoreRoomPostContentMatch(existing, incoming, windowMs)) {
+      contentMatches.push(existing);
     }
+  }
+  if (contentMatches.length === 0) return undefined;
+
+  for (let i = contentMatches.length - 1; i >= 0; i--) {
+    const existing = contentMatches[i];
+    if (meshcoreSenderMatchesForDedup(existing, incoming)) return existing;
+  }
+
+  const incomingAmbiguous = isAmbiguousMeshcoreSender(incoming);
+  const resolvedById = new Map<number, ChatMessage>();
+  for (const m of contentMatches) {
+    if (isAmbiguousMeshcoreSender(m) || m.sender_id <= 0) continue;
+    if (!resolvedById.has(m.sender_id)) resolvedById.set(m.sender_id, m);
+  }
+
+  if (incomingAmbiguous) {
+    if (resolvedById.size !== 1) return undefined;
+    for (const candidate of resolvedById.values()) return candidate;
+    return undefined;
+  }
+
+  if (incoming.sender_id <= 0) return undefined;
+  for (const id of resolvedById.keys()) {
+    if (id !== incoming.sender_id) return undefined;
+  }
+  for (let i = contentMatches.length - 1; i >= 0; i--) {
+    const existing = contentMatches[i];
+    if (isAmbiguousMeshcoreSender(existing)) return existing;
   }
   return undefined;
 }
@@ -857,24 +915,29 @@ export function meshcoreFullPubKeyBytesFromContactDbHex(raw: string): Uint8Array
  * Resolve a 32-byte MeshCore contact pubkey for export/share/DM paths.
  * Order: runtime map → global registry → live store slice → SQLite contact row.
  */
+function meshcorePubKeyMatchesNodeId(pubKey: Uint8Array, nodeId: number): boolean {
+  return pubKey.length === 32 && pubkeyToNodeId(pubKey) === nodeId;
+}
+
 export async function resolveMeshcoreNodePubKey(
   nodeId: number,
   pubKeyByNodeId: ReadonlyMap<number, Uint8Array>,
   storePublicKey?: Uint8Array,
 ): Promise<Uint8Array | null> {
   const fromMap = pubKeyByNodeId.get(nodeId);
-  if (fromMap?.length === 32) return fromMap;
+  if (fromMap && meshcorePubKeyMatchesNodeId(fromMap, nodeId)) return fromMap;
 
   const fromRegistry = getMeshcorePubKey(nodeId);
-  if (fromRegistry?.length === 32) return fromRegistry;
+  if (fromRegistry && meshcorePubKeyMatchesNodeId(fromRegistry, nodeId)) return fromRegistry;
 
-  if (storePublicKey?.length === 32) return storePublicKey;
+  if (storePublicKey && meshcorePubKeyMatchesNodeId(storePublicKey, nodeId)) return storePublicKey;
 
   try {
     const contact = (await window.electronAPI.db.getMeshcoreContactById(nodeId)) as
       Pick<MeshcoreContactDbRow, 'public_key'> | null | undefined;
     if (contact?.public_key) {
-      return meshcoreFullPubKeyBytesFromContactDbHex(contact.public_key);
+      const fromDb = meshcoreFullPubKeyBytesFromContactDbHex(contact.public_key);
+      if (fromDb && meshcorePubKeyMatchesNodeId(fromDb, nodeId)) return fromDb;
     }
   } catch (e: unknown) {
     console.warn(
@@ -883,6 +946,29 @@ export async function resolveMeshcoreNodePubKey(
     );
   }
   return null;
+}
+
+/**
+ * When the runtime map's 32-byte key does not hash to `nodeId`, reload from registry/DB
+ * and update the map. Throws if the key is still mismatched.
+ */
+export async function reloadMeshcorePubKeyIfNodeIdMismatch(
+  nodeId: number,
+  pubKey: Uint8Array,
+  pubKeyMap: Map<number, Uint8Array>,
+  logTag: string,
+): Promise<Uint8Array> {
+  if (meshcorePubKeyMatchesNodeId(pubKey, nodeId)) return pubKey;
+  try {
+    const resolved = await resolveMeshcoreNodePubKey(nodeId, pubKeyMap);
+    if (resolved && meshcorePubKeyMatchesNodeId(resolved, nodeId)) {
+      pubKeyMap.set(nodeId, resolved);
+      return resolved;
+    }
+  } catch (e: unknown) {
+    console.warn(`[${logTag}] pubkey reload failed ` + errLikeToLogString(e));
+  }
+  throw new Error('Room key out of sync — reconnect or refresh contacts.');
 }
 
 /** Pre-seed global pubkey registry from SQLite before PacketRouter subscribe (DM prefix decode). */
@@ -1021,6 +1107,26 @@ export function meshcoreReconcileChannelSenderIds(messages: ChatMessage[]): Chat
   });
 }
 
+/**
+ * Relink room BBS Unknown/sender_id 0 rows to a named twin in the same room with the same
+ * body within {@link MESHCORE_ROOM_POST_DEDUP_WINDOW_MS} (optimistic send + unresolved RF echo).
+ * Uses {@link findMeshcoreRoomPostDuplicate} so attribution requires exactly one resolved sender.
+ */
+export function meshcoreReconcileRoomSenderIds(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map((m, index) => {
+    if (!isMeshcoreRoomChatMessage(m) || !isAmbiguousMeshcoreSender(m)) return m;
+    const others: ChatMessage[] = [];
+    for (let i = 0; i < messages.length; i++) {
+      if (i === index) continue;
+      const other = messages[i];
+      if (other) others.push(other);
+    }
+    const twin = findMeshcoreRoomPostDuplicate(others, m);
+    if (!twin || isAmbiguousMeshcoreSender(twin) || twin.sender_id <= 0) return m;
+    return { ...m, sender_id: twin.sender_id, sender_name: twin.sender_name };
+  });
+}
+
 /** Map persisted MeshCore message rows to chat messages (stub sender id; trust stored payload). */
 export function mapMeshcoreDbRowsToChatMessages(rows: MeshcoreMessageDbRow[]): ChatMessage[] {
   const mapped: ChatMessage[] = [];
@@ -1070,7 +1176,9 @@ export function mapMeshcoreDbRowsToChatMessages(rows: MeshcoreMessageDbRow[]): C
       roomServerId: coerceOptionalDbInt(r.room_server_id),
     });
   }
-  return meshcoreChatMessagesForDisplay(meshcoreReconcileChannelSenderIds(mapped));
+  return meshcoreChatMessagesForDisplay(
+    meshcoreReconcileRoomSenderIds(meshcoreReconcileChannelSenderIds(mapped)),
+  );
 }
 
 /** Persist sender_id/name repairs after {@link mapMeshcoreDbRowsToChatMessages} reconciliation. */
@@ -1106,6 +1214,7 @@ export function mergeStubNodesFromMeshcoreMessages(
   const next = new Map(prev);
   for (const msg of mapped) {
     if (msg.sender_id === 0) continue;
+    if (!shouldApplyMeshcoreContact(msg.sender_id)) continue;
     if (msg.sender_name === 'Unknown' && msg.sender_id === MESHCORE_UNKNOWN_SENDER_STUB_ID)
       continue;
     if (next.has(msg.sender_id)) {
@@ -1125,4 +1234,39 @@ export function mergeStubNodesFromMeshcoreMessages(
     );
   }
   return next;
+}
+
+/**
+ * Prune contacts that the user deleted locally but the radio still holds: re-request
+ * `conn.removeContact(pubkey)` so an offline delete propagates on the next sync.
+ * Returns the contacts minus ids whose radio removal succeeded; failed removals are kept
+ * so the radio (authority) can revive them via the `fromRadio` apply path.
+ */
+export async function retryRadioRemoveDeletedContacts(
+  conn: Pick<MeshCoreConnection, 'removeContact'>,
+  contacts: MeshCoreContactRaw[],
+): Promise<MeshCoreContactRaw[]> {
+  const kept: MeshCoreContactRaw[] = [];
+  for (const c of contacts) {
+    const id = pubkeyToNodeId(c.publicKey);
+    if (id !== 0 && isMeshcoreLocallyDeletedContact(id)) {
+      try {
+        await withTimeout(
+          conn.removeContact(c.publicKey),
+          MESHCORE_REMOVE_CONTACT_TIMEOUT_MS,
+          'removeContact',
+        );
+        console.debug(
+          `[meshcore] retry removeContact: dropped tombstoned contact 0x${id.toString(16)}`,
+        );
+        continue;
+      } catch (e) {
+        console.warn(
+          '[meshcore] retry removeContact (tombstoned contact) failed ' + errLikeToLogString(e),
+        );
+      }
+    }
+    kept.push(c);
+  }
+  return kept;
 }

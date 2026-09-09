@@ -1,9 +1,11 @@
 import { useTranslation } from 'react-i18next';
 
+import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
 import {
   forgetMeshcoreRepeaterSavedSecret,
   getMeshcoreRepeaterSavedSecretsSummary,
 } from '@/renderer/lib/meshcoreRepeaterSavedSecrets';
+import { touch } from '@/shared/touch';
 
 export interface MeshcoreRepeaterPasswordControlsProps {
   nodeId: number;
@@ -26,7 +28,7 @@ export function MeshcoreRepeaterPasswordControls({
   onStatusMessage,
 }: MeshcoreRepeaterPasswordControlsProps) {
   const { t } = useTranslation();
-  void secretsEpoch;
+  touch(secretsEpoch);
   const summary = getMeshcoreRepeaterSavedSecretsSummary(nodeId);
 
   return (
@@ -43,12 +45,18 @@ export function MeshcoreRepeaterPasswordControls({
         <button
           type="button"
           onClick={() => {
-            void onPromptPassword(nodeId, nodeName).then((auth) => {
-              if (auth.ok && auth.saved) {
-                onSecretsChanged();
-                onStatusMessage(t('repeatersPanel.passwordSaved'));
-              }
-            });
+            void onPromptPassword(nodeId, nodeName)
+              .then((auth) => {
+                if (auth.ok && auth.saved) {
+                  onSecretsChanged();
+                  onStatusMessage(t('repeatersPanel.passwordSaved'));
+                }
+              })
+              .catch((e: unknown) => {
+                console.warn(
+                  '[MeshcoreRepeaterPasswordControls] prompt password ' + errLikeToLogString(e),
+                );
+              });
           }}
           className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-200 hover:bg-gray-700"
           aria-label={
@@ -65,10 +73,16 @@ export function MeshcoreRepeaterPasswordControls({
           <button
             type="button"
             onClick={() => {
-              void forgetMeshcoreRepeaterSavedSecret(nodeId).then(() => {
-                onSecretsChanged();
-                onStatusMessage(t('repeatersPanel.passwordForgotten'));
-              });
+              void forgetMeshcoreRepeaterSavedSecret(nodeId)
+                .then(() => {
+                  onSecretsChanged();
+                  onStatusMessage(t('repeatersPanel.passwordForgotten'));
+                })
+                .catch((e: unknown) => {
+                  console.warn(
+                    '[MeshcoreRepeaterPasswordControls] forget password ' + errLikeToLogString(e),
+                  );
+                });
             }}
             className="rounded border border-red-900/50 bg-red-950/40 px-2 py-1 text-xs text-red-300 hover:bg-red-900/30"
             aria-label={t('repeatersPanel.forgetPasswordAria')}

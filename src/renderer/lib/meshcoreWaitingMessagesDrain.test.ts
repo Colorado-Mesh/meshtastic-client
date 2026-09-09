@@ -3,24 +3,42 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as meshcoreRepeaterRpcInFlight from './meshcoreRepeaterRpcInFlight';
 import * as meshcoreTracePathMultiplex from './meshcoreTracePathMultiplex';
 import {
+  abandonMeshcoreSilentBulkAttempt,
+  awaitMeshcoreWaitingMessagesDrainIdle,
+  beginMeshcoreSilentBulkAttempt,
+  endMeshcoreSilentBulkCliPreempt,
   isMeshcoreCompanionDrainDeferred,
+  isMeshcoreSilentBulkAttemptCurrent,
   isMeshcoreSyncNextMessageTimeoutError,
+  isMeshcoreWaitingMessagesBulkFallbackError,
+  isMeshcoreWaitingMessagesTransportDeadError,
   logMeshcoreWaitingMessagesDrainError,
   markMeshcoreCompanionTx,
   markMeshcoreMsgWaitingEvent,
+  meshcoreWaitingMessagesCongestedRetryMs,
+  meshcoreWaitingMessagesPeriodicPollDue,
+  meshcoreWaitingMessagesPeriodicPollIntervalMs,
+  noteMeshcoreSilentBulkSuccess,
+  noteMeshcoreSilentBulkTimeout,
+  preemptMeshcoreSilentBulkForCli,
+  resetMeshcoreSilentBulkBreaker,
   resetMeshcoreWaitingMessagesDrainSchedule,
   resetMeshcoreWaitingMessagesDrainState,
   scheduleMeshcoreWaitingMessagesDrain,
   shouldActivateWaitingMessagesBanner,
+  shouldPreferMeshcoreSilentIncrementalDrain,
   shouldRunMeshcoreWaitingMessagesPeriodicPoll,
+  shouldSkipMeshcoreSilentBulkGetWaitingMessages,
   waitingMessagesDrainTimeoutMs,
 } from './meshcoreWaitingMessagesDrain';
 import {
   MESHCORE_WAITING_MESSAGES_AFTER_TX_DEFER_MS,
+  MESHCORE_WAITING_MESSAGES_CIRCUIT_OPEN_BACKOFF_FACTOR,
   MESHCORE_WAITING_MESSAGES_CONGESTED_RETRY_MS,
   MESHCORE_WAITING_MESSAGES_DRAIN_DEBOUNCE_MS,
   MESHCORE_WAITING_MESSAGES_POLL_MS,
   MESHCORE_WAITING_MESSAGES_SERIAL_SILENT_TIMEOUT_MS,
+  MESHCORE_WAITING_MESSAGES_SILENT_BULK_TIMEOUT_TRIP,
   MESHCORE_WAITING_MESSAGES_SILENT_TIMEOUT_MS,
   MESHCORE_WAITING_MESSAGES_SYNC_TIMEOUT_MS,
 } from './timeConstants';
@@ -32,6 +50,18 @@ describe('waitingMessagesDrainTimeoutMs', () => {
 
   it('uses a shorter silent timeout for USB serial auto-drains', () => {
     expect(waitingMessagesDrainTimeoutMs(false, 'serial')).toBe(
+      MESHCORE_WAITING_MESSAGES_SERIAL_SILENT_TIMEOUT_MS,
+    );
+  });
+
+  it('uses the shorter silent timeout for BLE auto-drains', () => {
+    expect(waitingMessagesDrainTimeoutMs(false, 'ble')).toBe(
+      MESHCORE_WAITING_MESSAGES_SERIAL_SILENT_TIMEOUT_MS,
+    );
+  });
+
+  it('uses the shorter silent timeout for TCP auto-drains', () => {
+    expect(waitingMessagesDrainTimeoutMs(false, 'tcp')).toBe(
       MESHCORE_WAITING_MESSAGES_SERIAL_SILENT_TIMEOUT_MS,
     );
   });
@@ -181,6 +211,19 @@ describe('isMeshcoreCompanionDrainDeferred', () => {
     expect(isMeshcoreCompanionDrainDeferred()).toBe(true);
     busySpy.mockRestore();
   });
+
+  it('ignores in-flight TraceData while a CLI reply hold is active', () => {
+    const holdSpy = vi
+      .spyOn(meshcoreRepeaterRpcInFlight, 'meshcoreCliReplyHoldActive')
+      .mockReturnValue(true);
+    const inFlightSpy = vi
+      .spyOn(meshcoreTracePathMultiplex, 'meshcoreTraceResponsesInFlightCount')
+      .mockReturnValue(1);
+    // Automatic drains defer during CLI hold; force kicks bypass via options.force.
+    expect(isMeshcoreCompanionDrainDeferred()).toBe(true);
+    holdSpy.mockRestore();
+    inFlightSpy.mockRestore();
+  });
 });
 
 describe('logMeshcoreWaitingMessagesDrainError', () => {
@@ -216,6 +259,62 @@ describe('isMeshcoreSyncNextMessageTimeoutError', () => {
     expect(isMeshcoreSyncNextMessageTimeoutError(new Error('getWaitingMessages timed out'))).toBe(
       false,
     );
+  });
+});
+
+describe('silent bulk error classifiers', () => {
+  it('treats tcp-write dead as transport-dead (no fallback)', () => {
+    expect(
+      isMeshcoreWaitingMessagesTransportDeadError(
+        new Error('meshcore:tcp-write: no active socket'),
+      ),
+    ).toBe(true);
+    expect(
+      isMeshcoreWaitingMessagesBulkFallbackError(new Error('meshcore:tcp-write: no active socket')),
+    ).toBe(false);
+  });
+
+  it('treats getWaitingMessages timeout as fallback-safe', () => {
+    expect(
+      isMeshcoreWaitingMessagesBulkFallbackError(
+        new Error('MeshCore getWaitingMessages timed out after 45000ms'),
+      ),
+    ).toBe(true);
+    expect(
+      isMeshcoreWaitingMessagesTransportDeadError(
+        new Error('MeshCore getWaitingMessages timed out after 45000ms'),
+      ),
+    ).toBe(false);
+  });
+
+  it('bumps silent bulk attempt id on abandon so late results are stale', () => {
+    resetMeshcoreWaitingMessagesDrainState(0);
+    const id = beginMeshcoreSilentBulkAttempt();
+    expect(isMeshcoreSilentBulkAttemptCurrent(id)).toBe(true);
+    abandonMeshcoreSilentBulkAttempt(id);
+    expect(isMeshcoreSilentBulkAttemptCurrent(id)).toBe(false);
+  });
+
+  it('ignores abandon of a stale attempt id so the newer attempt stays current', () => {
+    resetMeshcoreWaitingMessagesDrainState(0);
+    const staleId = beginMeshcoreSilentBulkAttempt();
+    const currentId = beginMeshcoreSilentBulkAttempt();
+    expect(isMeshcoreSilentBulkAttemptCurrent(staleId)).toBe(false);
+    expect(isMeshcoreSilentBulkAttemptCurrent(currentId)).toBe(true);
+    abandonMeshcoreSilentBulkAttempt(staleId);
+    expect(isMeshcoreSilentBulkAttemptCurrent(currentId)).toBe(true);
+  });
+
+  it('does not recycle silent bulk attempt ids across lifecycle reset', () => {
+    resetMeshcoreWaitingMessagesDrainState(0);
+    const oldId = beginMeshcoreSilentBulkAttempt();
+    expect(isMeshcoreSilentBulkAttemptCurrent(oldId)).toBe(true);
+    resetMeshcoreWaitingMessagesDrainState(0);
+    expect(isMeshcoreSilentBulkAttemptCurrent(oldId)).toBe(false);
+    const newId = beginMeshcoreSilentBulkAttempt();
+    expect(newId).not.toBe(oldId);
+    expect(isMeshcoreSilentBulkAttemptCurrent(oldId)).toBe(false);
+    expect(isMeshcoreSilentBulkAttemptCurrent(newId)).toBe(true);
   });
 });
 
@@ -255,6 +354,13 @@ describe('resetMeshcoreWaitingMessagesDrainSchedule', () => {
     vi.useRealTimers();
   });
 
+  it('invalidates in-flight silent bulk attempts so late timeouts cannot trip the next connection', () => {
+    const id = beginMeshcoreSilentBulkAttempt();
+    expect(isMeshcoreSilentBulkAttemptCurrent(id)).toBe(true);
+    resetMeshcoreWaitingMessagesDrainSchedule();
+    expect(isMeshcoreSilentBulkAttemptCurrent(id)).toBe(false);
+  });
+
   it('cancels a pending debounced drain', async () => {
     const drain = vi.fn().mockResolvedValue(undefined);
 
@@ -266,5 +372,177 @@ describe('resetMeshcoreWaitingMessagesDrainSchedule', () => {
     await Promise.resolve();
 
     expect(drain).not.toHaveBeenCalled();
+  });
+});
+
+describe('silent bulk timeout circuit breaker', () => {
+  afterEach(() => {
+    resetMeshcoreSilentBulkBreaker();
+  });
+
+  it('stays closed before the trip count', () => {
+    expect(noteMeshcoreSilentBulkTimeout()).toBe(false);
+    expect(shouldSkipMeshcoreSilentBulkGetWaitingMessages()).toBe(false);
+  });
+
+  it('opens on the trip timeout and only reports the trip once', () => {
+    for (let i = 1; i < MESHCORE_WAITING_MESSAGES_SILENT_BULK_TIMEOUT_TRIP; i += 1) {
+      expect(noteMeshcoreSilentBulkTimeout()).toBe(false);
+    }
+    expect(noteMeshcoreSilentBulkTimeout()).toBe(true);
+    expect(shouldSkipMeshcoreSilentBulkGetWaitingMessages()).toBe(true);
+    expect(noteMeshcoreSilentBulkTimeout()).toBe(false);
+    expect(shouldSkipMeshcoreSilentBulkGetWaitingMessages()).toBe(true);
+  });
+
+  it('resets on successful bulk', () => {
+    for (let i = 0; i < MESHCORE_WAITING_MESSAGES_SILENT_BULK_TIMEOUT_TRIP; i += 1) {
+      noteMeshcoreSilentBulkTimeout();
+    }
+    expect(shouldSkipMeshcoreSilentBulkGetWaitingMessages()).toBe(true);
+    noteMeshcoreSilentBulkSuccess();
+    expect(shouldSkipMeshcoreSilentBulkGetWaitingMessages()).toBe(false);
+  });
+
+  it('resets on drain state reset (reconnect)', () => {
+    for (let i = 0; i < MESHCORE_WAITING_MESSAGES_SILENT_BULK_TIMEOUT_TRIP; i += 1) {
+      noteMeshcoreSilentBulkTimeout();
+    }
+    resetMeshcoreWaitingMessagesDrainState(0);
+    expect(shouldSkipMeshcoreSilentBulkGetWaitingMessages()).toBe(false);
+  });
+
+  it('preemptMeshcoreSilentBulkForCli invalidates in-flight bulk and skips further bulk', () => {
+    const id = beginMeshcoreSilentBulkAttempt();
+    expect(isMeshcoreSilentBulkAttemptCurrent(id)).toBe(true);
+    preemptMeshcoreSilentBulkForCli();
+    expect(isMeshcoreSilentBulkAttemptCurrent(id)).toBe(false);
+    expect(shouldSkipMeshcoreSilentBulkGetWaitingMessages()).toBe(true);
+    endMeshcoreSilentBulkCliPreempt();
+    expect(shouldSkipMeshcoreSilentBulkGetWaitingMessages()).toBe(false);
+  });
+
+  it('CLI preempt does not leave the timeout circuit open after end', () => {
+    preemptMeshcoreSilentBulkForCli();
+    expect(shouldSkipMeshcoreSilentBulkGetWaitingMessages()).toBe(true);
+    endMeshcoreSilentBulkCliPreempt();
+    expect(shouldSkipMeshcoreSilentBulkGetWaitingMessages()).toBe(false);
+    // Timeout circuit still independent
+    for (let i = 0; i < MESHCORE_WAITING_MESSAGES_SILENT_BULK_TIMEOUT_TRIP; i += 1) {
+      noteMeshcoreSilentBulkTimeout();
+    }
+    expect(shouldSkipMeshcoreSilentBulkGetWaitingMessages()).toBe(true);
+  });
+});
+
+describe('shouldPreferMeshcoreSilentIncrementalDrain', () => {
+  afterEach(() => {
+    resetMeshcoreSilentBulkBreaker();
+  });
+
+  it('prefers incremental on TCP even when the bulk circuit is closed', () => {
+    expect(shouldPreferMeshcoreSilentIncrementalDrain('tcp')).toBe(true);
+    expect(shouldPreferMeshcoreSilentIncrementalDrain('ble')).toBe(false);
+  });
+
+  it('prefers incremental when the silent bulk circuit is open', () => {
+    for (let i = 0; i < MESHCORE_WAITING_MESSAGES_SILENT_BULK_TIMEOUT_TRIP; i += 1) {
+      noteMeshcoreSilentBulkTimeout();
+    }
+    expect(shouldPreferMeshcoreSilentIncrementalDrain('ble')).toBe(true);
+  });
+});
+
+describe('awaitMeshcoreWaitingMessagesDrainIdle', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('returns true immediately when drain is idle', async () => {
+    await expect(awaitMeshcoreWaitingMessagesDrainIdle(() => false, 5_000)).resolves.toBe(true);
+  });
+
+  it('returns true after drain becomes idle', async () => {
+    let busy = true;
+    const pending = awaitMeshcoreWaitingMessagesDrainIdle(() => busy, 5_000);
+    await vi.advanceTimersByTimeAsync(250);
+    busy = false;
+    await vi.advanceTimersByTimeAsync(250);
+    await expect(pending).resolves.toBe(true);
+  });
+
+  it('returns false when drain stays busy until timeout', async () => {
+    const pending = awaitMeshcoreWaitingMessagesDrainIdle(() => true, 1_000);
+    await vi.advanceTimersByTimeAsync(1_250);
+    await expect(pending).resolves.toBe(false);
+  });
+});
+
+describe('circuit-open backoff intervals', () => {
+  beforeEach(() => {
+    resetMeshcoreWaitingMessagesDrainState(0);
+  });
+
+  it('uses 1× poll/retry when circuit is closed', () => {
+    expect(meshcoreWaitingMessagesPeriodicPollIntervalMs()).toBe(MESHCORE_WAITING_MESSAGES_POLL_MS);
+    expect(meshcoreWaitingMessagesCongestedRetryMs()).toBe(
+      MESHCORE_WAITING_MESSAGES_CONGESTED_RETRY_MS,
+    );
+  });
+
+  it('uses 4× poll/retry when silent-bulk circuit is open', () => {
+    for (let i = 0; i < MESHCORE_WAITING_MESSAGES_SILENT_BULK_TIMEOUT_TRIP; i += 1) {
+      noteMeshcoreSilentBulkTimeout();
+    }
+    expect(shouldSkipMeshcoreSilentBulkGetWaitingMessages()).toBe(true);
+    expect(meshcoreWaitingMessagesPeriodicPollIntervalMs()).toBe(
+      MESHCORE_WAITING_MESSAGES_POLL_MS * MESHCORE_WAITING_MESSAGES_CIRCUIT_OPEN_BACKOFF_FACTOR,
+    );
+    expect(meshcoreWaitingMessagesCongestedRetryMs()).toBe(
+      MESHCORE_WAITING_MESSAGES_CONGESTED_RETRY_MS *
+        MESHCORE_WAITING_MESSAGES_CIRCUIT_OPEN_BACKOFF_FACTOR,
+    );
+  });
+
+  it('restores 1× after breaker reset', () => {
+    for (let i = 0; i < MESHCORE_WAITING_MESSAGES_SILENT_BULK_TIMEOUT_TRIP; i += 1) {
+      noteMeshcoreSilentBulkTimeout();
+    }
+    resetMeshcoreSilentBulkBreaker();
+    expect(meshcoreWaitingMessagesPeriodicPollIntervalMs()).toBe(MESHCORE_WAITING_MESSAGES_POLL_MS);
+    expect(meshcoreWaitingMessagesCongestedRetryMs()).toBe(
+      MESHCORE_WAITING_MESSAGES_CONGESTED_RETRY_MS,
+    );
+  });
+
+  it('circuit open at connect waits full 4× backoff from Date.now() anchor', () => {
+    vi.useFakeTimers();
+    const connectAt = Date.now();
+    for (let i = 0; i < MESHCORE_WAITING_MESSAGES_SILENT_BULK_TIMEOUT_TRIP; i += 1) {
+      noteMeshcoreSilentBulkTimeout();
+    }
+    const lastRunAt = connectAt;
+    const stretchedMs =
+      MESHCORE_WAITING_MESSAGES_POLL_MS * MESHCORE_WAITING_MESSAGES_CIRCUIT_OPEN_BACKOFF_FACTOR;
+
+    vi.advanceTimersByTime(MESHCORE_WAITING_MESSAGES_POLL_MS);
+    expect(
+      meshcoreWaitingMessagesPeriodicPollDue(
+        lastRunAt,
+        connectAt + MESHCORE_WAITING_MESSAGES_POLL_MS,
+      ),
+    ).toBe(false);
+
+    vi.advanceTimersByTime(MESHCORE_WAITING_MESSAGES_POLL_MS * 3);
+    expect(meshcoreWaitingMessagesPeriodicPollDue(lastRunAt, connectAt + stretchedMs)).toBe(true);
+
+    expect(
+      meshcoreWaitingMessagesPeriodicPollDue(0, connectAt + MESHCORE_WAITING_MESSAGES_POLL_MS),
+    ).toBe(true);
+    vi.useRealTimers();
   });
 });

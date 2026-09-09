@@ -13,6 +13,7 @@ import {
 } from 'recharts';
 
 import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
+import { formatDisplayTime } from '@/renderer/lib/formatDisplayTime';
 import { formatRelativeOrIsoDate } from '@/renderer/lib/formatRelativeOrIsoDate';
 import { useIconTrigger } from '@/renderer/lib/icons/iconMotionContext';
 import { SpinnerIcon } from '@/renderer/lib/icons/spinnerIcon';
@@ -22,8 +23,10 @@ import {
   isRfForeignLoraHeard,
   useDiagnosticsStore,
 } from '@/renderer/stores/diagnosticsStore';
+import { useTimeFormatStore } from '@/renderer/stores/timeFormatStore';
 import { formatIsoDateTime } from '@/shared/formatIsoDate';
 import { formatMeshtasticNodeId, meshtasticNodeIdMatchesHexQuery } from '@/shared/nodeNameUtils';
+import { MS_PER_DAY } from '@/shared/timeConstants';
 
 import {
   diagnosticRowsToRoutingMap,
@@ -48,6 +51,7 @@ import {
   getRecommendedAction,
   getRecommendedActionForRfCondition,
 } from '../lib/diagnostics/RemediationEngine';
+import { isReticulumDiagnosticRow } from '../lib/diagnostics/ReticulumDiagnosticEngine';
 import { hasLocalStatsData } from '../lib/diagnostics/RFDiagnosticEngine';
 import type { OurPosition } from '../lib/gpsSource';
 import { startNetworkDiscovery } from '../lib/networkDiscovery';
@@ -144,7 +148,7 @@ interface Props {
   capabilities?: ProtocolCapabilities;
   /** Active radio protocol — auto-traceroute preference is stored per protocol. */
   protocol: MeshProtocol;
-  /** Meshtastic node id used to look up foreign-LoRa detections (stable across panel remounts). */
+  /** Meshtastic node id used to look up foreign-LoRa detections when on the Meshtastic tab. */
   meshtasticListenerNodeId?: number;
   /** MeshCore contacts only — used for heard-by-Meshtastic links (not merged Meshtastic nodes). */
   meshcoreNodes?: Map<number, MeshNode>;
@@ -181,6 +185,7 @@ export default function DiagnosticsPanel({
   onRefreshReticulumDiagnostics,
 }: Props) {
   const { t } = useTranslation();
+  const use24HourTime = useTimeFormatStore((s) => s.use24HourTime);
   const formatRowTime = useCallback(
     (ts: number) => {
       if (!ts) return t('common.emDash');
@@ -189,7 +194,13 @@ export default function DiagnosticsPanel({
     [t],
   );
   const showMqttControls = capabilities?.hasMqttHybrid !== false;
-  const showLoRaMeshDiagnostics = capabilities?.hasHopCount !== false;
+  // LoRa Node/Offense tables are Meshtastic/MeshCore only. Derive from
+  // capabilities.protocol (not the tab prop alone) so a mismatched protocol
+  // prop cannot resurrect LoRa mesh tables on Reticulum. Native Reticulum rows
+  // render in ReticulumDiagnosticsSection — never as !00000000 peers.
+  const showLoRaMeshDiagnostics =
+    capabilities?.protocol !== 'reticulum' && capabilities?.hasHopCount !== false;
+  const showForeignLoraDiagnostics = capabilities?.hasDiagnosticsPanel !== false;
   const diagnosticRows = useDiagnosticsStore((s) => s.diagnosticRows);
   const diagnosticRowsRestoredAt = useDiagnosticsStore((s) => s.diagnosticRowsRestoredAt);
   const clearDiagnosticRowsSnapshot = useDiagnosticsStore((s) => s.clearDiagnosticRowsSnapshot);
@@ -227,9 +238,16 @@ export default function DiagnosticsPanel({
   const distanceOffsetKm = useDiagnosticsStore((s) => s.distanceOffsetKm);
   const setDistanceOffsetKm = useDiagnosticsStore((s) => s.setDistanceOffsetKm);
   const foreignLoraDetections = useDiagnosticsStore((s) => s.foreignLoraDetections);
+  /** Map key for foreign-LoRa detections: Meshtastic self id on MT tab, MeshCore self id on MC tab. */
+  const foreignLoraListenerNodeId =
+    protocol === 'meshcore' && myNodeNum > 0
+      ? myNodeNum
+      : protocol === 'meshtastic' && meshtasticListenerNodeId > 0
+        ? meshtasticListenerNodeId
+        : 0;
   const foreignLoraBySender = useMemo(
-    () => foreignLoraDetections.get(meshtasticListenerNodeId),
-    [foreignLoraDetections, meshtasticListenerNodeId],
+    () => foreignLoraDetections.get(foreignLoraListenerNodeId),
+    [foreignLoraDetections, foreignLoraListenerNodeId],
   );
   const meshcoreHeardList = useMemo(
     () =>
@@ -247,12 +265,12 @@ export default function DiagnosticsPanel({
     s.diagnosticRows.some(
       (r) =>
         r.kind === 'rf' &&
-        r.nodeId === meshtasticListenerNodeId &&
+        r.nodeId === foreignLoraListenerNodeId &&
         r.condition === 'Potential MeshCore Repeater Conflict',
     ),
   );
-  const showMeshtasticForeignLora =
-    protocol === 'meshtastic' && meshtasticListenerNodeId > 0 && isConnected;
+  const showForeignLoraTables =
+    showForeignLoraDiagnostics && foreignLoraListenerNodeId > 0 && isConnected;
 
   const [search, setSearch] = useState('');
   const [tracePendingNodes, setTracePendingNodes] = useState<Set<number>>(() => new Set());
@@ -472,16 +490,20 @@ export default function DiagnosticsPanel({
     return order(a.severity) - order(b.severity);
   });
 
-  const selfRows = anomalyList.filter((r) => r.nodeId === myNodeNum && !isForeignLoraRfRow(r));
+  const selfRows = anomalyList.filter(
+    (r) => r.nodeId === myNodeNum && !isForeignLoraRfRow(r) && !isReticulumDiagnosticRow(r),
+  );
   const foreignLoraListenerId =
-    protocol === 'meshtastic' && meshtasticListenerNodeId > 0
-      ? meshtasticListenerNodeId
-      : myNodeNum;
+    foreignLoraListenerNodeId > 0 ? foreignLoraListenerNodeId : myNodeNum;
   const otherCrossProtocolRows = anomalyList.filter(
     (r) =>
       r.nodeId === foreignLoraListenerId && isForeignLoraRfRow(r) && !isMeshCoreInterferenceRow(r),
   );
-  const meshRows = anomalyList.filter((r) => r.nodeId !== myNodeNum);
+  // Reticulum interface/stack rows belong in ReticulumDiagnosticsSection only —
+  // never as peer Node/Offense rows (avoids !00000000 self placeholders).
+  const meshRows = anomalyList.filter(
+    (r) => r.nodeId !== myNodeNum && !isReticulumDiagnosticRow(r),
+  );
 
   const errorCount = visibleDiagnosticRows.filter(
     (r) => r.kind === 'routing' && r.severity === 'error',
@@ -935,14 +957,11 @@ export default function DiagnosticsPanel({
               const samples = cuHistory.get(myNodeNum) ?? [];
               if (samples.length < 2) return null;
               const now = Date.now();
-              const cutoff = now - 24 * 60 * 60 * 1000;
+              const cutoff = now - MS_PER_DAY;
               const chartData = samples
                 .filter((s) => s.t >= cutoff)
                 .map((s) => ({
-                  time: new Date(s.t).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  }),
+                  time: formatDisplayTime(s.t, { use24Hour: use24HourTime }),
                   cu: Math.round(s.cu * 10) / 10,
                 }));
               if (chartData.length < 2) return null;
@@ -993,7 +1012,7 @@ export default function DiagnosticsPanel({
       )}
 
       {/* MeshCore nodes heard by Meshtastic radio (per transmitter) */}
-      {showMeshtasticForeignLora && meshcoreHeardList.length > 0 && (
+      {showForeignLoraTables && meshcoreHeardList.length > 0 && (
         <div className="space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
           <h3 className="flex items-center gap-1.5 text-sm font-medium text-amber-400">
             <AlertTriangleIcon className="h-4 w-4 shrink-0" />
@@ -1075,7 +1094,7 @@ export default function DiagnosticsPanel({
       )}
 
       {/* Meshtastic + unknown-lora foreign traffic on Meshtastic frequency */}
-      {showMeshtasticForeignLora && otherForeignList.length > 0 && (
+      {showForeignLoraTables && otherForeignList.length > 0 && (
         <div className="space-y-3 rounded-xl border border-orange-500/30 bg-orange-500/5 p-4">
           <h3 className="flex items-center gap-1.5 text-sm font-medium text-orange-400">
             <AlertTriangleIcon className="h-4 w-4 shrink-0" />
@@ -1374,127 +1393,129 @@ export default function DiagnosticsPanel({
         </div>
       )}
 
-      {/* Anomaly Table */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="text-muted text-sm font-medium">
-            {t('diagnosticsPanel.diagnosticsHeading', { count: visibleDiagnosticRows.length })}
-          </h3>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-            }}
-            placeholder={t('diagnosticsPanel.searchAnomalies')}
-            aria-label={t('diagnosticsPanel.searchAnomalies')}
-            className="bg-secondary-dark/80 focus:border-brand-green/50 w-48 rounded-lg border border-gray-600/50 px-3 py-1.5 text-sm text-gray-200 focus:outline-none"
-          />
-        </div>
+      {/* Anomaly Table — LoRa mesh only; Reticulum-only rows live in ReticulumDiagnosticsSection */}
+      {showLoRaMeshDiagnostics && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-muted text-sm font-medium">
+              {t('diagnosticsPanel.diagnosticsHeading', { count: visibleDiagnosticRows.length })}
+            </h3>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+              }}
+              placeholder={t('diagnosticsPanel.searchAnomalies')}
+              aria-label={t('diagnosticsPanel.searchAnomalies')}
+              className="bg-secondary-dark/80 focus:border-brand-green/50 w-48 rounded-lg border border-gray-600/50 px-3 py-1.5 text-sm text-gray-200 focus:outline-none"
+            />
+          </div>
 
-        {anomalyList.length === 0 ? (
-          <div className="bg-secondary-dark text-muted rounded-lg p-8 text-center text-sm">
-            {visibleDiagnosticRows.length === 0
-              ? t('diagnosticsPanel.noDiagnosticsHealthy')
-              : t('diagnosticsPanel.noAnomaliesMatchSearch')}
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {selfRows.length > 0 && (
-              <div>
-                <h4 className="mb-2 text-xs font-semibold tracking-wide text-gray-400 uppercase">
-                  {t('diagnosticsPanel.connectedNodeYouHeading', { count: selfRows.length })}
-                </h4>
-                <div className="border-brand-green/20 overflow-auto rounded-lg border border-gray-700">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-deep-black text-muted sticky top-0 text-left">
-                        <th className="px-4 py-2.5">{t('diagnosticsPanel.tableNode')}</th>
-                        <th className="px-4 py-2.5">{t('diagnosticsPanel.tableOffense')}</th>
-                        <th className="px-4 py-2.5 text-right">
-                          {t('diagnosticsPanel.tableHops')}
-                        </th>
-                        <th className="px-4 py-2.5 text-right">
-                          {t('diagnosticsPanel.tableDetected')}
-                        </th>
-                        <th className="px-4 py-2.5">{t('diagnosticsPanel.tableSuggestedFix')}</th>
-                        <th className="px-4 py-2.5 text-right">
-                          {t('diagnosticsPanel.tableAction')}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-700/50">
-                      {renderTableBody(selfRows)}
-                    </tbody>
-                  </table>
+          {anomalyList.length === 0 ? (
+            <div className="bg-secondary-dark text-muted rounded-lg p-8 text-center text-sm">
+              {visibleDiagnosticRows.length === 0
+                ? t('diagnosticsPanel.noDiagnosticsHealthy')
+                : t('diagnosticsPanel.noAnomaliesMatchSearch')}
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {selfRows.length > 0 && (
+                <div>
+                  <h4 className="mb-2 text-xs font-semibold tracking-wide text-gray-400 uppercase">
+                    {t('diagnosticsPanel.connectedNodeYouHeading', { count: selfRows.length })}
+                  </h4>
+                  <div className="border-brand-green/20 overflow-auto rounded-lg border border-gray-700">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-deep-black text-muted sticky top-0 text-left">
+                          <th className="px-4 py-2.5">{t('diagnosticsPanel.tableNode')}</th>
+                          <th className="px-4 py-2.5">{t('diagnosticsPanel.tableOffense')}</th>
+                          <th className="px-4 py-2.5 text-right">
+                            {t('diagnosticsPanel.tableHops')}
+                          </th>
+                          <th className="px-4 py-2.5 text-right">
+                            {t('diagnosticsPanel.tableDetected')}
+                          </th>
+                          <th className="px-4 py-2.5">{t('diagnosticsPanel.tableSuggestedFix')}</th>
+                          <th className="px-4 py-2.5 text-right">
+                            {t('diagnosticsPanel.tableAction')}
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-700/50">
+                        {renderTableBody(selfRows)}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
-            )}
-            {otherCrossProtocolRows.length > 0 && (
-              <div>
-                <h4 className="mb-2 text-xs font-semibold tracking-wide text-gray-400 uppercase">
-                  {t('diagnosticsPanel.otherCrossProtocolHeading', {
-                    count: otherCrossProtocolRows.length,
-                  })}
-                </h4>
-                <div className="overflow-auto rounded-lg border border-amber-500/20 border-gray-700">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-deep-black text-muted sticky top-0 text-left">
-                        <th className="px-4 py-2.5">{t('diagnosticsPanel.tableNode')}</th>
-                        <th className="px-4 py-2.5">{t('diagnosticsPanel.tableOffense')}</th>
-                        <th className="px-4 py-2.5 text-right">
-                          {t('diagnosticsPanel.tableHops')}
-                        </th>
-                        <th className="px-4 py-2.5 text-right">
-                          {t('diagnosticsPanel.tableDetected')}
-                        </th>
-                        <th className="px-4 py-2.5">{t('diagnosticsPanel.tableSuggestedFix')}</th>
-                        <th className="px-4 py-2.5 text-right">
-                          {t('diagnosticsPanel.tableAction')}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-700/50">
-                      {renderTableBody(otherCrossProtocolRows)}
-                    </tbody>
-                  </table>
+              )}
+              {otherCrossProtocolRows.length > 0 && (
+                <div>
+                  <h4 className="mb-2 text-xs font-semibold tracking-wide text-gray-400 uppercase">
+                    {t('diagnosticsPanel.otherCrossProtocolHeading', {
+                      count: otherCrossProtocolRows.length,
+                    })}
+                  </h4>
+                  <div className="overflow-auto rounded-lg border border-amber-500/20 border-gray-700">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-deep-black text-muted sticky top-0 text-left">
+                          <th className="px-4 py-2.5">{t('diagnosticsPanel.tableNode')}</th>
+                          <th className="px-4 py-2.5">{t('diagnosticsPanel.tableOffense')}</th>
+                          <th className="px-4 py-2.5 text-right">
+                            {t('diagnosticsPanel.tableHops')}
+                          </th>
+                          <th className="px-4 py-2.5 text-right">
+                            {t('diagnosticsPanel.tableDetected')}
+                          </th>
+                          <th className="px-4 py-2.5">{t('diagnosticsPanel.tableSuggestedFix')}</th>
+                          <th className="px-4 py-2.5 text-right">
+                            {t('diagnosticsPanel.tableAction')}
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-700/50">
+                        {renderTableBody(otherCrossProtocolRows)}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
-            )}
-            {meshRows.length > 0 && (
-              <div>
-                <h4 className="mb-2 text-xs font-semibold tracking-wide text-gray-400 uppercase">
-                  {t('diagnosticsPanel.meshDiagnosticsHeading', { count: meshRows.length })}
-                </h4>
-                <div className="overflow-auto rounded-lg border border-gray-700">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-deep-black text-muted sticky top-0 text-left">
-                        <th className="px-4 py-2.5">{t('diagnosticsPanel.tableNode')}</th>
-                        <th className="px-4 py-2.5">{t('diagnosticsPanel.tableOffense')}</th>
-                        <th className="px-4 py-2.5 text-right">
-                          {t('diagnosticsPanel.tableHops')}
-                        </th>
-                        <th className="px-4 py-2.5 text-right">
-                          {t('diagnosticsPanel.tableDetected')}
-                        </th>
-                        <th className="px-4 py-2.5">{t('diagnosticsPanel.tableSuggestedFix')}</th>
-                        <th className="px-4 py-2.5 text-right">
-                          {t('diagnosticsPanel.tableAction')}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-700/50">
-                      {renderTableBody(meshRows)}
-                    </tbody>
-                  </table>
+              )}
+              {meshRows.length > 0 && (
+                <div>
+                  <h4 className="mb-2 text-xs font-semibold tracking-wide text-gray-400 uppercase">
+                    {t('diagnosticsPanel.meshDiagnosticsHeading', { count: meshRows.length })}
+                  </h4>
+                  <div className="overflow-auto rounded-lg border border-gray-700">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-deep-black text-muted sticky top-0 text-left">
+                          <th className="px-4 py-2.5">{t('diagnosticsPanel.tableNode')}</th>
+                          <th className="px-4 py-2.5">{t('diagnosticsPanel.tableOffense')}</th>
+                          <th className="px-4 py-2.5 text-right">
+                            {t('diagnosticsPanel.tableHops')}
+                          </th>
+                          <th className="px-4 py-2.5 text-right">
+                            {t('diagnosticsPanel.tableDetected')}
+                          </th>
+                          <th className="px-4 py-2.5">{t('diagnosticsPanel.tableSuggestedFix')}</th>
+                          <th className="px-4 py-2.5 text-right">
+                            {t('diagnosticsPanel.tableAction')}
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-700/50">
+                        {renderTableBody(meshRows)}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

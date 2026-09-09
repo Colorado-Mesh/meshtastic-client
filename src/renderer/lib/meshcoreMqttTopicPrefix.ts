@@ -1,5 +1,5 @@
 import { isLetsMeshSettings } from './letsMeshJwt';
-import type { MeshcoreMqttPreset } from './meshcoreMqttPresets';
+import { DEVICE_SIGNING_MESHCORE_PRESETS, type MeshcoreMqttPreset } from './meshcoreMqttPresets';
 import type { MQTTSettings } from './types';
 
 /** i18n key used when an IATA-scoped MeshCore topic prefix is malformed. */
@@ -19,15 +19,13 @@ export interface MeshcoreIataTopicPrefixParseErr {
 export type MeshcoreIataTopicPrefixParseResult =
   MeshcoreIataTopicPrefixParseOk | MeshcoreIataTopicPrefixParseErr;
 
-const IATA_SCOPED_PRESETS = new Set<MeshcoreMqttPreset>(['letsmesh', 'coloradomesh', 'meshmapper']);
-
 /** Presets / device-signing hosts that expect `meshcore/{IATA}` or `meshcore/test`. */
 export function isIataScopedMeshcoreMqtt(
   preset: MeshcoreMqttPreset | null | undefined,
   settings: Pick<MQTTSettings, 'server'> | null | undefined,
 ): boolean {
-  if (preset && IATA_SCOPED_PRESETS.has(preset)) return true;
-  const server = settings?.server?.trim() ?? '';
+  if (preset && DEVICE_SIGNING_MESHCORE_PRESETS.has(preset)) return true;
+  const server = settings?.server.trim() ?? '';
   return server.length > 0 && isLetsMeshSettings(server);
 }
 
@@ -45,7 +43,7 @@ export function parseMeshcoreIataTopicPrefix(prefix: string): MeshcoreIataTopicP
   if (!match) {
     return { ok: false, errorKey: MESHCORE_TOPIC_PREFIX_INVALID_IATA_KEY };
   }
-  const rawSegment = match[1] ?? '';
+  const rawSegment = match[1];
   if (rawSegment.toLowerCase() === 'test') {
     return { ok: true, normalized: 'meshcore/test', segment: 'test' };
   }
@@ -68,7 +66,7 @@ export function isValidMeshcoreIataTopicPrefix(
   settings: Pick<MQTTSettings, 'server' | 'topicPrefix'>,
 ): boolean {
   if (!isIataScopedMeshcoreMqtt(preset, settings)) return true;
-  return parseMeshcoreIataTopicPrefix(settings.topicPrefix ?? '').ok;
+  return parseMeshcoreIataTopicPrefix(settings.topicPrefix).ok;
 }
 
 export type PrepareMeshcoreIataMqttResult =
@@ -84,13 +82,13 @@ export function prepareMeshcoreIataMqttTopicPrefix(
   settings: Pick<MQTTSettings, 'server' | 'topicPrefix'>,
 ): PrepareMeshcoreIataMqttResult {
   if (!isIataScopedMeshcoreMqtt(preset, settings)) {
-    return { ok: true, topicPrefix: settings.topicPrefix ?? '', changed: false };
+    return { ok: true, topicPrefix: settings.topicPrefix, changed: false };
   }
-  const parsed = parseMeshcoreIataTopicPrefix(settings.topicPrefix ?? '');
+  const parsed = parseMeshcoreIataTopicPrefix(settings.topicPrefix);
   if (!parsed.ok) return parsed;
   return {
     ok: true,
     topicPrefix: parsed.normalized,
-    changed: parsed.normalized !== (settings.topicPrefix ?? ''),
+    changed: parsed.normalized !== settings.topicPrefix,
   };
 }

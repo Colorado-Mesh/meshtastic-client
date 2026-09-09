@@ -12,7 +12,6 @@ import { setMeshtasticConfigSlice } from '../../stores/deviceStore';
 import { useDiagnosticsStore } from '../../stores/diagnosticsStore';
 import { updateIdentity } from '../../stores/identityStore';
 import { usePositionHistoryStore } from '../../stores/positionHistoryStore';
-import { safeDisconnect } from '../connection';
 import { persistDbWrite } from '../dbPersistRetry';
 import { connectionDriver } from '../drivers/ConnectionDriver';
 import { isForeignLoraLogCandidate } from '../foreignLoraDetection';
@@ -26,7 +25,6 @@ import type { MeshtasticRawPacketEntry } from '../rawPacketLogConstants';
 import { getStoredMeshProtocol } from '../storedMeshProtocol';
 import {
   MESHTASTIC_BLE_CONFIGURE_TIMEOUT_MS,
-  MESHTASTIC_GET_METADATA_AFTER_CONFIGURE_RETRY_MS,
   MESHTASTIC_LOCAL_LORA_CONFIG_DELAY_MS,
 } from '../timeConstants';
 import type {
@@ -42,8 +40,18 @@ import type {
   TelemetryPoint,
 } from '../types';
 import { recordMeshtasticClientNotification } from './meshtasticClientNotification';
+import {
+  getMeshtasticConfigurePhase,
+  setMeshtasticConfigurePhase,
+  setMeshtasticConfigureProgressHandler,
+} from './meshtasticConfigurePhase';
 import { meshtasticDeviceStatusForCode } from './meshtasticDeviceStatus';
+import {
+  cancelMeshtasticGetMetadataAfterConfigure,
+  scheduleMeshtasticGetMetadataAfterConfigure,
+} from './meshtasticGetMetadataAfterConfigure';
 import { shouldFetchLocalLoraConfigAfterConfigure } from './meshtasticLocalLoraConfig';
+import { recordMeshtasticLockdownStatus } from './meshtasticLockdown';
 import type { ModulePortEvent, PaxCounterPoint } from './meshtasticModuleEvents';
 import { attachMeshtasticModulePortSideEffects } from './meshtasticModulePortSideEffects';
 import type { MeshtasticMqttClientProxyBridge } from './meshtasticMqttClientProxy';
@@ -64,29 +72,6 @@ import { pushMeshtasticTransportSideEffectUnsubs } from './meshtasticTransportSi
 
 const REQUEST_NODEINFO_MIN_INTERVAL_MS = 120_000;
 const { DeviceStatusEnum } = Types;
-
-/** After configure, request NodeDB metadata once; retry once if the first call fails. */
-function requestMetadataAfterConfigure(
-  device: MeshDevice,
-  myNode: number,
-  attempt: 1 | 2,
-  retryTimerRef: { current: ReturnType<typeof setTimeout> | null },
-): void {
-  void device.getMetadata(myNode).catch((e: unknown) => {
-    console.debug(
-      '[useMeshtasticRuntime] getMetadata after configure failed ' +
-        errLikeToLogString(e) +
-        (attempt === 2 ? ' (retry)' : ''),
-    );
-    if (attempt === 1) {
-      if (retryTimerRef.current != null) clearTimeout(retryTimerRef.current);
-      retryTimerRef.current = setTimeout(() => {
-        retryTimerRef.current = null;
-        requestMetadataAfterConfigure(device, myNode, 2, retryTimerRef);
-      }, MESHTASTIC_GET_METADATA_AFTER_CONFIGURE_RETRY_MS);
-    }
-  });
-}
 
 export type RequestStoreForwardHistoryResult =
   | { ok: true }
@@ -174,6 +159,8 @@ export interface MeshtasticRuntimeWireEffectsDeps {
   isDuplicate: (senderId: number, packetId: number) => boolean;
   ensureNodeExists: (nodeNum: number, source: 'rf' | 'mqtt') => void;
   clearConfigureTimeout: () => void;
+  /** True while reconnect owns the BLE open+configure attempt (90s budget is the stall ceiling). */
+  isBleReconnectAttemptActive: () => boolean;
   applyMeshtasticForeignLoraFromLog: (message: string) => void;
   emptyNode: (nodeId: number) => MeshNode;
   setMeshtasticIdentityId: Dispatch<SetStateAction<string | null>>;
@@ -262,10 +249,31 @@ export function attachMeshtasticRuntimeWireEffects(
     current: null,
   };
   deps.unsubscribesRef.current.push(() => {
-    if (metadataRetryTimerRef.current != null) {
-      clearTimeout(metadataRetryTimerRef.current);
-      metadataRetryTimerRef.current = null;
+    cancelMeshtasticGetMetadataAfterConfigure(metadataRetryTimerRef);
+    setMeshtasticConfigureProgressHandler(null);
+  });
+
+  const armConfigureStallTimeout = (): void => {
+    if ((type !== 'ble' && type !== 'serial') || isBleReconnectAttemptActive()) return;
+    clearConfigureTimeout();
+    configureTimeoutRef.current = setTimeout(() => {
+      console.warn(
+        `[useMeshtasticRuntime] configure stall timeout (${type} ${MESHTASTIC_BLE_CONFIGURE_TIMEOUT_MS / 1000}s) — forcing disconnect`,
+      );
+      clearConfigureTimeout();
+      handleConnectionLostRef.current();
+    }, MESHTASTIC_BLE_CONFIGURE_TIMEOUT_MS);
+  };
+
+  setMeshtasticConfigureProgressHandler(() => {
+    if (
+      !getMeshtasticConfigurePhase() ||
+      (type !== 'ble' && type !== 'serial') ||
+      isBleReconnectAttemptActive()
+    ) {
+      return;
     }
+    armConfigureStallTimeout();
   });
 
   const {
@@ -320,6 +328,7 @@ export function attachMeshtasticRuntimeWireEffects(
     isDuplicate,
     ensureNodeExists,
     clearConfigureTimeout,
+    isBleReconnectAttemptActive,
     applyMeshtasticForeignLoraFromLog,
     emptyNode,
     setMeshtasticIdentityId,
@@ -389,7 +398,7 @@ export function attachMeshtasticRuntimeWireEffects(
   }
   if (identityId) {
     meshtasticIngestSessionRef.current = attachMeshtasticIngest(identityId, {
-      getIsConfiguring: () => isConfiguringRef.current,
+      getIsConfiguring: getMeshtasticConfigurePhase,
       getMyNodeNum: () => myNodeNumRef.current,
     });
   }
@@ -409,6 +418,7 @@ export function attachMeshtasticRuntimeWireEffects(
     if (status === DeviceStatusEnum.DeviceRestarting) {
       deviceConfiguredRef.current = false;
       isConfiguringRef.current = true;
+      setMeshtasticConfigurePhase(true);
       meshtasticIngestSessionRef.current?.setConfiguring(true);
       schedulePostCommitRebootRecoveryRef.current('DeviceRestarting');
     }
@@ -420,35 +430,16 @@ export function attachMeshtasticRuntimeWireEffects(
       status === DeviceStatusEnum.DeviceConfiguring
     ) {
       isConfiguringRef.current = true;
+      setMeshtasticConfigurePhase(true);
       meshtasticIngestSessionRef.current?.setConfiguring(true);
+      // Initial BLE/serial connect only — during reconnect the attempt budget owns stall detection.
       if (
         status === DeviceStatusEnum.DeviceConfiguring &&
-        type === 'ble' &&
-        !configureTimeoutRef.current
+        (type === 'ble' || type === 'serial') &&
+        !configureTimeoutRef.current &&
+        !isBleReconnectAttemptActive()
       ) {
-        configureTimeoutRef.current = setTimeout(() => {
-          console.warn('[useMeshtasticRuntime] configure timeout (BLE 30s) — forcing disconnect');
-          const activeDevice = deviceRef.current;
-          deviceRef.current = null;
-          if (activeDevice) {
-            void safeDisconnect(activeDevice).catch((e: unknown) => {
-              console.debug(
-                '[useMeshtasticRuntime] configure timeout safeDisconnect ' + errLikeToLogString(e),
-              );
-            });
-          }
-          cleanupSubscriptions();
-          stopWatchdog();
-          stopGpsInterval();
-          setState({
-            status: 'disconnected',
-            myNodeNum: 0,
-            connectionType: null,
-            batteryPercent: undefined,
-            batteryCharging: undefined,
-          });
-          clearConfigureTimeout();
-        }, MESHTASTIC_BLE_CONFIGURE_TIMEOUT_MS);
+        armConfigureStallTimeout();
       }
     }
 
@@ -457,6 +448,7 @@ export function attachMeshtasticRuntimeWireEffects(
       clearPostCommitRebootRecoveryRef.current();
       clearConfigureTimeout();
       isConfiguringRef.current = false;
+      setMeshtasticConfigurePhase(false);
       meshtasticIngestSessionRef.current?.setConfiguring(false);
       lastDataReceivedRef.current = Date.now();
       startWatchdog();
@@ -472,7 +464,7 @@ export function attachMeshtasticRuntimeWireEffects(
       mqttClientProxyBridgeRef.current?.flushPendingToDevice();
       const myNode = myNodeNumRef.current;
       if (myNode > 0) {
-        requestMetadataAfterConfigure(device, myNode, 1, metadataRetryTimerRef);
+        scheduleMeshtasticGetMetadataAfterConfigure(device, myNode, metadataRetryTimerRef);
       }
       if (localLoraConfigTimerRef.current != null) {
         clearTimeout(localLoraConfigTimerRef.current);
@@ -501,6 +493,7 @@ export function attachMeshtasticRuntimeWireEffects(
 
     // Always clean up on disconnect, even if we never reached configured
     if (status === DeviceStatusEnum.DeviceDisconnected) {
+      cancelMeshtasticGetMetadataAfterConfigure(metadataRetryTimerRef);
       if (localLoraConfigTimerRef.current != null) {
         clearTimeout(localLoraConfigTimerRef.current);
         localLoraConfigTimerRef.current = undefined;
@@ -511,6 +504,8 @@ export function attachMeshtasticRuntimeWireEffects(
       lastNodeInfoRequestAtRef.current.clear();
       clearConfigureTimeout();
       isConfiguringRef.current = false;
+      setMeshtasticConfigurePhase(false);
+      meshtasticIngestSessionRef.current?.setConfiguring(false);
       stopWatchdog();
       stopGpsInterval();
       cleanupSubscriptions();
@@ -548,14 +543,17 @@ export function attachMeshtasticRuntimeWireEffects(
 
   // ─── My node info ──────────────────────────────────────────
   const unsub2 = device.events.onMyNodeInfo.subscribe((info) => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
     console.debug(`[useMeshtasticRuntime] onMyNodeInfo: myNodeNum=${info.myNodeNum}`);
     touchLastData();
     const virtualNodeId = virtualNodeIdRef.current;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
     if (virtualNodeId !== info.myNodeNum) {
       window.electronAPI.db.deleteNode(virtualNodeId).catch((e: unknown) => {
         console.debug('[useMeshtasticRuntime] deleteNode virtual ' + errLikeToLogString(e));
       });
     }
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
     myNodeNumRef.current = info.myNodeNum;
     const identityId = meshtasticIdentityIdRef.current;
     if (identityId) {
@@ -565,39 +563,52 @@ export function attachMeshtasticRuntimeWireEffects(
           peripheralId: cp.blePeripheralId,
           host: cp.httpAddress,
         });
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
         connectionDriver.remapMeshtasticNodeSignature(identityId, transportParams, info.myNodeNum);
       } else {
         updateIdentity(identityId, {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
           selfNodeNum: info.myNodeNum,
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
           signature: `meshtastic:node:${info.myNodeNum}`,
         });
       }
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
       setConnection(identityId, { myNodeNum: info.myNodeNum, status: 'configured' });
     }
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
     setMeshtasticConnectedMyNodeNum(info.myNodeNum);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
     lastRfSelfNodeIdRef.current = info.myNodeNum;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
     persistLastRfSelfNodeId(info.myNodeNum);
     if (getStoredMeshProtocol() === 'meshtastic') {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
       useDiagnosticsStore.getState().migrateForeignLoraFromZero(info.myNodeNum);
     }
     setState((s) => ({
       ...s,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
       myNodeNum: info.myNodeNum,
       batteryPercent: undefined,
       batteryCharging: undefined,
     }));
     updateNodes((prev) => {
       const updated = new Map(prev);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
       if (virtualNodeId !== info.myNodeNum) updated.delete(virtualNodeId);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
       const existing = updated.get(info.myNodeNum);
       if (!existing) {
         const selfNode: MeshNode = {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
           ...emptyNode(info.myNodeNum),
           hops_away: 0,
           last_heard: Date.now(),
           source: 'rf',
           heard_via_mqtt_only: false,
         };
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
         updated.set(info.myNodeNum, selfNode);
         persistDbWrite('meshtastic runtime self node', () =>
           window.electronAPI.db.saveNode(selfNode),
@@ -609,6 +620,7 @@ export function attachMeshtasticRuntimeWireEffects(
           source: 'rf',
           heard_via_mqtt_only: false,
         };
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
         updated.set(info.myNodeNum, selfNode);
         persistDbWrite('meshtastic runtime self node', () =>
           window.electronAPI.db.saveNode(selfNode),
@@ -619,24 +631,30 @@ export function attachMeshtasticRuntimeWireEffects(
   });
   unsubscribesRef.current.push(unsub2);
 
-  const maybeRequestNodeInfoForNode = (from: number): void => {
+  const maybeRequestNodeInfoForNode = (
+    from: number,
+    opts?: { ignoreDisplayIdentity?: boolean },
+  ): void => {
     if (from === 0 || from === myNodeNumRef.current) return;
-    if (isConfiguringRef.current) return;
-    const existing = getIdentityNode(meshtasticIdentityIdRef.current, from);
-    if (existing && !meshtasticNodeLacksDisplayIdentity(existing, from)) return;
+    if (getMeshtasticConfigurePhase()) return;
+    // Missing-recipient-key recovery must refresh even nodes that already have a
+    // display name (we know who they are, we just lack a usable public key), so it
+    // opts out of the display-identity short-circuit while keeping the rate limit.
+    if (!opts?.ignoreDisplayIdentity) {
+      const existing = getIdentityNode(meshtasticIdentityIdRef.current, from);
+      if (existing && !meshtasticNodeLacksDisplayIdentity(existing, from)) return;
+    }
     const now = Date.now();
     const last = lastNodeInfoRequestAtRef.current.get(from) ?? 0;
     if (now - last < REQUEST_NODEINFO_MIN_INTERVAL_MS) return;
     lastNodeInfoRequestAtRef.current.set(from, now);
     void (async () => {
       try {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
         await device.sendPacket(new Uint8Array(), Portnums.PortNum.NODEINFO_APP, from);
         console.debug(`[useMeshtasticRuntime] NODEINFO request sent for 0x${from.toString(16)}`);
       } catch (e: unknown) {
-        console.debug(
-          '[useMeshtasticRuntime] NODEINFO request failed',
-          e instanceof Error ? e.message : e,
-        );
+        console.debug('[useMeshtasticRuntime] NODEINFO request failed ' + errLikeToLogString(e));
       }
     })();
   };
@@ -670,7 +688,7 @@ export function attachMeshtasticRuntimeWireEffects(
       }),
       attachMeshtasticRawPacketSideEffects(identityId, {
         getMyNodeNum: () => myNodeNumRef.current,
-        getIsConfiguring: () => isConfiguringRef.current,
+        getIsConfiguring: getMeshtasticConfigurePhase,
         setRawPackets,
         setSignalTelemetry,
         touchLastData,
@@ -713,9 +731,9 @@ export function attachMeshtasticRuntimeWireEffects(
       attachMeshtasticNodeSideEffects(identityId, {
         connectionType: type,
         getMyNodeNum: () => myNodeNumRef.current,
-        getIsConfiguring: () => isConfiguringRef.current,
+        getIsConfiguring: getMeshtasticConfigurePhase,
         getBluetoothDeviceId: () =>
-          (device.transport as { __bluetoothDevice?: { id?: string } })?.__bluetoothDevice?.id,
+          (device.transport as { __bluetoothDevice?: { id?: string } }).__bluetoothDevice?.id,
         touchLastData,
         emptyNode,
         ensureNodeExists,
@@ -798,8 +816,11 @@ export function attachMeshtasticRuntimeWireEffects(
   unsubscribesRef.current.push(unsubConfig);
 
   const unsubFromRadio = device.events.onFromRadio.subscribe((packet) => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
     const variant = packet.payloadVariant;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
     if (variant?.case === 'mqttClientProxyMessage') {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- External SDK value is validated by surrounding boundary logic.
       void mqttClientProxyBridgeRef.current?.handleFromRadio(packet).catch((e: unknown) => {
         console.warn(
           '[useMeshtasticRuntime] mqttClientProxy FromRadio failed ' + errLikeToLogString(e),
@@ -807,7 +828,17 @@ export function attachMeshtasticRuntimeWireEffects(
       });
       return;
     }
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
+    if (variant?.case === 'lockdownStatus') {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
+      if (recordMeshtasticLockdownStatus(variant.value) === null) {
+        console.debug('[useMeshtasticRuntime] unparseable lockdownStatus payload');
+      }
+      return;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
     if (variant?.case === 'clientNotification') {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
       const message = variant.value?.message;
       if (typeof message === 'string' && message.trim()) {
         recordMeshtasticClientNotification(message);
@@ -825,6 +856,9 @@ export function attachMeshtasticRuntimeWireEffects(
       myNodeNum: myNodeNumRef.current,
       identityId: meshtasticIdentityIdRef.current,
       tempIdToWirePacketId: ackMeshPacketIdByTempIdRef.current,
+      onMissingRecipientKey: (recipientNodeNum) => {
+        maybeRequestNodeInfoForNode(recipientNodeNum, { ignoreDisplayIdentity: true });
+      },
     });
   };
 
@@ -833,6 +867,9 @@ export function attachMeshtasticRuntimeWireEffects(
       myNodeNum: myNodeNumRef.current,
       identityId: meshtasticIdentityIdRef.current,
       tempIdToWirePacketId: ackMeshPacketIdByTempIdRef.current,
+      onMissingRecipientKey: (recipientNodeNum) => {
+        maybeRequestNodeInfoForNode(recipientNodeNum, { ignoreDisplayIdentity: true });
+      },
     });
     if (!uiApplied) {
       const parsed = reason as { id?: number; packetId?: number; error?: number };

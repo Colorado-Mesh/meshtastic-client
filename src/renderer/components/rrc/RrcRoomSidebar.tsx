@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight, LogIn, Star } from 'lucide-react-motion';
 import { useTranslation } from 'react-i18next';
 
+import { isRrcWhisperRoom } from '@/renderer/lib/rrcMention';
 import { rrcRoomMatchKey, rrcRoomsMatch } from '@/renderer/lib/rrcRoomName';
 import type { RrcListedRoom, RrcRoomInfo } from '@/shared/rrc-types';
 
@@ -62,6 +63,8 @@ export interface RrcRoomSidebarProps {
   onToggleFavourite: (name: string) => void;
   onToggleAutoJoin: (name: string) => void;
   autoJoin: string[];
+  /** Display labels for per-peer `@hash` DMs (match key → nick). */
+  dmRoomLabels?: Map<string, string>;
 }
 
 export function RrcRoomSidebar({
@@ -86,6 +89,7 @@ export function RrcRoomSidebar({
   onToggleFavourite,
   onToggleAutoJoin,
   autoJoin,
+  dmRoomLabels,
 }: RrcRoomSidebarProps) {
   const { t } = useTranslation();
   const q = roomSearch.trim().toLowerCase();
@@ -93,7 +97,20 @@ export function RrcRoomSidebar({
   const joinedKeys = new Set(joinedDeduped.map((r) => rrcRoomMatchKey(r.name)));
   const activeKey = activeRoom ? rrcRoomMatchKey(activeRoom) : null;
 
-  const filterName = (name: string) => !q || name.toLowerCase().includes(q);
+  const displayName = (name: string): string => {
+    if (isRrcWhisperRoom(name)) {
+      return dmRoomLabels?.get(rrcRoomMatchKey(name)) ?? name;
+    }
+    return name;
+  };
+
+  const filterName = (name: string) => {
+    if (!q) return true;
+    if (name.toLowerCase().includes(q)) return true;
+    const label = displayName(name);
+    if (label !== name && label.toLowerCase().includes(q)) return true;
+    return false;
+  };
 
   const unreadFor = (name: string): number => {
     const match = rrcRoomMatchKey(name);
@@ -111,6 +128,8 @@ export function RrcRoomSidebar({
     const key = rrcRoomMatchKey(name);
     const selected = activeKey != null && activeKey === key;
     const unread = opts?.unread ?? 0;
+    const label = displayName(name);
+    const isWhisper = isRrcWhisperRoom(name);
     const isFav = favourites.some((f) => rrcRoomsMatch(f, name));
     const isAuto = autoJoin.some((a) => rrcRoomsMatch(a, name));
 
@@ -120,16 +139,18 @@ export function RrcRoomSidebar({
           <button
             type="button"
             className={`relative flex w-full flex-col items-center gap-0.5 rounded px-1 py-1.5 ${
-              selected ? 'border-l-2 border-amber-400 bg-amber-950/40' : 'hover:bg-amber-950/25'
+              selected
+                ? 'border-bright-green bg-sidebar-active-bg border-l-2'
+                : 'hover:bg-gray-800/60'
             }`}
-            title={name}
-            aria-label={t('rrc.selectRoom', { name })}
+            title={label}
+            aria-label={t('rrc.selectRoom', { name: label })}
             onClick={() => {
               onSelectRoom(name, { join: opts?.joined === false });
             }}
           >
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-amber-950/60 text-[10px] font-semibold text-amber-100">
-              {roomCollapsedLabel(name)}
+            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-slate-800/80 text-[10px] font-semibold text-gray-100">
+              {roomCollapsedLabel(label)}
             </span>
             {unread > 0 && !selected && (
               <span className="absolute top-0.5 right-0.5 h-2 w-2 rounded-full bg-red-600" />
@@ -143,19 +164,21 @@ export function RrcRoomSidebar({
       <li key={key}>
         <div
           className={`flex items-center gap-0.5 rounded ${
-            selected ? 'bg-amber-950/50 text-amber-50' : 'hover:bg-amber-950/25'
+            selected
+              ? 'border-bright-green bg-sidebar-active-bg border-l-2 text-gray-100'
+              : 'hover:bg-gray-800/60'
           }`}
         >
           <button
             type="button"
             className="min-w-0 flex-1 px-2 py-1.5 text-left text-sm"
-            aria-label={t('rrc.selectRoom', { name })}
+            aria-label={t('rrc.selectRoom', { name: label })}
             onClick={() => {
               onSelectRoom(name, { join: opts?.joined === false });
             }}
           >
             <div className="flex items-center justify-between gap-1">
-              <span className="truncate">{name}</span>
+              <span className="truncate">{label}</span>
               {unread > 0 && !selected && (
                 <span className="ml-1 rounded-full bg-red-600 px-1.5 text-[10px] text-white">
                   {unread > 99 ? '99+' : unread}
@@ -163,36 +186,40 @@ export function RrcRoomSidebar({
               )}
             </div>
             {opts?.topic ? (
-              <div className="truncate text-[10px] text-amber-200/40">{opts.topic}</div>
+              <div className="text-muted truncate text-[10px]">{opts.topic}</div>
             ) : null}
           </button>
-          <button
-            type="button"
-            className={`shrink-0 p-1 ${isFav ? 'text-amber-400' : 'text-amber-200/30'}`}
-            aria-label={isFav ? t('rrc.unfavoriteRoom') : t('rrc.favoriteRoom')}
-            title={isFav ? t('rrc.unfavoriteRoom') : t('rrc.favoriteRoom')}
-            onClick={() => {
-              onToggleFavourite(name);
-            }}
-          >
-            <Star size={12} fill={isFav ? 'currentColor' : 'none'} />
-          </button>
-          <button
-            type="button"
-            className={
-              isAuto
-                ? 'shrink-0 rounded border border-amber-400 bg-amber-800/80 px-1.5 py-0.5 text-[9px] font-bold text-amber-50'
-                : 'shrink-0 rounded border border-dashed border-amber-700/60 px-1.5 py-0.5 text-[9px] font-semibold text-amber-200/45 hover:border-amber-500 hover:text-amber-200'
-            }
-            aria-label={isAuto ? t('rrc.disableAutoJoin') : t('rrc.enableAutoJoin')}
-            aria-pressed={isAuto}
-            title={isAuto ? t('rrc.roomAutoJoinOnHint') : t('rrc.roomAutoJoinOffHint')}
-            onClick={() => {
-              onToggleAutoJoin(name);
-            }}
-          >
-            A
-          </button>
+          {!isWhisper && (
+            <>
+              <button
+                type="button"
+                className={`shrink-0 p-1 ${isFav ? 'text-bright-green' : 'text-gray-500'}`}
+                aria-label={isFav ? t('rrc.unfavoriteRoom') : t('rrc.favoriteRoom')}
+                title={isFav ? t('rrc.unfavoriteRoom') : t('rrc.favoriteRoom')}
+                onClick={() => {
+                  onToggleFavourite(name);
+                }}
+              >
+                <Star size={12} fill={isFav ? 'currentColor' : 'none'} />
+              </button>
+              <button
+                type="button"
+                className={
+                  isAuto
+                    ? 'border-bright-green bg-readable-green shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-bold text-white'
+                    : 'text-muted shrink-0 rounded border border-dashed border-gray-600 px-1.5 py-0.5 text-[9px] font-semibold hover:border-gray-500 hover:text-gray-300'
+                }
+                aria-label={isAuto ? t('rrc.disableAutoJoin') : t('rrc.enableAutoJoin')}
+                aria-pressed={isAuto}
+                title={isAuto ? t('rrc.roomAutoJoinOnHint') : t('rrc.roomAutoJoinOffHint')}
+                onClick={() => {
+                  onToggleAutoJoin(name);
+                }}
+              >
+                A
+              </button>
+            </>
+          )}
         </div>
       </li>
     );
@@ -222,19 +249,19 @@ export function RrcRoomSidebar({
 
   return (
     <aside
-      className={`bg-secondary-dark/80 flex shrink-0 flex-col border-r border-amber-800/40 ${
+      className={`bg-secondary-dark/80 flex shrink-0 flex-col border-r border-gray-700 ${
         collapsed ? 'w-16' : 'w-52'
       }`}
     >
-      <div className="flex items-center justify-between gap-1 border-b border-amber-800/40 p-2">
+      <div className="flex items-center justify-between gap-1 border-b border-gray-700 p-2">
         {!collapsed && (
-          <span className="text-xs font-semibold tracking-wide text-amber-400/80 uppercase">
+          <span className="text-xs font-semibold tracking-wide text-gray-200 uppercase">
             {t('rrc.rooms')}
           </span>
         )}
         <button
           type="button"
-          className="rounded p-1 text-amber-200/80 hover:bg-amber-950/50"
+          className="rounded p-1 text-gray-400 hover:bg-gray-800/60"
           aria-label={collapsed ? t('rrc.expandRooms') : t('rrc.collapseRooms')}
           title={collapsed ? t('rrc.expandRooms') : t('rrc.collapseRooms')}
           aria-expanded={!collapsed}
@@ -253,9 +280,9 @@ export function RrcRoomSidebar({
             }}
             placeholder={t('rrc.searchRooms')}
             aria-label={t('rrc.searchRooms')}
-            className="w-full rounded border border-amber-800/50 bg-slate-900/80 px-2 py-1 text-xs text-amber-50"
+            className="bg-deep-black w-full rounded border border-gray-600 px-2 py-1 text-xs text-gray-100"
           />
-          <p className="px-1 text-[10px] leading-snug text-amber-200/45">{t('rrc.roomLegend')}</p>
+          <p className="text-muted px-1 text-[10px] leading-snug">{t('rrc.roomLegend')}</p>
           <div className="flex gap-1">
             <input
               type="text"
@@ -264,11 +291,11 @@ export function RrcRoomSidebar({
                 onJoinRoomNameChange(e.target.value);
               }}
               aria-label={t('rrc.joinRoom')}
-              className="min-w-0 flex-1 rounded border border-amber-800/50 bg-slate-900/80 px-2 py-1 text-xs text-amber-50"
+              className="bg-deep-black min-w-0 flex-1 rounded border border-gray-600 px-2 py-1 text-xs text-gray-100"
             />
             <button
               type="button"
-              className="rounded bg-amber-800/80 px-2 py-1 text-xs text-amber-50"
+              className="bg-readable-green rounded px-2 py-1 text-xs text-white hover:opacity-90"
               aria-label={t('rrc.join')}
               disabled={busy}
               onClick={onJoin}
@@ -284,23 +311,23 @@ export function RrcRoomSidebar({
             }}
             placeholder={t('rrc.roomKeyOptional')}
             aria-label={t('rrc.roomKeyOptional')}
-            className="w-full rounded border border-amber-800/50 bg-slate-900/80 px-2 py-1 text-xs text-amber-50"
+            className="bg-deep-black w-full rounded border border-gray-600 px-2 py-1 text-xs text-gray-100"
           />
           <button
             type="button"
-            className="w-full rounded border border-amber-800/40 px-2 py-1 text-[10px] text-amber-200/70 hover:bg-amber-950/40"
+            className="w-full rounded border border-gray-600 px-2 py-1 text-[10px] text-gray-400 hover:bg-gray-800/60"
             aria-label={t('rrc.refreshRoomList')}
             disabled={busy}
             onClick={onRefreshList}
           >
             {t('rrc.refreshRoomList')}
           </button>
-          <p className="text-[10px] leading-snug text-amber-200/40">{t('rrc.listHint')}</p>
+          <p className="text-muted text-[10px] leading-snug">{t('rrc.listHint')}</p>
         </div>
       )}
       <ul className="min-h-0 flex-1 overflow-y-auto px-1 pb-2">
         {!collapsed && joinedDeduped.some((r) => filterName(r.name)) && (
-          <li className="px-2 py-1 text-[10px] tracking-wide text-amber-500/70 uppercase">
+          <li className="text-muted px-2 py-1 text-[10px] tracking-wide uppercase">
             {t('rrc.joinedRooms')}
           </li>
         )}
@@ -314,7 +341,7 @@ export function RrcRoomSidebar({
             }),
           )}
         {!collapsed && (listedNotJoined.length > 0 || favNotJoined.length > 0) && (
-          <li className="mt-2 px-2 py-1 text-[10px] tracking-wide text-amber-500/70 uppercase">
+          <li className="text-muted mt-2 px-2 py-1 text-[10px] tracking-wide uppercase">
             {t('rrc.listedRooms')}
           </li>
         )}
@@ -331,7 +358,7 @@ export function RrcRoomSidebar({
             renderRoomButton(name, { unread: unreadFor(name), joined: false }),
           )}
         {!collapsed && recentVisible.length > 0 && (
-          <li className="mt-2 px-2 py-1 text-[10px] tracking-wide text-amber-500/70 uppercase">
+          <li className="text-muted mt-2 px-2 py-1 text-[10px] tracking-wide uppercase">
             {t('rrc.recentRooms')}
           </li>
         )}
@@ -340,7 +367,7 @@ export function RrcRoomSidebar({
             renderRoomButton(name, { unread: unreadFor(name), joined: false }),
           )}
         {joinedDeduped.length === 0 && !collapsed && (
-          <li className="px-2 text-xs text-amber-200/40">{t('rrc.noRoomsJoined')}</li>
+          <li className="text-muted px-2 text-xs">{t('rrc.noRoomsJoined')}</li>
         )}
       </ul>
     </aside>

@@ -310,6 +310,32 @@ describe('store record adapters (merge precedence)', () => {
     expect(messageRecordToChatMessage(record).reticulumDeliveryMethod).toBe('propagated');
   });
 
+  it('rehydrates paper received_via and delivery_method from DB', () => {
+    const record = reticulumDbRowToMessageRecord({
+      sender_id: 'aa'.repeat(16),
+      payload: 'paper body',
+      timestamp: 1_700_000_000_000,
+      message_hash: 'ff'.repeat(16),
+      delivery_status: 'delivered',
+      delivery_method: 'paper',
+      received_via: 'paper',
+    });
+    expect(record.receivedVia).toBe('paper');
+    expect(record.reticulumDeliveryMethod).toBe('paper');
+    expect(record.status).toBe('acked');
+  });
+
+  it('rehydrates ble received_via from DB', () => {
+    const record = reticulumDbRowToMessageRecord({
+      sender_id: 'aa'.repeat(16),
+      payload: 'ble body',
+      timestamp: 1_700_000_000_000,
+      message_hash: 'fe'.repeat(16),
+      received_via: 'ble',
+    });
+    expect(record.receivedVia).toBe('ble');
+  });
+
   it('round-trips Reticulum LXMF hash and reply fields from DB rows', () => {
     const record = reticulumDbRowToMessageRecord({
       sender_id: 'aa'.repeat(16),
@@ -324,6 +350,23 @@ describe('store record adapters (merge precedence)', () => {
     expect(record.reticulumReplyToHash).toBe('cc'.repeat(16));
     const chat = messageRecordToChatMessage(record);
     expect(chat.reticulum_reply_to_hash).toBe('cc'.repeat(16));
+    expect(chat.storeId).toBe('dd'.repeat(16));
+  });
+
+  it('exposes storeId for non-numeric Reticulum pending keys', () => {
+    const chat = messageRecordToChatMessage({
+      id: 'reticulum-pending-42',
+      from: 1,
+      senderName: 'Me',
+      to: 2,
+      payload: 'hi',
+      channelIndex: 0,
+      timestamp: 1,
+      status: 'failed',
+    });
+    expect(chat.id).toBeUndefined();
+    expect(chat.storeId).toBe('reticulum-pending-42');
+    expect(chatMessageToMessageRecord(chat).id).toBe('reticulum-pending-42');
   });
 
   it('rehydrates Reticulum tapbacks from DB rows using reply_to_hash parent linkage', () => {
@@ -355,5 +398,86 @@ describe('store record adapters (merge precedence)', () => {
     expect(reactionsByParentKey.get(parentHash)).toEqual([
       expect.objectContaining({ emoji: 0x1f44d, payload: '👍' }),
     ]);
+  });
+
+  it('messageRecordToChatMessage round-trips voice memo attachment fields', () => {
+    const chat = messageRecordToChatMessage({
+      id: 'hh'.repeat(32),
+      from: 1,
+      to: 2,
+      payload: '[voice:900]',
+      channelIndex: 0,
+      timestamp: 1,
+      status: 'acked',
+      reticulumAttachmentPath: '/cache/memo.ogg',
+      reticulumAttachmentKind: 'audio',
+      reticulumAudioMode: 16,
+      reticulumAudioDurationSec: 0.9,
+    });
+    expect(chat.reticulumAttachmentPath).toBe('/cache/memo.ogg');
+    expect(chat.reticulumAttachmentKind).toBe('audio');
+    expect(chat.reticulumAudioMode).toBe(16);
+    expect(chat.reticulumAudioDurationSec).toBe(0.9);
+  });
+
+  it('reticulumDbRowToMessageRecord maps audio_mode and audio_duration_sec', () => {
+    const record = reticulumDbRowToMessageRecord({
+      sender_id: 'aa'.repeat(16),
+      sender_name: 'Me',
+      payload: '[voice:600]',
+      timestamp: 1,
+      message_hash: 'bb'.repeat(32),
+      attachment_path: '/tmp/voice-memo-out.ogg',
+      audio_mode: 16,
+      audio_duration_sec: 0.6,
+    });
+    expect(record.reticulumAttachmentPath).toBe('/tmp/voice-memo-out.ogg');
+    expect(record.reticulumAttachmentKind).toBe('audio');
+    expect(record.reticulumAudioMode).toBe(16);
+    expect(record.reticulumAudioDurationSec).toBe(0.6);
+  });
+
+  it('reticulumDbRowToMessageRecord infers audio kind from .ogg attachment path', () => {
+    const record = reticulumDbRowToMessageRecord({
+      sender_id: 'aa'.repeat(16),
+      sender_name: 'Me',
+      payload: '[voice:600]',
+      timestamp: 1,
+      message_hash: 'bb'.repeat(32),
+      attachment_path: '/tmp/voice-memo-out.ogg',
+    });
+    expect(record.reticulumAttachmentPath).toBe('/tmp/voice-memo-out.ogg');
+    expect(record.reticulumAttachmentKind).toBe('audio');
+  });
+});
+
+describe('nodeRecordsToMeshNodeMap cache invalidation', () => {
+  const baseRecord: NodeRecord = { nodeId: 7, protocol: 'meshtastic' } as NodeRecord;
+
+  const fieldUpdates: [string, Partial<NodeRecord>][] = [
+    ['lightningStrikeCount1h', { lightningStrikeCount1h: 3 }],
+    ['lightningDistanceKm', { lightningDistanceKm: 12 }],
+    ['pm25Standard', { pm25Standard: 18 }],
+    ['co2', { co2: 640 }],
+    ['keyManuallyVerified', { keyManuallyVerified: true }],
+    ['hasXeddsaSigned', { hasXeddsaSigned: true }],
+  ];
+
+  it.each(fieldUpdates)('re-exports the node when %s changes', (_field, update) => {
+    resetNodeRecordsToMeshNodeMapCacheForTests();
+    const first = nodeRecordsToMeshNodeMap([baseRecord]);
+    const firstNode = first.get(7);
+
+    const second = nodeRecordsToMeshNodeMap([{ ...baseRecord, ...update }]);
+
+    expect(second.get(7)).not.toBe(firstNode);
+  });
+
+  it('reuses the cached node when nothing changed', () => {
+    resetNodeRecordsToMeshNodeMapCacheForTests();
+    const first = nodeRecordsToMeshNodeMap([baseRecord]);
+    const second = nodeRecordsToMeshNodeMap([{ ...baseRecord }]);
+
+    expect(second.get(7)).toBe(first.get(7));
   });
 });

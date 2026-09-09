@@ -5,13 +5,17 @@ import {
   registerReticulumDestinationHash,
   reticulumHashToNodeId,
 } from '@/renderer/lib/reticulum/destHash';
+import { formatReticulumProxyErrorMessage } from '@/renderer/lib/reticulum/reticulumProxyErrorHumanize';
 import type { ReticulumRmapDiscoveredWireRow } from '@/shared/reticulum-types';
+import { isExpectedReticulumProxyError } from '@/shared/reticulumProxyIpcError';
 
 export interface ReticulumIdentityStatus {
   configured: boolean;
   lxmfHash: string | null;
   displayName: string | null;
   identityHash?: string | null;
+  /** 128-hex X25519∥Ed25519 public key when sidecar reports it (Columba lxma://). */
+  publicKey?: string | null;
 }
 
 export interface ReticulumPeerPathResult {
@@ -44,22 +48,45 @@ export async function isReticulumSidecarRunning(): Promise<boolean> {
   }
 }
 
+/**
+ * True when live RNS is attached (`rns_ready`). HTTP can be up earlier (listen-first);
+ * RRC/LXMF need this before connect/send.
+ */
+export async function isReticulumRnsLiveReady(): Promise<boolean> {
+  if (!(await isReticulumSidecarRunning())) return false;
+  try {
+    const body = (await window.electronAPI.reticulum.proxyGet('/api/v1/status')) as {
+      rns_ready?: boolean;
+    };
+    return body.rns_ready === true;
+  } catch {
+    // catch-no-log-ok status probe — treat as not live yet
+    return false;
+  }
+}
+
 export function isReticulumSidecarNotRunningError(err: unknown): boolean {
   return errLikeToLogString(err).toLowerCase().includes('not running');
 }
 
 export function isReticulumSidecar404Error(err: unknown): boolean {
-  return errLikeToLogString(err).includes('404');
+  if (err != null && typeof err === 'object') {
+    const rec = err as Record<string, unknown>;
+    for (const key of ['status', 'statusCode'] as const) {
+      const raw = rec[key];
+      if (raw === 404 || raw === '404') return true;
+    }
+  }
+  // Sidecar manager: `sidecar GET … failed: 404`
+  return /failed:\s*404\b/i.test(errLikeToLogString(err));
+}
+
+export function isReticulumSidecarRateLimitError(err: unknown): boolean {
+  return errLikeToLogString(err).toLowerCase().includes('rate limit exceeded');
 }
 
 export function isReticulumSidecarExpectedProxyError(err: unknown): boolean {
-  const msg = errLikeToLogString(err).toLowerCase();
-  return (
-    isReticulumSidecarNotRunningError(err) ||
-    isReticulumSidecar404Error(err) ||
-    msg.includes('fetch failed') ||
-    msg.includes('aborted')
-  );
+  return isExpectedReticulumProxyError(err);
 }
 
 export interface ReticulumSidecarInterfaceRow {
@@ -69,41 +96,116 @@ export interface ReticulumSidecarInterfaceRow {
   enabled: boolean;
   status: string;
   serial_port?: string | null;
+  host?: string | null;
+  port?: number | null;
+  frequency?: number | null;
+  bandwidth?: number | null;
+  txpower?: number | null;
+  spreading_factor?: number | null;
+  coding_rate?: number | null;
+  callsign?: string | null;
+  preset?: string | null;
+  mode?: string | null;
+  runtime_mode?: string | null;
+  seed_addresses?: string[];
+  discoverable?: boolean | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  height?: number | null;
+  discovery_name?: string | null;
+  announce_interval_min?: number | null;
+  connectable?: boolean | null;
+  reachable_on?: string | null;
+  network_name?: string | null;
+  passphrase?: string | null;
+  flow_control?: boolean | null;
+  ignore_config_warnings?: boolean | null;
+  tx_queue_used?: number | null;
+  tx_queue_max?: number | null;
+  extra_config?: Record<string, string> | null;
+}
+
+export interface ReticulumSerialPortOption {
+  path: string;
+  label?: string;
 }
 
 const RETICULUM_INTERFACES_CACHE_MS = 5_000;
 let cachedReticulumInterfaces: ReticulumSidecarInterfaceRow[] = [];
 let cachedEffectivePrimaryLocalSerialInterfaceId: string | null = null;
 let cachedReticulumInterfacesAt = 0;
+let cachedReticulumSerialPorts: ReticulumSerialPortOption[] = [];
+let cachedReticulumSerialPortsAt = 0;
 
 export function invalidateReticulumInterfacesCache(): void {
   cachedReticulumInterfacesAt = 0;
+  cachedReticulumSerialPortsAt = 0;
 }
 
 export function getCachedReticulumEffectivePrimaryLocalSerialInterfaceId(): string | null {
   return cachedEffectivePrimaryLocalSerialInterfaceId;
 }
 
-/** Fetch OS serial port paths from the sidecar (for local interface health checks). */
-export async function fetchReticulumSerialPorts(): Promise<string[]> {
+export interface FetchReticulumSidecarReadOpts {
+  /**
+   * When true, rate-limit errors are rethrown so pollers can back off.
+   * Default false: return cached rows (or []) so unguarded callers keep working.
+   */
+  propagateRateLimit?: boolean;
+  /** Skip the 5s interfaces cache (TCP recovery uses this for live sidecar status). */
+  bypassCache?: boolean;
+}
+
+/** Fetch OS serial port options from the sidecar (shared cache with path-only helper). */
+export async function fetchReticulumSerialPortOptions(
+  opts?: FetchReticulumSidecarReadOpts,
+): Promise<ReticulumSerialPortOption[]> {
   if (!(await isReticulumSidecarRunning())) {
+    cachedReticulumSerialPorts = [];
+    cachedReticulumSerialPortsAt = 0;
     return [];
+  }
+  const now = Date.now();
+  if (
+    cachedReticulumSerialPorts.length > 0 &&
+    now - cachedReticulumSerialPortsAt < RETICULUM_INTERFACES_CACHE_MS
+  ) {
+    return cachedReticulumSerialPorts;
   }
   try {
     const body = (await window.electronAPI.reticulum.proxyGet('/api/v1/serial/ports')) as {
-      ports?: { path: string }[];
+      ports?: ReticulumSerialPortOption[];
     };
-    return (body.ports ?? []).map((p) => p.path);
+    const ports = body.ports ?? [];
+    cachedReticulumSerialPorts = ports;
+    cachedReticulumSerialPortsAt = now;
+    return ports;
   } catch (e) {
+    if (opts?.propagateRateLimit && isReticulumSidecarRateLimitError(e)) {
+      throw e instanceof Error ? e : new Error(String(e));
+    }
     if (!isReticulumSidecarExpectedProxyError(e)) {
       console.debug('[reticulumSidecarReads] serial ports ' + errLikeToLogString(e));
+    }
+    if (cachedReticulumSerialPorts.length > 0) {
+      return cachedReticulumSerialPorts;
     }
     return [];
   }
 }
 
-/** Fetch configured sidecar interfaces (shared by runtime and radio panel). */
-export async function fetchReticulumInterfaces(): Promise<ReticulumSidecarInterfaceRow[]> {
+/** Fetch OS serial port paths from the sidecar (for local interface health checks). */
+export async function fetchReticulumSerialPorts(
+  opts?: FetchReticulumSidecarReadOpts,
+): Promise<string[]> {
+  const ports = await fetchReticulumSerialPortOptions(opts);
+  return ports.map((p) => p.path);
+}
+
+/** Fetch configured sidecar interfaces (shared by runtime and Connection panel). */
+export async function fetchReticulumInterfaces(
+  opts?: FetchReticulumSidecarReadOpts,
+): Promise<ReticulumSidecarInterfaceRow[]> {
   if (!(await isReticulumSidecarRunning())) {
     cachedReticulumInterfaces = [];
     cachedEffectivePrimaryLocalSerialInterfaceId = null;
@@ -112,6 +214,7 @@ export async function fetchReticulumInterfaces(): Promise<ReticulumSidecarInterf
   }
   const now = Date.now();
   if (
+    !opts?.bypassCache &&
     cachedReticulumInterfaces.length > 0 &&
     now - cachedReticulumInterfacesAt < RETICULUM_INTERFACES_CACHE_MS
   ) {
@@ -129,8 +232,14 @@ export async function fetchReticulumInterfaces(): Promise<ReticulumSidecarInterf
     cachedReticulumInterfacesAt = now;
     return interfaces;
   } catch (e) {
+    if (opts?.propagateRateLimit && isReticulumSidecarRateLimitError(e)) {
+      throw e instanceof Error ? e : new Error(String(e));
+    }
     if (!isReticulumSidecarExpectedProxyError(e)) {
       console.debug('[reticulumSidecarReads] interfaces ' + errLikeToLogString(e));
+    }
+    if (opts?.bypassCache) {
+      throw e instanceof Error ? e : new Error(String(e));
     }
     if (cachedReticulumInterfaces.length > 0) {
       return cachedReticulumInterfaces;
@@ -161,7 +270,13 @@ export async function fetchReticulumRmapDiscovered(): Promise<ReticulumRmapDisco
 /** Fetch sidecar identity status. Panels use `reticulumIdentityStore` via `useReticulumSidecarApi`; runtime uses this helper directly. */
 export async function fetchReticulumIdentityStatus(): Promise<ReticulumIdentityStatus> {
   if (!(await isReticulumSidecarRunning())) {
-    return { configured: false, lxmfHash: null, displayName: null, identityHash: null };
+    return {
+      configured: false,
+      lxmfHash: null,
+      displayName: null,
+      identityHash: null,
+      publicKey: null,
+    };
   }
   try {
     const body = (await window.electronAPI.reticulum.proxyGet('/api/v1/identity/status')) as {
@@ -169,10 +284,15 @@ export async function fetchReticulumIdentityStatus(): Promise<ReticulumIdentityS
       lxmf_hash?: string;
       identity_hash?: string;
       display_name?: string | null;
+      public_key?: string | null;
     };
     const lxmfHash = body.configured && body.lxmf_hash ? body.lxmf_hash : null;
     const displayName = body.display_name?.trim() ? body.display_name.trim() : null;
     const identityHash = body.identity_hash?.trim() ? body.identity_hash.trim() : null;
+    const publicKey =
+      typeof body.public_key === 'string' && /^[0-9a-fA-F]{128}$/.test(body.public_key.trim())
+        ? body.public_key.trim().toLowerCase()
+        : null;
     if (lxmfHash) {
       registerReticulumDestinationHash(reticulumHashToNodeId(lxmfHash), lxmfHash);
     }
@@ -181,23 +301,62 @@ export async function fetchReticulumIdentityStatus(): Promise<ReticulumIdentityS
       lxmfHash,
       displayName,
       identityHash,
+      publicKey,
     };
   } catch (e) {
     if (!isReticulumSidecarExpectedProxyError(e)) {
       console.debug('[reticulumSidecarReads] identity status ' + errLikeToLogString(e));
     }
-    return { configured: false, lxmfHash: null, displayName: null, identityHash: null };
+    return {
+      configured: false,
+      lxmfHash: null,
+      displayName: null,
+      identityHash: null,
+      publicKey: null,
+    };
   }
 }
 
-export async function requestReticulumPeerPath(hash: string): Promise<ReticulumPeerPathResult> {
+/** Register a peer destination public key for Direct LXMF (Columba lxma:// import). */
+export async function registerReticulumKnownIdentity(
+  destinationHash: string,
+  publicKeyHex: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!(await isReticulumSidecarRunning())) {
+    return { ok: false, error: 'sidecar_not_running' };
+  }
+  try {
+    const res: unknown = await window.electronAPI.reticulum.proxyPost(
+      '/api/v1/identity/register-known',
+      {
+        destination_hash: destinationHash,
+        public_key: publicKeyHex,
+      },
+    );
+    if (!res || typeof res !== 'object') {
+      return { ok: false, error: 'invalid_response' };
+    }
+    const body = res as { ok?: unknown; error?: unknown };
+    const ok = body.ok === true;
+    const error = typeof body.error === 'string' ? body.error : undefined;
+    return ok ? { ok: true } : { ok: false, ...(error ? { error } : {}) };
+  } catch (e) {
+    // catch-no-log-ok error returned to caller for toast/UI
+    return { ok: false, error: errLikeToLogString(e) };
+  }
+}
+
+export async function requestReticulumPeerPath(
+  hash: string,
+  opts?: { force?: boolean },
+): Promise<ReticulumPeerPathResult> {
   if (!(await isReticulumSidecarRunning())) {
     return { ok: false, error: 'sidecar_not_running' };
   }
   try {
     const res = (await window.electronAPI.reticulum.proxyPost(
       `/api/v1/peers/${hash}/path`,
-      {},
+      opts?.force ? { force: true } : {},
     )) as { ok?: boolean; error?: string };
     return { ok: Boolean(res.ok), error: res.error };
   } catch (e) {
@@ -275,8 +434,9 @@ export function formatReticulumPeerPathToast(
   if (result.ok) {
     return { message: t('peerDetailModal.pathOk'), variant: 'success' };
   }
+  const error = formatReticulumProxyErrorMessage(result.error ?? t('common.error'), t);
   return {
-    message: t('peerDetailModal.pathFailed', { error: result.error ?? t('common.error') }),
+    message: t('peerDetailModal.pathFailed', { error }),
     variant: 'error',
   };
 }
@@ -300,8 +460,9 @@ export function formatReticulumPeerProbeToast(
   if (result.ok) {
     return { message: t('peerDetailModal.probeOk'), variant: 'success' };
   }
+  const error = formatReticulumProxyErrorMessage(result.error ?? t('common.error'), t);
   return {
-    message: t('peerDetailModal.probeFailed', { error: result.error ?? t('common.error') }),
+    message: t('peerDetailModal.probeFailed', { error }),
     variant: 'error',
   };
 }
@@ -328,10 +489,10 @@ export async function switchReticulumIdentity(identityId: string): Promise<boole
   const res = (await window.electronAPI.reticulum.proxyPost('/api/v1/identities/switch', {
     identity_id: identityId,
   })) as { ok?: boolean; error?: string };
-  if (res?.ok === false) {
+  if (res.ok === false) {
     throw new Error(res.error ?? 'identity switch failed');
   }
-  return Boolean(res?.ok);
+  return Boolean(res.ok);
 }
 
 export async function createReticulumIdentitySlot(
@@ -343,8 +504,8 @@ export async function createReticulumIdentitySlot(
   const res = (await window.electronAPI.reticulum.proxyPost('/api/v1/identities', {
     display_name: displayName?.trim() || undefined,
   })) as { ok?: boolean; id?: string; error?: string };
-  if (res?.ok === false || !res?.id) {
-    throw new Error(res?.error ?? 'identity create failed');
+  if (res.ok === false || !res.id) {
+    throw new Error(res.error ?? 'identity create failed');
   }
   return { id: res.id };
 }
@@ -356,7 +517,7 @@ export async function deleteReticulumIdentitySlot(identityId: string): Promise<v
   const res = (await window.electronAPI.reticulum.proxyPost('/api/v1/identities/delete', {
     identity_id: identityId,
   })) as { ok?: boolean; error?: string };
-  if (res?.ok === false) {
+  if (res.ok === false) {
     throw new Error(res.error ?? 'identity delete failed');
   }
 }

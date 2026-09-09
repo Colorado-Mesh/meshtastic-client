@@ -1,4 +1,5 @@
 import { formatIsoDate } from '../../shared/formatIsoDate';
+import { formatDisplayTime } from './formatDisplayTime';
 import type { MeshProtocol } from './types';
 
 export interface LogEntry {
@@ -35,6 +36,8 @@ export interface CategoryFinding {
   lastTs: number;
   /** Truncated message from the most recent matching line. */
   lastMessage: string;
+  /** Matching evidence, newest first. Entries retain their original timestamps and sources. */
+  entries: LogEntry[];
 }
 
 export interface AnalysisResult {
@@ -72,6 +75,68 @@ function truncateLastMessage(message: string): string {
  * analysis time.
  */
 const PATTERN_CATEGORIES: PatternCategory[] = [
+  {
+    id: 'renderer-unresponsive',
+    patterns: [/\[main\] renderer (?:unresponsive|webContents unresponsive|heartbeat stalled)/i],
+    severity: 'warning',
+    requireWarnOrError: true,
+  },
+  {
+    id: 'database-persistence',
+    patterns: [/\[dbPersistRetry\] degraded persistence:/i],
+    severity: 'error',
+    requireWarnOrError: true,
+  },
+  {
+    id: 'meshtastic-tcp',
+    patterns: [/\[IPC\] meshtastic:tcp-(?:connect|write)\s+error/i],
+    severity: 'error',
+    protocols: ['meshtastic'],
+    requireWarnOrError: true,
+  },
+  {
+    id: 'reticulum-sidecar',
+    patterns: [
+      /\[reticulumSidecarWatchdog\] (?:hung poll failure|restarting hung sidecar|hung restart failed)/i,
+      /\[ReticulumIPC\] (?:start|stop) failed:/i,
+      /\[ReticulumSidecar\] (?:voice )?ws (?:error|bridge unavailable):/i,
+      /\[useReticulumRuntime\] (?:stack restart|stack_restart_requested) failed/i,
+    ],
+    severity: 'warning',
+    protocols: ['reticulum'],
+    requireWarnOrError: true,
+  },
+  {
+    id: 'reticulum-delivery',
+    patterns: [
+      /\[ReticulumSidecar\].*LXMF path request budget exhausted; marking outbound failed/i,
+      /\[ReticulumSidecar\].*LXMF outbound delivery failed/i,
+      /\[reticulumPropagationStore\] sync\s/i,
+      /\[ReticulumSidecar\].*opportunistic LXMF decrypt failed/i,
+    ],
+    severity: 'warning',
+    protocols: ['reticulum'],
+    requireWarnOrError: true,
+  },
+  {
+    id: 'reticulum-backpressure',
+    patterns: [
+      /\[ReticulumSidecar\].*LXMF outbound backchannel saturated/i,
+      /\[ReticulumSidecar\].*LXMF inbound raw channel full/i,
+      /\[ReticulumSidecar\].*websocket (?:event )?subscriber lagged; (?:some events|frames) dropped/i,
+      /\[ReticulumSidecar\].*(?:voice )?ws message exceeded.*byte cap, dropping/i,
+      /\[ReticulumSidecar\].*failed to queue path request for LXMF delivery \(transport channel full\)/i,
+    ],
+    severity: 'warning',
+    protocols: ['reticulum'],
+    requireWarnOrError: true,
+  },
+  {
+    id: 'firmware-flash',
+    patterns: [/\[nrf52DfuFlasher\] sendFirmware stalled/i, /\[esp32Flasher\] writeFlash stalled/i],
+    severity: 'warning',
+    requireWarnOrError: true,
+  },
   {
     id: 'ble-connection',
     patterns: [
@@ -133,6 +198,7 @@ const PATTERN_CATEGORIES: PatternCategory[] = [
   },
   {
     id: 'auth-decrypt',
+    protocols: ['meshtastic', 'meshcore'],
     patterns: [
       /auth failed/i,
       /decrypt attempt failed/i,
@@ -354,6 +420,7 @@ export function analyzeLogs(entries: LogEntry[], protocol: MeshProtocol): Analys
   const newestTs = Math.max(...timestamps);
 
   const categoryFindings: CategoryFinding[] = [];
+  const classified = new Set<LogEntry>();
 
   for (const category of PATTERN_CATEGORIES) {
     if (category.protocols && !category.protocols.includes(protocol)) {
@@ -361,6 +428,8 @@ export function analyzeLogs(entries: LogEntry[], protocol: MeshProtocol): Analys
     }
 
     const matchingEntries = entries.filter((e) => matchesCategory(e, category));
+    matchingEntries.sort((a, b) => b.ts - a.ts);
+    for (const entry of matchingEntries) classified.add(entry);
     if (matchingEntries.length === 0) continue;
 
     const lastEntry = matchingEntries.reduce((a, b) => (a.ts >= b.ts ? a : b), matchingEntries[0]);
@@ -374,6 +443,28 @@ export function analyzeLogs(entries: LogEntry[], protocol: MeshProtocol): Analys
       severity: category.severity,
       lastTs,
       lastMessage,
+      entries: matchingEntries,
+    });
+  }
+  // Unrecognized warnings are evidence to review, not a guessed root cause.
+  // Keep the existing cancelled-navigation exclusion out of this fallback too.
+  const unclassified = entries
+    .filter(
+      (entry) =>
+        isWarnOrErrorLevel(entry.level) &&
+        !classified.has(entry) &&
+        !isFailedLoadAbortNoise(entry.message),
+    )
+    .sort((a, b) => b.ts - a.ts);
+  if (unclassified.length > 0) {
+    categoryFindings.push({
+      id: 'unclassified',
+      recommendationGroup: 'unclassified',
+      count: unclassified.length,
+      severity: unclassified.some((entry) => entry.level === 'error') ? 'error' : 'warning',
+      lastTs: unclassified[0].ts,
+      lastMessage: truncateLastMessage(unclassified[0].message),
+      entries: unclassified,
     });
   }
   categoryFindings.sort((a, b) => {
@@ -393,15 +484,8 @@ export function analyzeLogs(entries: LogEntry[], protocol: MeshProtocol): Analys
   };
 }
 
-export function formatTimeRange(oldestTs: number, newestTs: number): string {
-  const format = (ts: number) => {
-    const d = new Date(ts);
-    return d.toLocaleTimeString(undefined, {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
-  };
+export function formatTimeRange(oldestTs: number, newestTs: number, use24Hour = false): string {
+  const format = (ts: number) => formatDisplayTime(ts, { withSeconds: true, use24Hour });
 
   const oldestDate = new Date(oldestTs).toDateString();
   const newestDate = new Date(newestTs).toDateString();

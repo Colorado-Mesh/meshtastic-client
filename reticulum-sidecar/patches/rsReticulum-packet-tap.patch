@@ -1,8 +1,8 @@
 diff --git a/crates/rns-runtime/src/reticulum.rs b/crates/rns-runtime/src/reticulum.rs
-index c0568e6..5e73442 100644
+index 0105b03..6cf57ca 100644
 --- a/crates/rns-runtime/src/reticulum.rs
 +++ b/crates/rns-runtime/src/reticulum.rs
-@@ -172,6 +172,17 @@ impl ReticulumHandle {
+@@ -1476,6 +1476,17 @@ impl ReticulumHandle {
          result
      }
  
@@ -17,14 +17,14 @@ index c0568e6..5e73442 100644
 +            .await;
 +    }
 +
-     /// Query the authoritative control plane.
+     /// Recall the identity and latest announce metadata for `destination_hash`.
      ///
-     /// In client mode, Python proxies Reticulum control methods to the local
+     /// This reads this process' live, validated replicated announce cache in
 diff --git a/crates/rns-transport/src/actor/inbound.rs b/crates/rns-transport/src/actor/inbound.rs
-index 68e1fa3..232795f 100644
+index 9a48725..9ec6306 100644
 --- a/crates/rns-transport/src/actor/inbound.rs
 +++ b/crates/rns-transport/src/actor/inbound.rs
-@@ -35,6 +35,15 @@ impl TransportActor {
+@@ -41,6 +41,15 @@ impl TransportActor {
              packet.raw.clone()
          };
  
@@ -41,10 +41,10 @@ index 68e1fa3..232795f 100644
              Ok((header, offset)) => (header, offset),
              Err(e) => {
 diff --git a/crates/rns-transport/src/actor/mod.rs b/crates/rns-transport/src/actor/mod.rs
-index 3973969..f888cae 100644
+index fe2bfb0..03c760b 100644
 --- a/crates/rns-transport/src/actor/mod.rs
 +++ b/crates/rns-transport/src/actor/mod.rs
-@@ -145,6 +145,9 @@ pub struct TransportActor {
+@@ -245,6 +245,9 @@ pub struct TransportActor {
      /// background switches the maintenance tick to the long interval so the
      /// actor stops burning CPU (and battery) while the app is suspended.
      pub is_foreground: Arc<AtomicBool>,
@@ -54,15 +54,15 @@ index 3973969..f888cae 100644
  }
  
  /// Cached announce metadata for diagnostics + CacheRequest replay. Raw
-@@ -269,6 +272,7 @@ impl TransportActor {
-             channel_drops: 0,
+@@ -411,6 +414,7 @@ impl TransportActor {
              announce_handlers: Vec::new(),
+             next_announce_handler_id: 0,
              is_foreground: Arc::new(AtomicBool::new(true)),
 +            packet_tap: None,
          };
  
          (actor, tx)
-@@ -616,6 +620,9 @@ impl TransportActor {
+@@ -974,6 +978,9 @@ impl TransportActor {
                      debug!(dest = hex::encode(dest), "registered path waiter");
                  }
              }
@@ -72,7 +72,7 @@ index 3973969..f888cae 100644
              TransportMessage::Shutdown => unreachable!(),
          }
      }
-@@ -955,6 +962,35 @@ impl TransportActor {
+@@ -1447,6 +1454,35 @@ impl TransportActor {
      ///
      /// `try_send` failures: `Full` bumps `tx_drops`; `Closed` auto-deregisters
      /// (zombie interface — receiver dropped without DeregisterInterface).
@@ -108,35 +108,38 @@ index 3973969..f888cae 100644
      #[tracing::instrument(
          level = "trace",
          name = "actor.send_to_interface",
-@@ -985,8 +1021,17 @@ impl TransportActor {
+@@ -1468,11 +1504,22 @@ impl TransportActor {
          } else {
              Bytes::copy_from_slice(raw)
          };
 -        match entry.tx.try_send(data) {
--            Ok(()) => {}
-+        match entry.tx.try_send(data.clone()) {
-+            Ok(()) => {
-+                self.emit_packet_tap(
-+                    crate::messages::PacketTapDirection::Tx,
-+                    id,
-+                    &data,
-+                    None,
-+                    None,
-+                    None,
-+                );
-+            }
-             Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                 let tx_drops = entry
-                     .tx_drops
++        let outcome = match entry.tx.try_send(data.clone()) {
+             Ok(()) => InterfaceSendOutcome::Sent,
+             Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => InterfaceSendOutcome::Full,
+             Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => InterfaceSendOutcome::Closed,
++        };
++        if matches!(outcome, InterfaceSendOutcome::Sent) {
++            self.emit_packet_tap(
++                crate::messages::PacketTapDirection::Tx,
++                id,
++                &data,
++                None,
++                None,
++                None,
++            );
+         }
++        outcome
+     }
+ 
+     fn send_to_interface(&mut self, id: InterfaceId, raw: &[u8]) -> bool {
 diff --git a/crates/rns-transport/src/messages.rs b/crates/rns-transport/src/messages.rs
-index 045aa0f..8756378 100644
+index 7adbf81..a96aae4 100644
 --- a/crates/rns-transport/src/messages.rs
 +++ b/crates/rns-transport/src/messages.rs
-@@ -212,7 +212,71 @@ pub struct AnnounceHandlerEvent {
-     pub name_hash: [u8; 10],
+@@ -419,6 +419,71 @@ pub struct PathRequestOptions {
+     pub recursive: bool,
  }
  
--/// Every mutation of transport state enters through this enum — the actor
 +#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 +pub enum PacketTapDirection {
 +    Rx,
@@ -202,10 +205,10 @@ index 045aa0f..8756378 100644
 +    }
 +}
 +
+ /// Every mutation of transport state enters through this enum — the actor
  /// dispatches on the variant, so adding a new operation is a matter of adding
  /// a variant and a match arm rather than exposing a new lock or shared type.
- // This is the transport actor's public message surface. Boxing individual
-@@ -321,6 +385,10 @@ pub enum TransportMessage {
+@@ -618,6 +683,10 @@ pub enum TransportMessage {
          dest: [u8; 16],
          reply: tokio::sync::oneshot::Sender<bool>,
      },
@@ -216,7 +219,7 @@ index 045aa0f..8756378 100644
      Shutdown,
  }
  
-@@ -353,6 +421,7 @@ pub fn msg_variant_name(msg: &TransportMessage) -> &'static str {
+@@ -661,6 +730,7 @@ pub fn msg_variant_name(msg: &TransportMessage) -> &'static str {
          TransportMessage::RegisterLink { .. } => "RegisterLink",
          TransportMessage::ActivateLink { .. } => "ActivateLink",
          TransportMessage::AwaitPath { .. } => "AwaitPath",
@@ -224,7 +227,7 @@ index 045aa0f..8756378 100644
          TransportMessage::Shutdown => "Shutdown",
      }
  }
-@@ -733,6 +802,7 @@ impl std::fmt::Debug for TransportMessage {
+@@ -1161,6 +1231,7 @@ impl std::fmt::Debug for TransportMessage {
              Self::AwaitPath { dest, .. } => {
                  f.debug_struct("AwaitPath").field("dest", dest).finish()
              }

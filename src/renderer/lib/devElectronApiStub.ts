@@ -5,10 +5,10 @@ const noop = (): void => {};
 const noopUnsub = (): (() => void) => () => {};
 const noopAsync = async (): Promise<void> => {};
 
-function stubOutboxEntry(entry: OutboxEntryInput): OutboxEntry {
+function stubOutboxEntry(entry: OutboxEntryInput, id: number): OutboxEntry {
   const now = Date.now();
   return {
-    id: 0,
+    id,
     attemptCount: 0,
     createdAt: now,
     updatedAt: now,
@@ -18,10 +18,13 @@ function stubOutboxEntry(entry: OutboxEntryInput): OutboxEntry {
 
 /** No-op electronAPI for Vite browser dev when Electron preload is unavailable. */
 export function createDevElectronApiStub(): typeof window.electronAPI {
+  let nextOutboxId = 1;
+
   return {
     db: {
       saveMessage: noopAsync,
       getMessages: async () => [],
+      listMeshtasticDmPeers: async () => [],
       saveNode: noopAsync,
       saveNodePath: noopAsync,
       getNodes: async () => [],
@@ -39,6 +42,8 @@ export function createDevElectronApiStub(): typeof window.electronAPI {
       pruneReticulumMessagesByCount: async () => ({ changes: 0 }),
       listRrcMessages: async () => [],
       insertRrcMessage: async () => ({ changes: 0 }),
+      listRrcNicks: async () => [],
+      upsertRrcNick: async () => ({ changes: 0 }),
       deleteRrcMessagesByRoom: async () => ({ changes: 0 }),
       pruneRrcMessagesByCount: async () => ({ changes: 0 }),
       pruneRrcMessagesByAge: async () => ({ changes: 0 }),
@@ -48,6 +53,11 @@ export function createDevElectronApiStub(): typeof window.electronAPI {
       deleteNodesBatch: async () => 0,
       clearMessagesByChannel: noopAsync,
       getMessageChannels: async () => [],
+      getBlockedContacts: async () => [],
+      blockContact: async () => ({ changes: 1 }),
+      unblockContact: async () => ({ changes: 1 }),
+      listReticulumRemoteAddresses: async () => [],
+      listReticulumInboundPolicy: async () => [],
       setNodeFavorited: noopAsync,
       getNodeNote: async () => null,
       setNodeNote: noopAsync,
@@ -60,6 +70,7 @@ export function createDevElectronApiStub(): typeof window.electronAPI {
       updateMessageReceivedVia: noopAsync,
       updateMessagePacketId: noopAsync,
       getMeshcoreMessages: async () => [],
+      listMeshcoreDmPeers: async () => [],
       getReticulumMessages: async () => [],
       clearReticulumMessages: async () => ({ changes: 0 }),
       clearReticulumContactDestinations: async () => ({ changes: 0 }),
@@ -67,6 +78,8 @@ export function createDevElectronApiStub(): typeof window.electronAPI {
       markStaleReticulumOutbound: async () => ({ changes: 0 }),
       vacuumReticulumTables: async () => ({ ok: true }),
       getReticulumDestinations: async () => [],
+      getReticulumIdentityActivity: async () => [],
+      getReticulumIdentityActivityByIdentity: async () => [],
       deleteReticulumDestination: async () => ({ changes: 1 }),
       upsertReticulumDestination: noopAsync,
       upsertReticulumIdentityActivity: async () => ({ changes: 1 }),
@@ -97,6 +110,7 @@ export function createDevElectronApiStub(): typeof window.electronAPI {
       getMeshcoreContactCount: async () => 0,
       deleteMeshcoreContactsWithoutPubkey: async () => ({ deleted: 0, excludedStubCount: 0 }),
       offloadAllMeshcoreContacts: async () => 0,
+      markMeshcoreContactOffRadio: async () => ({ changes: 0 }),
       getMeshcoreContactById: async () => null,
       updateMeshcoreContactNickname: noopAsync,
       updateMeshcoreContactFavorited: noopAsync,
@@ -138,6 +152,7 @@ export function createDevElectronApiStub(): typeof window.electronAPI {
       onClientId: noopUnsub,
       getClientId: async () => '',
       getCachedNodes: async () => [],
+      getChannelNameToIndex: async () => ({}),
       updateChannelKeys: noopAsync,
       updateTopicPrefix: noopAsync,
       publish: async () => 1,
@@ -154,6 +169,7 @@ export function createDevElectronApiStub(): typeof window.electronAPI {
     },
     onNobleBleAdapterState: noopUnsub,
     onNobleBleDeviceDiscovered: noopUnsub,
+    onNobleBleLinkRssi: noopUnsub,
     onNobleBleConnected: noopUnsub,
     onNobleBleDisconnected: noopUnsub,
     onNobleBleConnectAborted: noopUnsub,
@@ -169,7 +185,7 @@ export function createDevElectronApiStub(): typeof window.electronAPI {
     cancelSerialSelection: noop,
     onBluetoothDevicesDiscovered: noopUnsub,
     selectBluetoothDevice: noop,
-    cancelBluetoothSelection: noop,
+    cancelBluetoothSelection: async () => ({ cancelled: false }),
     bluetoothUnpair: noopAsync,
     bluetoothStartScan: noopAsync,
     bluetoothStopScan: noopAsync,
@@ -199,6 +215,7 @@ export function createDevElectronApiStub(): typeof window.electronAPI {
     notifyDeviceDisconnected: noop,
     setTrayUnread: noop,
     quitApp: noopAsync,
+    restartApp: noopAsync,
     getPlatform: () => 'linux',
     showEmojiPanel: noopAsync,
     clipboard: {
@@ -206,6 +223,8 @@ export function createDevElectronApiStub(): typeof window.electronAPI {
     },
     notify: {
       show: noopAsync,
+      longSessionRestart: noopAsync,
+      clearLongSessionNudge: noopAsync,
     },
     safeStorage: {
       encrypt: async () => null,
@@ -221,6 +240,16 @@ export function createDevElectronApiStub(): typeof window.electronAPI {
     onPowerSuspend: noopUnsub,
     onPowerResume: noopUnsub,
     sendRendererHeartbeat: async () => {},
+    getProcessUptimeSec: async () => 0,
+    app: {
+      getRendererLiveness: async () => ({
+        mainUptimeSec: 0,
+        lastRendererHeartbeatAgeMs: null,
+        rendererUnresponsiveSeen: false,
+        rss: 0,
+        heapUsed: 0,
+      }),
+    },
     onSpellcheckReplace: noopUnsub,
     meshcore: {
       tcp: {
@@ -238,6 +267,11 @@ export function createDevElectronApiStub(): typeof window.electronAPI {
       write: noopAsync,
       disconnect: noopAsync,
       onData: noopUnsub,
+    },
+    hostLink: {
+      probeHttpRtt: async () => null,
+      probeTcpRtt: async () => null,
+      getSessionMeter: async () => null,
     },
     meshtastic: {
       tcp: {
@@ -258,7 +292,7 @@ export function createDevElectronApiStub(): typeof window.electronAPI {
       },
       outbox: {
         list: async () => [],
-        add: async (entry: OutboxEntryInput) => stubOutboxEntry(entry),
+        add: async (entry: OutboxEntryInput) => stubOutboxEntry(entry, nextOutboxId++),
         updateStatus: noopAsync,
         remove: noopAsync,
       },
@@ -291,14 +325,46 @@ export function createDevElectronApiStub(): typeof window.electronAPI {
       onClientDisconnected: noopUnsub,
     },
     bleCoexistence: {
-      register: async () => ({ connections: [], scanOwner: null }),
-      unregister: async () => ({ connections: [], scanOwner: null }),
-      assertCanConnect: async () => ({ connections: [], scanOwner: null }),
-      getState: async () => ({ connections: [], scanOwner: null }),
-      acquireScan: async () => ({ connections: [], scanOwner: null }),
-      releaseScan: async () => ({ connections: [], scanOwner: null }),
-      pauseNobleScan: async () => ({ connections: [], scanOwner: null }),
-      suspendNobleForReticulumBleConnect: async () => ({ connections: [], scanOwner: null }),
+      register: async () => ({
+        connections: [],
+        scanOwner: null,
+        nobleYieldDecisionPending: false,
+      }),
+      unregister: async () => ({
+        connections: [],
+        scanOwner: null,
+        nobleYieldDecisionPending: false,
+      }),
+      assertCanConnect: async () => ({
+        connections: [],
+        scanOwner: null,
+        nobleYieldDecisionPending: false,
+      }),
+      getState: async () => ({
+        connections: [],
+        scanOwner: null,
+        nobleYieldDecisionPending: false,
+      }),
+      acquireScan: async () => ({
+        connections: [],
+        scanOwner: null,
+        nobleYieldDecisionPending: false,
+      }),
+      releaseScan: async () => ({
+        connections: [],
+        scanOwner: null,
+        nobleYieldDecisionPending: false,
+      }),
+      pauseNobleScan: async () => ({
+        connections: [],
+        scanOwner: null,
+        nobleYieldDecisionPending: false,
+      }),
+      suspendNobleForReticulumBleConnect: async () => ({
+        connections: [],
+        scanOwner: null,
+        nobleYieldDecisionPending: false,
+      }),
     },
     reticulum: {
       start: async () => ({ running: false, port: 0, pid: null }),
@@ -312,7 +378,27 @@ export function createDevElectronApiStub(): typeof window.electronAPI {
       readDefaultConfigFile: async () => ({ path: null, content: null }),
       showConfigImportDialog: async () => ({ path: null, content: null }),
       onEvent: noopUnsub,
+      onVoiceAudio: noopUnsub,
       onStatus: noopUnsub,
+      rncp: {
+        send: async () => ({ ok: false, error: 'stub' }),
+        fetch: async () => ({ ok: false, error: 'stub' }),
+        cancel: async () => ({ ok: true }),
+        accept: async () => ({ ok: false, error: 'stub' }),
+        reject: async () => ({ ok: true }),
+        getStatus: async () => ({ transfers: [], pending_offers: [] }),
+        getListener: async () => ({
+          enabled: false,
+          inbound_mode: 'off',
+          allowed: [],
+          blocked: [],
+        }),
+        setListener: async () => ({ ok: false, error: 'stub' }),
+        announce: async () => ({ ok: false, error: 'stub' }),
+        showOpenFileDialog: async () => ({ canceled: true, path: null }),
+        showSaveDirectoryDialog: async () => ({ canceled: true, path: null }),
+        revealInFolder: async () => ({ ok: false, error: 'stub' }),
+      } satisfies typeof window.electronAPI.reticulum.rncp,
       rrc: {
         listHubs: async () => ({ hubs: [] }),
         upsertHub: async () => ({ ok: true }),

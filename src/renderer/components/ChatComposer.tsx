@@ -1,8 +1,17 @@
 /* eslint-disable react-hooks/refs */
 import 'emoji-picker-element';
 
-import { ChevronDown, ChevronUp, CornerUpLeft, MapPin } from 'lucide-react-motion';
-import { type RefObject, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { ChevronDown, ChevronUp, CornerUpLeft, MapPin, Mic } from 'lucide-react-motion';
+import {
+  type ReactNode,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
@@ -10,7 +19,9 @@ import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
 import { useIconTrigger } from '@/renderer/lib/icons/iconMotionContext';
 import { nodeDisplayName } from '@/renderer/lib/nodeLongNameOrHex';
 import type { ChatMessage, MeshNode, MeshProtocol } from '@/renderer/lib/types';
+import { useReticulumVoiceMemoStore } from '@/renderer/stores/reticulumVoiceMemoStore';
 import type { OutboxEntry, OutboxEntryInput } from '@/shared/electron-api.types';
+import { touch } from '@/shared/touch';
 
 import {
   isMeshcoreOpenWireCompatEnabled,
@@ -24,7 +35,14 @@ import {
   splitChatMessage,
 } from '../lib/chatComposerLimits';
 import { formatLocationMessage } from '../lib/chatLocationUtils';
-import { clearDraft, loadDraftsInitial, saveDraft } from '../lib/chatPanelProtocolStorage';
+import {
+  clearDraft,
+  FLOOD_SCOPE_OVERRIDE_UNSCOPED,
+  loadDraftsInitial,
+  loadFloodScopeOverridesInitial,
+  saveDraft,
+  saveFloodScopeOverride,
+} from '../lib/chatPanelProtocolStorage';
 import { normalizeMeshcoreFloodScopeHashtag } from '../lib/meshcoreFloodScope';
 import {
   isValidMeshcoreFloodScopeHashtag,
@@ -36,9 +54,69 @@ import {
   normalizeMeshcoreGifOutboundWire,
   parseMeshcoreGifId,
 } from '../lib/meshcoreGifWire';
+import { isMeshcoreSendTooFast, recordMeshcoreSend } from '../lib/meshcoreSendRateNotice';
+import { withMeshtasticTextSendPacing } from '../lib/meshtasticTextSendPacing';
+import { useRadioProvider } from '../lib/radio/providerFactory';
+import { MESHCORE_FAST_SEND_WARN_INTERVAL_MS } from '../lib/timeConstants';
 import { HelpTooltip } from './HelpTooltip';
 import MentionAutocomplete, { buildMentionCandidates } from './MentionAutocomplete';
 import { useToast } from './Toast';
+
+/**
+ * Shared amber advisory pill used by the MeshCore composer (non-blocking "sending too fast"
+ * `status` banner and the over-limit `note` callout). Keeps the border/background/icon shell
+ * identical; callers vary the margin, body content, and optional dismiss button.
+ */
+function ComposerAmberCallout({
+  role,
+  wrapperClassName,
+  children,
+  onDismiss,
+  dismissLabel,
+}: {
+  role: 'status' | 'note';
+  wrapperClassName: string;
+  children: ReactNode;
+  onDismiss?: () => void;
+  dismissLabel?: string;
+}) {
+  return (
+    <div
+      role={role}
+      aria-live="polite"
+      className={`flex gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200 ${wrapperClassName}`}
+    >
+      <span aria-hidden="true" className="mt-0.5 shrink-0 text-amber-400">
+        ⚠
+      </span>
+      {children}
+      {onDismiss && (
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label={dismissLabel}
+          className="shrink-0 rounded px-1 text-amber-300 hover:text-amber-100"
+        >
+          ×
+        </button>
+      )}
+    </div>
+  );
+}
+
+function emojiUnicodeFromEvent(event: Event): string | null {
+  if (
+    !(event instanceof CustomEvent) ||
+    typeof event.detail !== 'object' ||
+    event.detail === null
+  ) {
+    return null;
+  }
+  const detail = event.detail as Record<string, unknown>;
+  if (typeof detail.emoji !== 'object' || detail.emoji === null) return null;
+  const emoji = detail.emoji as Record<string, unknown>;
+  return typeof emoji.unicode === 'string' ? emoji.unicode : null;
+}
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -54,7 +132,10 @@ export interface ChatComposerSendOpts {
   /** Reticulum ratspeak.chat.v2 reply target (LXMF message hash). */
   replyHash?: string;
   chunkIndex?: number;
-  /** MeshCore: ephemeral flood-scope hashtag for this send only (not persisted). */
+  /**
+   * MeshCore: flood-scope hashtag for this send only (applied then radio default restored).
+   * Composer UI remembers the selection per viewKey separately.
+   */
   floodScopeOverride?: string;
 }
 
@@ -92,7 +173,7 @@ export interface ChatComposerProps {
   onSendSuccess?: () => void;
   /** Use LXMF message hash for reply threading (Reticulum). */
   lxmfReplyHashReplies?: boolean;
-  /** MeshCore: show per-message flood-scope override control. */
+  /** MeshCore: show per-channel flood-scope override control (remembered per viewKey). */
   showFloodScopeOverride?: boolean;
   /** MeshCore: user-managed flood-scope quick-picks. */
   floodScopePresets?: string[];
@@ -112,6 +193,8 @@ export interface ChatComposerProps {
    */
   onSendLocationWaypoint?: (lat: number, lon: number) => Promise<void>;
   textareaRef?: RefObject<HTMLTextAreaElement | null>;
+  /** When set, renders a mic button that triggers voice memo recording. */
+  onVoiceMemo?: () => void;
   className?: string;
 }
 
@@ -145,16 +228,25 @@ export function ChatComposer({
   resolveShareLocation,
   onSendLocationWaypoint,
   textareaRef,
+  onVoiceMemo,
   className,
 }: ChatComposerProps) {
   const { t } = useTranslation();
   const { addToast } = useToast();
   const iconTrigger = useIconTrigger();
+  const capabilities = useRadioProvider(protocol);
+  const tracksSendCadence = capabilities.composerMaxChunks <= 1;
   const isLinux = useMemo(() => window.electronAPI.getPlatform() === 'linux', []);
   const limitHintId = useId();
   const counterLiveId = useId();
   const floodScopeListboxId = useId();
   const floodScopeCustomInputId = useId();
+  const memoPhase = useReticulumVoiceMemoStore((s) => s.phase);
+  const memoRecordingActive =
+    memoPhase === 'recording' ||
+    memoPhase === 'starting' ||
+    memoPhase === 'stopping' ||
+    memoPhase === 'ready';
 
   const [input, setInput] = useState('');
   const [floodScopeOverride, setFloodScopeOverride] = useState('');
@@ -178,8 +270,10 @@ export function ChatComposer({
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionTriggerPos, setMentionTriggerPos] = useState(0);
   const [mentionSelectedIdx, setMentionSelectedIdx] = useState(0);
+  const [meshcoreFastSendWarn, setMeshcoreFastSendWarn] = useState(false);
 
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const meshcoreFastSendWarnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const emojiPickerRef = useRef<HTMLElement | null>(null);
   const floodScopeMenuButtonRef = useRef<HTMLButtonElement | null>(null);
   const floodScopeMenuRef = useRef<HTMLDivElement | null>(null);
@@ -187,6 +281,8 @@ export function ChatComposer({
   const floodScopeCustomInputRef = useRef<HTMLInputElement | null>(null);
   const inputValueRef = useRef(input);
   inputValueRef.current = input;
+  const floodScopeOverrideRef = useRef(floodScopeOverride);
+  floodScopeOverrideRef.current = floodScopeOverride;
   const prevViewKeyRef = useRef<string | null>(null);
 
   const closeFloodScopeMenu = useCallback(() => {
@@ -197,10 +293,30 @@ export function ChatComposer({
     setFloodScopeCustomError(null);
   }, []);
 
+  const persistFloodScopeOverride = useCallback(
+    (next: string) => {
+      setFloodScopeOverride(next);
+      floodScopeOverrideRef.current = next;
+      if (!showFloodScopeOverride) return;
+      saveFloodScopeOverride(protocol, viewKey, next);
+    },
+    [protocol, showFloodScopeOverride, viewKey],
+  );
+
+  const commitCustomFloodScopeDraft = useCallback(() => {
+    const normalized = normalizeMeshcoreFloodScopeHashtag(floodScopeCustomDraft);
+    if (!isValidMeshcoreFloodScopeHashtag(normalized)) {
+      setFloodScopeCustomError(t('chatPanel.floodScopeOverrideCustomInvalid'));
+      return;
+    }
+    persistFloodScopeOverride(normalized);
+    closeFloodScopeMenu();
+  }, [closeFloodScopeMenu, floodScopeCustomDraft, persistFloodScopeOverride, t]);
+
   const rememberFloodScopeIfNeeded = useCallback(
     (override: string) => {
-      // Default (`''`) and Unscoped (`__unscoped__`) must not enter the quick-pick list.
-      if (!override || override === '__unscoped__') return;
+      // Default (`''`) and Unscoped must not enter the quick-pick list.
+      if (!override || override === FLOOD_SCOPE_OVERRIDE_UNSCOPED) return;
       if (!isValidMeshcoreFloodScopeHashtag(override)) return;
       if (onRememberFloodScopePreset) {
         onRememberFloodScopePreset(override);
@@ -317,13 +433,13 @@ export function ChatComposer({
   const nodes = mentionNodes ?? emptyMentionNodes;
 
   const noopQueue = useCallback((entry: OutboxEntryInput): Promise<OutboxEntry> => {
-    void entry;
+    touch(entry);
     return Promise.reject(new Error('Outbox queue unavailable'));
   }, []);
 
   const queueOutbox = queueOutboxProp ?? noopQueue;
 
-  // Draft persistence: save/restore unsent input when viewKey changes
+  // Draft + flood-scope persistence: save/restore when viewKey changes
   useEffect(() => {
     const prevKey = prevViewKeyRef.current;
     if (prevKey !== null && prevKey !== viewKey) {
@@ -333,14 +449,32 @@ export function ChatComposer({
       } else {
         clearDraft(protocol, prevKey);
       }
+      if (showFloodScopeOverride) {
+        saveFloodScopeOverride(protocol, prevKey, floodScopeOverrideRef.current);
+      }
     }
     prevViewKeyRef.current = viewKey;
     const drafts = loadDraftsInitial(protocol);
     // eslint-disable-next-line react-hooks/set-state-in-effect -- restore per-view draft from localStorage on tab switch
     setInput(drafts[viewKey] ?? '');
+    if (showFloodScopeOverride) {
+      const overrides = loadFloodScopeOverridesInitial(protocol);
+      const restored = overrides[viewKey] ?? '';
+      setFloodScopeOverride(restored);
+      floodScopeOverrideRef.current = restored;
+    } else {
+      setFloodScopeOverride('');
+      floodScopeOverrideRef.current = '';
+    }
     setMentionQuery(null);
     setChatActionError(null);
-  }, [viewKey, protocol]);
+    // Clear any lingering fast-send advisory when switching chat views.
+    if (meshcoreFastSendWarnTimerRef.current) {
+      clearTimeout(meshcoreFastSendWarnTimerRef.current);
+      meshcoreFastSendWarnTimerRef.current = null;
+    }
+    setMeshcoreFastSendWarn(false);
+  }, [viewKey, protocol, showFloodScopeOverride]);
 
   const mentionCandidates = useMemo(
     () => (mentionQuery != null ? buildMentionCandidates(nodes, protocol, mentionQuery) : []),
@@ -379,6 +513,52 @@ export function ChatComposer({
     },
     [protocol, viewKey],
   );
+
+  const dismissMeshcoreFastSendWarn = useCallback(() => {
+    if (meshcoreFastSendWarnTimerRef.current) {
+      clearTimeout(meshcoreFastSendWarnTimerRef.current);
+      meshcoreFastSendWarnTimerRef.current = null;
+    }
+    setMeshcoreFastSendWarn(false);
+  }, []);
+
+  // Advisory only — surface a non-blocking "sending too fast" banner that auto-dismisses.
+  const triggerMeshcoreFastSendWarn = useCallback(() => {
+    if (meshcoreFastSendWarnTimerRef.current) {
+      clearTimeout(meshcoreFastSendWarnTimerRef.current);
+    }
+    setMeshcoreFastSendWarn(true);
+    meshcoreFastSendWarnTimerRef.current = setTimeout(() => {
+      setMeshcoreFastSendWarn(false);
+      meshcoreFastSendWarnTimerRef.current = null;
+    }, MESHCORE_FAST_SEND_WARN_INTERVAL_MS);
+  }, []);
+
+  /**
+   * Shared single-packet cadence bookkeeping for live text / GIF / location sends.
+   * Capture `tooFast` *before* the send; call after a successful send with that flag.
+   * Never blocks or delays the send.
+   */
+  const finishSendCadence = useCallback(
+    (tooFast: boolean) => {
+      if (!tracksSendCadence) return;
+      recordMeshcoreSend();
+      if (tooFast) {
+        triggerMeshcoreFastSendWarn();
+      } else {
+        dismissMeshcoreFastSendWarn();
+      }
+    },
+    [dismissMeshcoreFastSendWarn, tracksSendCadence, triggerMeshcoreFastSendWarn],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (meshcoreFastSendWarnTimerRef.current) {
+        clearTimeout(meshcoreFastSendWarnTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleSend = useCallback(async () => {
     if (!input.trim() || sending || disabled) return;
@@ -444,20 +624,32 @@ export function ChatComposer({
 
     setSending(true);
     setChatActionError(null);
+    // Advisory fast-send cadence: capture before recording this send so the warning reflects
+    // proximity to the *previous* single-packet-protocol send. Never blocks or delays the send.
+    const sendTooFast = tracksSendCadence && isMeshcoreSendTooFast();
     try {
       for (let i = 0; i < textsToSend.length; i++) {
-        await onSendChunk(textsToSend[i], {
-          replyId: i === 0 && typeof replyKey === 'number' ? replyKey : undefined,
-          replyHash: i === 0 ? reticulumReplyHash : undefined,
-          chunkIndex: i,
-          floodScopeOverride:
-            floodScopeOverride === '__unscoped__'
-              ? ''
-              : floodScopeOverride
-                ? floodScopeOverride
-                : undefined,
-        });
+        const sendChunk = () =>
+          onSendChunk(textsToSend[i], {
+            replyId: i === 0 && typeof replyKey === 'number' ? replyKey : undefined,
+            replyHash: i === 0 ? reticulumReplyHash : undefined,
+            chunkIndex: i,
+            floodScopeOverride:
+              floodScopeOverride === FLOOD_SCOPE_OVERRIDE_UNSCOPED
+                ? ''
+                : floodScopeOverride
+                  ? floodScopeOverride
+                  : undefined,
+          });
+        // Shared Meshtastic TEXT_MESSAGE_APP pacing (with outbox drain) — firmware rejects
+        // a second locally-originated text within ~2s (RATE_LIMIT_EXCEEDED).
+        if (protocol === 'meshtastic') {
+          await withMeshtasticTextSendPacing(sendChunk);
+        } else {
+          await sendChunk();
+        }
       }
+      finishSendCadence(sendTooFast);
       rememberFloodScopeIfNeeded(floodScopeOverride);
       clearSentDraft(draftSnapshot);
       setMentionQuery(null);
@@ -525,6 +717,8 @@ export function ChatComposer({
     viewKey,
     wireOverheadFirstChunk,
     meshcoreOpenWireCompat,
+    tracksSendCadence,
+    finishSendCadence,
   ]);
 
   const sendGifWire = useCallback(
@@ -539,8 +733,11 @@ export function ChatComposer({
       }
       setSending(true);
       setChatActionError(null);
+      const sendTooFast = tracksSendCadence && isMeshcoreSendTooFast();
       try {
         await onSendChunk(wireText);
+        // GIF is a live send on single-packet protocols — same cadence check/record/warn as text.
+        finishSendCadence(sendTooFast);
         setShowGifModal(false);
         setGifInput('');
         onSendSuccess?.();
@@ -554,7 +751,18 @@ export function ChatComposer({
         setSending(false);
       }
     },
-    [allowOutbox, disabled, isConnected, onSendChunk, onSendSuccess, sending, t, viewKey],
+    [
+      allowOutbox,
+      disabled,
+      finishSendCadence,
+      isConnected,
+      onSendChunk,
+      onSendSuccess,
+      sending,
+      t,
+      tracksSendCadence,
+      viewKey,
+    ],
   );
 
   const handleGifConfirm = useCallback(() => {
@@ -617,7 +825,10 @@ export function ChatComposer({
         if (await enqueueLocationText(text)) onSendSuccess?.();
         return;
       }
+      const sendTooFast = tracksSendCadence && isMeshcoreSendTooFast();
       await onSendChunk(text);
+      // Live location send on single-packet protocols uses the same cadence sequence as text.
+      finishSendCadence(sendTooFast);
       if (
         protocol === 'meshtastic' &&
         isShareLocationSendWaypointEnabled() &&
@@ -658,6 +869,7 @@ export function ChatComposer({
     allowOutbox,
     disabled,
     enqueueLocationText,
+    finishSendCadence,
     isConnected,
     isMqttOnly,
     onSendChunk,
@@ -667,6 +879,7 @@ export function ChatComposer({
     resolveShareLocation,
     sending,
     t,
+    tracksSendCadence,
     viewKey,
   ]);
 
@@ -702,7 +915,8 @@ export function ChatComposer({
     const el = emojiPickerRef.current;
     if (!el) return;
     const handler = (e: Event) => {
-      const unicode: string = (e as CustomEvent).detail.emoji.unicode;
+      const unicode = emojiUnicodeFromEvent(e);
+      if (!unicode) return;
       const textarea = inputRef.current;
       const currentValue = textarea?.value ?? '';
       const start = textarea?.selectionStart ?? currentValue.length;
@@ -747,9 +961,13 @@ export function ChatComposer({
           ? t('chatPanel.composePlaceholderMqttOnly')
           : t('chatPanel.composePlaceholderDefault'));
 
-  const limitHintText = t('chatPanel.composeLimit.limitHint', {
-    limit: limitStatus.singleMessageLimit,
-  });
+  // Single-packet protocols (composerMaxChunks <= 1): over-limit text is blocked with an
+  // explanatory callout rather than auto-split into parts that busy repeaters drop.
+  const singlePacketProtocol = capabilities.composerMaxChunks <= 1;
+
+  const limitHintText = singlePacketProtocol
+    ? t('chatPanel.composeLimit.limitHintSingle', { limit: limitStatus.singleMessageLimit })
+    : t('chatPanel.composeLimit.limitHint', { limit: limitStatus.singleMessageLimit });
 
   const showQueueButton = allowOutbox && (!isConnected || (isMqttOnly && protocol === 'meshcore'));
 
@@ -772,6 +990,11 @@ export function ChatComposer({
 
   const counterMainText = (() => {
     if (limitStatus.phase === 'overMax') {
+      if (singlePacketProtocol) {
+        return t('chatPanel.composeLimit.overMaxSingle', {
+          limit: limitStatus.totalMaxChars,
+        });
+      }
       return t('chatPanel.composeLimit.overMax', {
         totalMax: limitStatus.totalMaxChars,
         maxParts: MAX_CHUNKS,
@@ -794,8 +1017,8 @@ export function ChatComposer({
 
   const textareaClass =
     variant === 'room'
-      ? 'max-h-32 min-h-[42px] w-full resize-none overflow-y-auto rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-200 transition-colors focus:outline-none focus:border-brand-green/50 focus:ring-1 focus:ring-brand-green/30'
-      : `max-h-32 min-h-[42px] w-full resize-none overflow-y-auto rounded-xl border px-4 py-2.5 text-gray-200 transition-colors focus:outline-none ${
+      ? 'max-h-32 min-h-[2.625rem] w-full resize-none overflow-y-auto rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-200 transition-colors focus:outline-none focus:border-brand-green/50 focus:ring-1 focus:ring-brand-green/30'
+      : `max-h-32 min-h-[2.625rem] w-full resize-none overflow-y-auto rounded-xl border px-4 py-2.5 text-gray-200 transition-colors focus:outline-none ${
           isDmMode
             ? 'border-purple-600/50 bg-purple-900/20 focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/30'
             : 'bg-secondary-dark/80 focus:border-brand-green/50 focus:ring-brand-green/30 border-gray-600/50 focus:ring-1'
@@ -803,7 +1026,7 @@ export function ChatComposer({
 
   const floodScopeOverrideActive = floodScopeOverride !== '';
   const floodScopeOverrideIndicator =
-    floodScopeOverride === '__unscoped__'
+    floodScopeOverride === FLOOD_SCOPE_OVERRIDE_UNSCOPED
       ? t('chatPanel.floodScopeOverrideUnscoped')
       : floodScopeOverride || null;
 
@@ -966,6 +1189,19 @@ export function ChatComposer({
         </div>
       )}
 
+      {meshcoreFastSendWarn && (
+        <ComposerAmberCallout
+          role="status"
+          wrapperClassName="mb-2 items-start"
+          onDismiss={dismissMeshcoreFastSendWarn}
+          dismissLabel={t('common.dismiss')}
+        >
+          <span className="min-w-0 flex-1 leading-snug">
+            {t('chatPanel.meshcoreFastSend.warning')}
+          </span>
+        </ComposerAmberCallout>
+      )}
+
       <span id={limitHintId} className="sr-only">
         {limitHintText}
       </span>
@@ -1035,7 +1271,9 @@ export function ChatComposer({
               if (isLinux) {
                 setShowComposePicker((prev) => !prev);
               } else {
-                void window.electronAPI.showEmojiPanel();
+                void window.electronAPI.showEmojiPanel().catch((e: unknown) => {
+                  console.debug('[ChatComposer] showEmojiPanel failed ' + errLikeToLogString(e));
+                });
               }
             }}
             disabled={disabled || !isConnected}
@@ -1186,16 +1424,7 @@ export function ChatComposer({
                             }
                             if (e.key === 'Enter') {
                               e.preventDefault();
-                              const normalized =
-                                normalizeMeshcoreFloodScopeHashtag(floodScopeCustomDraft);
-                              if (!isValidMeshcoreFloodScopeHashtag(normalized)) {
-                                setFloodScopeCustomError(
-                                  t('chatPanel.floodScopeOverrideCustomInvalid'),
-                                );
-                                return;
-                              }
-                              setFloodScopeOverride(normalized);
-                              closeFloodScopeMenu();
+                              commitCustomFloodScopeDraft();
                             }
                           }}
                           ref={floodScopeCustomInputRef}
@@ -1223,16 +1452,7 @@ export function ChatComposer({
                           <button
                             type="button"
                             onClick={() => {
-                              const normalized =
-                                normalizeMeshcoreFloodScopeHashtag(floodScopeCustomDraft);
-                              if (!isValidMeshcoreFloodScopeHashtag(normalized)) {
-                                setFloodScopeCustomError(
-                                  t('chatPanel.floodScopeOverrideCustomInvalid'),
-                                );
-                                return;
-                              }
-                              setFloodScopeOverride(normalized);
-                              closeFloodScopeMenu();
+                              commitCustomFloodScopeDraft();
                             }}
                             className="bg-brand-green/20 text-brand-green hover:bg-brand-green/30 rounded px-2 py-1 text-[10px] font-medium"
                           >
@@ -1254,7 +1474,7 @@ export function ChatComposer({
                               label: tag,
                             })),
                             {
-                              value: '__unscoped__',
+                              value: FLOOD_SCOPE_OVERRIDE_UNSCOPED,
                               label: t('chatPanel.floodScopeOverrideUnscoped'),
                             },
                           ] as const
@@ -1269,7 +1489,7 @@ export function ChatComposer({
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setFloodScopeOverride(option.value);
+                                  persistFloodScopeOverride(option.value);
                                   closeFloodScopeMenu();
                                 }}
                                 className={`w-full px-3 py-1.5 text-left text-xs transition-colors ${
@@ -1290,7 +1510,7 @@ export function ChatComposer({
                               setFloodScopeCustomEditing(true);
                               setFloodScopeCustomDraft(
                                 floodScopeOverride &&
-                                  floodScopeOverride !== '__unscoped__' &&
+                                  floodScopeOverride !== FLOOD_SCOPE_OVERRIDE_UNSCOPED &&
                                   !floodScopePresets.includes(floodScopeOverride)
                                   ? floodScopeOverride
                                   : '',
@@ -1310,20 +1530,29 @@ export function ChatComposer({
               : null}
           </div>
         ) : (
-          <button
-            type="button"
-            onMouseDown={(e) => {
-              e.preventDefault();
-            }}
-            onClick={() => {
-              void handleSend();
-            }}
-            disabled={!input.trim() || sending || inputChunks === null || disabled}
-            aria-label={sendLabel}
-            className={sendButtonClass}
-          >
-            {sendLabel}
-          </button>
+          <div className="flex items-center gap-1">
+            {onVoiceMemo != null && !sending && (memoRecordingActive || !input.trim()) && (
+              <VoiceMemoComposerButton
+                onVoiceMemo={onVoiceMemo}
+                disabled={disabled}
+                idleClassName={emojiButtonClass}
+              />
+            )}
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+              }}
+              onClick={() => {
+                void handleSend();
+              }}
+              disabled={!input.trim() || sending || inputChunks === null || disabled}
+              aria-label={sendLabel}
+              className={sendButtonClass}
+            >
+              {sendLabel}
+            </button>
+          </div>
         )}
       </div>
 
@@ -1350,8 +1579,87 @@ export function ChatComposer({
               </span>
             </HelpTooltip>
           )}
+          {singlePacketProtocol && limitStatus.phase === 'warn' && (
+            <HelpTooltip text={t('chatPanel.composeLimit.meshcoreSingleNotice.hint')}>
+              <span
+                className="text-muted cursor-help select-none"
+                aria-label={t('chatPanel.composeLimit.meshcoreSingleNotice.hint')}
+              >
+                ⓘ
+              </span>
+            </HelpTooltip>
+          )}
         </div>
       )}
+
+      {singlePacketProtocol && limitStatus.phase === 'overMax' && (
+        <ComposerAmberCallout role="note" wrapperClassName="mt-2">
+          <span className="min-w-0">
+            <span className="block font-semibold text-amber-300">
+              {t('chatPanel.composeLimit.meshcoreSingleNotice.title')}
+            </span>
+            <span className="mt-0.5 block leading-snug">
+              {t('chatPanel.composeLimit.meshcoreSingleNotice.body', {
+                limit: limitStatus.totalMaxChars,
+              })}
+            </span>
+          </span>
+        </ComposerAmberCallout>
+      )}
     </div>
+  );
+}
+
+function VoiceMemoComposerButton({
+  onVoiceMemo,
+  disabled,
+  idleClassName,
+}: {
+  onVoiceMemo: () => void;
+  disabled?: boolean;
+  /** Same chrome as emoji / location / GIF composer controls. */
+  idleClassName: string;
+}) {
+  const { t } = useTranslation();
+  const phase = useReticulumVoiceMemoStore((s) => s.phase);
+  const elapsedSec = useReticulumVoiceMemoStore((s) => s.elapsedSec);
+  const recording = phase === 'recording' || phase === 'starting';
+  const sendMode = recording || phase === 'ready';
+  const busy = phase === 'starting' || phase === 'stopping' || phase === 'sending';
+  return (
+    <HelpTooltip
+      text={
+        sendMode ? t('chatPanel.voiceMemo.sendTooltip') : t('chatPanel.voiceMemo.recordTooltip')
+      }
+      className="shrink-0"
+      nonFocusableWrapper
+    >
+      <button
+        type="button"
+        aria-label={
+          recording && elapsedSec > 0
+            ? t('chatPanel.voiceMemo.sendAriaWithElapsed', { seconds: elapsedSec })
+            : sendMode
+              ? t('chatPanel.voiceMemo.sendAria')
+              : t('chatPanel.voiceMemo.recordAria')
+        }
+        onClick={onVoiceMemo}
+        disabled={disabled || busy}
+        className={
+          recording
+            ? 'rounded-xl border border-red-500/60 bg-red-600/80 px-2.5 py-2.5 text-white transition-colors hover:bg-red-500 disabled:opacity-50'
+            : idleClassName
+        }
+      >
+        <span className="flex items-center gap-1">
+          <Mic aria-hidden className="h-4 w-4" size={16} />
+          {recording && elapsedSec > 0 ? (
+            <span className="text-xs tabular-nums" aria-hidden>
+              {elapsedSec}s
+            </span>
+          ) : null}
+        </span>
+      </button>
+    </HelpTooltip>
   );
 }

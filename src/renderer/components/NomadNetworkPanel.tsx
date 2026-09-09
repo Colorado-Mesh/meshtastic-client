@@ -9,7 +9,6 @@ import { useParentIconTrigger } from '@/renderer/lib/icons/iconMotionContext';
 import {
   buildNomadLinkRequest,
   DEFAULT_NOMAD_NODE_PAGE_PATH,
-  formatNomadRequestDataForUrlBar,
   isNomadMicronPage,
   nomadPageRequestDataEquals,
   normalizeNomadPagePath,
@@ -33,21 +32,28 @@ import {
   sortPreparedNomadNodeRows,
   writeNomadNodeSortPreference,
 } from '@/renderer/lib/nomad/nomadNodeSort';
-import {
-  clearNomadPageCache,
-  getNomadPageCache,
-  MAX_NOMAD_PAGE_CACHE_CHARS,
-  setNomadPageCache,
-} from '@/renderer/lib/nomad/nomadPageCache';
+import { isNomadLastSeenStale } from '@/renderer/lib/nomad/nomadNodeStale';
 import {
   humanizeNomadPageError,
   isRetryableNomadPageError,
+  shouldForceNomadPathRefreshRetry,
 } from '@/renderer/lib/nomad/nomadPageErrorHumanize';
+import {
+  readNomadPageFitWidth,
+  writeNomadPageFitWidth,
+} from '@/renderer/lib/nomad/nomadPageFitWidth';
 import { isReticulumSidecarRunning } from '@/renderer/lib/reticulum/reticulumSidecarReads';
-import { NOMAD_PAGE_FETCH_RETRY_SETTLE_MS } from '@/renderer/lib/timeConstants';
-import type { NomadNodeRow, NomadPageRequestData, NomadPageResponse } from '@/shared/nomad-types';
+import type { NomadNodeRow, NomadPageRequestData } from '@/shared/nomad-types';
 
 import { useNomadNetworkStore } from '../stores/nomadNetworkStore';
+import {
+  formatNomadPageCountdown,
+  formatNomadViewerUrlBar,
+  type NomadPageErrorNodeSnapshot,
+  nomadPageLoadingRemainingSec,
+  type NomadPageLoadOptions,
+  useNomadPageViewerStore,
+} from '../stores/nomadPageViewerStore';
 import NomadMicronPageView from './NomadMicronPageView';
 import NomadPageServerPanel from './NomadPageServerPanel';
 
@@ -57,19 +63,7 @@ interface NomadHistoryEntry {
   requestData?: NomadPageRequestData;
 }
 
-interface LoadNodePageOptions {
-  fromHistory?: boolean;
-  forceReload?: boolean;
-  /** Force sidecar path rediscovery (stale-route retry / post-error reload). */
-  forcePathRefresh?: boolean;
-  requestData?: NomadPageRequestData;
-}
-
-/** Cap displayed page size to avoid renderer stress on huge Micron pages. */
-const MAX_NOMAD_PAGE_DISPLAY_CHARS = MAX_NOMAD_PAGE_CACHE_CHARS;
-
 const NOMAD_NODE_LIST_COLLAPSED_STORAGE_KEY = 'mesh-client:nomadNodeListCollapsed';
-const NOMAD_PAGE_FIT_WIDTH_STORAGE_KEY = 'mesh-client:nomadPageFitWidth';
 
 const NOMAD_SORT_KEYS: readonly NomadNodeSortKey[] = ['lastSeen', 'hops', 'name'];
 
@@ -103,19 +97,6 @@ function nomadCollapsedLabel(displayName: string | null | undefined, hash: strin
   return hash.slice(0, 2).toUpperCase();
 }
 
-function formatNomadUrlBar(hash: string, path: string, requestData?: NomadPageRequestData): string {
-  const base = `${hash}:${path}`;
-  const varSuffix = formatNomadRequestDataForUrlBar(requestData);
-  return varSuffix ? `${base}\`${varSuffix}` : base;
-}
-
-function truncateNomadPageContent(content: string): { text: string; truncated: boolean } {
-  if (content.length <= MAX_NOMAD_PAGE_DISPLAY_CHARS) {
-    return { text: content, truncated: false };
-  }
-  return { text: content.slice(0, MAX_NOMAD_PAGE_DISPLAY_CHARS), truncated: true };
-}
-
 function formatNomadHash(hash: string): string {
   if (hash.length <= 16) return `<${hash}>`;
   return `<${hash.slice(0, 8)}…${hash.slice(-8)}>`;
@@ -127,23 +108,6 @@ function matchesSearch(node: NomadNodeRow, query: string): boolean {
   const name = (node.display_name ?? '').toLowerCase();
   const hash = node.destination_hash.toLowerCase();
   return name.includes(q) || hash.includes(q);
-}
-
-interface NomadPageErrorNodeSnapshot {
-  hash: string;
-  lastSeen: number | null;
-  hops: number | null;
-}
-
-function snapshotNomadNodeForPageError(
-  hash: string,
-  node: NomadNodeRow | undefined,
-): NomadPageErrorNodeSnapshot {
-  return {
-    hash: hash.toLowerCase(),
-    lastSeen: node?.last_seen ?? null,
-    hops: node?.hops ?? null,
-  };
 }
 
 function nomadNodeChangedSincePageError(
@@ -283,46 +247,88 @@ export default function NomadNetworkPanel({
   const fetchNomadFile = useNomadNetworkStore((s) => s.fetchNomadFile);
   const toggleFavorite = useNomadNetworkStore((s) => s.toggleFavorite);
 
+  const selectedHash = useNomadPageViewerStore((s) => s.selectedHash);
+  const pagePath = useNomadPageViewerStore((s) => s.pagePath);
+  const pageRequestData = useNomadPageViewerStore((s) => s.pageRequestData);
+  const pageContent = useNomadPageViewerStore((s) => s.pageContent);
+  const pageContentType = useNomadPageViewerStore((s) => s.pageContentType);
+  const pageContentTruncated = useNomadPageViewerStore((s) => s.pageContentTruncated);
+  const pageLoading = useNomadPageViewerStore((s) => s.pageLoading);
+  const pageLoadingStartedAt = useNomadPageViewerStore((s) => s.pageLoadingStartedAt);
+  const pageLoadingBudgetSec = useNomadPageViewerStore((s) => s.pageLoadingBudgetSec);
+  const pageLoadingRetrying = useNomadPageViewerStore((s) => s.pageLoadingRetrying);
+  const pageLoadingProgress = useNomadPageViewerStore((s) => s.pageLoadingProgress);
+  const pageErrorRaw = useNomadPageViewerStore((s) => s.pageErrorRaw);
+  const pageErrorEgress = useNomadPageViewerStore((s) => s.pageErrorEgress);
+  const pageErrorDiag = useNomadPageViewerStore((s) => s.pageErrorDiag);
+  const pageErrorNodeSnapshot = useNomadPageViewerStore((s) => s.pageErrorNodeSnapshot);
+  const announceReloadDone = useNomadPageViewerStore((s) => s.announceReloadDone);
+  const loadPage = useNomadPageViewerStore((s) => s.loadPage);
+  const closeViewerStore = useNomadPageViewerStore((s) => s.closeViewer);
+  const setPanelActive = useNomadPageViewerStore((s) => s.setPanelActive);
+  const setInvalidUrlError = useNomadPageViewerStore((s) => s.setInvalidUrlError);
+  const markAnnounceReloadDone = useNomadPageViewerStore((s) => s.markAnnounceReloadDone);
+
+  const pageError = pageErrorRaw ? humanizeNomadPageError(pageErrorRaw, t, pageErrorDiag) : null;
+  const pageErrorCode = pageErrorRaw;
+
   const [activeTab, setActiveTab] = useState<NomadListTab>('favourites');
   const [searchQuery, setSearchQuery] = useState('');
   const [sidecarRunning, setSidecarRunning] = useState(false);
-  const [selectedHash, setSelectedHash] = useState<string | null>(null);
-  const [pagePath, setPagePath] = useState(DEFAULT_NOMAD_NODE_PAGE_PATH);
-  const [pageRequestData, setPageRequestData] = useState<NomadPageRequestData | undefined>(
-    undefined,
-  );
   const [urlBarValue, setUrlBarValue] = useState('');
   const [historyStack, setHistoryStack] = useState<NomadHistoryEntry[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
-  const [pageContent, setPageContent] = useState<string | null>(null);
-  const [pageContentType, setPageContentType] = useState<string | undefined>(undefined);
   const [showPageSource, setShowPageSource] = useState(false);
-  const [pageLoading, setPageLoading] = useState(false);
-  const [pageError, setPageError] = useState<string | null>(null);
-  const [pageErrorCode, setPageErrorCode] = useState<string | null>(null);
+  const [pageLoadingRemainingSec, setPageLoadingRemainingSec] = useState(0);
   const [fileDownloading, setFileDownloading] = useState(false);
   const [fileDownloadError, setFileDownloadError] = useState<string | null>(null);
   const [nodeListCollapsed, setNodeListCollapsed] = useState(
     () => localStorage.getItem(NOMAD_NODE_LIST_COLLAPSED_STORAGE_KEY) === 'true',
   );
-  /** Missing key defaults to fit-width (wrap) for prose pages; open width is opt-in. */
-  const [pageFitWidth, setPageFitWidth] = useState(
-    () => localStorage.getItem(NOMAD_PAGE_FIT_WIDTH_STORAGE_KEY) !== 'false',
-  );
+  const [pageFitWidth, setPageFitWidth] = useState(readNomadPageFitWidth);
   const [sortPref, setSortPref] = useState(readNomadNodeSortPreference);
   const sortKey = sortPref.key;
   const sortDir = sortPref.dir;
-  const pageRequestSeqRef = useRef(0);
   const fileDownloadInFlightRef = useRef(false);
   const mountedRef = useRef(true);
   const historyIndexRef = useRef(-1);
-  const pageErrorNodeSnapshotRef = useRef<NomadPageErrorNodeSnapshot | null>(null);
-  const announceReloadDoneRef = useRef(false);
   const listCollapseTrigger = useParentIconTrigger();
 
   useEffect(() => {
     historyIndexRef.current = historyIndex;
   }, [historyIndex]);
+
+  useEffect(() => {
+    setPanelActive(isActive);
+    return () => {
+      setPanelActive(false);
+    };
+  }, [isActive, setPanelActive]);
+
+  useEffect(() => {
+    if (!pageLoading || pageLoadingStartedAt == null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear countdown when load ends
+      setPageLoadingRemainingSec(0);
+      return;
+    }
+    const tick = () => {
+      setPageLoadingRemainingSec(
+        nomadPageLoadingRemainingSec(pageLoadingStartedAt, pageLoadingBudgetSec),
+      );
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => {
+      window.clearInterval(id);
+    };
+  }, [pageLoading, pageLoadingStartedAt, pageLoadingBudgetSec]);
+
+  useEffect(() => {
+    if (selectedHash) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- mirror store navigation into the editable URL bar
+      setUrlBarValue(formatNomadViewerUrlBar(selectedHash, pagePath, pageRequestData));
+    }
+  }, [selectedHash, pagePath, pageRequestData]);
 
   useEffect(() => {
     if (isActive && selectedHash == null) {
@@ -359,17 +365,22 @@ export default function NomadNetworkPanel({
   useEffect(() => {
     mountedRef.current = true;
     return () => {
+      // Keep in-flight Nomad loads alive across protocol/panel unmount.
       mountedRef.current = false;
-      pageRequestSeqRef.current += 1;
     };
   }, []);
 
   useEffect(() => {
     const applyRunning = (running: boolean) => {
       setSidecarRunning(running);
+      // floating-ok: refreshFromSidecar (store) catches/logs; Nomad refreshFromSidecar same pattern
       if (running) void refreshFromSidecar();
     };
-    void isReticulumSidecarRunning().then(applyRunning);
+    void isReticulumSidecarRunning()
+      .then(applyRunning)
+      .catch((e: unknown) => {
+        console.warn('[NomadNetworkPanel] sidecar status ' + errLikeToLogString(e));
+      });
     const unsub = window.electronAPI.reticulum.onStatus((status) => {
       applyRunning(status.running && status.port > 0);
     });
@@ -402,122 +413,23 @@ export default function NomadNetworkPanel({
 
   const selectedNode = selectedHash ? nodes.get(selectedHash.toLowerCase()) : undefined;
 
-  const applyPageResult = useCallback(
-    (
-      hash: string,
-      normalizedPath: string,
-      content: string,
-      contentType: string | undefined,
-      truncated: boolean,
-      requestData?: NomadPageRequestData,
-    ) => {
-      setPageContent(truncated ? `${content}\n\n[${t('nomadNetwork.pageTruncated')}]` : content);
-      setPageContentType(contentType);
-      setUrlBarValue(formatNomadUrlBar(hash, normalizedPath, requestData));
-    },
-    [t],
-  );
-
   const loadNodePage = useCallback(
-    async (hash: string, path: string, options: LoadNodePageOptions = {}) => {
+    async (hash: string, path: string, options: NomadPageLoadOptions = {}) => {
+      setShowPageSource(false);
       const normalizedPath = normalizeNomadPagePath(path);
       const normalizedRequest = normalizeNomadPageRequestData(options.requestData);
-      const requestSeq = ++pageRequestSeqRef.current;
-      setSelectedHash(hash);
-      setPagePath(normalizedPath);
-      setPageRequestData(normalizedRequest);
-      setPageLoading(true);
-      setPageError(null);
-      setPageErrorCode(null);
-      pageErrorNodeSnapshotRef.current = null;
-      setShowPageSource(false);
-
-      if (!options.forceReload) {
-        const cached = getNomadPageCache({
-          hash,
-          path: normalizedPath,
-          requestData: normalizedRequest,
-        });
-        if (cached) {
-          if (!mountedRef.current || requestSeq !== pageRequestSeqRef.current) return;
-          setPageLoading(false);
-          applyPageResult(
-            hash,
-            normalizedPath,
-            cached.content,
-            cached.content_type,
-            false,
-            normalizedRequest,
-          );
-          if (!options.fromHistory) {
-            pushHistoryEntry(hash, normalizedPath, normalizedRequest);
-          }
-          return;
-        }
-      }
-
-      setPageContent(null);
-      setPageContentType(undefined);
-      let res: NomadPageResponse;
-      try {
-        res = await fetchNomadPage(
-          hash,
-          normalizedPath,
-          normalizedRequest,
-          options.forcePathRefresh ? { forcePathRefresh: true } : undefined,
-        );
-        if (!mountedRef.current || requestSeq !== pageRequestSeqRef.current) return;
-
-        if ((!res.ok || !res.content) && isRetryableNomadPageError(res.error)) {
-          const retryCode = res.error?.trim() || 'unknown';
-          console.warn(`[NomadNetwork] page fetch retry after ${retryCode}`);
-          await new Promise<void>((resolve) => {
-            window.setTimeout(resolve, NOMAD_PAGE_FETCH_RETRY_SETTLE_MS);
-          });
-          if (!mountedRef.current || requestSeq !== pageRequestSeqRef.current) return;
-          res = await fetchNomadPage(hash, normalizedPath, normalizedRequest, {
-            forcePathRefresh: true,
-          });
-          if (!mountedRef.current || requestSeq !== pageRequestSeqRef.current) return;
-        }
-      } catch (e) {
-        // Failure point: unexpected fetchNomadPage reject. Fallback: clear loading + generic error.
-        console.warn('[NomadNetwork] page fetch ' + errLikeToLogString(e));
-        if (!mountedRef.current || requestSeq !== pageRequestSeqRef.current) return;
-        setPageLoading(false);
-        setPageErrorCode(null);
-        setPageError(humanizeNomadPageError(undefined, t));
-        return;
-      }
-
-      setPageLoading(false);
-      if (!res.ok || !res.content) {
-        const rawCode = res.error?.trim() || null;
-        setPageErrorCode(rawCode);
-        setPageError(humanizeNomadPageError(res.error, t));
-        const node = useNomadNetworkStore.getState().nodes.get(hash.toLowerCase());
-        pageErrorNodeSnapshotRef.current = snapshotNomadNodeForPageError(hash, node);
-        announceReloadDoneRef.current = false;
-        return;
-      }
-      const { text, truncated } = truncateNomadPageContent(res.content);
-      applyPageResult(hash, normalizedPath, text, res.content_type, truncated, normalizedRequest);
-      setNomadPageCache(
-        {
-          hash,
-          path: normalizedPath,
-          requestData: normalizedRequest,
-        },
-        {
-          content: truncated ? text : res.content,
-          content_type: res.content_type,
-        },
-      );
-      if (!options.fromHistory) {
+      await loadPage(hash, path, options);
+      const viewer = useNomadPageViewerStore.getState();
+      if (
+        !options.fromHistory &&
+        viewer.pageContent != null &&
+        viewer.selectedHash?.toLowerCase() === hash.toLowerCase() &&
+        viewer.pagePath === normalizedPath
+      ) {
         pushHistoryEntry(hash, normalizedPath, normalizedRequest);
       }
     },
-    [applyPageResult, fetchNomadPage, pushHistoryEntry, t],
+    [loadPage, pushHistoryEntry],
   );
 
   useEffect(() => {
@@ -530,22 +442,27 @@ export default function NomadNetworkPanel({
     ) {
       return;
     }
-    if (announceReloadDoneRef.current) return;
-    const snap = pageErrorNodeSnapshotRef.current;
+    if (announceReloadDone) return;
+    const snap = pageErrorNodeSnapshot;
     if (snap == null) return;
     if (snap.hash !== selectedHash.toLowerCase()) return;
     if (!nomadNodeChangedSincePageError(snap, selectedNode)) return;
 
-    announceReloadDoneRef.current = true;
+    markAnnounceReloadDone();
     console.warn('[NomadNetwork] page reload after announce refresh');
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- auto-retry after announce updates node metadata
     void loadNodePage(selectedHash, pagePath, {
       forceReload: true,
-      forcePathRefresh: true,
+      forcePathRefresh: shouldForceNomadPathRefreshRetry(pageErrorCode, pageErrorEgress),
       requestData: pageRequestData,
     });
   }, [
+    announceReloadDone,
     loadNodePage,
+    markAnnounceReloadDone,
     pageErrorCode,
+    pageErrorEgress,
+    pageErrorNodeSnapshot,
     pageLoading,
     pagePath,
     pageRequestData,
@@ -609,42 +526,47 @@ export default function NomadNetworkPanel({
     [historyIndex, historyStack, loadNodePage],
   );
 
+  const activeDestinationHash = selectedNode?.destination_hash ?? selectedHash;
+
   const submitUrlBar = useCallback(() => {
-    if (!selectedNode) return;
     const trimmed = urlBarValue.trim();
     if (!trimmed) return;
 
     let target = trimmed;
     if (target.startsWith(':')) {
-      target = `${selectedNode.destination_hash}${target}`;
+      if (!activeDestinationHash) {
+        setInvalidUrlError();
+        return;
+      }
+      target = `${activeDestinationHash}${target}`;
     }
 
     const { destination: baseDestination, requestData } = buildNomadLinkRequest(target, null, null);
     const parsed = parseNomadNetworkLinkUrl(baseDestination, DEFAULT_NOMAD_NODE_PAGE_PATH);
     if (!parsed) {
-      setPageError(t('nomadNetwork.invalidUrl'));
+      setInvalidUrlError();
       return;
     }
 
-    const hash = parsed.destination_hash ?? selectedNode.destination_hash;
+    const hash = parsed.destination_hash ?? activeDestinationHash;
+    if (!hash) {
+      setInvalidUrlError();
+      return;
+    }
     const normalizedRequest = normalizeNomadPageRequestData(requestData);
     void loadNodePage(hash, parsed.path, {
       requestData: normalizedRequest,
     });
-  }, [loadNodePage, selectedNode, t, urlBarValue]);
+  }, [activeDestinationHash, loadNodePage, setInvalidUrlError, urlBarValue]);
 
   const closeViewer = useCallback(() => {
-    setSelectedHash(null);
-    setPageContent(null);
-    setPageError(null);
-    setPageRequestData(undefined);
+    closeViewerStore();
     setUrlBarValue('');
     setHistoryStack([]);
     historyIndexRef.current = -1;
     setHistoryIndex(-1);
     setActiveTab('favourites');
-    clearNomadPageCache();
-  }, []);
+  }, [closeViewerStore]);
 
   const handleNodeListToggle = useCallback(() => {
     setNodeListCollapsed((prev) => {
@@ -942,29 +864,63 @@ export default function NomadNetworkPanel({
               onPreviewHostedSite={handlePreviewHostedSite}
             />
           ) : null}
-          {activeTab !== 'myPages' && !selectedNode ? (
-            <p className="text-muted m-auto max-w-sm p-6 text-center text-sm">
-              {t('nomadNetwork.selectNode')}
-            </p>
+          {activeTab !== 'myPages' && !selectedHash ? (
+            <div className="m-auto flex w-full max-w-lg flex-col items-stretch gap-3 p-6">
+              <p className="text-muted text-center text-sm">{t('nomadNetwork.enterUrlHint')}</p>
+              <form
+                className="flex gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  submitUrlBar();
+                }}
+              >
+                <input
+                  type="text"
+                  value={urlBarValue}
+                  onChange={(e) => {
+                    setUrlBarValue(e.target.value);
+                  }}
+                  aria-label={t('nomadNetwork.urlBarAria')}
+                  placeholder={t('nomadNetwork.enterUrlPlaceholder')}
+                  className="min-w-0 flex-1 rounded border border-gray-600 bg-slate-900 px-2 py-1.5 font-mono text-xs text-gray-200"
+                />
+                <button
+                  type="submit"
+                  className="shrink-0 rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-200 hover:bg-slate-800"
+                  aria-label={t('nomadNetwork.goToUrl')}
+                >
+                  {t('nomadNetwork.goToUrl')}
+                </button>
+              </form>
+              {pageError ? (
+                <p className="text-center text-sm text-red-300">
+                  {t('nomadNetwork.pageFailed', { error: pageError })}
+                </p>
+              ) : null}
+            </div>
           ) : null}
-          {activeTab !== 'myPages' && selectedNode ? (
+          {activeTab !== 'myPages' && selectedHash ? (
             <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
               <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-gray-700/60 p-2">
                 <span className="truncate font-medium text-gray-100">
-                  {selectedNode.display_name ?? selectedNode.destination_hash.slice(0, 16)}
+                  {selectedNode?.display_name ?? selectedHash.slice(0, 16)}
                 </span>
-                {selectedNode.hops != null ? (
+                {selectedNode?.hops != null ? (
                   <span className="text-muted text-xs">
                     {t('nomadNetwork.hopsAway', { count: selectedNode.hops })}
                   </span>
                 ) : null}
                 <div className="ml-auto flex flex-wrap gap-1">
-                  {onOpenDm ? (
+                  {onOpenDm && selectedNode ? (
                     <button
                       type="button"
                       disabled={!sidecarRunning}
                       className="rounded border border-purple-600 px-2 py-1 text-xs text-purple-300 hover:bg-purple-900/30 disabled:opacity-40"
                       aria-label={t('nomadNetwork.sendMessageAria', {
+                        name:
+                          selectedNode.display_name ?? selectedNode.destination_hash.slice(0, 16),
+                      })}
+                      title={t('nomadNetwork.sendMessageAria', {
                         name:
                           selectedNode.display_name ?? selectedNode.destination_hash.slice(0, 16),
                       })}
@@ -980,6 +936,7 @@ export default function NomadNetworkPanel({
                     disabled={!canGoBack}
                     className="rounded border border-gray-600 px-2 py-1 text-xs text-gray-200 hover:bg-slate-800 disabled:opacity-40"
                     aria-label={t('nomadNetwork.back')}
+                    title={t('nomadNetwork.back')}
                     onClick={() => {
                       navigateHistory(-1);
                     }}
@@ -991,6 +948,7 @@ export default function NomadNetworkPanel({
                     disabled={!canGoForward}
                     className="rounded border border-gray-600 px-2 py-1 text-xs text-gray-200 hover:bg-slate-800 disabled:opacity-40"
                     aria-label={t('nomadNetwork.forward')}
+                    title={t('nomadNetwork.forward')}
                     onClick={() => {
                       navigateHistory(1);
                     }}
@@ -1001,11 +959,9 @@ export default function NomadNetworkPanel({
                     type="button"
                     className="rounded border border-gray-600 px-2 py-1 text-xs text-gray-200 hover:bg-slate-800"
                     aria-label={t('nomadNetwork.homePage')}
+                    title={t('nomadNetwork.homePage')}
                     onClick={() => {
-                      void loadNodePage(
-                        selectedNode.destination_hash,
-                        DEFAULT_NOMAD_NODE_PAGE_PATH,
-                      );
+                      void loadNodePage(selectedHash, DEFAULT_NOMAD_NODE_PAGE_PATH);
                     }}
                   >
                     ⌂
@@ -1019,6 +975,9 @@ export default function NomadNetworkPanel({
                           : 'border-gray-600 text-gray-200 hover:bg-slate-800'
                       }`}
                       aria-label={
+                        showPageSource ? t('nomadNetwork.hideSource') : t('nomadNetwork.showSource')
+                      }
+                      title={
                         showPageSource ? t('nomadNetwork.hideSource') : t('nomadNetwork.showSource')
                       }
                       aria-pressed={showPageSource}
@@ -1040,11 +999,14 @@ export default function NomadNetworkPanel({
                       aria-label={
                         pageFitWidth ? t('nomadNetwork.openWidth') : t('nomadNetwork.fitWidth')
                       }
+                      title={
+                        pageFitWidth ? t('nomadNetwork.openWidth') : t('nomadNetwork.fitWidth')
+                      }
                       aria-pressed={pageFitWidth}
                       onClick={() => {
                         setPageFitWidth((prev) => {
                           const next = !prev;
-                          localStorage.setItem(NOMAD_PAGE_FIT_WIDTH_STORAGE_KEY, String(next));
+                          writeNomadPageFitWidth(next);
                           return next;
                         });
                       }}
@@ -1056,10 +1018,14 @@ export default function NomadNetworkPanel({
                     type="button"
                     className="rounded border border-gray-600 px-2 py-1 text-xs text-gray-200 hover:bg-slate-800"
                     aria-label={t('nomadNetwork.reloadPage')}
+                    title={t('nomadNetwork.reloadPage')}
                     onClick={() => {
-                      void loadNodePage(selectedNode.destination_hash, pagePath, {
+                      void loadNodePage(selectedHash, pagePath, {
                         forceReload: true,
-                        forcePathRefresh: isRetryableNomadPageError(pageErrorCode),
+                        forcePathRefresh: shouldForceNomadPathRefreshRetry(
+                          pageErrorCode,
+                          pageErrorEgress,
+                        ),
                         requestData: pageRequestData,
                       });
                     }}
@@ -1070,6 +1036,7 @@ export default function NomadNetworkPanel({
                     type="button"
                     className="rounded border border-gray-600 px-2 py-1 text-xs text-gray-200 hover:bg-slate-800"
                     aria-label={t('nomadNetwork.closeViewer')}
+                    title={t('nomadNetwork.closeViewer')}
                     onClick={closeViewer}
                   >
                     ✕
@@ -1110,17 +1077,57 @@ export default function NomadNetworkPanel({
                     </p>
                   ) : null}
                   {pageLoading ? (
-                    <p className="text-muted text-sm">{t('nomadNetwork.pageLoading')}</p>
+                    <div className="space-y-1">
+                      <p className="text-muted text-sm">
+                        {pageLoadingProgress
+                          ? t(pageLoadingProgress.messageKey, pageLoadingProgress.messageParams)
+                          : pageLoadingStartedAt == null
+                            ? t('nomadNetwork.pageLoading')
+                            : pageLoadingRetrying
+                              ? pageLoadingRemainingSec > 0
+                                ? t('nomadNetwork.pageLoadingRetryCountdown', {
+                                    time: formatNomadPageCountdown(pageLoadingRemainingSec),
+                                  })
+                                : t('nomadNetwork.pageLoadingRetryOverdue')
+                              : pageLoadingRemainingSec > 0
+                                ? t('nomadNetwork.pageLoadingCountdown', {
+                                    time: formatNomadPageCountdown(pageLoadingRemainingSec),
+                                  })
+                                : t('nomadNetwork.pageLoadingCountdownOverdue')}
+                      </p>
+                      {pageLoadingProgress && pageLoadingStartedAt != null ? (
+                        <p className="text-muted text-xs">
+                          {pageLoadingRemainingSec > 0
+                            ? t('nomadNetwork.pageLoadingTimeLeft', {
+                                time: formatNomadPageCountdown(pageLoadingRemainingSec),
+                              })
+                            : t('nomadNetwork.pageLoadingStillWorking')}
+                        </p>
+                      ) : null}
+                    </div>
                   ) : pageError ? (
-                    <p className="text-sm text-red-300">
-                      {t('nomadNetwork.pageFailed', { error: pageError })}
-                    </p>
+                    <div className="space-y-2">
+                      <p className="text-sm text-red-300">
+                        {t('nomadNetwork.pageFailed', { error: pageError })}
+                      </p>
+                      {selectedNode && isNomadLastSeenStale(selectedNode.last_seen) ? (
+                        <p className="text-xs text-amber-200/90">
+                          {t('nomadNetwork.staleLastSeenHint', {
+                            time: formatRelativeOrIsoDate((selectedNode.last_seen ?? 0) * 1000, t),
+                          })}
+                        </p>
+                      ) : null}
+                    </div>
                   ) : pageContent != null ? (
                     isNomadMicronPage(pageContentType, pagePath) && !showPageSource ? (
                       <NomadMicronPageView
-                        content={pageContent}
+                        content={
+                          pageContentTruncated
+                            ? `${pageContent}\n\n[${t('nomadNetwork.pageTruncated')}]`
+                            : pageContent
+                        }
                         defaultPagePath={DEFAULT_NOMAD_NODE_PAGE_PATH}
-                        selectedHash={selectedNode.destination_hash}
+                        selectedHash={selectedHash}
                         fitWidth={pageFitWidth}
                         onNavigate={handleMicronNavigate}
                         onDownloadFile={handleMicronDownload}
@@ -1135,7 +1142,9 @@ export default function NomadNetworkPanel({
                             : 'whitespace-pre'
                         }`}
                       >
-                        {pageContent}
+                        {pageContentTruncated
+                          ? `${pageContent}\n\n[${t('nomadNetwork.pageTruncated')}]`
+                          : pageContent}
                       </pre>
                     )
                   ) : null}

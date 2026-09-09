@@ -1,4 +1,8 @@
 // @vitest-environment jsdom
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -19,6 +23,45 @@ import {
   splitNomadLinkDestination,
 } from './micronParser';
 
+const rendererDir = join(dirname(fileURLToPath(import.meta.url)), '../..');
+const stylesCss = readFileSync(join(rendererDir, 'styles.css'), 'utf8');
+const nomadFontWoff2Path = join(rendererDir, 'assets/fonts/MeshClientNomadMono.woff2');
+
+describe('nomad-micron-page whitespace CSS contract', () => {
+  it('preserves spaces in open-width and wraps with pre-wrap in fit-width', () => {
+    expect(stylesCss).toMatch(/\.nomad-micron-page\s*\{[^}]*white-space:\s*pre;/s);
+    expect(stylesCss).toMatch(/\.nomad-micron-page--fit-width\s*\{[^}]*white-space:\s*pre-wrap;/s);
+  });
+});
+
+describe('nomad-micron-page bundled Nerd Mono font contract', () => {
+  it('declares @font-face MeshClientNomadMono pointing at the bundled woff2', () => {
+    expect(stylesCss).toMatch(
+      /@font-face\s*\{[^}]*font-family:\s*MeshClientNomadMono;[^}]*url\(['"]\.\/assets\/fonts\/MeshClientNomadMono\.woff2['"]\)/s,
+    );
+    expect(existsSync(nomadFontWoff2Path)).toBe(true);
+    // Non-empty woff2 (subset includes Latin + Nerd PUA).
+    expect(readFileSync(nomadFontWoff2Path).byteLength).toBeGreaterThan(10_000);
+  });
+
+  it('lists MeshClientNomadMono first on .nomad-micron-page font-family', () => {
+    expect(stylesCss).toMatch(
+      /\.nomad-micron-page\s*\{[^}]*font-family:\s*MeshClientNomadMono\s*,/s,
+    );
+  });
+
+  it('keeps FA/Nerd PUA glyphs in mounted Micron link labels', () => {
+    const userIcon = '\uf007';
+    const markup = `\`FT86efac\`[${userIcon} About me\`:/page/about.mu]\`f`;
+    const html = renderNomadMicronPage(markup);
+    const container = document.createElement('div');
+    mountNomadMicronHtml(container, html);
+    expect(container.textContent).toContain(userIcon);
+    expect(container.textContent).toContain('About me');
+    expect(container.querySelector('[data-action="openNode"]')).not.toBeNull();
+  });
+});
+
 describe('renderNomadMicronPage', () => {
   it('renders headings, colors, separators, and links from Micron markup', () => {
     const markup = [
@@ -32,7 +75,7 @@ describe('renderNomadMicronPage', () => {
     const html = renderNomadMicronPage(markup);
     const container = document.createElement('div');
     mountNomadMicronHtml(container, html);
-    const plainText = container.textContent ?? '';
+    const plainText = container.textContent;
 
     expect(plainText).toContain('Hello Nomad');
     expect(plainText).toContain('olored text');
@@ -75,6 +118,23 @@ describe('renderNomadMicronPage', () => {
     expect(partial).not.toBeNull();
     expect(partial?.getAttribute('data-partial-destination')).toBe(`${hash}:/page/partial.mu`);
     expect(partial?.textContent).toContain('⧖');
+  });
+
+  it('preserves RMAP-style box padding spaces before Unicode borders', () => {
+    // Padding spaces before trailing │ must survive parse/mount (CSS white-space: pre* keeps them visible).
+    const markup = [
+      '    │  This is the NomadNet page of the RMAP Project, a web interface      │',
+      '    │  `F8f0•`f Visualize LoRa RNode Connection Info,                        │ │',
+    ].join('\n');
+    const html = renderNomadMicronPage(markup);
+    const container = document.createElement('div');
+    mountNomadMicronHtml(container, html);
+    const plainText = container.textContent;
+
+    expect(plainText).toMatch(/web interface {2,}│/);
+    expect(plainText).toMatch(/Connection Info, {2,}│ │/);
+    expect(plainText).not.toMatch(/web interface│/);
+    expect(plainText).not.toMatch(/Connection Info,││/);
   });
 });
 
@@ -165,6 +225,36 @@ describe('renderNomadMicronPage XSS', () => {
     mountNomadMicronHtml(container, html);
     expect(container.querySelector('script')).toBeNull();
     expect(container.textContent).toContain('Hello');
+  });
+
+  it('keeps tag-like page text inert instead of building an element', () => {
+    const html = renderNomadMicronPage('before <img src=x onerror="alert(1)"> after');
+    const container = document.createElement('div');
+    mountNomadMicronHtml(container, html);
+
+    expect(container.querySelector('img')).toBeNull();
+    // The handler survives only as literal text, which is what the page author typed.
+    expect(container.textContent).toContain('<img src=x onerror="alert(1)">');
+    expect(container.textContent).toContain('before');
+    expect(container.textContent).toContain('after');
+  });
+
+  it('renders literal angle brackets and ampersands as text', () => {
+    const html = renderNomadMicronPage('a < b & c > d');
+    const container = document.createElement('div');
+    mountNomadMicronHtml(container, html);
+    expect(container.textContent).toContain('a < b & c > d');
+  });
+
+  it('keeps tag-like link labels inert', () => {
+    const html = renderNomadMicronPage('`[<img src=x onerror="alert(1)">label`:/page/index.mu]`');
+    expect(html).not.toContain('<img');
+
+    const container = document.createElement('div');
+    mountNomadMicronHtml(container, html);
+    const link = container.querySelector('[data-action="openNode"]');
+    expect(link).not.toBeNull();
+    expect(link?.textContent).toContain('label');
   });
 });
 

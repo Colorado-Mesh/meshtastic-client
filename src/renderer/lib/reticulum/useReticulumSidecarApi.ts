@@ -8,6 +8,7 @@ import {
 } from '@/renderer/lib/appSettingsStorage';
 import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
 import { isBleScanBusyErrorMessage } from '@/renderer/lib/reticulum/reticulumBleAdapterLease';
+import { refreshGamesSessions } from '@/renderer/lib/reticulum/reticulumGamesSession';
 import {
   isReticulumManualStackStopSuppress,
   setReticulumManualStackStopSuppress,
@@ -132,6 +133,7 @@ export function useReticulumSidecarApi({
             identity_hash: '',
             lxmf_hash: '',
             display_name: null,
+            public_key: null,
           };
         }
         return {
@@ -139,6 +141,7 @@ export function useReticulumSidecarApi({
           identity_hash: status.identityHash?.trim() || '',
           lxmf_hash: status.lxmfHash,
           display_name: status.displayName,
+          public_key: status.publicKey ?? null,
         };
       }, generation);
     } catch (e) {
@@ -197,6 +200,7 @@ export function useReticulumSidecarApi({
     let cancelled = false;
     void (async () => {
       const ready = await waitForReticulumSession();
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Runtime guard protects external or callback-mutated state.
       if (cancelled) {
         // Effect re-ran (unstable callback) before start — allow a fresh attempt unless Stop latched.
         if (!isReticulumManualStackStopSuppress()) {
@@ -289,6 +293,7 @@ export function useReticulumSidecarApi({
     void refreshIdentity();
     if (sidecarApiReady) {
       void refreshAppInfo();
+      void refreshGamesSessions();
     }
   }, [sidecarStatus.running, sidecarApiReady, refreshIdentity, refreshAppInfo]);
 

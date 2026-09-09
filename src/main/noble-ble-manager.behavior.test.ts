@@ -133,6 +133,7 @@ describe('NobleBleManager behavior (notify-first + fallback)', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -311,5 +312,183 @@ describe('NobleBleManager behavior (notify-first + fallback)', () => {
 
     expect(disconnectSpy).toHaveBeenCalledTimes(1);
     expect(peripheral.state).toBe('connected');
+  });
+
+  it('duplicate Meshtastic connect while already connected is idempotent', async () => {
+    const mod = await import('./noble-ble-manager');
+    const manager = new mod.NobleBleManager();
+    (manager as any).sessions.set('meshtastic', (manager as any).createSessionState());
+    (manager as any).sessions.set('meshcore', (manager as any).createSessionState());
+    (manager as any).adapterReady = true;
+    (manager as any).lastAdapterState = 'poweredOn';
+
+    const toRadio = new FakeCharacteristic(MESHTASTIC_TORADIO_UUID, { properties: ['write'] });
+    const fromRadio = new FakeCharacteristic(MESHTASTIC_FROMRADIO_UUID, {
+      properties: ['read', 'notify'],
+      readResults: [Buffer.alloc(0)],
+    });
+    const fromNum = new FakeCharacteristic(MESHTASTIC_FROMNUM_UUID, { properties: ['notify'] });
+    const peripheral = new FakePeripheral('idempotent-meshtastic', [toRadio, fromRadio, fromNum]);
+    (manager as any).knownPeripherals.set(peripheral.id, peripheral);
+
+    await manager.connect('meshtastic', peripheral.id);
+    const connectAsyncSpy = vi.spyOn(peripheral, 'connectAsync');
+    const disconnectSpy = vi.spyOn(peripheral, 'disconnectAsync');
+
+    await manager.connect('meshtastic', peripheral.id);
+
+    expect(connectAsyncSpy).not.toHaveBeenCalled();
+    expect(disconnectSpy).not.toHaveBeenCalled();
+    expect(manager.isConnected('meshtastic')).toBe(true);
+  });
+
+  it('connect error rejects promptly when disconnectAsync hangs after mid-GATT drop', async () => {
+    vi.useFakeTimers();
+    const mod = await import('./noble-ble-manager');
+    const manager = new mod.NobleBleManager();
+    (manager as any).sessions.set('meshtastic', (manager as any).createSessionState());
+    (manager as any).sessions.set('meshcore', (manager as any).createSessionState());
+    (manager as any).adapterReady = true;
+    (manager as any).lastAdapterState = 'poweredOn';
+
+    const toRadio = new FakeCharacteristic(MESHTASTIC_TORADIO_UUID, { properties: ['write'] });
+    const fromRadio = new FakeCharacteristic(MESHTASTIC_FROMRADIO_UUID, {
+      properties: ['read', 'notify'],
+      readResults: [Buffer.alloc(0)],
+    });
+    const fromNum = new FakeCharacteristic(MESHTASTIC_FROMNUM_UUID, { properties: ['notify'] });
+    const peripheral = new FakePeripheral('hang-disconnect-cleanup', [toRadio, fromRadio, fromNum]);
+    peripheral.discoverSomeServicesAndCharacteristicsAsync = () => {
+      peripheral.state = 'connected';
+      // Simulate OS drop mid-GATT that leaves noble stuck on disconnectAsync.
+      return Promise.reject(new Error('Disconnected unknown'));
+    };
+    peripheral.disconnectAsync = () => new Promise(() => {});
+    (manager as any).knownPeripherals.set(peripheral.id, peripheral);
+
+    const connectPromise = manager.connect('meshtastic', peripheral.id);
+    // Attach rejection handler before advancing timers so the budget timeout is not unhandled.
+    const rejected = expect(connectPromise).rejects.toThrow('Disconnected unknown');
+    await vi.advanceTimersByTimeAsync(5_100);
+    await rejected;
+    vi.useRealTimers();
+
+    // Queue must be free for a follow-up connect (mutex / IPC settle).
+    const peripheral2 = new FakePeripheral('after-hang', [toRadio, fromRadio, fromNum]);
+    (manager as any).knownPeripherals.set(peripheral2.id, peripheral2);
+    await expect(manager.connect('meshtastic', peripheral2.id)).resolves.toBeUndefined();
+  });
+
+  it('skips connect-error disconnectAsync when peripheral already disconnected', async () => {
+    const mod = await import('./noble-ble-manager');
+    const manager = new mod.NobleBleManager();
+    (manager as any).sessions.set('meshtastic', (manager as any).createSessionState());
+    (manager as any).sessions.set('meshcore', (manager as any).createSessionState());
+    (manager as any).adapterReady = true;
+    (manager as any).lastAdapterState = 'poweredOn';
+
+    const toRadio = new FakeCharacteristic(MESHTASTIC_TORADIO_UUID, { properties: ['write'] });
+    const fromRadio = new FakeCharacteristic(MESHTASTIC_FROMRADIO_UUID, {
+      properties: ['read', 'notify'],
+      readResults: [Buffer.alloc(0)],
+    });
+    const fromNum = new FakeCharacteristic(MESHTASTIC_FROMNUM_UUID, { properties: ['notify'] });
+    const peripheral = new FakePeripheral('already-disconnected', [toRadio, fromRadio, fromNum]);
+    let disconnectCalls = 0;
+    peripheral.discoverSomeServicesAndCharacteristicsAsync = () => {
+      peripheral.state = 'disconnected';
+      return Promise.reject(new Error('Disconnected unknown'));
+    };
+    peripheral.disconnectAsync = async () => {
+      disconnectCalls += 1;
+      await new Promise(() => {});
+    };
+    (manager as any).knownPeripherals.set(peripheral.id, peripheral);
+
+    await expect(manager.connect('meshtastic', peripheral.id)).rejects.toThrow(
+      'Disconnected unknown',
+    );
+    expect(disconnectCalls).toBe(0);
+  });
+
+  it('second concurrent connect awaits in-flight GATT setup instead of disconnecting', async () => {
+    const mod = await import('./noble-ble-manager');
+    const manager = new mod.NobleBleManager();
+    (manager as any).sessions.set('meshtastic', (manager as any).createSessionState());
+    (manager as any).sessions.set('meshcore', (manager as any).createSessionState());
+    (manager as any).adapterReady = true;
+    (manager as any).lastAdapterState = 'poweredOn';
+
+    const toRadio = new FakeCharacteristic(MESHTASTIC_TORADIO_UUID, { properties: ['write'] });
+    const fromRadio = new FakeCharacteristic(MESHTASTIC_FROMRADIO_UUID, {
+      properties: ['read', 'notify'],
+      readResults: [Buffer.alloc(0)],
+    });
+    const fromNum = new FakeCharacteristic(MESHTASTIC_FROMNUM_UUID, { properties: ['notify'] });
+    const peripheral = new FakePeripheral('coalesce-peripheral', [toRadio, fromRadio, fromNum]);
+    let releaseDiscover!: () => void;
+    const discoverGate = new Promise<void>((resolve) => {
+      releaseDiscover = resolve;
+    });
+    const originalDiscover =
+      peripheral.discoverSomeServicesAndCharacteristicsAsync.bind(peripheral);
+    peripheral.discoverSomeServicesAndCharacteristicsAsync = async () => {
+      await discoverGate;
+      return originalDiscover();
+    };
+    const connectAsyncSpy = vi.spyOn(peripheral, 'connectAsync');
+    const disconnectSpy = vi.spyOn(peripheral, 'disconnectAsync');
+    (manager as any).knownPeripherals.set(peripheral.id, peripheral);
+
+    const first = manager.connect('meshtastic', peripheral.id);
+    // Wait until first connect has link-up + gattSetupInflight (past connectAsync).
+    await vi.waitFor(() => {
+      expect(connectAsyncSpy).toHaveBeenCalledTimes(1);
+      const session = (manager as any).sessions.get('meshtastic');
+      expect(session.gattSetupInflight).not.toBeNull();
+    });
+
+    const second = manager.connect('meshtastic', peripheral.id);
+    releaseDiscover();
+    await Promise.all([first, second]);
+
+    expect(connectAsyncSpy).toHaveBeenCalledTimes(1);
+    // Coalesce path must not tear down the in-flight / completed session.
+    expect(disconnectSpy).not.toHaveBeenCalled();
+    expect(manager.isConnected('meshtastic')).toBe(true);
+  });
+
+  it('releases the connect queue when the queue wait times out', async () => {
+    const mod = await import('./noble-ble-manager');
+    const manager = new mod.NobleBleManager();
+    (manager as any).sessions.set('meshtastic', (manager as any).createSessionState());
+    (manager as any).sessions.set('meshcore', (manager as any).createSessionState());
+    (manager as any).adapterReady = true;
+    (manager as any).lastAdapterState = 'poweredOn';
+
+    const toRadio = new FakeCharacteristic(MESHCORE_RX_UUID, { properties: ['write'] });
+    const fromRadio = new FakeCharacteristic(MESHCORE_TX_UUID, { properties: ['notify'] });
+    const peripheral = new FakePeripheral('meshcore-peripheral', [toRadio, fromRadio]);
+    (manager as any).knownPeripherals.set(peripheral.id, peripheral);
+
+    // Wedge the queue behind a holder that never releases, so the wait must time out.
+    (manager as any).connectQueue = new Promise<void>(() => {
+      /* never settles */
+    });
+
+    vi.useFakeTimers();
+    const wedged = manager.connect('meshcore', peripheral.id);
+    const wedgedAssertion = expect(wedged).rejects.toThrow(/BLE connect queue wait/);
+    // Longer than BLE_CONNECT_QUEUE_WAIT_MS on every platform (60s darwin / 90s others).
+    await vi.advanceTimersByTimeAsync(95_000);
+    await wedgedAssertion;
+    vi.useRealTimers();
+
+    // Regression: the timed-out attempt must release the queue slot it installed.
+    // Otherwise this second connect awaits a promise that can never settle and BLE
+    // connect stays wedged for the rest of the process lifetime.
+    await manager.connect('meshcore', peripheral.id);
+    expect(manager.isConnected('meshcore')).toBe(true);
+    expect(fromRadio.subscribeCalls).toBe(1);
   });
 });

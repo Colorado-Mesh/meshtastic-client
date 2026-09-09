@@ -4,7 +4,6 @@ import { withTimeout } from '@/shared/withTimeout';
 import type { MeshCoreContactRaw } from './meshcore/meshcoreHookTypes';
 import { meshcoreContactOutPathBytesForTrace } from './meshcoreRadioContactPath';
 import {
-  CONTACT_TYPE_LABELS,
   MESHCORE_COORD_SCALE,
   meshcoreContactTypeFromHwModel,
   pubkeyToNodeId,
@@ -27,6 +26,90 @@ export interface MeshcoreRoomLoginPathSyncConn {
     advLat: number,
     advLon: number,
   ): Promise<void>;
+  removeContact?(pubKey: Uint8Array): Promise<void>;
+}
+
+/**
+ * Force companion `ContactInfo.sync_since = 0` so room login requests the ring-buffer catch-up.
+ * Firmware only zeroes sync_since on *new* contacts; updates preserve the watermark.
+ * Failure point: remove/re-add fails — caller continues login (may still get live posts).
+ */
+export async function resetMeshcoreRoomCompanionSyncSinceForCatchUp(
+  conn: MeshcoreRoomLoginPathSyncConn,
+  nodeId: number,
+  pubKey: Uint8Array,
+  signal?: AbortSignal,
+): Promise<'reset' | 'skipped' | 'failed'> {
+  const removeContact = conn.removeContact;
+  const addOrUpdate = conn.addOrUpdateContact;
+  if (!removeContact || !addOrUpdate) return 'skipped';
+  if (signal?.aborted) return 'skipped';
+  let contact: MeshCoreContactRaw | undefined;
+  try {
+    const contacts = await withTimeout(
+      conn.getContacts(),
+      MESHCORE_ROOM_LOGIN_PATH_SYNC_TIMEOUT_MS,
+      'meshcoreRoomSyncSinceResetGetContacts',
+    );
+    contact = findRadioContact(contacts, nodeId);
+  } catch {
+    // catch-no-log-ok getContacts timeout/failure — caller treats 'failed' and continues login
+    return 'failed';
+  }
+  if (!contact) return 'skipped';
+  if (signal?.aborted) return 'skipped';
+  const existing = contact;
+  try {
+    await withTimeout(
+      removeContact.call(conn, pubKey),
+      MESHCORE_ROOM_LOGIN_PATH_SYNC_TIMEOUT_MS,
+      'meshcoreRoomSyncSinceResetRemove',
+    );
+  } catch (e: unknown) {
+    console.warn(
+      '[meshcoreRoomLoginPathSync] sync_since catch-up remove failed ' +
+        (e instanceof Error ? e.message : String(e)),
+    );
+    return 'failed';
+  }
+  const addContact = (): Promise<void> =>
+    withTimeout(
+      addOrUpdate.call(
+        conn,
+        pubKey,
+        existing.type,
+        existing.flags,
+        existing.outPathLen ?? 0,
+        existing.outPath instanceof Uint8Array ? existing.outPath : new Uint8Array(64),
+        existing.advName,
+        existing.lastAdvert,
+        existing.advLat,
+        existing.advLon,
+      ),
+      MESHCORE_ROOM_LOGIN_PATH_SYNC_TIMEOUT_MS,
+      'meshcoreRoomSyncSinceResetAdd',
+    );
+  // Once remove succeeds, always try to restore the contact (retry once). Do not abort
+  // between remove and add — that would drop the room from the companion table.
+  try {
+    await addContact();
+    return 'reset';
+  } catch (e: unknown) {
+    console.warn(
+      '[meshcoreRoomLoginPathSync] sync_since catch-up add failed, retrying restore ' +
+        (e instanceof Error ? e.message : String(e)),
+    );
+    try {
+      await addContact();
+      return 'reset';
+    } catch (e2: unknown) {
+      console.warn(
+        '[meshcoreRoomLoginPathSync] sync_since catch-up restore failed; contact may be missing ' +
+          (e2 instanceof Error ? e2.message : String(e2)),
+      );
+      return 'failed';
+    }
+  }
 }
 
 function packContactOutPath(path: Uint8Array): Uint8Array {
@@ -57,13 +140,13 @@ async function pushRouteToRadioContact(
     await conn.addOrUpdateContact(
       pubKey,
       contact.type,
-      contact.flags ?? 0,
+      contact.flags,
       outPathLen ?? 0,
       packContactOutPath(path),
-      contact.advName ?? '',
-      contact.lastAdvert ?? 0,
-      contact.advLat ?? 0,
-      contact.advLon ?? 0,
+      contact.advName,
+      contact.lastAdvert,
+      contact.advLat,
+      contact.advLon,
     );
     return;
   }
@@ -93,7 +176,7 @@ function buildContactFromNode(
   pubKey: Uint8Array,
   node: Pick<MeshNode, 'long_name' | 'hw_model' | 'last_heard' | 'latitude' | 'longitude'>,
 ): MeshCoreContactRaw {
-  const type = meshcoreContactTypeFromHwModel(node.hw_model ?? CONTACT_TYPE_LABELS[3]) ?? 3;
+  const type = meshcoreContactTypeFromHwModel(node.hw_model) ?? 3;
   const lat =
     node.latitude != null && Number.isFinite(node.latitude)
       ? Math.round(node.latitude * MESHCORE_COORD_SCALE)
@@ -106,8 +189,8 @@ function buildContactFromNode(
     publicKey: pubKey,
     type,
     flags: 0,
-    advName: node.long_name ?? '',
-    lastAdvert: node.last_heard ?? 0,
+    advName: node.long_name,
+    lastAdvert: node.last_heard,
     advLat: lat,
     advLon: lon,
   };

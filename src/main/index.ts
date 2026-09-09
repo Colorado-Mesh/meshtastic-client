@@ -23,11 +23,18 @@ import {
 import fs from 'fs';
 import net from 'net';
 import path from 'path';
-import { pathToFileURL } from 'url';
 import zlib from 'zlib';
 
 import type { MQTTSettings } from '../renderer/lib/types';
+import {
+  MESHCORE_REPEATER_CREDENTIAL_SETTING_PREFIX,
+  MESHCORE_ROOM_CREDENTIAL_SETTING_PREFIX,
+  MESHCORE_ROOM_LAST_POST_SETTING_PREFIX,
+  MESHCORE_ROOM_SYNC_SETTING_PREFIX,
+  MESHTASTIC_REMOTE_ADMIN_KEY_SETTING_PREFIX,
+} from '../shared/appSettingsKeyPrefixes';
 import { APP_ABOUT_TAGLINE } from '../shared/appTagline';
+import { clampQueryLimit } from '../shared/clampQueryLimit';
 import { formatHostForSocket, parseConnectHostPort } from '../shared/connectHost';
 import { NODES_LAST_HEARD_SEC_SQL, normalizeLastHeardToUnixSec } from '../shared/lastHeardUnits';
 import { findLxmUrlInArgv, isForwardableMeshClientOpenUrl } from '../shared/meshClientDeepLink';
@@ -46,6 +53,7 @@ import { effectiveMessageTimestampMs } from '../shared/messageTimestampSkew';
 import { sanitizeUnicodeReactionScalar } from '../shared/reactionEmoji';
 import type { ReticulumSidecarStatus } from '../shared/reticulum-types';
 import type { TAKServerStatus, TAKSettings } from '../shared/tak-types';
+import { MS_PER_MINUTE, MS_PER_SECOND } from '../shared/timeConstants';
 import {
   bleCoexistenceCoordinator,
   type BlePeripheralOwner,
@@ -53,13 +61,17 @@ import {
   type BleScanOwner,
 } from './ble-coexistence-coordinator';
 import { ensureCameraAccess, isAllowedCameraPrivacySettingsUrl } from './cameraAccess';
-import { formatChatExportLines } from './chatExportFormat';
+import {
+  assertChatExportMessageSizes,
+  formatChatExportLinesWithTotalCap,
+} from './chatExportFormat';
 import {
   addContactToGroup,
   closeDatabase,
   createContactGroup,
   deleteAllMeshcorePathHistory,
   deleteContactGroup,
+  deleteMeshcoreContactOn,
   deleteMeshcoreContactsByAge,
   deleteMeshcoreContactsNeverAdvertised,
   deleteMeshcorePathHistoryForNode,
@@ -76,6 +88,7 @@ import {
   getMeshcoreTraceHistory,
   initDatabase,
   isDatabaseSchemaTooNewError,
+  isDatabaseSchemaUpgradeDeclinedError,
   mergeDatabase,
   type MeshcoreContactUpsertParams,
   migrateRfStubNodes,
@@ -98,6 +111,8 @@ import { finishDbIpcHandler, finishDbIpcReadHandler, getDbForIpc } from './db-ip
 import { formatDatabaseSchemaTooNewMessage, showFatalStartupError } from './fatal-startup-dialog';
 import { fetchLinkPreview } from './fetchLinkPreview';
 import { formatGpxTracks, GPX_EXPORT_MAX_POINTS } from './gpxExportFormat';
+import { isHarmlessSocketOptionError } from './harmlessSocketOptionError';
+import { probeHttpRttMs, probeTcpRttMs } from './host-link-rtt';
 import { isValidHttpHostname } from './httpHostValidation';
 import { registerGpsIpcHandlers } from './ipc/gps-handlers';
 import { registerReticulumDbIpcHandlers } from './ipc/reticulum-db-handlers';
@@ -105,6 +120,20 @@ import { registerReticulumIpcHandlers, wireReticulumSidecarBridge } from './ipc/
 import { registerReticulumIdentityIpcHandlers } from './ipc/reticulum-identity-handlers';
 import { registerRrcDbIpcHandlers } from './ipc/rrc-db-handlers';
 import { registerTakIpcHandlers } from './ipc/tak-handlers';
+import { createIpcRateLimiter } from './ipcRateLimit';
+import { registerLinuxWebBluetoothCancelIpcHandlers } from './linuxWebBluetoothCancelIpc';
+import {
+  formatBluetoothctlSpawnError,
+  linuxWebBluetoothDeviceSelection,
+} from './linuxWebBluetoothDeviceSelection';
+import { listMeshcoreDmPeersFromDb, listMeshtasticDmPeersFromDb } from './listDmPeers';
+import {
+  clearLiveSessionMeter,
+  noteLiveSessionData,
+  noteLiveSessionWrite,
+  resetLiveSessionMeter,
+  snapshotLiveSessionMeter,
+} from './live-session-meter';
 import {
   clearLogFile,
   exportLogTo,
@@ -119,15 +148,26 @@ import {
   sanitizeLogMessage,
   setMainWindow,
 } from './log-service';
+import {
+  createLongSessionNudgeController,
+  type LongSessionNudgeController,
+  parseLongSessionRestartPayload,
+} from './longSessionNudge';
 import { MeshcoreMqttAdapter } from './meshcore-mqtt-adapter';
 import { decodePathPayload, isPathPacket } from './meshcore-path-decoder';
+import { meshtasticTcpWriteErrorIsNoSocket } from './meshtasticTcpWriteResult';
 import { ensureMicrophoneAccess, isAllowedMicrophonePrivacySettingsUrl } from './microphoneAccess';
 import { resolveMqttBrokerClientId } from './mqtt-broker-client-id';
-import { MQTTManager, parsePsk } from './mqtt-manager';
+import { type CachedNode, MQTTManager, parsePsk } from './mqtt-manager';
 import { handleNobleBleToRadioWrite } from './noble-ble-ipc';
-import { NobleBleManager, type NobleSessionId } from './noble-ble-manager';
+import { type NobleBleDevice, NobleBleManager, type NobleSessionId } from './noble-ble-manager';
 import { readFileUpTo } from './readFileUpTo';
 import { createRendererHeartbeatWatchdog } from './rendererHeartbeatWatchdog';
+import { resolveRendererLoadUrl } from './resolveRendererLoadUrl';
+import {
+  readReticulumAttachmentBytes,
+  takeReticulumAttachmentAudioRateToken,
+} from './reticulum-attachment-audio';
 import {
   readReticulumAttachmentAsDataUrl,
   takeReticulumAttachmentImageRateToken,
@@ -296,6 +336,8 @@ async function ensureTakServerManager(): Promise<TakServerManager> {
 
 /** Max bytes per MeshCore TCP IPC write (DoS guard). */
 const MESHCORE_TCP_WRITE_MAX_BYTES = 256 * 1024;
+/** Cap per-chunk IPC fan-out from OpenHop/companion TCP reads (align with write max). */
+const MESHCORE_TCP_DATA_MAX_BYTES = MESHCORE_TCP_WRITE_MAX_BYTES;
 /** Min node ID for MeshCore chat stub nodes (derived from meshcoreUtils). */
 const MESHCORE_CHAT_STUB_ID_MIN = 0xa0000000 >>> 0;
 /** Max node ID for MeshCore chat stub nodes (derived from meshcoreUtils). */
@@ -321,6 +363,135 @@ let appMenu: Menu | null = null;
 let isConnected = false;
 let isQuitting = false;
 let shutdownDone = false;
+/** Shared quit/relaunch single-flight (app:quit, app:relaunch, OS nudge Restart). */
+let quitMainInFlight = false;
+/** Last tray unread count — restore Dock badge after long-session nudge clears. */
+let lastTrayUnreadCount = 0;
+let longSessionNudge: LongSessionNudgeController | null = null;
+
+function getLongSessionNudge(): LongSessionNudgeController {
+  longSessionNudge ??= createLongSessionNudgeController({
+    platform: process.platform,
+    isNotificationSupported: () => Notification.isSupported(),
+    createNotification: (opts) => {
+      const note = new Notification(opts);
+      return {
+        on: (event, listener) => {
+          if (event === 'action') {
+            note.on('action', (...args: unknown[]) => {
+              listener(...args);
+            });
+          } else {
+            note.on('click', (...args: unknown[]) => {
+              listener(...args);
+            });
+          }
+        },
+        show: () => {
+          note.show();
+        },
+        close: () => {
+          note.close();
+        },
+      };
+    },
+    setDockBadge: (badge) => {
+      app.dock?.setBadge(badge);
+    },
+    flashFrame: (flash) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.flashFrame(flash);
+      }
+    },
+    showAndFocusMainWindow: () => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      mainWindow.show();
+      mainWindow.focus();
+    },
+    relaunchApp: () => {
+      void quitMainProcess({ relaunch: true });
+    },
+    getLastUnreadCount: () => lastTrayUnreadCount,
+    logWarn: (message) => {
+      console.warn(sanitizeLogMessage(message));
+    },
+  });
+  return longSessionNudge;
+}
+
+/**
+ * Graceful main-process exit used by app:quit / app:relaunch / OS long-session Restart.
+ * Mirrors historical app:quit cleanup; optional relaunch schedules a new instance before exit.
+ */
+async function quitMainProcess(opts: { relaunch?: boolean } = {}): Promise<void> {
+  if (quitMainInFlight) return;
+  quitMainInFlight = true;
+  isQuitting = true;
+  isConnected = false;
+  try {
+    try {
+      getLongSessionNudge().clear();
+    } catch {
+      // catch-no-log-ok best-effort OS cue clear before exit
+    }
+    await nobleBleManager.stopAllScanning();
+    try {
+      await nobleBleManager.disconnectAll();
+    } catch (err) {
+      console.error(
+        '[main] quitMainProcess BLE disconnectAll failed:',
+        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+      );
+    }
+
+    await shutdownAppResources();
+
+    if (meshcoreTcpSocket) {
+      try {
+        meshcoreTcpSocket.destroy();
+      } catch (err) {
+        console.debug(
+          '[main] quitMainProcess TCP socket destroy (ignored):',
+          err instanceof Error ? err.message : err,
+        ); // log-injection-ok internal Node.js socket error during cleanup
+      }
+      meshcoreTcpSocket = null;
+    }
+    if (meshtasticTcpSocket) {
+      try {
+        meshtasticTcpSocket.destroy();
+      } catch (err) {
+        console.debug(
+          '[main] quitMainProcess TCP socket destroy (ignored):',
+          err instanceof Error ? err.message : err,
+        ); // log-injection-ok internal Node.js socket error during cleanup
+      }
+      meshtasticTcpSocket = null;
+    }
+    stopPowerSaveBlocker();
+
+    nobleBleManager.releaseNobleProcessHandles();
+    tray?.destroy();
+    tray = null;
+    if (opts.relaunch) {
+      app.relaunch();
+    }
+    app.exit(0);
+  } catch (err) {
+    console.error(
+      '[main] quitMainProcess failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    if (opts.relaunch) {
+      try {
+        app.relaunch();
+      } catch {
+        // catch-no-log-ok relaunch already best-effort in failure path before quit
+      }
+    }
+    app.quit();
+  }
+}
 
 /** Stop network services, flush logs, and close SQLite before process exit. */
 async function shutdownAppResources(): Promise<void> {
@@ -335,7 +506,7 @@ async function shutdownAppResources(): Promise<void> {
     ); // log-injection-ok internal cleanup
   }
   try {
-    await reticulumSidecarManager?.stop();
+    await reticulumSidecarManager?.stop({ forQuit: true });
   } catch (err) {
     console.debug(
       '[main] Reticulum sidecar stop during shutdown (ignored):',
@@ -436,9 +607,10 @@ function clearPendingSerialSelectionTimer(): void {
 // (empty string always allowed = cancel). Prevents arbitrary id injection from a compromised renderer.
 let lastSerialPortIds = new Set<string>();
 
-// Pending Web Bluetooth callback (Linux only — select-bluetooth-device on webContents)
-let pendingBluetoothCallback: ((deviceId: string) => void) | null = null;
-let lastBluetoothDeviceIds = new Set<string>();
+// Linux Web Bluetooth device selection session: linuxWebBluetoothDeviceSelection
+// (retain-first callback + device merge — see linuxWebBluetoothDeviceSelection.ts)
+// MeshCore may need bluetoothctl pairing + PIN before resolving requestDevice().
+const BLUETOOTH_DEVICE_SELECTION_TIMEOUT_MS = 300 * MS_PER_SECOND;
 
 // Bluetooth pairing state (Linux only — setBluetoothPairingHandler)
 // Electron's Response type requires confirmed: boolean, pin is optional
@@ -458,6 +630,13 @@ const OSM_HTTP_REFERRER = 'https://meshtastic-client.app/';
 
 // ─── Global error handlers (prevent silent crashes in packaged app) ──
 process.on('uncaughtException', (error) => {
+  if (isHarmlessSocketOptionError(error)) {
+    console.warn(
+      '[main] Ignoring best-effort socket QoS failure:',
+      sanitizeLogMessage(error.message),
+    );
+    return;
+  }
   console.error(
     '[main] Uncaught exception:',
     sanitizeLogMessage(error?.stack ?? error?.message ?? String(error)),
@@ -478,6 +657,13 @@ let lastUnhandledRejectionDialogAt = 0;
 const UNHANDLED_REJECTION_DIALOG_COOLDOWN_MS = 60_000;
 
 process.on('unhandledRejection', (reason) => {
+  if (isHarmlessSocketOptionError(reason)) {
+    console.warn(
+      '[main] Ignoring best-effort socket QoS failure:',
+      sanitizeLogMessage(reason instanceof Error ? reason.message : String(reason)),
+    );
+    return;
+  }
   console.error(
     '[main] Unhandled rejection:',
     sanitizeLogMessage(reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)),
@@ -643,6 +829,18 @@ function validateSaveMeshcoreMessage(msg: unknown): asserts msg is Record<string
     const rs = Number(m.room_server_id);
     if (!Number.isInteger(rs) || rs < 0)
       throw new Error('db:saveMeshcoreMessage: room_server_id must be a non-negative integer');
+  }
+  if (m.sender_id != null) {
+    const rawSender = Number(m.sender_id);
+    if (!Number.isFinite(rawSender))
+      throw new Error('db:saveMeshcoreMessage: sender_id must be a finite number');
+    m.sender_id = rawSender >>> 0;
+  }
+  if (m.to_node != null) {
+    const rawTo = Number(m.to_node);
+    if (!Number.isFinite(rawTo))
+      throw new Error('db:saveMeshcoreMessage: to_node must be a finite number');
+    m.to_node = rawTo >>> 0;
   }
 }
 
@@ -981,12 +1179,14 @@ function validateMqttPublishWaypointArgs(args: unknown): void {
   validateOptionalPskBase64(a.pskBase64, 'mqtt:publishWaypoint');
 }
 
-// Enable Web Serial (experimental)
-app.commandLine.appendSwitch('enable-blink-features', 'Serial');
-
-// Enable Web Bluetooth on Linux (experimental - required for BLE on Linux)
+// Enable Web Serial; on Linux also enable Web Bluetooth at the process level
+// (per-webContents enableBlinkFeatures is not enough — Chromium gates WebBluetooth behind this switch).
 if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('enable-blink-features', 'Serial,WebBluetooth');
+  app.commandLine.appendSwitch('enable-features', 'WebBluetooth');
   app.commandLine.appendSwitch('enable-experimental-web-platform-features');
+} else {
+  app.commandLine.appendSwitch('enable-blink-features', 'Serial');
 }
 
 // ─── Icon Path Helper ──────────────────────────────────────────────
@@ -1136,11 +1336,11 @@ function applyAboutPanelOptions(): void {
     '',
     APP_ABOUT_TAGLINE,
     '',
-    'Reticulum support uses a bundled AGPL-3.0 sidecar (mesh-client-reticulum). See docs/reticulum.md and docs/license.md.',
+    'Reticulum support uses a bundled AGPL-3.0-or-later sidecar (mesh-client-reticulum). See docs/reticulum.md and docs/license.md.',
     '',
     'Reticulum stack inspiration: Ratspeak (https://github.com/ratspeak/Ratspeak)',
     '',
-    'License: MIT (application code). AGPL-3.0 applies to the bundled Reticulum sidecar binary.',
+    'License: GPL-3.0-or-later (application code). AGPL-3.0-or-later applies to the bundled Reticulum sidecar binary.',
     'Author: Colorado Mesh',
     '',
     `Website:  ${HELP_URL_WEBSITE}`,
@@ -1732,44 +1932,34 @@ function createWindow() {
   // On Linux, Electron does not show a native Bluetooth chooser. Instead it fires
   // select-bluetooth-device on the webContents. Without a handler the request is
   // immediately cancelled ("User cancelled the requestDevice() chooser.").
-  // We intercept, forward the device list to the renderer, and resolve the callback
-  // when the user picks a device (or cancels) via IPC.
+  // Chromium multi-fires this event with a new callback each time — retain the first
+  // via linuxWebBluetoothDeviceSelection and merge device lists (do not overwrite).
   mainWindow.webContents.on('select-bluetooth-device', (event, deviceList, callback) => {
     event.preventDefault();
 
-    const isNewRequest = !pendingBluetoothCallback;
-    pendingBluetoothCallback = callback;
+    const { isNewRequest, devices, generation } =
+      linuxWebBluetoothDeviceSelection.beginOrMergeDiscovery(deviceList, callback);
 
     if (isNewRequest) {
-      // MeshCore Linux may need bluetoothctl pairing + PIN before resolving requestDevice();
-      // 60s was too short and left pendingBluetoothCallback null so selectBluetoothDevice was ignored.
-      const selectionStaleMs = 300_000;
-      setTimeout(() => {
-        if (pendingBluetoothCallback === callback) {
+      // 60s was too short and left the session empty so selectBluetoothDevice was ignored.
+      linuxWebBluetoothDeviceSelection.armStaleTimeout(
+        BLUETOOTH_DEVICE_SELECTION_TIMEOUT_MS,
+        () => {
           console.warn(
-            `[IPC] Bluetooth device selection stale after ${selectionStaleMs / 1000}s — auto-cancelling`,
+            `[IPC] Bluetooth device selection stale after ${BLUETOOTH_DEVICE_SELECTION_TIMEOUT_MS / MS_PER_SECOND}s — auto-cancelling`,
           );
-          pendingBluetoothCallback('');
-          pendingBluetoothCallback = null;
-          lastBluetoothDeviceIds.clear();
-        }
-      }, selectionStaleMs);
+        },
+      );
     }
 
     console.debug(`[IPC] select-bluetooth-device: ${deviceList.length} device(s) found`);
-    lastBluetoothDeviceIds = new Set(deviceList.map((d) => d.deviceId));
 
     if (!mainWindow || mainWindow.isDestroyed()) {
       console.warn('[IPC] select-bluetooth-device: mainWindow unavailable — cancelling selection');
-      pendingBluetoothCallback?.('');
-      pendingBluetoothCallback = null;
-      lastBluetoothDeviceIds.clear();
+      linuxWebBluetoothDeviceSelection.cancelSelection();
       return;
     }
-    mainWindow.webContents.send(
-      'bluetooth-devices-discovered',
-      deviceList.map((d) => ({ deviceId: d.deviceId, deviceName: d.deviceName })),
-    );
+    mainWindow.webContents.send('bluetooth-devices-discovered', devices, generation);
   });
 
   // ─── Web Bluetooth: Pairing Handler (Linux) ───────────────────────────
@@ -1893,6 +2083,13 @@ function createWindow() {
     }
   });
 
+  mainWindow.webContents.on('unresponsive', () => {
+    rendererHeartbeatWatchdog.markRendererUnresponsive();
+  });
+  mainWindow.webContents.on('responsive', () => {
+    rendererHeartbeatWatchdog.markRendererResponsive();
+  });
+
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDesc, validatedURL) => {
     console.error(
       '[main] Failed to load:',
@@ -1922,24 +2119,33 @@ function createWindow() {
   });
 
   // Load the app
-  if (process.env.VITE_DEV_SERVER_URL) {
-    // Same startup diagnostics as packaged build so Log panel captures them in dev too
-    console.debug('[Startup] dev server URL:', sanitizeLogMessage(process.env.VITE_DEV_SERVER_URL));
+  void (async () => {
+    const distIndexPath = path.join(__dirname, '../../dist/renderer/index.html');
+    const resolved = await resolveRendererLoadUrl({
+      packaged: app.isPackaged,
+      devServerUrl: process.env.VITE_DEV_SERVER_URL,
+      distIndexPath,
+    });
+    console.debug('[Startup] renderer load source:', resolved.source);
+    console.debug('[Startup] renderer URL:', sanitizeLogMessage(resolved.url));
     console.debug('[Startup] app.isPackaged:', app.isPackaged);
     console.debug('[Startup] userData:', sanitizeLogMessage(app.getPath('userData')));
-    void mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
-
-    mainWindow.webContents.openDevTools();
-  } else {
-    const indexPath = path.join(__dirname, '../../dist/renderer/index.html');
-    const indexUrl = pathToFileURL(indexPath).toString();
-    // Use loadURL with an explicit HTTP referrer so OpenStreetMap tile requests
-    // from the packaged app include a valid Referer header and comply with the
-    // OSM tile usage policy for web-style traffic.
-    void mainWindow.loadURL(indexUrl, {
-      httpReferrer: OSM_HTTP_REFERRER,
-    });
-  }
+    if (resolved.openDevTools) {
+      mainWindow.webContents.openDevTools();
+    }
+    if (resolved.source === 'dist') {
+      await mainWindow.loadURL(resolved.url, {
+        httpReferrer: OSM_HTTP_REFERRER,
+      });
+      return;
+    }
+    await mainWindow.loadURL(resolved.url);
+  })().catch((e: unknown) => {
+    console.error(
+      '[main] Failed to load renderer:',
+      sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+    );
+  });
 
   mainWindow.on('closed', () => {
     setMainWindow(null);
@@ -1966,6 +2172,10 @@ function createWindow() {
     }
   });
 
+  win.on('focus', () => {
+    getLongSessionNudge().onMainWindowFocus();
+  });
+
   setupTray(mainWindow);
 
   initUpdater(mainWindow);
@@ -1976,9 +2186,14 @@ let _cachedBadgeIcon: ReturnType<typeof nativeImage.createFromBuffer> | null = n
 let _cachedTrayIconUnread: Electron.NativeImage | null = null;
 let _cachedTrayIconRead: Electron.NativeImage | null = null;
 let _lastTrayUnreadVariant: boolean | null = null;
-ipcMain.on('set-tray-unread', (_event, count: unknown) => {
+ipcMain.on('set-tray-unread', (event, count: unknown) => {
+  if (!validateIpcSender(event)) {
+    console.warn('[IPC] set-tray-unread: unauthorized sender');
+    return;
+  }
   try {
     const n = Math.max(0, Math.min(Math.floor(Number(count)) || 0, 99999));
+    lastTrayUnreadCount = n;
     const hasUnread = n > 0;
     if (_lastTrayUnreadVariant !== hasUnread) {
       _lastTrayUnreadVariant = hasUnread;
@@ -1994,7 +2209,9 @@ ipcMain.on('set-tray-unread', (_event, count: unknown) => {
     }
     tray?.setToolTip(hasUnread ? `Mesh-Client (${n} unread)` : 'Mesh-Client');
     if (process.platform === 'darwin') {
-      app.dock?.setBadge(hasUnread ? String(n) : '');
+      if (!getLongSessionNudge().shouldSuppressUnreadDockBadge()) {
+        app.dock?.setBadge(hasUnread ? String(n) : '');
+      }
     } else if (process.platform === 'linux') {
       app.setBadgeCount(hasUnread ? n : 0);
     } else if (process.platform === 'win32' && mainWindow) {
@@ -2045,7 +2262,11 @@ function stopPowerSaveBlocker(): void {
 }
 
 // ─── IPC: Serial port selected by user ──────────────────────────────
-ipcMain.on('serial-port-selected', (_event, portId: unknown) => {
+ipcMain.on('serial-port-selected', (event, portId: unknown) => {
+  if (!validateIpcSender(event)) {
+    console.warn('[IPC] serial-port-selected: unauthorized sender');
+    return;
+  }
   if (!pendingSerialCallback) return;
   const id = typeof portId === 'string' ? portId : '';
   if (id !== '' && !lastSerialPortIds.has(id)) {
@@ -2060,7 +2281,11 @@ ipcMain.on('serial-port-selected', (_event, portId: unknown) => {
 });
 
 // ─── IPC: Cancel Serial selection ───────────────────────────────────
-ipcMain.on('serial-port-cancelled', () => {
+ipcMain.on('serial-port-cancelled', (event) => {
+  if (!validateIpcSender(event)) {
+    console.warn('[IPC] serial-port-cancelled: unauthorized sender');
+    return;
+  }
   clearPendingSerialSelectionTimer();
   if (pendingSerialCallback) {
     pendingSerialCallback(''); // Empty string cancels the request
@@ -2070,32 +2295,30 @@ ipcMain.on('serial-port-cancelled', () => {
 });
 
 // ─── IPC: Bluetooth device selected by user (Linux Web Bluetooth) ────
-ipcMain.on('bluetooth-device-selected', (_event, deviceId: unknown) => {
-  if (!pendingBluetoothCallback) {
+ipcMain.on('bluetooth-device-selected', (event, deviceId: unknown) => {
+  if (!validateIpcSender(event)) {
+    console.warn('[IPC] bluetooth-device-selected: unauthorized sender');
+    return;
+  }
+  if (!linuxWebBluetoothDeviceSelection.hasPendingSelection()) {
     console.warn(
       '[IPC] bluetooth-device-selected: no pending selection (ignored — may have timed out or already resolved)',
     );
     return;
   }
   const id = typeof deviceId === 'string' ? deviceId : '';
-  if (id !== '' && !lastBluetoothDeviceIds.has(id)) {
+  if (id !== '' && !linuxWebBluetoothDeviceSelection.knownDeviceIds().has(id)) {
     console.warn('[IPC] bluetooth-device-selected: ignoring unknown deviceId');
     return;
   }
   console.debug('[IPC] bluetooth-device-selected:', sanitizeLogMessage(id || '(cancelled)'));
-  pendingBluetoothCallback(id);
-  pendingBluetoothCallback = null;
-  lastBluetoothDeviceIds.clear();
+  if (!linuxWebBluetoothDeviceSelection.resolveSelection(id)) {
+    console.warn('[IPC] bluetooth-device-selected: resolve ignored');
+  }
 });
 
 // ─── IPC: Cancel Bluetooth selection ────────────────────────────────
-ipcMain.on('bluetooth-device-cancelled', () => {
-  if (pendingBluetoothCallback) {
-    pendingBluetoothCallback(''); // Empty string cancels the request
-    pendingBluetoothCallback = null;
-  }
-  lastBluetoothDeviceIds.clear();
-});
+registerLinuxWebBluetoothCancelIpcHandlers();
 
 // ─── IPC: Unpair Bluetooth device (Linux only — bluetoothctl remove) ──
 // Not used on routine disconnect; only ConnectionPanel manual re-pair flow.
@@ -2147,11 +2370,9 @@ ipcMain.handle('bluetooth-unpair', async (event, macAddress: unknown) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      console.error(
-        '[IPC] bluetooth-unpair error:',
-        sanitizeLogMessage(err?.message ?? String(err)),
-      );
-      reject(err);
+      const msg = formatBluetoothctlSpawnError(err);
+      console.error('[IPC] bluetooth-unpair error:', sanitizeLogMessage(msg));
+      reject(new Error(msg));
     });
   });
 });
@@ -2192,11 +2413,9 @@ ipcMain.handle('bluetooth-start-scan', async (event) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      console.warn(
-        '[IPC] bluetooth-start-scan error:',
-        sanitizeLogMessage(err?.message ?? String(err)),
-      );
-      reject(err);
+      const msg = formatBluetoothctlSpawnError(err);
+      console.warn('[IPC] bluetooth-start-scan error:', sanitizeLogMessage(msg));
+      reject(new Error(msg));
     });
   });
 });
@@ -2393,11 +2612,21 @@ ipcMain.handle('bluetooth-pair', async (event, macAddress: unknown, pin: unknown
         stderr.includes('AuthenticationCanceled');
       const pairingSucceededByOutput = stdout.includes('Pairing successful');
       if (!pairingFailedByOutput && (pairingSucceededByOutput || code === 0)) {
-        void trustDeviceBestEffort().then(() => {
-          if (settled) return;
-          console.debug('[IPC] bluetooth-pair success');
-          finishResolve();
-        });
+        void trustDeviceBestEffort()
+          .then(() => {
+            if (settled) return;
+            console.debug('[IPC] bluetooth-pair success');
+            finishResolve();
+          })
+          .catch((e: unknown) => {
+            // trustDeviceBestEffort is best-effort and should not reject; finish pairing anyway.
+            console.debug(
+              '[IPC] bluetooth-pair trust settle:',
+              sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+            );
+            if (settled) return;
+            finishResolve();
+          });
       } else {
         console.warn(
           '[IPC] bluetooth-pair failed:',
@@ -2416,8 +2645,11 @@ ipcMain.handle('bluetooth-pair', async (event, macAddress: unknown, pin: unknown
     });
     proc.on('error', (err) => {
       if (settled) return;
-      console.warn('[IPC] bluetooth-pair error:', sanitizeLogMessage(err?.message ?? String(err)));
-      finishReject(err instanceof Error ? err : new Error(String(err)));
+      console.warn(
+        '[IPC] bluetooth-pair error:',
+        sanitizeLogMessage(formatBluetoothctlSpawnError(err)),
+      );
+      finishReject(new Error(formatBluetoothctlSpawnError(err)));
     });
   });
 });
@@ -2454,11 +2686,9 @@ ipcMain.handle('bluetooth-connect', async (event, macAddress: unknown) => {
       }
     });
     proc.on('error', (err) => {
-      console.warn(
-        '[IPC] bluetooth-connect error:',
-        sanitizeLogMessage(err?.message ?? String(err)),
-      );
-      reject(err);
+      const msg = formatBluetoothctlSpawnError(err);
+      console.warn('[IPC] bluetooth-connect error:', sanitizeLogMessage(msg));
+      reject(new Error(msg));
     });
   });
 });
@@ -2540,7 +2770,7 @@ ipcMain.handle('bluetooth-get-info', async (event, macAddress: unknown) => {
       finish(output);
     });
     proc.on('error', (err) => {
-      const msg = err?.message ?? String(err);
+      const msg = formatBluetoothctlSpawnError(err);
       finish(msg);
     });
   });
@@ -2565,7 +2795,11 @@ ipcMain.on('bluetooth-provide-pin', (event, pin: unknown) => {
 });
 
 // ─── IPC: Cancel Bluetooth pairing (Linux) ────────────────────────────
-ipcMain.on('bluetooth-cancel-pairing', () => {
+ipcMain.on('bluetooth-cancel-pairing', (event) => {
+  if (!validateIpcSender(event)) {
+    console.warn('[IPC] bluetooth-cancel-pairing: unauthorized sender');
+    return;
+  }
   if (pendingPairingCallback) {
     console.debug('[IPC] bluetooth-cancel-pairing: cancelling');
     pendingPairingCallback({ pin: '', confirmed: false }); // confirmed: false cancels
@@ -2577,18 +2811,30 @@ ipcMain.on('bluetooth-cancel-pairing', () => {
 
 // ─── IPC: Reset BLE pairing retry count (Linux) ───────────────────────────
 // Called when starting a new BLE connection so the first pairing attempt uses the default PIN
-ipcMain.on('ble-reset-pairing-retry-count', (_event, sessionKind?: unknown) => {
+ipcMain.on('ble-reset-pairing-retry-count', (event, sessionKind?: unknown) => {
+  if (!validateIpcSender(event)) {
+    console.warn('[IPC] ble-reset-pairing-retry-count: unauthorized sender');
+    return;
+  }
   pendingPairingRetryCount = 0;
   blePairingSessionKind = sessionKind === 'meshcore' ? 'meshcore' : 'meshtastic';
 });
 
 // ─── IPC: Connection status tracking (module-scope, not per-window) ─
-ipcMain.on('device-connected', () => {
+ipcMain.on('device-connected', (event) => {
+  if (!validateIpcSender(event)) {
+    console.warn('[IPC] device-connected: unauthorized sender');
+    return;
+  }
   console.debug('[main] device-connected: isConnected = true');
   isConnected = true;
   startPowerSaveBlocker();
 });
-ipcMain.on('device-disconnected', () => {
+ipcMain.on('device-disconnected', (event) => {
+  if (!validateIpcSender(event)) {
+    console.warn('[IPC] device-disconnected: unauthorized sender');
+    return;
+  }
   console.debug('[main] device-disconnected: isConnected = false');
   isConnected = false;
   stopPowerSaveBlocker();
@@ -2598,9 +2844,15 @@ ipcMain.on('device-disconnected', () => {
 nobleBleManager.on('adapterState', (state: string) => {
   mainWindow?.webContents.send('noble-ble-adapter-state', state);
 });
-nobleBleManager.on('deviceDiscovered', (device: { deviceId: string; deviceName: string }) => {
+nobleBleManager.on('deviceDiscovered', (device: NobleBleDevice) => {
   mainWindow?.webContents.send('noble-ble-device-discovered', device);
 });
+nobleBleManager.on(
+  'linkRssi',
+  ({ sessionId, rssi }: { sessionId: NobleSessionId; rssi: number | null }) => {
+    mainWindow?.webContents.send('noble-ble-link-rssi', { sessionId, rssi });
+  },
+);
 nobleBleManager.on('connected', ({ sessionId }: { sessionId: NobleSessionId }) => {
   mainWindow?.webContents.send('noble-ble-connected', { sessionId });
 });
@@ -2675,8 +2927,16 @@ ipcMain.handle('bleCoexistence:acquireScan', async (event, owner: unknown) => {
   if (typeof owner !== 'string' || !BLE_SCAN_OWNERS.has(owner as BleScanOwner)) {
     throw new Error('bleCoexistence:acquireScan: owner must be noble, reticulum, or webbt');
   }
-  await bleCoexistenceCoordinator.acquireScan(owner as BleScanOwner);
-  return bleCoexistenceCoordinator.getState();
+  try {
+    await bleCoexistenceCoordinator.acquireScan(owner as BleScanOwner);
+    return bleCoexistenceCoordinator.getState();
+  } catch (err) {
+    console.error(
+      '[main] bleCoexistence:acquireScan failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
 });
 ipcMain.handle('bleCoexistence:releaseScan', (event, owner: unknown) => {
   assertIpcSender(event, 'bleCoexistence:releaseScan');
@@ -2688,13 +2948,29 @@ ipcMain.handle('bleCoexistence:releaseScan', (event, owner: unknown) => {
 });
 ipcMain.handle('bleCoexistence:pauseNobleScan', async (event) => {
   assertIpcSender(event, 'bleCoexistence:pauseNobleScan');
-  await bleCoexistenceCoordinator.pauseNobleScan();
-  return bleCoexistenceCoordinator.getState();
+  try {
+    await bleCoexistenceCoordinator.pauseNobleScan();
+    return bleCoexistenceCoordinator.getState();
+  } catch (err) {
+    console.error(
+      '[main] bleCoexistence:pauseNobleScan failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
 });
 ipcMain.handle('bleCoexistence:suspendNobleForReticulumBleConnect', async (event) => {
   assertIpcSender(event, 'bleCoexistence:suspendNobleForReticulumBleConnect');
-  await bleCoexistenceCoordinator.suspendNobleForReticulumBleConnect();
-  return bleCoexistenceCoordinator.getState();
+  try {
+    await bleCoexistenceCoordinator.suspendNobleForReticulumBleConnect();
+    return bleCoexistenceCoordinator.getState();
+  } catch (err) {
+    console.error(
+      '[main] bleCoexistence:suspendNobleForReticulumBleConnect failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
 });
 
 ipcMain.handle('noble-ble-start-scan', async (event, sessionId: unknown) => {
@@ -2729,7 +3005,14 @@ ipcMain.handle('noble-ble-stop-scan', async (event, sessionId: unknown) => {
   if (sessionId !== 'meshtastic' && sessionId !== 'meshcore') {
     throw new Error('noble-ble-stop-scan: sessionId must be meshtastic or meshcore');
   }
-  await nobleBleManager.stopScanning(sessionId);
+  try {
+    await nobleBleManager.stopScanning(sessionId);
+  } catch (err) {
+    console.error(
+      `[main] noble-ble-stop-scan failed: session=${sessionId} message=${sanitizeLogMessage(err instanceof Error ? err.message : String(err))}`,
+    );
+    throw err;
+  }
 });
 ipcMain.handle('noble-ble-connect', async (event, sessionId: unknown, peripheralId: unknown) => {
   assertIpcSender(event, 'noble-ble-connect');
@@ -2758,7 +3041,14 @@ ipcMain.handle('noble-ble-disconnect', async (event, sessionId: unknown) => {
   if (sessionId !== 'meshtastic' && sessionId !== 'meshcore') {
     throw new Error('noble-ble-disconnect: sessionId must be meshtastic or meshcore');
   }
-  await nobleBleManager.disconnect(sessionId);
+  try {
+    await nobleBleManager.disconnect(sessionId);
+  } catch (err) {
+    console.error(
+      `[main] noble-ble-disconnect failed: session=${sessionId} message=${sanitizeLogMessage(err instanceof Error ? err.message : String(err))}`,
+    );
+    throw err;
+  }
 });
 ipcMain.handle('noble-ble-is-connected', (event, sessionId: unknown) => {
   assertIpcSender(event, 'noble-ble-is-connected');
@@ -2796,36 +3086,24 @@ ipcMain.handle('noble-ble-to-radio', async (event, sessionId: unknown, bytes: un
 });
 
 // ─── MQTT: Forward manager events to renderer ───────────────────────
-mqttManager.on('status', (s) => {
+mqttManager.on('status', (s: string) => {
   if (mainWindow) mainWindow.webContents.send('mqtt:status', { status: s, protocol: 'meshtastic' });
-  else
-    console.debug(
-      '[main] mqtt:status dropped (mainWindow not ready)',
-      sanitizeLogMessage(String(s)),
-    );
+  else console.debug('[main] mqtt:status dropped (mainWindow not ready)', sanitizeLogMessage(s));
 });
-mqttManager.on('error', (msg) => {
+mqttManager.on('error', (msg: string) => {
   if (mainWindow) mainWindow.webContents.send('mqtt:error', { error: msg, protocol: 'meshtastic' });
-  else
-    console.debug(
-      '[main] mqtt:error dropped (mainWindow not ready)',
-      sanitizeLogMessage(String(msg)),
-    );
+  else console.debug('[main] mqtt:error dropped (mainWindow not ready)', sanitizeLogMessage(msg));
 });
-mqttManager.on('clientId', (id) => {
+mqttManager.on('clientId', (id: string) => {
   if (mainWindow)
     mainWindow.webContents.send('mqtt:clientId', { clientId: id, protocol: 'meshtastic' });
-  else
-    console.debug(
-      '[main] mqtt:clientId dropped (mainWindow not ready)',
-      sanitizeLogMessage(String(id)),
-    );
+  else console.debug('[main] mqtt:clientId dropped (mainWindow not ready)', sanitizeLogMessage(id));
 });
-mqttManager.on('nodeUpdate', (n) => {
+mqttManager.on('nodeUpdate', (n: CachedNode) => {
   if (mainWindow)
     mainWindow.webContents.send('mqtt:node-update', { ...n, protocol: 'meshtastic' as const });
   else console.debug('[main] mqtt:node-update dropped (mainWindow not ready)');
-  takServerManager?.onNodeUpdate(n);
+  takServerManager?.onNodeUpdate({ ...n, altitude: n.altitude ?? undefined });
 });
 mqttManager.on(
   'traceRouteReply',
@@ -2854,38 +3132,38 @@ mqttManager.on('brokerRaw', (payload: { topic: string; payload: Buffer; retained
   }
 });
 
-meshcoreMqttAdapter.on('status', (s) => {
+meshcoreMqttAdapter.on('status', (s: string) => {
   if (mainWindow) mainWindow.webContents.send('mqtt:status', { status: s, protocol: 'meshcore' });
   else
     console.debug(
       '[main] mqtt:status (meshcore) dropped (mainWindow not ready)',
-      sanitizeLogMessage(String(s)),
+      sanitizeLogMessage(s),
     );
 });
-meshcoreMqttAdapter.on('error', (msg) => {
+meshcoreMqttAdapter.on('error', (msg: string) => {
   if (mainWindow) mainWindow.webContents.send('mqtt:error', { error: msg, protocol: 'meshcore' });
   else
     console.debug(
       '[main] mqtt:error (meshcore) dropped (mainWindow not ready)',
-      sanitizeLogMessage(String(msg)),
+      sanitizeLogMessage(msg),
     );
 });
-meshcoreMqttAdapter.on('clientId', (id) => {
+meshcoreMqttAdapter.on('clientId', (id: string) => {
   if (mainWindow)
     mainWindow.webContents.send('mqtt:clientId', { clientId: id, protocol: 'meshcore' });
   else
     console.debug(
       '[main] mqtt:clientId (meshcore) dropped (mainWindow not ready)',
-      sanitizeLogMessage(String(id)),
+      sanitizeLogMessage(id),
     );
 });
-meshcoreMqttAdapter.on('subscribeWarning', (msg) => {
+meshcoreMqttAdapter.on('subscribeWarning', (msg: string) => {
   if (mainWindow)
     mainWindow.webContents.send('mqtt:warning', { warning: msg, protocol: 'meshcore' });
   else
     console.debug(
       '[main] mqtt:warning (meshcore) dropped (mainWindow not ready)',
-      sanitizeLogMessage(String(msg)),
+      sanitizeLogMessage(msg),
     );
 });
 meshcoreMqttAdapter.on('chatMessage', (m) => {
@@ -3160,7 +3438,6 @@ ipcMain.handle('mqtt:publishMeshcore', (event, args) => {
 ipcMain.handle('mqtt:publishMeshcorePacketLog', (event, args) => {
   assertIpcSender(event, 'mqtt:publishMeshcorePacketLog');
   try {
-    console.debug('[IPC] mqtt:publishMeshcorePacketLog');
     validateMqttPublishMeshcorePacketLogArgs(args);
     const a = args as {
       origin: string;
@@ -3202,6 +3479,18 @@ ipcMain.handle('mqtt:getCachedNodes', (event) => {
   } catch (err) {
     console.error(
       '[IPC] mqtt:getCachedNodes failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
+});
+ipcMain.handle('mqtt:getChannelNameToIndex', (event) => {
+  assertIpcSender(event, 'mqtt:getChannelNameToIndex');
+  try {
+    return mqttManager.getChannelNameToIndex();
+  } catch (err) {
+    console.error(
+      '[IPC] mqtt:getChannelNameToIndex failed:',
       sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
     );
     throw err;
@@ -3357,7 +3646,32 @@ ipcMain.handle('notify:message', (event, title: unknown, body: unknown) => {
   }
 });
 
+ipcMain.handle('notify:longSessionRestart', (event, payload: unknown) => {
+  assertIpcSender(event, 'notify:longSessionRestart');
+  const parsed = parseLongSessionRestartPayload(payload);
+  if (!parsed) return;
+  getLongSessionNudge().show(parsed);
+});
+
+ipcMain.handle('notify:clearLongSessionNudge', (event) => {
+  assertIpcSender(event, 'notify:clearLongSessionNudge');
+  getLongSessionNudge().clear();
+});
+
 // ─── IPC: Safe storage (OS-keychain-backed encryption) ─────────────
+/** Export / import dialogs — max 5 / 60s. */
+const exportIpcRateLimit = createIpcRateLimiter({
+  max: 5,
+  windowMs: MS_PER_MINUTE,
+  label: 'export',
+});
+/** storage:encrypt / storage:decrypt — max 30 / 60s. */
+const storageCryptoIpcRateLimit = createIpcRateLimiter({
+  max: 30,
+  windowMs: MS_PER_MINUTE,
+  label: 'storage:crypto',
+});
+
 ipcMain.handle('storage:isAvailable', (event) => {
   assertIpcSender(event, 'storage:isAvailable');
   try {
@@ -3373,6 +3687,7 @@ ipcMain.handle('storage:isAvailable', (event) => {
 
 ipcMain.handle('storage:encrypt', (event, plaintext: unknown) => {
   assertIpcSender(event, 'storage:encrypt');
+  storageCryptoIpcRateLimit.checkOrThrow();
   if (typeof plaintext !== 'string' || plaintext.length > 4096)
     throw new Error('storage:encrypt: invalid input');
   try {
@@ -3389,6 +3704,7 @@ ipcMain.handle('storage:encrypt', (event, plaintext: unknown) => {
 
 ipcMain.handle('storage:decrypt', (event, ciphertext: unknown) => {
   assertIpcSender(event, 'storage:decrypt');
+  storageCryptoIpcRateLimit.checkOrThrow();
   if (typeof ciphertext !== 'string' || ciphertext.length > 8192)
     throw new Error('storage:decrypt: invalid input');
   try {
@@ -3404,7 +3720,25 @@ ipcMain.handle('storage:decrypt', (event, ciphertext: unknown) => {
 });
 
 // ─── IPC: Login item (launch at startup) ───────────────────────────
-ipcMain.handle('app:getProcessUptimeSec', () => Math.floor(process.uptime()));
+ipcMain.handle('app:getProcessUptimeSec', (event) => {
+  assertIpcSender(event, 'app:getProcessUptimeSec');
+  return Math.floor(process.uptime());
+});
+
+ipcMain.handle('app:getRendererLiveness', (event) => {
+  if (!validateIpcSender(event)) {
+    throw new Error('IPC sender validation failed');
+  }
+  const mem = process.memoryUsage();
+  const hb = rendererHeartbeatWatchdog.getLivenessSnapshot();
+  return {
+    mainUptimeSec: Math.floor(process.uptime()),
+    lastRendererHeartbeatAgeMs: hb.lastRendererHeartbeatAgeMs,
+    rendererUnresponsiveSeen: hb.rendererUnresponsiveSeen,
+    rss: mem.rss,
+    heapUsed: mem.heapUsed,
+  };
+});
 
 ipcMain.handle('app:getLoginItem', (event) => {
   assertIpcSender(event, 'app:getLoginItem');
@@ -3455,18 +3789,18 @@ const APP_SETTINGS_ALLOWED_KEYS: ReadonlySet<string> = new Set([
   'meshcoreLastSelfNodeId',
   'storeForwardAutoFetchHistory',
   'reduceMotion',
+  'use24HourTime',
+  'alwaysShowMessageActions',
   'reticulumAutostart',
+  'reticulumAutoResendOnAnnounce',
+  'reticulumLastSelfLxmfHash',
+  'reticulumRmapAnnounceIntervalMin',
+  'reticulumRmapReachableOn',
+  'reticulumRmapHeightMeters',
   /** Legacy blob; prefer meshtasticRemoteAdminKey:<nodeNum> per-node keys. */
   'meshtasticRemoteAdminKeyByNode',
 ]);
 const APP_SETTINGS_MAX_VALUE_LENGTH = 256;
-const MESHTASTIC_REMOTE_ADMIN_KEY_SETTING_PREFIX = 'meshtasticRemoteAdminKey:';
-/** MeshCore Rooms tab — must match renderer meshcoreRoomSyncStorage / meshcoreRoomCredentialStorage. */
-const MESHCORE_ROOM_SYNC_SETTING_PREFIX = 'meshcoreRoomSync:';
-const MESHCORE_ROOM_LAST_POST_SETTING_PREFIX = 'meshcoreRoomLastPost:';
-const MESHCORE_ROOM_CREDENTIAL_SETTING_PREFIX = 'meshcoreRoomCredential:';
-/** MeshCore Repeaters tab — must match renderer meshcoreRepeaterCredentialStorage. */
-const MESHCORE_REPEATER_CREDENTIAL_SETTING_PREFIX = 'meshcoreRepeaterCredential:';
 
 function isAppSettingsKeyAllowed(key: string): boolean {
   return (
@@ -3565,7 +3899,7 @@ ipcMain.handle('app:showEmojiPanel', (event) => {
 
 const CLIPBOARD_WRITE_TEXT_MAX_CHARS = 256 * 1024;
 
-ipcMain.handle('clipboard:writeText', (event, text: unknown) => {
+ipcMain.handle('clipboard:writeText', async (event, text: unknown) => {
   if (!validateIpcSender(event)) {
     throw new Error('IPC sender validation failed');
   }
@@ -3576,7 +3910,7 @@ ipcMain.handle('clipboard:writeText', (event, text: unknown) => {
     throw new Error('clipboard:writeText: text too long');
   }
   try {
-    clipboard.writeText(text);
+    await clipboard.writeText(text);
   } catch (e) {
     console.warn(
       '[IPC] clipboard:writeText failed:',
@@ -3638,58 +3972,12 @@ ipcMain.handle('app:quit', async (event) => {
   if (!validateIpcSender(event)) {
     throw new Error('IPC sender validation failed');
   }
-  isQuitting = true;
-  isConnected = false;
-  try {
-    await nobleBleManager.stopAllScanning();
-    try {
-      await nobleBleManager.disconnectAll();
-    } catch (err) {
-      console.error(
-        '[IPC] app:quit BLE disconnectAll failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-      );
-    }
+  await quitMainProcess({ relaunch: false });
+});
 
-    await shutdownAppResources();
-
-    if (meshcoreTcpSocket) {
-      try {
-        meshcoreTcpSocket.destroy();
-      } catch (err) {
-        console.debug(
-          '[IPC] app:quit TCP socket destroy (ignored):',
-          err instanceof Error ? err.message : err,
-        ); // log-injection-ok internal Node.js socket error during cleanup
-      }
-      meshcoreTcpSocket = null;
-    }
-    if (meshtasticTcpSocket) {
-      try {
-        meshtasticTcpSocket.destroy();
-      } catch (err) {
-        console.debug(
-          '[IPC] app:quit TCP socket destroy (ignored):',
-          err instanceof Error ? err.message : err,
-        ); // log-injection-ok internal Node.js socket error during cleanup
-      }
-      meshtasticTcpSocket = null;
-    }
-    stopPowerSaveBlocker();
-
-    nobleBleManager.releaseNobleProcessHandles();
-    tray?.destroy();
-    tray = null;
-    app.exit(0);
-  } catch (err) {
-    console.error(
-      '[IPC] app:quit disconnect failed:',
-      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-    );
-    app.quit();
-  } finally {
-    // no-op: handled above
-  }
+ipcMain.handle('app:relaunch', async (event) => {
+  assertIpcSender(event, 'app:relaunch');
+  await quitMainProcess({ relaunch: true });
 });
 
 // ─── IPC: Database operations ──────────────────────────────────────
@@ -3739,7 +4027,7 @@ ipcMain.handle('db:saveMessage', (event, message) => {
 ipcMain.handle('db:getMessages', (event, channel?: number, limit = 200) => {
   if (!validateIpcSender(event)) throw new Error('db:getMessages: unauthorized sender');
   try {
-    const safeLimit = Math.min(Math.max(1, Number(limit) || 1000), 10000);
+    const safeLimit = clampQueryLimit(limit, { default: 1000, max: 10000 });
     const db = getDbForIpc('db:getMessages');
     if (!db) return [];
     const columns = `id, sender_id, sender_name, payload, channel, timestamp,
@@ -3747,22 +4035,22 @@ ipcMain.handle('db:getMessages', (event, channel?: number, limit = 200) => {
          mqtt_status AS mqttStatus, received_via AS receivedVia,
          reply_preview_text AS replyPreviewText, reply_preview_sender AS replyPreviewSender,
          rx_hops AS rxHops, via_store_forward AS viaStoreForward`;
-    let rows: any[];
+    let rows: Record<string, unknown>[];
     if (channel != null) {
       const ch = safeNonNegativeInt(channel);
       rows = db
         .prepareOnce(
           `SELECT ${columns} FROM messages WHERE channel = ? ORDER BY timestamp DESC LIMIT ?`,
         )
-        .all(ch, safeLimit);
+        .all(ch, safeLimit) as Record<string, unknown>[];
     } else {
       rows = db
         .prepareOnce(`SELECT ${columns} FROM messages ORDER BY timestamp DESC LIMIT ?`)
-        .all(safeLimit);
+        .all(safeLimit) as Record<string, unknown>[];
     }
 
     // Map to_node back to `to` for the renderer; drop invalid reaction scalars from legacy rows
-    return rows.map((r: any) => {
+    return rows.map((r) => {
       const { to_node, emoji: emojiRaw, viaStoreForward: viaSfRaw, ...rest } = r;
       const emoji =
         emojiRaw != null ? (sanitizeUnicodeReactionScalar(emojiRaw) ?? undefined) : undefined;
@@ -3776,6 +4064,30 @@ ipcMain.handle('db:getMessages', (event, channel?: number, limit = 200) => {
     });
   } catch (err) {
     finishDbIpcHandler('db:getMessages', err);
+  }
+});
+
+ipcMain.handle('db:listMeshtasticDmPeers', (event, ownNodeId: unknown, limit?: unknown) => {
+  try {
+    assertIpcSender(event, 'db:listMeshtasticDmPeers');
+    if (typeof ownNodeId !== 'number' || !Number.isFinite(ownNodeId)) return [];
+    const db = getDbForIpc('db:listMeshtasticDmPeers');
+    if (!db) return [];
+    return listMeshtasticDmPeersFromDb(db, ownNodeId, limit);
+  } catch (err) {
+    return finishDbIpcReadHandler('db:listMeshtasticDmPeers', err, []);
+  }
+});
+
+ipcMain.handle('db:listMeshcoreDmPeers', (event, ownNodeId: unknown, limit?: unknown) => {
+  try {
+    assertIpcSender(event, 'db:listMeshcoreDmPeers');
+    if (typeof ownNodeId !== 'number' || !Number.isFinite(ownNodeId)) return [];
+    const db = getDbForIpc('db:listMeshcoreDmPeers');
+    if (!db) return [];
+    return listMeshcoreDmPeersFromDb(db, ownNodeId, limit);
+  } catch (err) {
+    return finishDbIpcReadHandler('db:listMeshcoreDmPeers', err, []);
   }
 });
 
@@ -3888,8 +4200,9 @@ ipcMain.handle('db:setNodeFavorited', (event, nodeId: number, favorited: boolean
   }
 });
 
-ipcMain.handle('db:getNodeNote', (_event, nodeId: number) => {
+ipcMain.handle('db:getNodeNote', (event, nodeId: number) => {
   try {
+    assertIpcSender(event, 'db:getNodeNote');
     const id = safeNonNegativeInt(nodeId);
     const db = getDbForIpc('db:getNodeNote');
     if (!db) return null;
@@ -4412,6 +4725,7 @@ ipcMain.handle(
 // ─── IPC: Export database ───────────────────────────────────────────
 ipcMain.handle('db:export', async (event) => {
   if (!validateIpcSender(event)) throw new Error('db:export: unauthorized sender');
+  exportIpcRateLimit.checkOrThrow();
   try {
     if (!getDbForIpc('db:export')) return null;
     if (!mainWindow) return null;
@@ -4433,6 +4747,7 @@ ipcMain.handle('db:export', async (event) => {
 // ─── IPC: Import / merge database ───────────────────────────────────
 ipcMain.handle('db:import', async (event) => {
   if (!validateIpcSender(event)) throw new Error('db:import: unauthorized sender');
+  exportIpcRateLimit.checkOrThrow();
   try {
     if (!getDbForIpc('db:import')) return null;
     if (!mainWindow) return null;
@@ -4526,6 +4841,7 @@ ipcMain.handle('log:export', async (event) => {
   if (!validateIpcSender(event)) {
     throw new Error('IPC sender validation failed');
   }
+  exportIpcRateLimit.checkOrThrow();
   try {
     if (!mainWindow) return null;
     const result = await dialog.showSaveDialog(mainWindow, {
@@ -4556,6 +4872,7 @@ ipcMain.handle('support:exportBundle', async (event, mode: unknown, debugSnapsho
   if (!validateIpcSender(event)) {
     throw new Error('IPC sender validation failed');
   }
+  exportIpcRateLimit.checkOrThrow();
   if (!isSupportBundleMode(mode)) {
     throw new Error('support:exportBundle: invalid mode');
   }
@@ -4590,10 +4907,12 @@ ipcMain.handle('support:exportBundle', async (event, mode: unknown, debugSnapsho
 
 ipcMain.handle('chat:export', async (event, messages: unknown) => {
   if (!validateIpcSender(event)) throw new Error('IPC sender validation failed');
+  exportIpcRateLimit.checkOrThrow();
   if (!Array.isArray(messages)) throw new Error('messages must be an array');
   if (messages.length > CHAT_EXPORT_MAX_MESSAGES) {
     throw new Error(`chat:export: too many messages (max ${CHAT_EXPORT_MAX_MESSAGES})`);
   }
+  assertChatExportMessageSizes(messages);
   if (!mainWindow) return { success: false };
   try {
     const result = await dialog.showSaveDialog(mainWindow, {
@@ -4602,8 +4921,8 @@ ipcMain.handle('chat:export', async (event, messages: unknown) => {
       filters: [{ name: 'Text file', extensions: ['txt'] }],
     });
     if (result.canceled || !result.filePath) return { success: false };
-    const lines = formatChatExportLines(messages as unknown[]);
-    await fs.promises.writeFile(result.filePath, lines.join('\n') + '\n', 'utf8');
+    const text = formatChatExportLinesWithTotalCap(messages);
+    await fs.promises.writeFile(result.filePath, text, 'utf8');
     return { success: true, path: result.filePath };
   } catch (err) {
     console.error(
@@ -4740,6 +5059,27 @@ ipcMain.handle('chat:readReticulumAttachmentAsDataUrl', async (event, opts: unkn
   } catch (err) {
     console.error(
       '[IPC] chat:readReticulumAttachmentAsDataUrl failed:',
+      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+    );
+    throw err;
+  }
+});
+
+ipcMain.handle('chat:readReticulumAttachmentBytes', async (event, filePath: unknown) => {
+  if (!validateIpcSender(event)) throw new Error('IPC sender validation failed');
+  if (typeof filePath !== 'string' || !filePath.trim() || filePath.length > 512) {
+    throw new Error('filePath must be a non-empty string');
+  }
+  if (!takeReticulumAttachmentAudioRateToken()) {
+    console.debug('[IPC] chat:readReticulumAttachmentBytes rate limited');
+    return { dataBase64: null };
+  }
+  try {
+    const dataBase64 = await readReticulumAttachmentBytes(filePath);
+    return { dataBase64 };
+  } catch (err) {
+    console.error(
+      '[IPC] chat:readReticulumAttachmentBytes failed:',
       sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
     );
     throw err;
@@ -4959,9 +5299,10 @@ function rowToOutboxEntry(row: Record<string, unknown>) {
 }
 
 // ─── IPC: MeshCore database operations ──────────────────────────────
-ipcMain.handle('db:getMeshcoreMessages', (_event, channelIdx?: number, limit = 200) => {
+ipcMain.handle('db:getMeshcoreMessages', (event, channelIdx?: number, limit = 200) => {
   try {
-    const safeLimit = Math.min(Math.max(1, Number(limit) || 200), 10000);
+    assertIpcSender(event, 'db:getMeshcoreMessages');
+    const safeLimit = clampQueryLimit(limit, { default: 200, max: 10000 });
     const db = getDbForIpc('db:getMeshcoreMessages');
     if (!db) return [];
     // Order by row id (insert order at this client), not `timestamp`:
@@ -4994,8 +5335,9 @@ ipcMain.handle('db:getMeshcoreMessages', (_event, channelIdx?: number, limit = 2
   }
 });
 
-ipcMain.handle('db:searchMessages', (_event, query: string, limit?: number) => {
+ipcMain.handle('db:searchMessages', (event, query: string, limit?: number) => {
   try {
+    assertIpcSender(event, 'db:searchMessages');
     if (!getDbForIpc('db:searchMessages')) return [];
     if (typeof query !== 'string' || query.length > 500) return [];
     return searchMessages(query, Math.min(limit ?? 50, 200));
@@ -5004,8 +5346,9 @@ ipcMain.handle('db:searchMessages', (_event, query: string, limit?: number) => {
   }
 });
 
-ipcMain.handle('db:searchMeshcoreMessages', (_event, query: string, limit?: number) => {
+ipcMain.handle('db:searchMeshcoreMessages', (event, query: string, limit?: number) => {
   try {
+    assertIpcSender(event, 'db:searchMeshcoreMessages');
     if (!getDbForIpc('db:searchMeshcoreMessages')) return [];
     if (typeof query !== 'string' || query.length > 500) return [];
     return searchMeshcoreMessages(query, Math.min(limit ?? 50, 200));
@@ -5014,8 +5357,9 @@ ipcMain.handle('db:searchMeshcoreMessages', (_event, query: string, limit?: numb
   }
 });
 
-ipcMain.handle('db:getMeshcoreContacts', () => {
+ipcMain.handle('db:getMeshcoreContacts', (event) => {
   try {
+    assertIpcSender(event, 'db:getMeshcoreContacts');
     const db = getDbForIpc('db:getMeshcoreContacts');
     if (!db) return [];
     return db.prepareOnce('SELECT * FROM meshcore_contacts').all();
@@ -5049,7 +5393,7 @@ ipcMain.handle('db:saveMeshcoreMessage', (event, message) => {
     const replyPreviewSender =
       typeof m.reply_preview_sender === 'string' ? m.reply_preview_sender.slice(0, 64) : null;
     const rowParams = {
-      sender_id: m.sender_id != null ? Number(m.sender_id) : null,
+      sender_id: m.sender_id != null ? Number(m.sender_id) >>> 0 : null,
       sender_name: typeof m.sender_name === 'string' ? m.sender_name : null,
       payload: m.payload as string,
       channel_idx: m.channel_idx != null ? Math.trunc(Number(m.channel_idx)) : 0,
@@ -5058,7 +5402,7 @@ ipcMain.handle('db:saveMeshcoreMessage', (event, message) => {
       packet_id: m.packet_id != null ? Number(m.packet_id) : null,
       emoji: m.emoji != null ? (sanitizeUnicodeReactionScalar(m.emoji) ?? null) : null,
       reply_id: replyId,
-      to_node: m.to_node != null ? Number(m.to_node) : null,
+      to_node: m.to_node != null ? Number(m.to_node) >>> 0 : null,
       received_via,
       rx_packet_fingerprint: rxFp,
       reply_preview_text: replyPreviewText,
@@ -5239,7 +5583,8 @@ ipcMain.handle(
   },
 );
 
-ipcMain.handle('meshcore:openJsonFile', async () => {
+ipcMain.handle('meshcore:openJsonFile', async (event) => {
+  assertIpcSender(event, 'meshcore:openJsonFile');
   try {
     if (!mainWindow) return null;
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -5355,7 +5700,7 @@ ipcMain.handle('db:deleteMeshcoreContact', (event, nodeId: number) => {
     const db = getDbForIpc('db:deleteMeshcoreContact');
     if (!db) return { changes: 0 };
     const id = safeNonNegativeInt(nodeId);
-    return db.prepareOnce('DELETE FROM meshcore_contacts WHERE node_id = ?').run(id);
+    return deleteMeshcoreContactOn(db, id);
   } catch (err) {
     finishDbIpcHandler('db:deleteMeshcoreContact', err);
   }
@@ -5374,8 +5719,9 @@ ipcMain.handle('db:clearMeshcoreMessages', (event) => {
   }
 });
 
-ipcMain.handle('db:getMeshcoreMessageChannels', () => {
+ipcMain.handle('db:getMeshcoreMessageChannels', (event) => {
   try {
+    assertIpcSender(event, 'db:getMeshcoreMessageChannels');
     const db = getDbForIpc('db:getMeshcoreMessageChannels');
     if (!db) return [];
     return db
@@ -5447,8 +5793,9 @@ ipcMain.handle('db:markAllMeshcoreContactsOffRadio', (event) => {
 });
 
 // Returns count of contacts currently marked as on_radio = 1.
-ipcMain.handle('db:getMeshcoreContactCount', () => {
+ipcMain.handle('db:getMeshcoreContactCount', (event) => {
   try {
+    assertIpcSender(event, 'db:getMeshcoreContactCount');
     const db = getDbForIpc('db:getMeshcoreContactCount');
     if (!db) return 0;
     const result = db
@@ -5509,9 +5856,33 @@ ipcMain.handle('db:offloadAllMeshcoreContacts', (event) => {
   }
 });
 
-// Get a single contact by node_id (returns on_radio status).
-ipcMain.handle('db:getMeshcoreContactById', (_event, nodeId: number) => {
+// Mark a single contact off-radio by public_key (CONTACT_DELETED push). Returns { changes }.
+ipcMain.handle('db:markMeshcoreContactOffRadio', (event, publicKeyHex: unknown) => {
+  if (!validateIpcSender(event))
+    throw new Error('db:markMeshcoreContactOffRadio: unauthorized sender');
   try {
+    if (typeof publicKeyHex !== 'string' || !/^[0-9a-fA-F]{64}$/.test(publicKeyHex)) {
+      throw new Error('db:markMeshcoreContactOffRadio: public_key must be 64 hex chars');
+    }
+    const db = getDbForIpc('db:markMeshcoreContactOffRadio');
+    if (!db) return { changes: 0 };
+    const key = publicKeyHex.toLowerCase();
+    const result = db
+      .prepareOnce(
+        `UPDATE meshcore_contacts SET on_radio = 0
+         WHERE lower(public_key) = ? AND on_radio = 1`,
+      )
+      .run(key);
+    return { changes: result.changes };
+  } catch (err) {
+    return finishDbIpcReadHandler('db:markMeshcoreContactOffRadio', err, { changes: 0 });
+  }
+});
+
+// Get a single contact by node_id (returns on_radio status).
+ipcMain.handle('db:getMeshcoreContactById', (event, nodeId: number) => {
+  try {
+    assertIpcSender(event, 'db:getMeshcoreContactById');
     const db = getDbForIpc('db:getMeshcoreContactById');
     if (!db) return null;
     const id = safeNonNegativeInt(nodeId);
@@ -5525,8 +5896,9 @@ ipcMain.handle('db:getMeshcoreContactById', (_event, nodeId: number) => {
 
 // ─── IPC: Contact groups ──────────────────────────────────────────────────────
 
-ipcMain.handle('db:getContactGroups', (_event, selfNodeId: number) => {
+ipcMain.handle('db:getContactGroups', (event, selfNodeId: number) => {
   try {
+    assertIpcSender(event, 'db:getContactGroups');
     if (!getDbForIpc('db:getContactGroups')) return [];
     return getContactGroups(safeNonNegativeInt(selfNodeId));
   } catch (err) {
@@ -5592,8 +5964,9 @@ ipcMain.handle('db:removeContactFromGroup', (event, groupId: number, contactNode
   }
 });
 
-ipcMain.handle('db:getContactGroupMembers', (_event, groupId: number) => {
+ipcMain.handle('db:getContactGroupMembers', (event, groupId: number) => {
   try {
+    assertIpcSender(event, 'db:getContactGroupMembers');
     if (!getDbForIpc('db:getContactGroupMembers')) return [];
     return getContactGroupMembers(safeNonNegativeInt(groupId));
   } catch (err) {
@@ -5741,8 +6114,9 @@ ipcMain.handle(
   },
 );
 
-ipcMain.handle('db:getPositionHistory', (_event, sinceMs: number) => {
+ipcMain.handle('db:getPositionHistory', (event, sinceMs: number) => {
   try {
+    assertIpcSender(event, 'db:getPositionHistory');
     const db = getDbForIpc('db:getPositionHistory');
     if (!db) return [];
     const since = typeof sinceMs === 'number' && isFinite(sinceMs) ? sinceMs : 0;
@@ -5791,8 +6165,9 @@ ipcMain.handle(
   },
 );
 
-ipcMain.handle('db:getMeshcoreHopHistory', (_event, nodeId: number) => {
+ipcMain.handle('db:getMeshcoreHopHistory', (event, nodeId: number) => {
   try {
+    assertIpcSender(event, 'db:getMeshcoreHopHistory');
     if (!getDbForIpc('db:getMeshcoreHopHistory')) return [];
     return getMeshcoreHopHistory(nodeId);
   } catch (err) {
@@ -5800,8 +6175,9 @@ ipcMain.handle('db:getMeshcoreHopHistory', (_event, nodeId: number) => {
   }
 });
 
-ipcMain.handle('db:getAllMeshcoreHopHistory', () => {
+ipcMain.handle('db:getAllMeshcoreHopHistory', (event) => {
   try {
+    assertIpcSender(event, 'db:getAllMeshcoreHopHistory');
     if (!getDbForIpc('db:getAllMeshcoreHopHistory')) return [];
     return getAllMeshcoreHopHistoryRows();
   } catch (err) {
@@ -5832,8 +6208,9 @@ ipcMain.handle(
   },
 );
 
-ipcMain.handle('db:getMeshcoreTraceHistory', (_event, nodeId: number) => {
+ipcMain.handle('db:getMeshcoreTraceHistory', (event, nodeId: number) => {
   try {
+    assertIpcSender(event, 'db:getMeshcoreTraceHistory');
     if (!getDbForIpc('db:getMeshcoreTraceHistory')) return [];
     return getMeshcoreTraceHistory(nodeId);
   } catch (err) {
@@ -5898,8 +6275,9 @@ ipcMain.handle(
   },
 );
 
-ipcMain.handle('db:getAllMeshcorePathHistory', () => {
+ipcMain.handle('db:getAllMeshcorePathHistory', (event) => {
   try {
+    assertIpcSender(event, 'db:getAllMeshcorePathHistory');
     if (!getDbForIpc('db:getAllMeshcorePathHistory')) return [];
     return getAllMeshcorePathHistory();
   } catch (err) {
@@ -5907,8 +6285,9 @@ ipcMain.handle('db:getAllMeshcorePathHistory', () => {
   }
 });
 
-ipcMain.handle('db:getMeshcorePathHistory', (_event, nodeId: number) => {
+ipcMain.handle('db:getMeshcorePathHistory', (event, nodeId: number) => {
   try {
+    assertIpcSender(event, 'db:getMeshcorePathHistory');
     if (!getDbForIpc('db:getMeshcorePathHistory')) return [];
     return getMeshcorePathHistory(nodeId);
   } catch (err) {
@@ -5960,17 +6339,28 @@ ipcMain.handle('meshcore:tcp-connect', (event, host: string, port: number) => {
       return;
     }
     if (meshcoreTcpSocket) {
-      meshcoreTcpSocket.destroy();
+      // Null before destroy so the superseded socket's 'close' does not emit
+      // meshcore:tcp-disconnected (renderer reconnect is driven by that event — #792).
+      const prev = meshcoreTcpSocket;
       meshcoreTcpSocket = null;
+      clearLiveSessionMeter('meshcore');
+      prev.destroy();
     }
     const socketHost = formatHostForSocket(host);
     const socket = new net.Socket();
+    // MeshCore Open / official companion TCP clients use TCP_NODELAY; Node defaults can
+    // Nagle-batch small companion RPCs and OpenHop peers often FIN mid-init.
+    socket.setNoDelay(true);
+    socket.setKeepAlive(true, MESHCORE_TCP_KEEPALIVE_INITIAL_DELAY_MS);
     meshcoreTcpSocket = socket;
     const connectTimeout = setTimeout(() => {
       if (settled) return;
       settled = true;
+      if (meshcoreTcpSocket === socket) {
+        meshcoreTcpSocket = null;
+        clearLiveSessionMeter('meshcore');
+      }
       socket.destroy();
-      if (meshcoreTcpSocket === socket) meshcoreTcpSocket = null;
       reject(new Error('meshcore:tcp-connect: connection timeout'));
     }, MESHCORE_TCP_CONNECT_TIMEOUT_MS);
     socket.connect(p, socketHost, () => {
@@ -5979,6 +6369,7 @@ ipcMain.handle('meshcore:tcp-connect', (event, host: string, port: number) => {
       logDeviceConnection(
         `transport=tcp stack=meshcore host=${sanitizeLogMessage(socketHost)} port=${p}`,
       );
+      resetLiveSessionMeter('meshcore');
       if (!settled) {
         settled = true;
         resolve();
@@ -5986,13 +6377,48 @@ ipcMain.handle('meshcore:tcp-connect', (event, host: string, port: number) => {
     });
     socket.on('data', (data) => {
       const chunk = Buffer.isBuffer(data) ? data : Buffer.from(data);
+      if (chunk.length > MESHCORE_TCP_DATA_MAX_BYTES) {
+        console.warn(
+          `[IPC] meshcore:tcp-data oversized chunk (${chunk.length} > ${MESHCORE_TCP_DATA_MAX_BYTES}); dropping socket`,
+        );
+        try {
+          socket.destroy();
+        } catch (e) {
+          console.debug(
+            '[IPC] meshcore:tcp-data destroy after oversize ' +
+              sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+          );
+        }
+        return;
+      }
+      // Superseded sockets must not update the live session meter (#792 connect-replace).
+      if (meshcoreTcpSocket === socket) {
+        noteLiveSessionData('meshcore');
+      }
       mainWindow?.webContents.send('meshcore:tcp-data', new Uint8Array(chunk));
     });
     socket.on('close', (hadError) => {
       clearTimeout(connectTimeout);
-      console.debug('[IPC] meshcore:tcp socket closed', hadError ? '(hadError)' : '(clean)');
-      mainWindow?.webContents.send('meshcore:tcp-disconnected');
-      if (meshcoreTcpSocket === socket) meshcoreTcpSocket = null;
+      // readableEnded=true after peer FIN; local destroy-before-null tear downs do not hit this
+      // branch as active (ref cleared first). Log fields help triage n7eal post-contacts hangs.
+      const remote = socket.remoteAddress
+        ? `${socket.remoteAddress}:${socket.remotePort ?? '?'}`
+        : 'unknown';
+      console.debug(
+        '[IPC] meshcore:tcp socket closed',
+        hadError ? '(hadError)' : '(clean)',
+        `remote=${sanitizeLogMessage(remote)}`,
+        `readableEnded=${socket.readableEnded}`,
+        `writableEnded=${socket.writableEnded}`,
+      );
+      // Only notify when this socket is still the active bridge. connect/disconnect clear the
+      // ref before destroy(), so superseded closes must not look like a live link drop
+      // (renderer reconnect is driven by this event — see #792).
+      if (meshcoreTcpSocket === socket) {
+        meshcoreTcpSocket = null;
+        clearLiveSessionMeter('meshcore');
+        mainWindow?.webContents.send('meshcore:tcp-disconnected');
+      }
     });
     socket.on('error', (err) => {
       clearTimeout(connectTimeout);
@@ -6001,7 +6427,9 @@ ipcMain.handle('meshcore:tcp-connect', (event, host: string, port: number) => {
         settled = true;
         reject(err);
       }
-      if (meshcoreTcpSocket === socket) meshcoreTcpSocket = null;
+      // Do not null meshcoreTcpSocket here. Node fires 'error' before 'close' on ECONNRESET
+      // etc.; nulling early makes close's active-socket guard fail and swallows
+      // meshcore:tcp-disconnected (renderer never reconnects). close owns that transition.
     });
   });
 });
@@ -6031,6 +6459,10 @@ ipcMain.handle('meshcore:tcp-write', (event, bytes: number[]) => {
         console.error('[IPC] meshcore:tcp-write error:', sanitizeLogMessage(err.message));
         reject(err);
       } else {
+        // Ignore write completions from a superseded socket.
+        if (meshcoreTcpSocket === sock) {
+          noteLiveSessionWrite('meshcore');
+        }
         resolve();
       }
     });
@@ -6041,8 +6473,11 @@ ipcMain.handle('meshcore:tcp-disconnect', (event) => {
   assertIpcSender(event, 'meshcore:tcp-disconnect');
   if (meshcoreTcpSocket) {
     console.debug('[IPC] meshcore:tcp-disconnect');
-    meshcoreTcpSocket.destroy();
+    // Null before destroy so this teardown close is not reported as a live link drop.
+    const prev = meshcoreTcpSocket;
     meshcoreTcpSocket = null;
+    clearLiveSessionMeter('meshcore');
+    prev.destroy();
   }
 });
 
@@ -6068,17 +6503,26 @@ ipcMain.handle('meshtastic:tcp-connect', (event, host: string, port: number) => 
       return;
     }
     if (meshtasticTcpSocket) {
-      meshtasticTcpSocket.destroy();
+      // Null before destroy so the superseded socket's 'close' does not emit
+      // meshtastic:tcp-disconnected (renderer reconnect is driven by that event — #792).
+      const prev = meshtasticTcpSocket;
       meshtasticTcpSocket = null;
+      clearLiveSessionMeter('meshtastic');
+      prev.destroy();
     }
     const socketHost = formatHostForSocket(host);
     const socket = new net.Socket();
+    socket.setNoDelay(true);
+    socket.setKeepAlive(true, MESHTASTIC_TCP_KEEPALIVE_INITIAL_DELAY_MS);
     meshtasticTcpSocket = socket;
     const connectTimeout = setTimeout(() => {
       if (settled) return;
       settled = true;
+      if (meshtasticTcpSocket === socket) {
+        meshtasticTcpSocket = null;
+        clearLiveSessionMeter('meshtastic');
+      }
       socket.destroy();
-      if (meshtasticTcpSocket === socket) meshtasticTcpSocket = null;
       reject(new Error('meshtastic:tcp-connect: connection timeout'));
     }, MESHTASTIC_TCP_CONNECT_TIMEOUT_MS);
     socket.connect(p, socketHost, () => {
@@ -6087,6 +6531,7 @@ ipcMain.handle('meshtastic:tcp-connect', (event, host: string, port: number) => 
       logDeviceConnection(
         `transport=tcp stack=meshtastic host=${sanitizeLogMessage(socketHost)} port=${p}`,
       );
+      resetLiveSessionMeter('meshtastic');
       if (!settled) {
         settled = true;
         resolve();
@@ -6094,13 +6539,37 @@ ipcMain.handle('meshtastic:tcp-connect', (event, host: string, port: number) => 
     });
     socket.on('data', (data) => {
       const chunk = Buffer.isBuffer(data) ? data : Buffer.from(data);
+      if (chunk.length > MESHTASTIC_TCP_DATA_MAX_BYTES) {
+        console.warn(
+          `[IPC] meshtastic:tcp-data oversized chunk (${chunk.length} > ${MESHTASTIC_TCP_DATA_MAX_BYTES}); dropping socket`,
+        );
+        try {
+          socket.destroy();
+        } catch (e) {
+          console.debug(
+            '[IPC] meshtastic:tcp-data destroy after oversize ' +
+              sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+          );
+        }
+        return;
+      }
+      // Superseded sockets must not update the live session meter (#792 connect-replace).
+      if (meshtasticTcpSocket === socket) {
+        noteLiveSessionData('meshtastic');
+      }
       mainWindow?.webContents.send('meshtastic:tcp-data', new Uint8Array(chunk));
     });
     socket.on('close', (hadError) => {
       clearTimeout(connectTimeout);
       console.debug('[IPC] meshtastic:tcp socket closed', hadError ? '(hadError)' : '(clean)');
-      mainWindow?.webContents.send('meshtastic:tcp-disconnected');
-      if (meshtasticTcpSocket === socket) meshtasticTcpSocket = null;
+      // Only notify when this socket is still the active bridge. connect/disconnect clear the
+      // ref before destroy(), so superseded closes must not look like a live link drop
+      // (renderer reconnect is driven by this event — see #792).
+      if (meshtasticTcpSocket === socket) {
+        meshtasticTcpSocket = null;
+        clearLiveSessionMeter('meshtastic');
+        mainWindow?.webContents.send('meshtastic:tcp-disconnected');
+      }
     });
     socket.on('error', (err) => {
       clearTimeout(connectTimeout);
@@ -6109,7 +6578,9 @@ ipcMain.handle('meshtastic:tcp-connect', (event, host: string, port: number) => 
         settled = true;
         reject(err);
       }
-      if (meshtasticTcpSocket === socket) meshtasticTcpSocket = null;
+      // Do not null meshtasticTcpSocket here. Node fires 'error' before 'close' on ECONNRESET
+      // etc.; nulling early makes close's active-socket guard fail and swallows
+      // meshtastic:tcp-disconnected (renderer never reconnects). close owns that transition.
     });
   });
 });
@@ -6128,18 +6599,31 @@ ipcMain.handle('meshtastic:tcp-write', (event, bytes: number[]) => {
     return Promise.reject(new Error('meshtastic:tcp-write: byte values must be integers 0-255'));
   }
   if (!meshtasticTcpSocket) {
-    const msg = 'meshtastic:tcp-write: no active socket';
-    console.warn(`[IPC] ${msg}`);
-    return Promise.reject(new Error(msg));
+    // Expected reconnect race — resolve so Electron does not log handler [error].
+    console.debug('[IPC] meshtastic:tcp-write: no active socket');
+    return 'no-socket';
   }
   const sock = meshtasticTcpSocket;
-  return new Promise<void>((resolve, reject) => {
+  if (sock.destroyed || sock.writableEnded) {
+    console.debug('[IPC] meshtastic:tcp-write: no active socket');
+    return 'no-socket';
+  }
+  return new Promise<'no-socket' | undefined>((resolve, reject) => {
     sock.write(new Uint8Array(bytes), (err) => {
       if (err) {
+        if (meshtasticTcpWriteErrorIsNoSocket(sock, err)) {
+          console.debug('[IPC] meshtastic:tcp-write: no active socket');
+          resolve('no-socket');
+          return;
+        }
         console.error('[IPC] meshtastic:tcp-write error:', sanitizeLogMessage(err.message));
         reject(err);
       } else {
-        resolve();
+        // Ignore write completions from a superseded socket.
+        if (meshtasticTcpSocket === sock) {
+          noteLiveSessionWrite('meshtastic');
+        }
+        resolve(undefined);
       }
     });
   });
@@ -6149,8 +6633,11 @@ ipcMain.handle('meshtastic:tcp-disconnect', (event) => {
   assertIpcSender(event, 'meshtastic:tcp-disconnect');
   if (meshtasticTcpSocket) {
     console.debug('[IPC] meshtastic:tcp-disconnect');
-    meshtasticTcpSocket.destroy();
+    // Null before destroy so this teardown close is not reported as a live link drop.
+    const prev = meshtasticTcpSocket;
     meshtasticTcpSocket = null;
+    clearLiveSessionMeter('meshtastic');
+    prev.destroy();
   }
 });
 
@@ -6212,9 +6699,15 @@ async function readBoundedArrayBuffer(response: Response, maxBytes: number): Pro
   return merged.buffer;
 }
 const MESHCORE_TCP_CONNECT_TIMEOUT_MS = 20_000;
+/** Initial TCP keepalive probe delay for MeshCore companion sockets (ms). */
+const MESHCORE_TCP_KEEPALIVE_INITIAL_DELAY_MS = 30_000;
 const MESHTASTIC_TCP_CONNECT_TIMEOUT_MS = 20_000;
+/** Initial TCP keepalive probe delay for Meshtastic WiFi/TCP sockets (ms). */
+const MESHTASTIC_TCP_KEEPALIVE_INITIAL_DELAY_MS = 30_000;
 /** Max Meshtastic TCP toRadio write payload (aligned with meshcore:tcp-write cap). */
 const MESHTASTIC_TCP_WRITE_MAX_BYTES = 256 * 1024;
+/** Cap inbound Meshtastic TCP chunks before IPC fan-out (same as write max). */
+const MESHTASTIC_TCP_DATA_MAX_BYTES = MESHTASTIC_TCP_WRITE_MAX_BYTES;
 const CHAT_EXPORT_MAX_MESSAGES = 10_000;
 const DB_SAVE_NODE_PATH_MAX_BYTES = 16 * 1024;
 /** Max Meshtastic HTTP toRadio payload (aligned with meshcore:tcp-write cap). */
@@ -6262,6 +6755,32 @@ ipcMain.handle('http:preflight', async (event, host: unknown, tls: unknown) => {
     throw new Error('Invalid tls');
   }
   await httpPreflight(host, tls);
+});
+
+ipcMain.handle('hostLink:probeHttpRtt', async (event, host: unknown, tls: unknown) => {
+  assertIpcSender(event, 'hostLink:probeHttpRtt');
+  validateHttpHost(host);
+  if (typeof tls !== 'boolean') {
+    throw new Error('Invalid tls');
+  }
+  return probeHttpRttMs(host, tls);
+});
+
+ipcMain.handle('hostLink:probeTcpRtt', async (event, host: unknown, port: unknown) => {
+  assertIpcSender(event, 'hostLink:probeTcpRtt');
+  validateHttpHost(host);
+  if (!Number.isInteger(port) || (port as number) < 1 || (port as number) > 65535) {
+    throw new Error('Invalid port');
+  }
+  return probeTcpRttMs(host, port as number);
+});
+
+ipcMain.handle('hostLink:getSessionMeter', (event, protocol: unknown) => {
+  assertIpcSender(event, 'hostLink:getSessionMeter');
+  if (protocol !== 'meshtastic' && protocol !== 'meshcore') {
+    throw new Error('Invalid protocol');
+  }
+  return snapshotLiveSessionMeter(protocol);
 });
 
 ipcMain.handle('http:connect', async (event, host: unknown, tls: unknown) => {
@@ -6417,142 +6936,173 @@ app.on('child-process-gone', (_event, details) => {
   );
 });
 
-void app.whenReady().then(() => {
-  try {
-    initLogFile();
-    console.debug(`[Startup] runtime ${formatRuntimeLogTag()}`);
+void app
+  .whenReady()
+  .then(() => {
     try {
-      console.debug('[main] crashDumps path:', sanitizeLogMessage(app.getPath('crashDumps')));
-    } catch (e: unknown) {
-      console.warn(
-        '[main] crashDumps path unavailable:',
-        sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-      );
-    }
-
-    // Register lxm:// deep links (dev + packaged). OS-specific: argv in defaultApp.
-    if (process.defaultApp) {
-      if (process.argv.length >= 2) {
-        app.setAsDefaultProtocolClient('lxm', process.execPath, [path.resolve(process.argv[1])]);
-      }
-    } else {
-      app.setAsDefaultProtocolClient('lxm');
-    }
-    const coldStartUrl = findLxmUrlInArgv(process.argv);
-    if (coldStartUrl) pendingOpenUrl = coldStartUrl;
-
-    initDatabase();
-
-    // Auto-restore TAK server if auto-start is enabled
-    const takSettingsPath = path.join(app.getPath('userData'), 'tak-settings.json');
-    try {
-      if (fs.existsSync(takSettingsPath)) {
-        const raw = JSON.parse(fs.readFileSync(takSettingsPath, 'utf-8'));
-        // Backfill autoStart for settings files saved before the field was added.
-        if (
-          raw &&
-          typeof raw === 'object' &&
-          typeof (raw as Record<string, unknown>).autoStart !== 'boolean'
-        ) {
-          (raw as Record<string, unknown>).autoStart = false;
-        }
-        const saved = raw as unknown;
-        validateTakSettings(saved);
-        if (saved.autoStart) {
-          void ensureTakServerManager()
-            .then((m) => m.start(saved))
-            .catch((e: unknown) => {
-              console.error(
-                '[TAK] Auto-start failed:',
-                sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-              );
-            });
-        }
-      }
-    } catch (e: unknown) {
-      console.warn(
-        '[TAK] Settings restore failed:',
-        sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-      );
-    }
-
-    // Force the dock icon in development on macOS
-    if (!app.isPackaged && process.platform === 'darwin') {
-      const iconPath = path.join(
-        __dirname,
-        '../../resources/icons/mac/iconset/icon_256x256@1x.png',
-      );
-      app.dock?.setIcon(iconPath);
-    }
-    createWindow();
-
-    const MAIN_PROCESS_HEALTH_LOG_INTERVAL_MS = 60 * 60 * 1000;
-    const MAIN_PROCESS_HEALTH_UPTIME_THRESHOLD_SEC = 24 * 60 * 60;
-    setInterval(() => {
-      if (process.uptime() < MAIN_PROCESS_HEALTH_UPTIME_THRESHOLD_SEC) return;
-      const uptimeSec = Math.floor(process.uptime());
-      const mem = process.memoryUsage();
-      const ble = nobleBleManager.getLongSessionHealthSnapshot();
-      console.debug(
-        `[main] long-session health uptimeSec=${uptimeSec} rss=${mem.rss} heapUsed=${mem.heapUsed} ble=${JSON.stringify(ble)}`,
-      );
-    }, MAIN_PROCESS_HEALTH_LOG_INTERVAL_MS).unref();
-
-    setupAppMenu();
-
-    // ─── Power monitor: notify renderer on suspend/resume ──────────
-    powerMonitor.on('suspend', () => {
-      console.debug('[main] System suspending');
-      rendererHeartbeatWatchdog.clearResumeWatchdog();
-      mqttManager.handlePowerSuspend();
-      meshcoreMqttAdapter.handlePowerSuspend();
-      mainWindow?.webContents.send('power:suspend');
-    });
-    powerMonitor.on('resume', () => {
-      console.debug('[main] System resumed');
-      rendererHeartbeatWatchdog.startResumeWatchdog();
-      mainWindow?.webContents.send('power:resume');
-    });
-  } catch (error) {
-    console.error(
-      '[main] Fatal startup error:',
-      sanitizeLogMessage(error instanceof Error ? (error.stack ?? error.message) : String(error)),
-    );
-    const isNativeModuleError =
-      error instanceof Error && (error as NodeJS.ErrnoException).code === 'ERR_DLOPEN_FAILED';
-    const message = isDatabaseSchemaTooNewError(error)
-      ? formatDatabaseSchemaTooNewMessage(error)
-      : isNativeModuleError
-        ? `A native module failed to load. This usually means the app needs to be rebuilt for this version of Electron.\n\nFix: run "pnpm install" in the project directory, then restart.\n\nDetails: ${error.message}`
-        : `The application failed to start:\n\n${error instanceof Error ? error.message : String(error)}\n\nPlease report this issue.`;
-    showFatalStartupError('Mesh-Client — Startup Error', message);
-    app.quit();
-    return;
-  }
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+      initLogFile();
+      console.debug(`[Startup] runtime ${formatRuntimeLogTag()}`);
       try {
-        createWindow();
-      } catch (error) {
-        console.error(
-          '[main] Window creation error:',
-          sanitizeLogMessage(error instanceof Error ? error.message : String(error)),
+        console.debug('[main] crashDumps path:', sanitizeLogMessage(app.getPath('crashDumps')));
+      } catch (e: unknown) {
+        console.warn(
+          '[main] crashDumps path unavailable:',
+          sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
         );
       }
-    } else {
-      mainWindow?.show(); // Restore hidden window on dock click
+
+      // Register lxm:// deep links (dev + packaged). OS-specific: argv in defaultApp.
+      if (process.defaultApp) {
+        if (process.argv.length >= 2) {
+          app.setAsDefaultProtocolClient('lxm', process.execPath, [path.resolve(process.argv[1])]);
+        }
+      } else {
+        app.setAsDefaultProtocolClient('lxm');
+      }
+      const coldStartUrl = findLxmUrlInArgv(process.argv);
+      if (coldStartUrl) pendingOpenUrl = coldStartUrl;
+
+      initDatabase();
+
+      // Auto-restore TAK server if auto-start is enabled
+      const takSettingsPath = path.join(app.getPath('userData'), 'tak-settings.json');
+      try {
+        if (fs.existsSync(takSettingsPath)) {
+          const raw: unknown = JSON.parse(fs.readFileSync(takSettingsPath, 'utf-8'));
+          // Backfill autoStart for settings files saved before the field was added.
+          if (
+            raw != null &&
+            typeof raw === 'object' &&
+            typeof (raw as Record<string, unknown>).autoStart !== 'boolean'
+          ) {
+            (raw as Record<string, unknown>).autoStart = false;
+          }
+          const saved = raw;
+          validateTakSettings(saved);
+          if (saved.autoStart) {
+            void ensureTakServerManager()
+              .then((m) => m.start(saved))
+              .catch((e: unknown) => {
+                console.error(
+                  '[TAK] Auto-start failed:',
+                  sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+                );
+              });
+          }
+        }
+      } catch (e: unknown) {
+        console.warn(
+          '[TAK] Settings restore failed:',
+          sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+        );
+      }
+
+      // Force the dock icon in development on macOS
+      if (!app.isPackaged && process.platform === 'darwin') {
+        const iconPath = path.join(
+          __dirname,
+          '../../resources/icons/mac/iconset/icon_256x256@1x.png',
+        );
+        app.dock?.setIcon(iconPath);
+      }
+      createWindow();
+
+      rendererHeartbeatWatchdog.startStallWatchdog(() => {
+        const win = mainWindow;
+        if (!win || win.isDestroyed()) return false;
+        return win.isVisible() && !win.isMinimized();
+      });
+
+      const MAIN_PROCESS_HEALTH_LOG_INTERVAL_MS = 60 * 60 * 1000;
+      const MAIN_PROCESS_HEALTH_UPTIME_THRESHOLD_SEC = 24 * 60 * 60;
+      setInterval(() => {
+        if (process.uptime() < MAIN_PROCESS_HEALTH_UPTIME_THRESHOLD_SEC) return;
+        const uptimeSec = Math.floor(process.uptime());
+        const mem = process.memoryUsage();
+        const ble = nobleBleManager.getLongSessionHealthSnapshot();
+        console.debug(
+          `[main] long-session health uptimeSec=${uptimeSec} rss=${mem.rss} heapUsed=${mem.heapUsed} ble=${JSON.stringify(ble)}`,
+        );
+      }, MAIN_PROCESS_HEALTH_LOG_INTERVAL_MS).unref();
+
+      setupAppMenu();
+
+      // ─── Power monitor: notify renderer on suspend/resume ──────────
+      powerMonitor.on('suspend', () => {
+        console.debug('[main] System suspending');
+        rendererHeartbeatWatchdog.clearResumeWatchdog();
+        mqttManager.handlePowerSuspend();
+        meshcoreMqttAdapter.handlePowerSuspend();
+        mainWindow?.webContents.send('power:suspend');
+      });
+      powerMonitor.on('resume', () => {
+        console.debug('[main] System resumed');
+        rendererHeartbeatWatchdog.startResumeWatchdog(() => {
+          const win = mainWindow;
+          if (!win || win.isDestroyed()) return false;
+          return win.isVisible() && !win.isMinimized();
+        });
+        mainWindow?.webContents.send('power:resume');
+      });
+    } catch (error) {
+      if (isDatabaseSchemaUpgradeDeclinedError(error)) {
+        console.debug(
+          '[main] Schema upgrade declined; quitting without changing database:',
+          sanitizeLogMessage(error.message),
+        );
+        app.quit();
+        return;
+      }
+      console.error(
+        '[main] Fatal startup error:',
+        sanitizeLogMessage(error instanceof Error ? (error.stack ?? error.message) : String(error)),
+      );
+      const isNativeModuleError =
+        error instanceof Error && (error as NodeJS.ErrnoException).code === 'ERR_DLOPEN_FAILED';
+      const message = isDatabaseSchemaTooNewError(error)
+        ? formatDatabaseSchemaTooNewMessage(error)
+        : isNativeModuleError
+          ? `A native module failed to load. This usually means the app needs to be rebuilt for this version of Electron.\n\nFix: run "pnpm install" in the project directory, then restart.\n\nDetails: ${error.message}`
+          : `The application failed to start:\n\n${error instanceof Error ? error.message : String(error)}\n\nPlease report this issue.`;
+      showFatalStartupError('Mesh-Client — Startup Error', message);
+      app.quit();
+      return;
     }
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        try {
+          createWindow();
+        } catch (error) {
+          console.error(
+            '[main] Window creation error:',
+            sanitizeLogMessage(error instanceof Error ? error.message : String(error)),
+          );
+        }
+      } else {
+        mainWindow?.show(); // Restore hidden window on dock click
+      }
+    });
+  })
+  .catch((error: unknown) => {
+    console.error(
+      '[main] app.whenReady failed:',
+      sanitizeLogMessage(error instanceof Error ? (error.stack ?? error.message) : String(error)),
+    );
+    showFatalStartupError(
+      'Mesh-Client — Startup Error',
+      `The application failed to start:\n\n${error instanceof Error ? error.message : String(error)}\n\nPlease report this issue.`,
+    );
+    app.quit();
   });
-});
 
 app.on('before-quit', (event) => {
+  rendererHeartbeatWatchdog.stopStallWatchdog();
+  rendererHeartbeatWatchdog.clearResumeWatchdog();
   // Clean up any pending Bluetooth device selection to prevent callback leak
-  if (pendingBluetoothCallback) {
+  if (linuxWebBluetoothDeviceSelection.hasPendingSelection()) {
     console.debug('[main] before-quit: cleaning up pending Bluetooth callback');
-    pendingBluetoothCallback('');
-    pendingBluetoothCallback = null;
-    lastBluetoothDeviceIds.clear();
+    linuxWebBluetoothDeviceSelection.cancelSelection();
   }
 
   if (shutdownDone) {
@@ -6571,7 +7121,16 @@ app.on('before-quit', (event) => {
           sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
         );
       } finally {
-        await shutdownAppResources();
+        // quit() must run even if shutdown throws: before-quit was prevented, so an
+        // escaping rejection here would leave the app running with no path to exit.
+        try {
+          await shutdownAppResources();
+        } catch (err) {
+          console.error(
+            '[main] shutdownAppResources failed before quit:',
+            sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+          );
+        }
         app.quit();
       }
     })();
@@ -6613,7 +7172,7 @@ app.on('will-quit', (event) => {
       ); // log-injection-ok internal cleanup
     }
     try {
-      await reticulumSidecarManager?.stop();
+      await reticulumSidecarManager?.stop({ forQuit: true });
     } catch (err) {
       console.debug(
         '[main] Reticulum sidecar stop during will-quit (ignored):',
@@ -6663,11 +7222,9 @@ app.on('will-quit', (event) => {
 
 app.on('window-all-closed', () => {
   // Clean up any pending Bluetooth device selection to prevent callback leak
-  if (pendingBluetoothCallback) {
+  if (linuxWebBluetoothDeviceSelection.hasPendingSelection()) {
     console.debug('[main] window-all-closed: cleaning up pending Bluetooth callback');
-    pendingBluetoothCallback('');
-    pendingBluetoothCallback = null;
-    lastBluetoothDeviceIds.clear();
+    linuxWebBluetoothDeviceSelection.cancelSelection();
   }
   const hasConnection = isConnected || isAnyMqttConnected();
   // On macOS: quit when user chose Quit, or when there's no connection (window closed with nothing to keep running for)

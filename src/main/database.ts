@@ -4,6 +4,7 @@ import path from 'path';
 
 import { normalizeLastHeardToUnixSec } from '../shared/lastHeardUnits';
 import { meshcoreContactsAgeCutoffSec } from '../shared/meshcoreContactAgeCutoff';
+import { MESHCORE_CONTACT_TYPE_ROOM } from '../shared/meshcoreContactHwLabels';
 import { MESHCORE_LAST_ADVERT_MIN_PLAUSIBLE_SEC } from '../shared/meshcoreLastAdvertPlausible';
 import {
   MESHCORE_PATH_HISTORY_GLOBAL_ROW_LIMIT,
@@ -19,11 +20,34 @@ import {
   isDatabaseSchemaTooNewError,
   runSchemaUpgrade,
 } from './db-schema-sync';
+import { confirmDatabaseSchemaUpgrade } from './fatal-startup-dialog';
 import { sanitizeLogMessage } from './log-service';
 import { buildFtsMatchQuery, isMessageFtsReady } from './messageFts';
 
 /** Re-export for callers/tests that track the on-disk `user_version`. */
 export { CURRENT_SCHEMA_VERSION, DatabaseSchemaTooNewError, isDatabaseSchemaTooNewError };
+
+/** Thrown when the user declines an irreversible schema upgrade at startup. */
+export class DatabaseSchemaUpgradeDeclinedError extends Error {
+  readonly code = 'DB_SCHEMA_UPGRADE_DECLINED' as const;
+  readonly fromVersion: number;
+  readonly toVersion: number;
+
+  constructor(fromVersion: number, toVersion: number) {
+    super(
+      `[db] Schema upgrade from v${fromVersion} to v${toVersion} declined; database left unchanged`,
+    );
+    this.name = 'DatabaseSchemaUpgradeDeclinedError';
+    this.fromVersion = fromVersion;
+    this.toVersion = toVersion;
+  }
+}
+
+export function isDatabaseSchemaUpgradeDeclinedError(
+  err: unknown,
+): err is DatabaseSchemaUpgradeDeclinedError {
+  return err instanceof DatabaseSchemaUpgradeDeclinedError;
+}
 
 /** Thrown when mergeDatabase rejects the source path before opening SQLite. */
 export class MergeSourceInvalidError extends Error {
@@ -71,6 +95,25 @@ export function initDatabase(): void {
 
   try {
     db = new NodeSqliteDB(dbPath);
+
+    // Confirm irreversible upgrades before any writable DB configuration (chmod / WAL / sync).
+    const userVersion = db.pragma('user_version', { simple: true }) as number;
+    if (userVersion > 0 && userVersion < CURRENT_SCHEMA_VERSION) {
+      if (!confirmDatabaseSchemaUpgrade(userVersion, CURRENT_SCHEMA_VERSION)) {
+        try {
+          db.close();
+        } catch (closeErr) {
+          console.debug(
+            '[db] close after declined schema upgrade failed (non-fatal):',
+            sanitizeLogMessage(closeErr instanceof Error ? closeErr.message : String(closeErr)),
+          );
+        } finally {
+          db = null;
+        }
+        throw new DatabaseSchemaUpgradeDeclinedError(userVersion, CURRENT_SCHEMA_VERSION);
+      }
+    }
+
     // Restrict DB file to owner-only access (no-op on Windows)
     try {
       fs.chmodSync(dbPath, 0o600);
@@ -86,8 +129,8 @@ export function initDatabase(): void {
     db.pragma('foreign_keys = ON');
 
     const setup = db.transaction(() => {
-      const userVersion = db!.pragma('user_version', { simple: true }) as number;
-      if (userVersion === 0) {
+      const cur = db!.pragma('user_version', { simple: true }) as number;
+      if (cur === 0) {
         createBaseTables();
         db!.pragma(`user_version = ${CURRENT_SCHEMA_VERSION}`);
       }
@@ -100,6 +143,13 @@ export function initDatabase(): void {
       `[db] Database initialized at ${sanitizeLogMessage(dbPath)} (user_version = ${version})`,
     );
   } catch (error) {
+    if (isDatabaseSchemaUpgradeDeclinedError(error)) {
+      console.debug(
+        '[db] Schema upgrade declined; database left unchanged:',
+        sanitizeLogMessage(error.message),
+      );
+      throw error;
+    }
     console.error(
       '[db] Database init failed:',
       sanitizeLogMessage(error instanceof Error ? error.message : String(error)),
@@ -151,14 +201,85 @@ export function prunePositionHistoryPerNode(maxPerNode: number): number {
   return Number(result.changes);
 }
 
-export function deleteMeshcoreContactsNeverAdvertised(): number {
-  const d = getDatabase();
+/** Delete room BBS rows for the given room-server node ids (FTS triggers keep search in sync). */
+export function deleteMeshcoreMessagesForRoomServerIds(
+  d: NodeSqliteDB,
+  roomServerIds: readonly number[],
+): number {
+  if (roomServerIds.length === 0) return 0;
+  let deleted = 0;
+  const stmt = d.prepareOnce('DELETE FROM meshcore_messages WHERE room_server_id = ?');
+  for (const id of roomServerIds) {
+    deleted += Number(stmt.run(id).changes);
+  }
+  return deleted;
+}
+
+/** Room posts whose room_server_id no longer has a Room contact row. */
+export function deleteOrphanMeshcoreRoomMessagesOn(d: NodeSqliteDB): number {
   const result = d
     .prepareOnce(
-      'DELETE FROM meshcore_contacts WHERE last_advert IS NULL AND (favorited IS NULL OR favorited = 0)',
+      'DELETE FROM meshcore_messages WHERE room_server_id IS NOT NULL AND room_server_id NOT IN (' +
+        'SELECT node_id FROM meshcore_contacts WHERE contact_type = ?' +
+        ')',
     )
-    .run();
+    .run(MESHCORE_CONTACT_TYPE_ROOM);
   return Number(result.changes);
+}
+
+/** Room posts whose room_server_id no longer has a Room contact row. */
+export function deleteOrphanMeshcoreRoomMessages(): number {
+  return deleteOrphanMeshcoreRoomMessagesOn(getDatabase());
+}
+
+/**
+ * Delete one MeshCore contact and its room BBS rows atomically (FTS stays in sync via triggers).
+ * Returns SQLite `changes` for the contact row delete.
+ */
+export function deleteMeshcoreContactOn(d: NodeSqliteDB, nodeId: number): { changes: number } {
+  return d.transaction(() => {
+    deleteMeshcoreMessagesForRoomServerIds(d, [nodeId]);
+    const result = d.prepareOnce('DELETE FROM meshcore_contacts WHERE node_id = ?').run(nodeId);
+    deleteOrphanMeshcoreRoomMessagesOn(d);
+    return { changes: Number(result.changes) };
+  })();
+}
+
+function selectRoomContactIdsMatching(d: NodeSqliteDB, sql: string, params: unknown[]): number[] {
+  const rows = d.prepareOnce(sql).all(...params) as { node_id: number }[];
+  return rows.map((r) => r.node_id);
+}
+
+/** Cascade room BBS deletes around a contact-delete callback, then sweep orphans. */
+function deleteMeshcoreContactsWithRoomMessageCascade(
+  d: NodeSqliteDB,
+  roomIds: readonly number[],
+  deleteContacts: () => number,
+): number {
+  return d.transaction(() => {
+    deleteMeshcoreMessagesForRoomServerIds(d, roomIds);
+    const deleted = deleteContacts();
+    deleteOrphanMeshcoreRoomMessagesOn(d);
+    return deleted;
+  })();
+}
+
+export function deleteMeshcoreContactsNeverAdvertised(): number {
+  const d = getDatabase();
+  const roomIds = selectRoomContactIdsMatching(
+    d,
+    'SELECT node_id FROM meshcore_contacts WHERE contact_type = ? AND last_advert IS NULL AND (favorited IS NULL OR favorited = 0)',
+    [MESHCORE_CONTACT_TYPE_ROOM],
+  );
+  return deleteMeshcoreContactsWithRoomMessageCascade(d, roomIds, () =>
+    Number(
+      d
+        .prepareOnce(
+          'DELETE FROM meshcore_contacts WHERE last_advert IS NULL AND (favorited IS NULL OR favorited = 0)',
+        )
+        .run().changes,
+    ),
+  );
 }
 
 export { meshcoreContactsAgeCutoffSec } from '../shared/meshcoreContactAgeCutoff';
@@ -167,12 +288,20 @@ export function deleteMeshcoreContactsByAge(days: number): number {
   const d = getDatabase();
   const cutoffSec = meshcoreContactsAgeCutoffSec(days);
   if (cutoffSec === null) return 0;
-  const result = d
-    .prepareOnce(
-      'DELETE FROM meshcore_contacts WHERE last_advert IS NOT NULL AND last_advert >= ? AND last_advert < ? AND (favorited IS NULL OR favorited = 0)',
-    )
-    .run(MESHCORE_LAST_ADVERT_MIN_PLAUSIBLE_SEC, cutoffSec);
-  return Number(result.changes);
+  const roomIds = selectRoomContactIdsMatching(
+    d,
+    'SELECT node_id FROM meshcore_contacts WHERE contact_type = ? AND last_advert IS NOT NULL AND last_advert >= ? AND last_advert < ? AND (favorited IS NULL OR favorited = 0)',
+    [MESHCORE_CONTACT_TYPE_ROOM, MESHCORE_LAST_ADVERT_MIN_PLAUSIBLE_SEC, cutoffSec],
+  );
+  return deleteMeshcoreContactsWithRoomMessageCascade(d, roomIds, () =>
+    Number(
+      d
+        .prepareOnce(
+          'DELETE FROM meshcore_contacts WHERE last_advert IS NOT NULL AND last_advert >= ? AND last_advert < ? AND (favorited IS NULL OR favorited = 0)',
+        )
+        .run(MESHCORE_LAST_ADVERT_MIN_PLAUSIBLE_SEC, cutoffSec).changes,
+    ),
+  );
 }
 
 export function pruneMeshcoreContactsByCount(maxCount: number): number {
@@ -190,15 +319,27 @@ export function pruneMeshcoreContactsByCount(maxCount: number): number {
   ).cnt;
   const toDelete = Math.min(total - maxCount, deletable);
   if (toDelete <= 0) return 0;
-  const result = d
+  const doomed = d
     .prepareOnce(
-      'DELETE FROM meshcore_contacts WHERE node_id IN (' +
-        'SELECT node_id FROM meshcore_contacts WHERE (favorited IS NULL OR favorited = 0) ' +
-        'ORDER BY CASE WHEN last_advert IS NULL OR last_advert < ? THEN 1 ELSE 0 END, COALESCE(last_advert, 0) ASC LIMIT ?' +
-        ')',
+      'SELECT node_id, contact_type FROM meshcore_contacts WHERE (favorited IS NULL OR favorited = 0) ' +
+        'ORDER BY CASE WHEN last_advert IS NULL OR last_advert < ? THEN 1 ELSE 0 END, COALESCE(last_advert, 0) ASC LIMIT ?',
     )
-    .run(MESHCORE_LAST_ADVERT_MIN_PLAUSIBLE_SEC, toDelete);
-  return Number(result.changes);
+    .all(MESHCORE_LAST_ADVERT_MIN_PLAUSIBLE_SEC, toDelete) as {
+    node_id: number;
+    contact_type: number;
+  }[];
+  const roomIds = doomed
+    .filter((r) => r.contact_type === MESHCORE_CONTACT_TYPE_ROOM)
+    .map((r) => r.node_id);
+  const ids = doomed.map((r) => r.node_id);
+  return deleteMeshcoreContactsWithRoomMessageCascade(d, roomIds, () => {
+    let deleted = 0;
+    const delStmt = d.prepareOnce('DELETE FROM meshcore_contacts WHERE node_id = ?');
+    for (const id of ids) {
+      deleted += Number(delStmt.run(id).changes);
+    }
+    return deleted;
+  });
 }
 
 export interface MeshcoreContactUpsertParams {

@@ -6,7 +6,10 @@ import {
   collectReticulumLocalInterfaceAlerts,
   collectReticulumLocalInterfaceConnecting,
   collectReticulumRemoteInterfaceAlerts,
+  resolveReticulumTxDropHintKind,
   reticulumLocalOfflineDisplayKind,
+  reticulumTxDropConnectionHintKey,
+  reticulumTxDropDiagnosticsCauseKey,
 } from './reticulumLocalInterfaceHealth';
 
 const heltec: Parameters<typeof classifyReticulumLocalInterface>[0] = {
@@ -142,6 +145,25 @@ describe('reticulumLocalInterfaceHealth', () => {
     expect(alerts[0]?.reason).toBe('tcp_unreachable');
   });
 
+  it('flags down TCP hubs as tcp_fast_flap when stack restarts exceeded the hub window', () => {
+    const alerts = collectReticulumRemoteInterfaceAlerts(
+      [
+        {
+          id: 'ratspeak',
+          name: 'Ratspeak',
+          type: 'tcp',
+          enabled: true,
+          status: 'down',
+          host: 'rns.ratspeak.org',
+          port: 4242,
+        },
+      ],
+      { stackFastFlapSuspected: true },
+    );
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]?.reason).toBe('tcp_fast_flap');
+  });
+
   it('suppresses tcp_unreachable when SharedInstanceClient is up', () => {
     const alerts = collectReticulumRemoteInterfaceAlerts([
       {
@@ -209,5 +231,94 @@ describe('reticulumLocalInterfaceHealth', () => {
     );
     expect(alerts).toHaveLength(2);
     expect(alerts.map((a) => a.reason).sort()).toEqual(['enabled_down', 'tcp_unreachable']);
+  });
+});
+
+describe('resolveReticulumTxDropHintKind', () => {
+  const tcpHub = {
+    id: 'rmap',
+    name: 'RMAP World',
+    type: 'tcp',
+    enabled: true,
+    status: 'down',
+    host: 'rmap.world',
+    port: 4242,
+  };
+  const bleRnode = {
+    id: 'rnode-41f4',
+    name: 'RNode 41F4',
+    type: 'rnode',
+    enabled: true,
+    status: 'down',
+    serial_port: 'ble://eccf2847-e1fd-3f5f-0811-064db1639a3d',
+  };
+  const usbRnode = {
+    ...heltec,
+    name: 'Heltec USB',
+    serial_port: '/dev/cu.usbserial-7',
+  };
+  const wifiRnode = {
+    ...heltec,
+    name: 'RNode WiFi',
+    serial_port: 'tcp://192.168.1.10:7633',
+  };
+
+  it('classifies TCP hubs as tcp', () => {
+    expect(resolveReticulumTxDropHintKind('RMAP World', [tcpHub])).toBe('tcp');
+    expect(reticulumTxDropConnectionHintKey('tcp')).toBe('txQueueDropsHint');
+    expect(reticulumTxDropDiagnosticsCauseKey('tcp')).toBe('txQueueDrops');
+  });
+
+  it('classifies BLE RNodes as ble', () => {
+    expect(resolveReticulumTxDropHintKind('RNode 41F4', [bleRnode])).toBe('ble');
+    expect(reticulumTxDropConnectionHintKey('ble')).toBe('txQueueDropsHintBle');
+  });
+
+  it('classifies flow-controlled BLE RNodes as bleFlowControl', () => {
+    const flowControlled = { ...bleRnode, flow_control: true as const };
+    expect(resolveReticulumTxDropHintKind('RNode 41F4', [flowControlled])).toBe('bleFlowControl');
+    expect(reticulumTxDropConnectionHintKey('bleFlowControl')).toBe(
+      'txQueueDropsHintBleFlowControl',
+    );
+    expect(reticulumTxDropDiagnosticsCauseKey('bleFlowControl')).toBe('txQueueDropsBleFlowControl');
+  });
+
+  it('keeps ble when flow_control is false or unset', () => {
+    expect(
+      resolveReticulumTxDropHintKind('RNode 41F4', [{ ...bleRnode, flow_control: false }]),
+    ).toBe('ble');
+    expect(
+      resolveReticulumTxDropHintKind('RNode 41F4', [{ ...bleRnode, flow_control: null }]),
+    ).toBe('ble');
+  });
+
+  it('prefers bleBondStale when name is in bleBondRemoved', () => {
+    expect(resolveReticulumTxDropHintKind('RNode 41F4', [bleRnode], ['RNode 41F4'])).toBe(
+      'bleBondStale',
+    );
+    expect(
+      resolveReticulumTxDropHintKind(
+        'RNode 41F4',
+        [{ ...bleRnode, flow_control: true }],
+        ['RNode 41F4'],
+      ),
+    ).toBe('bleBondStale');
+    expect(resolveReticulumTxDropHintKind('RNode 41F4', undefined, ['RNode 41F4'])).toBe(
+      'bleBondStale',
+    );
+    expect(resolveReticulumTxDropHintKind('RMAP World', [tcpHub], ['RMAP World'])).toBe(
+      'bleBondStale',
+    );
+  });
+
+  it('classifies USB and Wi-Fi RNodes as neutral', () => {
+    expect(resolveReticulumTxDropHintKind('Heltec USB', [usbRnode])).toBe('neutral');
+    expect(resolveReticulumTxDropHintKind('RNode WiFi', [wifiRnode])).toBe('neutral');
+  });
+
+  it('returns neutral when the row is missing or name mismatches', () => {
+    expect(resolveReticulumTxDropHintKind('Missing', [])).toBe('neutral');
+    expect(resolveReticulumTxDropHintKind('Missing', undefined)).toBe('neutral');
+    expect(resolveReticulumTxDropHintKind('Other', [tcpHub, bleRnode])).toBe('neutral');
   });
 });

@@ -1,5 +1,14 @@
 // Single source of truth for the Electron context bridge API surface.
 import type { MeshNode, MQTTSettings, MQTTStatus } from '../renderer/lib/types';
+import type {
+  GamesActionRequest,
+  GamesActionResult,
+  GamesAppManifest,
+  GamesListSessionsResponse,
+  GamesOkResponse,
+  GamesSessionDetailResponse,
+  GamesStatusResponse,
+} from './games-types';
 import type { MeshProtocol } from './meshProtocol';
 import type {
   PathCapability,
@@ -32,6 +41,12 @@ import type {
   ReticulumSidecarStatus,
 } from './reticulum-types';
 import type {
+  VoiceMemoAudioRequest,
+  VoiceMemoOkResponse,
+  VoiceMemoSessionRequest,
+  VoiceMemoStartResponse,
+} from './reticulum-voice-memo-types';
+import type {
   RrcConnectRequest,
   RrcDisconnectRequest,
   RrcHubInfo,
@@ -45,6 +60,13 @@ import type {
 } from './rrc-types';
 import type { SupportBundleMode } from './support-bundle.types';
 import type { TAKClientInfo, TAKServerStatus, TAKSettings } from './tak-types';
+import type {
+  VoiceAudioRequest,
+  VoiceCallRequest,
+  VoiceMuteRequest,
+  VoiceOkResponse,
+  VoiceStatusResponse,
+} from './voice-types';
 
 export type { MeshProtocol, SupportBundleMode };
 
@@ -66,6 +88,17 @@ export interface ReticulumIdentityImportDialogResult {
   byteLength: number | null;
   error: 'invalid_private_key_length' | 'read_failed' | null;
 }
+
+export interface ReticulumIdentityBackupImportDialogResult {
+  path: string | null;
+  contentText: string | null;
+  error: 'read_failed' | 'too_large' | null;
+}
+
+export interface ReticulumIdentityExportSaveResult {
+  path: string | null;
+  error: 'write_failed' | 'invalid_opts' | 'content_too_large' | null;
+}
 //
 // Rules for maintaining this file:
 // - Every method here must have a matching ipcMain.handle/on in src/main/index.ts
@@ -79,6 +112,12 @@ export interface ReticulumIdentityImportDialogResult {
 
 export interface DbPruneResult {
   changes: number;
+}
+
+/** Distinct DM peer row from `db:list*DmPeers` (History tab). */
+export interface DmPeerRow {
+  node_id: number;
+  last_message_at: number;
 }
 
 export interface SavedMessage {
@@ -135,13 +174,35 @@ export interface UpdateCheckingPayload {
   notifyOnSettled?: boolean;
 }
 
+/** Renderer → main long-session restart OS notification (Noble BLE day-4 nudge). */
+export interface LongSessionRestartPayload {
+  title: string;
+  body: string;
+  restartLabel: string;
+  laterLabel: string;
+}
+
 export interface NobleBleDevice {
   deviceId: string;
   deviceName: string;
+  /** Advertised / last-seen BLE RSSI in dBm; null when unknown (e.g. Linux Web Bluetooth). */
+  rssi?: number | null;
+  /**
+   * Hardware BLE MAC when the OS exposes one (Noble `peripheral.address`).
+   * On macOS this is typically empty until after a prior GATT connect (CoreBluetoothCache).
+   */
+  address?: string | null;
 }
 
 export type NobleBleSessionId = MeshProtocol;
 export type NobleBleConnectResult = { ok: true } | { ok: false; error: string };
+
+/** Host↔radio BLE RSSI while GATT is connected (Noble updateRssiAsync). */
+export interface NobleBleLinkRssiPayload {
+  sessionId: NobleBleSessionId;
+  /** RSSI in dBm; null when the last poll failed or returned non-finite. */
+  rssi: number | null;
+}
 
 export interface SerialPort {
   portId: string;
@@ -183,6 +244,15 @@ export interface ReadReticulumAttachmentAsDataUrlResult {
   dataUrl: string | null;
 }
 
+/**
+ * IPC response for `chat:readReticulumAttachmentBytes`.
+ * Used to read a jailed OggS audio file (≤256 KiB).
+ */
+export interface ReadReticulumAttachmentBytesResult {
+  /** Base64-encoded file contents, or null on failure / out-of-jail / rate-limit. */
+  dataBase64: string | null;
+}
+
 export type OutboxStatus = 'queued' | 'sending' | 'blocked' | 'failed';
 
 export interface OutboxEntry {
@@ -212,6 +282,15 @@ export interface SpellcheckReplacePayload {
   selectionStartOffset?: number;
 }
 
+/** Main-process hang/liveness fields embedded in support debug snapshots. */
+export interface RendererLivenessSnapshot {
+  mainUptimeSec: number;
+  lastRendererHeartbeatAgeMs: number | null;
+  rendererUnresponsiveSeen: boolean;
+  rss: number;
+  heapUsed: number;
+}
+
 // ─── ElectronAPI interface ────────────────────────────────────────────────────
 
 export type BlePeripheralOwner =
@@ -230,6 +309,12 @@ export interface BleRegisteredConnection {
 export interface BleCoexistenceState {
   connections: BleRegisteredConnection[];
   scanOwner: BleScanOwner | null;
+  /**
+   * True while main has decided a Reticulum BLE RNode Noble yield is required but has not yet
+   * finished acquire/skip. RF auto-connect must wait so it does not race fire-and-forget yield.
+   * Optional on older IPC shapes; treat missing as false.
+   */
+  nobleYieldDecisionPending?: boolean;
 }
 
 export interface ElectronAPI {
@@ -254,6 +339,8 @@ export interface ElectronAPI {
     }) => Promise<void>;
 
     getMessages: (channel?: number, limit?: number) => Promise<SavedMessage[]>;
+    /** Distinct Meshtastic DM peers for History (survives message hydrate cap). */
+    listMeshtasticDmPeers: (ownNodeId: number, limit?: number) => Promise<DmPeerRow[]>;
 
     saveNode: (node: MeshNode) => Promise<void>;
 
@@ -302,6 +389,26 @@ export interface ElectronAPI {
       body: string;
       timestamp: number;
     }) => Promise<{ changes: number }>;
+    /**
+     * Nick cache for one hub. Survives transcript clears / retention pruning, so
+     * the RRC nicklist can still name a peer that only ever spoke once.
+     */
+    listRrcNicks: (
+      hubHash: string,
+      limit?: number,
+    ) => Promise<
+      {
+        identity_hash: string;
+        nickname: string;
+        last_seen: number;
+      }[]
+    >;
+    upsertRrcNick: (nick: {
+      hub_hash: string;
+      identity_hash: string;
+      nickname: string;
+      last_seen: number;
+    }) => Promise<{ changes: number }>;
     deleteRrcMessagesByRoom: (hubHash: string, room: string) => Promise<{ changes: number }>;
     pruneRrcMessagesByCount: (maxCount: number) => Promise<DbPruneResult>;
     pruneRrcMessagesByAge: (maxAgeDays: number) => Promise<DbPruneResult>;
@@ -330,6 +437,8 @@ export interface ElectronAPI {
     ) => Promise<void>;
 
     getMeshcoreMessages: (channelIdx?: number, limit?: number) => Promise<unknown[]>;
+    /** Distinct MeshCore DM peers (`channel_idx = -1`) for History. */
+    listMeshcoreDmPeers: (ownNodeId: number, limit?: number) => Promise<DmPeerRow[]>;
     searchMessages: (query: string, limit?: number) => Promise<SavedMessage[]>;
     searchMeshcoreMessages: (query: string, limit?: number) => Promise<unknown[]>;
     getMeshcoreContacts: () => Promise<unknown[]>;
@@ -360,12 +469,16 @@ export interface ElectronAPI {
       to_hash?: string | null;
       reply_to_hash?: string | null;
       message_hash?: string | null;
+      /** Exact prior row to replace (optimistic pending or failed hash) in the same transaction. */
+      replaces_message_hash?: string | null;
       received_via?: string | null;
       delivery_status?: string | null;
       delivery_method?: string | null;
       delivery_attempts?: number | null;
       next_delivery_attempt_at?: number | null;
       attachment_path?: string | null;
+      audio_mode?: number | null;
+      audio_duration_sec?: number | null;
     }) => Promise<void>;
     markStaleReticulumOutbound: (
       identityId: string,
@@ -379,6 +492,8 @@ export interface ElectronAPI {
       display_name?: string | null;
       last_heard?: number | null;
       favorited?: boolean | number | null;
+      /** Explicit saved contact (Contacts tab). Omitted patches must not clear. */
+      is_contact?: boolean | number | null;
       icon_name?: string | null;
       icon_color?: string | null;
     }) => Promise<void>;
@@ -401,7 +516,24 @@ export interface ElectronAPI {
       identityId: string,
       blockedHash: string,
     ) => Promise<{ changes: number }>;
+    /** All blocked hashes for bulk export (newest first). */
+    exportBlockedContacts: (protocol: string, identityId: string) => Promise<string[]>;
+    /** Bulk upsert; malformed, duplicate and already-blocked entries count as skipped. */
+    importBlockedContacts: (
+      protocol: string,
+      identityId: string,
+      hashes: string[],
+    ) => Promise<{ imported: number; skipped: number }>;
     getReticulumIdentityActivity: (destinationHash: string) => Promise<
+      {
+        destination_hash: string;
+        aspect: string;
+        identity_hash?: string | null;
+        last_seen: number;
+        hops?: number | null;
+      }[]
+    >;
+    getReticulumIdentityActivityByIdentity: (identityHash: string) => Promise<
       {
         destination_hash: string;
         aspect: string;
@@ -530,6 +662,7 @@ export interface ElectronAPI {
       excludedStubCount: number;
     }>;
     offloadAllMeshcoreContacts: () => Promise<number>;
+    markMeshcoreContactOffRadio: (publicKeyHex: string) => Promise<{ changes: number }>;
     getMeshcoreContactById: (nodeId: number) => Promise<{
       node_id: number;
       public_key: string;
@@ -687,6 +820,7 @@ export interface ElectronAPI {
     onClientId: (cb: (payload: { clientId: string; protocol: MeshProtocol }) => void) => () => void;
     getClientId: (protocol?: MeshProtocol) => Promise<string>;
     getCachedNodes: () => Promise<unknown>;
+    getChannelNameToIndex: () => Promise<Record<string, number>>;
     updateChannelKeys: (args: {
       entries: { name: string; pskBase64: string; index?: number }[];
     }) => Promise<void>;
@@ -787,6 +921,7 @@ export interface ElectronAPI {
   // ─── Noble BLE ───────────────────────────────────────────────────────────────
   onNobleBleAdapterState: (cb: (state: string) => void) => () => void;
   onNobleBleDeviceDiscovered: (cb: (device: NobleBleDevice) => void) => () => void;
+  onNobleBleLinkRssi: (cb: (payload: NobleBleLinkRssiPayload) => void) => () => void;
   onNobleBleConnected: (cb: (sessionId: NobleBleSessionId) => void) => () => void;
   onNobleBleDisconnected: (cb: (sessionId: NobleBleSessionId) => void) => () => void;
   onNobleBleConnectAborted: (
@@ -811,9 +946,16 @@ export interface ElectronAPI {
   cancelSerialSelection: () => void;
 
   // ─── Bluetooth device selection (Linux Web Bluetooth) ────────────────────────
-  onBluetoothDevicesDiscovered: (callback: (devices: NobleBleDevice[]) => void) => () => void;
+  onBluetoothDevicesDiscovered: (
+    callback: (devices: NobleBleDevice[], generation?: number) => void,
+  ) => () => void;
   selectBluetoothDevice: (deviceId: string) => void;
-  cancelBluetoothSelection: () => void;
+  /**
+   * Cancel the Linux Web Bluetooth chooser.
+   * Pass the generation from onBluetoothDevicesDiscovered to ignore stale cancels.
+   * Await before starting a new requestDevice() so force-clear cannot race the new session.
+   */
+  cancelBluetoothSelection: (generation?: number | null) => Promise<{ cancelled: boolean }>;
 
   // ─── Bluetooth pairing (Linux) ──────────────────────────────────────────────
   bluetoothUnpair: (macAddress: string) => Promise<void>;
@@ -872,10 +1014,14 @@ export interface ElectronAPI {
   notifyDeviceDisconnected: () => void;
   setTrayUnread: (count: number) => void;
   quitApp: () => Promise<void>;
+  /** Full process relaunch (Noble BLE long-session restart). */
+  restartApp: () => Promise<void>;
 
   // ─── Native OS notifications ─────────────────────────────────────────────────
   notify: {
     show: (title: string, body: string) => Promise<void>;
+    longSessionRestart: (opts: LongSessionRestartPayload) => Promise<void>;
+    clearLongSessionNudge: () => Promise<void>;
   };
 
   // ─── Safe storage ────────────────────────────────────────────────────────────
@@ -917,10 +1063,17 @@ export interface ElectronAPI {
   /** Spellchecker context-menu pick — syncs React-controlled inputs after replaceMisspelling. */
   onSpellcheckReplace: (cb: (payload: SpellcheckReplacePayload) => void) => () => void;
 
-  /** Renderer liveness ping for post-resume hang detection (main log only). */
+  /** Renderer liveness ping for hang detection (resume + visible-window stall). */
   sendRendererHeartbeat: (payload?: { ts: number }) => Promise<void>;
   /** Main-process uptime in seconds (for long-session restart nudge). */
   getProcessUptimeSec: () => Promise<number>;
+  /**
+   * App-process diagnostics (IPC `app:*`).
+   * Liveness fields for support debug snapshots — namespaced (not root).
+   */
+  app: {
+    getRendererLiveness: () => Promise<RendererLivenessSnapshot>;
+  };
 
   // ─── MeshCore TCP bridge ─────────────────────────────────────────────────────
   meshcore: {
@@ -943,10 +1096,30 @@ export interface ElectronAPI {
     onData: (cb: (bytes: Uint8Array) => void) => () => void;
   };
 
+  /**
+   * Host↔radio link-quality probes (Connection panel meter).
+   * HTTP/TCP connect probes return RTT in ms, or null when the probe fails / times out.
+   * Live TCP sessions use getSessionMeter (passive write→data EWMA) — never a second connect.
+   */
+  hostLink: {
+    probeHttpRtt: (host: string, tls: boolean) => Promise<number | null>;
+    probeTcpRtt: (host: string, port: number) => Promise<number | null>;
+    getSessionMeter: (
+      protocol: 'meshtastic' | 'meshcore',
+    ) => Promise<{ rttMs: number | null } | null>;
+  };
+
   // ─── Meshtastic TCP bridge ────────────────────────────────────────────────────
   meshtastic: {
     tcp: {
       connect: (host: string, port: number) => Promise<void>;
+      /**
+       * Write one length-prefixed toRadio frame. Rejects with
+       * `meshtastic:tcp-write: no active socket` when main has no socket
+       * (reconnect race). Main resolves a sentinel so Electron does not log
+       * handler [error]; preload maps that to this rejection. Do not replay
+       * the payload on a later socket.
+       */
       write: (bytes: number[]) => Promise<void>;
       disconnect: () => Promise<void>;
       onData: (cb: (bytes: Uint8Array) => void) => () => void;
@@ -977,6 +1150,8 @@ export interface ElectronAPI {
     readReticulumAttachmentAsDataUrl: (
       opts: ReadReticulumAttachmentAsDataUrlOpts,
     ) => Promise<ReadReticulumAttachmentAsDataUrlResult>;
+    /** Read a jailed OggS audio attachment (≤256 KiB) as base64. */
+    readReticulumAttachmentBytes: (filePath: string) => Promise<ReadReticulumAttachmentBytesResult>;
     linkPreview: {
       fetch: (url: string) => Promise<{
         title: string;
@@ -1029,6 +1204,24 @@ export interface ElectronAPI {
     readDefaultConfigFile: () => Promise<{ path: string | null; content: string | null }>;
     showConfigImportDialog: () => Promise<{ path: string | null; content: string | null }>;
     showIdentityImportDialog: () => Promise<ReticulumIdentityImportDialogResult>;
+    showIdentityBackupImportDialog: () => Promise<ReticulumIdentityBackupImportDialogResult>;
+    saveIdentityExportDialog: (opts: {
+      defaultPath: string;
+      contentBase64: string;
+    }) => Promise<ReticulumIdentityExportSaveResult>;
+    /** Save dialog + write of the blocked-contact list. `path` is null when cancelled. */
+    saveBlocklistDialog: (
+      hashes: string[],
+    ) => Promise<{ path: string | null; error: string | null }>;
+    /**
+     * Open dialog + bounded read + parse of a blocklist file. `hashes` is null when
+     * cancelled or unreadable; `skipped` counts entries rejected while parsing.
+     */
+    openBlocklistDialog: () => Promise<{
+      hashes: string[] | null;
+      skipped: number;
+      error: string | null;
+    }>;
     /** Pick a Nomad site root or pages directory for watched hosting. */
     showNomadContentSourceDialog: () => Promise<{ canceled: boolean; path: string | null }>;
     /**
@@ -1038,6 +1231,11 @@ export interface ElectronAPI {
     setNomadContentSource: (path: string) => Promise<unknown>;
     validateConfig: () => Promise<ReticulumConfigValidateResult>;
     onEvent: (cb: (event: ReticulumSidecarEvent) => void) => () => void;
+    /**
+     * High-rate LXST PCM receive frames (`voice.audio` via `/ws/voice`).
+     * Not delivered on {@link onEvent} / shared `/ws`.
+     */
+    onVoiceAudio: (cb: (event: ReticulumSidecarEvent) => void) => () => void;
     onStatus: (cb: (status: ReticulumSidecarStatus) => void) => () => void;
     /** Thin typed wrappers over proxyGet/proxyPost for RRC. */
     rrc: {
@@ -1066,6 +1264,40 @@ export interface ElectronAPI {
       disconnect: (opts: RnshDisconnectRequest) => Promise<RemoteOkResponse>;
       getStatus: () => Promise<RnshStatusResponse>;
     };
+    /** LXST voice (rsLXST telephony) — thin wrappers over `/api/v1/voice/*`. */
+    voice: {
+      getStatus: () => Promise<VoiceStatusResponse>;
+      call: (opts: VoiceCallRequest) => Promise<VoiceOkResponse>;
+      answer: () => Promise<VoiceOkResponse>;
+      reject: () => Promise<VoiceOkResponse>;
+      hangup: () => Promise<VoiceOkResponse>;
+      mute: (opts: VoiceMuteRequest) => Promise<VoiceOkResponse>;
+      sendAudio: (opts: VoiceAudioRequest) => Promise<VoiceOkResponse>;
+    };
+    /**
+     * LXMF voice memos (FIELD_AUDIO Ogg Opus). Dedicated IPC — generic proxyPost
+     * rejects `/api/v1/voice/memo/*` paths so memo PCM does not share the proxy bucket.
+     */
+    voiceMemo: {
+      start: () => Promise<VoiceMemoStartResponse>;
+      sendAudio: (opts: VoiceMemoAudioRequest) => Promise<VoiceMemoOkResponse>;
+      stop: (opts: VoiceMemoSessionRequest) => Promise<VoiceMemoOkResponse>;
+      cancel: (opts: VoiceMemoSessionRequest) => Promise<VoiceMemoOkResponse>;
+    };
+    /**
+     * LRGP games (lrgp-rs). Dedicated IPC channels — generic `proxyGet`/`proxyPost`
+     * reject `/api/v1/games/*` so session polls/moves do not share the 900/min proxy bucket.
+     */
+    games: {
+      getStatus: () => Promise<GamesStatusResponse>;
+      listApps: () => Promise<{ apps?: GamesAppManifest[] } | GamesStatusResponse>;
+      listSessions: (peer?: string) => Promise<GamesListSessionsResponse>;
+      getSession: (sessionId: string) => Promise<GamesSessionDetailResponse>;
+      sendAction: (opts: GamesActionRequest) => Promise<GamesActionResult>;
+      resend: (sessionId: string) => Promise<GamesActionResult | GamesOkResponse>;
+      markRead: (sessionId: string) => Promise<GamesOkResponse>;
+      deleteSession: (sessionId: string) => Promise<GamesOkResponse>;
+    };
     /**
      * rncp (file transfer). `send` / `fetch` / `setListener` are picker-backed
      * (path must match the last `showOpenFileDialog` / `showSaveDirectoryDialog`
@@ -1080,6 +1312,8 @@ export interface ElectronAPI {
       getStatus: () => Promise<RncpStatusResponse>;
       getListener: () => Promise<RncpListenerStatus>;
       setListener: (opts: RncpListenerRequest) => Promise<RemoteOkResponse>;
+      /** Force one `rncp.receive` announce while the inbound listener is enabled. */
+      announce: () => Promise<RemoteOkResponse>;
       /** Pick a local file to send. */
       showOpenFileDialog: () => Promise<RemoteFileDialogResult>;
       /** Pick a local directory for listener save_dir / fetch_jail or fetch save_path. */

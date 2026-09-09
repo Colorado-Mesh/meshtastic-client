@@ -8,3 +8,5 @@ rules:
 ignore: |
   pnpm-lock.yaml
   node_modules/
+  .rsstack/
+  .github/rulesets/

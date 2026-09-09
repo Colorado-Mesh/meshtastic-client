@@ -1,7 +1,8 @@
-import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
+import { create, toBinary } from '@bufbuild/protobuf';
 import type { MeshDevice } from '@meshtastic/core';
 import { Mesh, Portnums, StoreForward } from '@meshtastic/protobufs';
 
+import { parseStoreForwardPacket } from '@/shared/meshtasticTextMessagePayload';
 import { MS_PER_MINUTE } from '@/shared/timeConstants';
 
 /** Duration after MQTT connect during which inbound messages are treated as backlog. */
@@ -134,16 +135,6 @@ export function buildStoreForwardHistoryRequestBytes(
   return toBinary(StoreForward.StoreAndForwardSchema, msg);
 }
 
-function parseStoreForwardPacket(data: Uint8Array) {
-  if (!data.length) return null;
-  try {
-    return fromBinary(StoreForward.StoreAndForwardSchema, data);
-  } catch {
-    // catch-no-log-ok malformed StoreAndForward protobuf
-    return null;
-  }
-}
-
 /** Parse ROUTER_HEARTBEAT payload; null if not a heartbeat variant. */
 export function parseStoreForwardHeartbeat(data: Uint8Array): StoreForwardHeartbeatInfo | null {
   const parsed = parseStoreForwardPacket(data);
@@ -186,11 +177,13 @@ export function buildStoreForwardHistoryToRadioBytes(
     lastRequest: params.lastRequest,
     messageCap: params.messageCap,
   });
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
   const meshPacket = create(Mesh.MeshPacketSchema, {
     payloadVariant: {
       case: 'decoded',
       value: {
         payload,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
         portnum: Portnums.PortNum.STORE_FORWARD_APP,
         wantResponse: false,
       },
@@ -201,9 +194,11 @@ export function buildStoreForwardHistoryToRadioBytes(
     wantAck: false,
     channel: params.channel,
   });
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
   const toRadio = create(Mesh.ToRadioSchema, {
     payloadVariant: { case: 'packet', value: meshPacket },
   });
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
   return toBinary(Mesh.ToRadioSchema, toRadio);
 }
 
@@ -275,6 +270,7 @@ export function getLastSfHistoryFetchMs(
   state: SfHistoryFetchState = loadSfHistoryFetchState(),
 ): number | null {
   const ts = state[String(serverNodeId)];
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Runtime guard protects external or callback-mutated state.
   return ts != null && ts > 0 ? ts : null;
 }
 

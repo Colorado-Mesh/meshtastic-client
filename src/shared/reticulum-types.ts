@@ -19,6 +19,11 @@ export interface ReticulumSidecarStatus {
   unhealthySince?: number;
   autoBeaconAlert?: ReticulumAutoBeaconAlert | null;
   interfaceIssueAlert?: ReticulumInterfaceIssueAlert | null;
+  /**
+   * True when this client started the stack five or more times within 12 hours.
+   * Matches Reticulum 1.4.0+ BackboneInterface fast-flap IP block (not sidecar log parsing).
+   */
+  stackFastFlapSuspected?: boolean;
 }
 
 export type ReticulumAutoBeaconAlertKind = 'tunnel_only' | 'physical_failures';
@@ -44,6 +49,10 @@ export interface ReticulumLinkDeliveryTimeout {
 /** Parsed from sidecar stdout when TCP peers are unreachable or TX queues overflow. */
 export interface ReticulumInterfaceIssueAlert {
   tcpConnectFailed: string[];
+  /** Hub sent TCP RST after RNS session started (named via reconnect line). */
+  tcpResetByPeer?: string[];
+  /** Hub closed TCP cleanly — INFO-level `TCP read: EOF` (named when possible). */
+  tcpReadEof?: string[];
   txQueueDrops: ReticulumInterfaceTxQueueDrop[];
   linkDeliveryTimeouts: ReticulumLinkDeliveryTimeout[];
   /**
@@ -114,6 +123,8 @@ export interface ReticulumPeer {
   path_hash?: string | null;
   via_hash?: string | null;
   identity_hash?: string;
+  /** 128-hex public key when known from announces (Columba lxma://). */
+  public_key?: string | null;
   /** Populated after a path request when sidecar returns hop data. */
   path_hops?: number;
   favorited?: boolean;
@@ -121,13 +132,31 @@ export interface ReticulumPeer {
   custom_display_name?: string | null;
 }
 
-/** Peer the user has messaged (LXMF contact). */
+/**
+ * Peer with LXMF history and/or explicit saved-contact membership.
+ * History = `last_heard` set; Contacts tab = `is_contact === true`.
+ */
 export interface ReticulumContact extends ReticulumPeer {
   last_heard: number;
+  /** Explicit Save as contact (not set by messaging alone). */
+  is_contact?: boolean;
 }
 
-export function isReticulumContact(peer: ReticulumPeer | undefined): peer is ReticulumContact {
-  return peer != null && 'last_heard' in peer;
+/** True when the peer has History (positive `last_heard`) — not the same as saved Contacts. */
+export function hasReticulumHistory(peer: ReticulumPeer | undefined): peer is ReticulumContact {
+  if (peer == null || !('last_heard' in peer)) return false;
+  const heard = (peer as ReticulumContact).last_heard;
+  return typeof heard === 'number' && Number.isFinite(heard) && heard > 0;
+}
+
+/**
+ * @deprecated Use {@link hasReticulumHistory}. Name historically meant “has last_heard”.
+ */
+export const isReticulumContact = hasReticulumHistory;
+
+/** Saved contact for Contacts tab (`is_contact === true`). */
+export function isReticulumSavedContact(peer: ReticulumPeer | undefined): boolean {
+  return peer != null && 'is_contact' in peer && (peer as ReticulumContact).is_contact === true;
 }
 
 /** Sidecar wire row for GET /api/v1/peers */
@@ -139,6 +168,7 @@ export interface ReticulumPeerWireRow {
   interface?: string | null;
   path_hash?: string | null;
   via_hash?: string | null;
+  public_key?: string | null;
 }
 
 export interface ReticulumTopologyEdge {

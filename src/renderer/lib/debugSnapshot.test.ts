@@ -83,6 +83,7 @@ function makeMeshtasticBucketOverrides(
     channelPills: overrides.channelPills ?? [],
     channelConfigsSummary: overrides.channelConfigsSummary ?? [],
     mqttChannelKeyEntryCount: overrides.mqttChannelKeyEntryCount ?? null,
+    mqttChannelNameToIndex: overrides.mqttChannelNameToIndex ?? null,
   };
 }
 
@@ -214,6 +215,7 @@ describe('buildDebugSnapshot', () => {
     expect(snap.meshtastic.channelPills).toEqual([]);
     expect(snap.meshtastic.channelConfigsSummary).toEqual([]);
     expect(snap.meshtastic.mqttChannelKeyEntryCount).toBeNull();
+    expect(snap.meshtastic.mqttChannelNameToIndex).toBeNull();
     expect(snap.warnings).toEqual([]);
   });
 
@@ -241,6 +243,7 @@ describe('buildDebugSnapshot', () => {
         },
       ],
       mqttChannelKeyEntryCount: 2,
+      mqttChannelNameToIndex: { LongFast: 1, Private: 0 },
     });
 
     const snap = buildDebugSnapshot();
@@ -252,6 +255,7 @@ describe('buildDebugSnapshot', () => {
     expect(snap.meshtastic.channelConfigsSummary).toHaveLength(2);
     expect(snap.meshtastic.channelConfigsSummary[1]?.isDefaultPublicPsk).toBe(true);
     expect(snap.meshtastic.mqttChannelKeyEntryCount).toBe(2);
+    expect(snap.meshtastic.mqttChannelNameToIndex).toEqual({ LongFast: 1, Private: 0 });
   });
 
   it('uses activeProtocol from ui context for activeTab including reticulum', () => {
@@ -497,6 +501,25 @@ describe('analyzeDebugSnapshot', () => {
     expect(snap.warnings.map((w) => w.code)).toContain('staleResolvedBucket');
   });
 
+  it('includes meshcore drain congestion fields from ui context', () => {
+    setDebugSnapshotUiContext({
+      meshcoreDrain: {
+        meshcoreCompanionRepeaterRfBusy: true,
+        meshcoreCliReplyHoldCount: 1,
+        meshcoreAdminRpcInFlightCount: 2,
+        meshcoreTraceRpcInFlightCount: 0,
+        meshcoreTraceResponsesInFlightCount: 0,
+        meshcoreSilentBulkSkipped: true,
+        meshcoreSilentBulkTimeoutStreak: 2,
+      },
+    });
+    expect(getDebugSnapshotUiContext().meshcoreDrain).toMatchObject({
+      meshcoreCompanionRepeaterRfBusy: true,
+      meshcoreSilentBulkSkipped: true,
+      meshcoreSilentBulkTimeoutStreak: 2,
+    });
+  });
+
   it('flags chatPanelFrozen when frozen count lags live store', () => {
     const snap = makeSyntheticSnapshot({
       ui: {
@@ -586,6 +609,32 @@ describe('buildDebugSnapshotAsync', () => {
 
     expect(snap.reticulum.sidecar.running).toBe(true);
     expect(snap.reticulum.stack?.status).toMatchObject({ rns_ready: true });
+  });
+
+  it('includes mainLiveness from getRendererLiveness', async () => {
+    ensureOfflineProtocolIdentities();
+    vi.mocked(window.electronAPI.reticulum.getStatus).mockResolvedValue({
+      running: false,
+      port: 0,
+      pid: null,
+    });
+    vi.mocked(window.electronAPI.app.getRendererLiveness).mockResolvedValue({
+      mainUptimeSec: 3600,
+      lastRendererHeartbeatAgeMs: 12_000,
+      rendererUnresponsiveSeen: true,
+      rss: 100,
+      heapUsed: 50,
+    });
+
+    const snap = await buildDebugSnapshotAsync();
+
+    expect(snap.mainLiveness).toEqual({
+      mainUptimeSec: 3600,
+      lastRendererHeartbeatAgeMs: 12_000,
+      rendererUnresponsiveSeen: true,
+      rss: 100,
+      heapUsed: 50,
+    });
   });
 });
 

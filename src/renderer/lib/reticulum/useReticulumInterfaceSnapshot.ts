@@ -13,9 +13,21 @@ import type { ReticulumLocalInterfaceHealthOptions } from '@/renderer/lib/reticu
 import { logReticulumLocalInterfaceHealthChanges } from '@/renderer/lib/reticulum/reticulumLocalInterfaceLogging';
 import {
   pickReticulumLocalHealthPollMs,
+  RETICULUM_LOCAL_HEALTH_POLL_MS,
   scheduleReticulumLocalInterfaceBurst,
 } from '@/renderer/lib/reticulum/reticulumLocalInterfaceRefresh';
-import { invalidateReticulumInterfacesCache } from '@/renderer/lib/reticulum/reticulumSidecarReads';
+import {
+  isReticulumProxyRateLimitBackoffActive,
+  noteReticulumProxyRateLimitHit,
+} from '@/renderer/lib/reticulum/reticulumProxyRateLimitBackoff';
+import { reticulumSidecarEventRefreshActions } from '@/renderer/lib/reticulum/reticulumSidecarPeerRefreshEvents';
+import {
+  fetchReticulumInterfaces,
+  fetchReticulumSerialPortOptions,
+  getCachedReticulumEffectivePrimaryLocalSerialInterfaceId,
+  invalidateReticulumInterfacesCache,
+  isReticulumSidecarRateLimitError,
+} from '@/renderer/lib/reticulum/reticulumSidecarReads';
 import type { ReticulumSidecarEvent } from '@/shared/reticulum-types';
 
 export interface ReticulumInterfaceRow {
@@ -36,6 +48,11 @@ export interface ReticulumInterfaceRow {
   preset?: string | null;
   /** rnsd interface mode (`full`, `boundary`, `access_point`, …). */
   mode?: string | null;
+  /**
+   * Effective RNS mode from live sidecar stats (canonical rnsd value).
+   * When it differs from `mode`, the stack rewrote a discoverable interface.
+   */
+  runtime_mode?: string | null;
   seed_addresses?: string[];
   discoverable?: boolean | null;
   latitude?: number | null;
@@ -49,6 +66,17 @@ export interface ReticulumInterfaceRow {
   network_name?: string | null;
   /** IFAC authentication passphrase. */
   passphrase?: string | null;
+  /** RNode/KISS TX ready-gate. Only present for RF interface types. */
+  flow_control?: boolean | null;
+  /**
+   * Upstream RNS opt-out so discoverable + Full/Roaming/Boundary keeps the
+   * configured mode. Sidecar-derived; not edited in the UI form.
+   */
+  ignore_config_warnings?: boolean | null;
+  /** Host outbound TX mpsc fill from live sidecar stats. */
+  tx_queue_used?: number | null;
+  /** Host outbound TX mpsc capacity from live sidecar stats. */
+  tx_queue_max?: number | null;
   /** Unknown INI keys preserved by the sidecar across CRUD. */
   extra_config?: Record<string, string> | null;
 }
@@ -59,13 +87,18 @@ export interface ReticulumSerialPortOption {
 }
 
 export interface UseReticulumInterfaceSnapshotOptions {
-  sidecarApiReady: boolean;
+  /**
+   * Sidecar process is up (may still be `connecting` in the UI).
+   * Read/refresh while running so BLE RNode rows exist during first-start settle;
+   * mutations stay gated by `sidecarApiReady` in the panel.
+   */
+  sidecarRunning: boolean;
   /** When false, adaptive polling pauses (stack stopped). */
   pollActive: boolean;
 }
 
 export function useReticulumInterfaceSnapshot({
-  sidecarApiReady,
+  sidecarRunning,
   pollActive,
 }: UseReticulumInterfaceSnapshotOptions) {
   const [interfaces, setInterfaces] = useState<ReticulumInterfaceRow[]>([]);
@@ -101,35 +134,36 @@ export function useReticulumInterfaceSnapshot({
   }, []);
 
   const refresh = useCallback(async () => {
-    if (!sidecarApiReady) return undefined;
+    if (!sidecarRunning) return undefined;
+    if (isReticulumProxyRateLimitBackoffActive('shared')) {
+      return { interfaces: [], paths: [], rateLimited: true as const };
+    }
     try {
-      invalidateReticulumInterfacesCache();
-      const [body, portsBody] = await Promise.all([
-        window.electronAPI.reticulum.proxyGet('/api/v1/interfaces') as Promise<{
-          interfaces?: ReticulumInterfaceRow[];
-          effective_primary_local_serial_interface_id?: string | null;
-        }>,
-        window.electronAPI.reticulum.proxyGet('/api/v1/serial/ports') as Promise<{
-          ports?: ReticulumSerialPortOption[];
-        }>,
+      const [rows, ports] = await Promise.all([
+        fetchReticulumInterfaces({ propagateRateLimit: true }),
+        fetchReticulumSerialPortOptions({ propagateRateLimit: true }),
       ]);
-      const rows = body.interfaces ?? [];
-      const ports = portsBody.ports ?? [];
+      // Do not clear shared backoff here — warm interface/serial caches can succeed
+      // without a proxy round-trip and would incorrectly shorten peer-store backoff.
       const paths = ports.map((p) => p.path);
       setInterfaces(rows);
       setSerialPorts(ports);
       setInterfacesHydrated(true);
       setEffectivePrimaryLocalSerialInterfaceId(
-        body.effective_primary_local_serial_interface_id ?? null,
+        getCachedReticulumEffectivePrimaryLocalSerialInterfaceId(),
       );
       logReticulumLocalInterfaceHealthChanges(rows, paths);
       await syncReticulumBleRegistry(rows);
       return { interfaces: rows, paths };
     } catch (e) {
       console.debug('[useReticulumInterfaceSnapshot] refresh ' + errLikeToLogString(e));
+      if (isReticulumSidecarRateLimitError(e)) {
+        noteReticulumProxyRateLimitHit('shared');
+        return { interfaces: [], paths: [], rateLimited: true as const };
+      }
       return undefined;
     }
-  }, [sidecarApiReady]);
+  }, [sidecarRunning]);
 
   useEffect(() => {
     refreshRef.current = refresh;
@@ -137,15 +171,21 @@ export function useReticulumInterfaceSnapshot({
 
   const handleSidecarEvent = useCallback(
     (evt: ReticulumSidecarEvent) => {
-      if (
-        evt.type === 'interface.state' ||
-        evt.type === 'stats_update' ||
-        evt.type === 'announce.received' ||
-        evt.type === 'stack_restart_requested'
-      ) {
-        if (evt.type === 'stack_restart_requested') {
-          beginBleConnectGrace();
+      // stack_restart is not flagged interfaces:true on the shared helper (runtime
+      // restarts the stack instead), but Connection still needs a local refresh + grace.
+      if (evt.type === 'stack_restart_requested') {
+        beginBleConnectGrace();
+        invalidateReticulumInterfacesCache();
+        if (!isReticulumProxyRateLimitBackoffActive('shared')) {
+          void refreshRef.current?.();
         }
+        return;
+      }
+      // announce.received / stats_update must not refresh interfaces — they flood
+      // the shared 900/min proxy bucket after wake on large peer tables.
+      if (!reticulumSidecarEventRefreshActions(evt.type).interfaces) return;
+      invalidateReticulumInterfacesCache();
+      if (!isReticulumProxyRateLimitBackoffActive('shared')) {
         void refreshRef.current?.();
       }
     },
@@ -153,7 +193,7 @@ export function useReticulumInterfaceSnapshot({
   );
 
   useEffect(() => {
-    if (!sidecarApiReady) {
+    if (!sidecarRunning) {
       setInterfaces([]);
       setSerialPorts([]);
       setEffectivePrimaryLocalSerialInterfaceId(null);
@@ -161,11 +201,13 @@ export function useReticulumInterfaceSnapshot({
       burstCancelRef.current?.();
       burstCancelRef.current = null;
       // Noble BLE yield + shared grace clock are owned by useReticulumNobleBleYieldWatcher.
-      // Do not clear grace or release yield here: sidecarApiReady is false while connecting,
-      // and a mid-pair clear leaves release/renew stuck (CoreBluetooth Event receiver died).
+      // Do not clear grace or release yield here while the sidecar is still up during
+      // connecting — a mid-pair clear leaves release/renew stuck (CoreBluetooth Event
+      // receiver died).
       return;
     }
     beginBleConnectGrace();
+    invalidateReticulumInterfacesCache();
     void refresh();
     burstCancelRef.current?.();
     burstCancelRef.current = scheduleReticulumLocalInterfaceBurst(() => {
@@ -175,10 +217,10 @@ export function useReticulumInterfaceSnapshot({
       burstCancelRef.current?.();
       burstCancelRef.current = null;
     };
-  }, [sidecarApiReady, refresh, beginBleConnectGrace]);
+  }, [sidecarRunning, refresh, beginBleConnectGrace]);
 
   useEffect(() => {
-    if (!sidecarApiReady || !pollActive) {
+    if (!sidecarRunning || !pollActive) {
       if (pollTimeoutRef.current) {
         clearTimeout(pollTimeoutRef.current);
         pollTimeoutRef.current = null;
@@ -196,8 +238,16 @@ export function useReticulumInterfaceSnapshot({
     };
 
     const tick = async () => {
+      if (isReticulumProxyRateLimitBackoffActive('shared')) {
+        scheduleNextPoll(RETICULUM_LOCAL_HEALTH_POLL_MS);
+        return;
+      }
       const snapshot = await refreshRef.current?.();
       if (cancelled || !snapshot) return;
+      if ('rateLimited' in snapshot && snapshot.rateLimited) {
+        scheduleNextPoll(RETICULUM_LOCAL_HEALTH_POLL_MS);
+        return;
+      }
       scheduleNextPoll(
         pickReticulumLocalHealthPollMs(snapshot.interfaces, snapshot.paths, healthOptions),
       );
@@ -212,7 +262,7 @@ export function useReticulumInterfaceSnapshot({
         pollTimeoutRef.current = null;
       }
     };
-  }, [sidecarApiReady, pollActive, healthOptions]);
+  }, [sidecarRunning, pollActive, healthOptions]);
 
   return {
     interfaces,
@@ -221,7 +271,10 @@ export function useReticulumInterfaceSnapshot({
     serialPortPaths,
     effectivePrimaryLocalSerialInterfaceId,
     healthOptions,
-    refresh,
+    refresh: async () => {
+      invalidateReticulumInterfacesCache();
+      return refresh();
+    },
     beginBleConnectGrace,
     handleSidecarEvent,
   };

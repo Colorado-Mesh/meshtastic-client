@@ -1,6 +1,13 @@
-import { COLORADO_MESH_HOST, isLetsMeshSettings } from './letsMeshJwt';
+import {
+  COLORADO_MESH_HOST,
+  isLetsMeshSettings,
+  MESHMAPPER_HOST,
+  MESHMAPPER_HOST_LEGACY_CC,
+  migrateMeshmapperServerHost,
+} from './letsMeshJwt';
 import {
   applyMeshcoreMqttPreset,
+  DEVICE_SIGNING_MESHCORE_PRESETS,
   MESHCORE_MQTT_PRESET_STORAGE_KEY,
   type MeshcoreMqttPreset,
   meshcoreMqttPresetFields,
@@ -17,6 +24,7 @@ const MESHCORE_TOPIC_IATA_MIGRATION_KEY = 'mesh-client:migrated:meshcore-topic-i
 const COLORADO_MESH_PORT_MIGRATION_KEY = 'mesh-client:migrated:colorado-mesh-port-443-v1';
 const MESHCORE_LETSMESH_DEFAULT_MIGRATION_KEY = 'mesh-client:migrated:meshcore-letsmesh-default-v1';
 const MESHCORE_TOPIC_IATA_SHAPE_MIGRATION_KEY = 'mesh-client:migrated:meshcore-topic-iata-shape-v1';
+const MESHMAPPER_HOST_NET_MIGRATION_KEY = 'mesh-client:migrated:meshmapper-host-net-v1';
 /** Set after the one-time Colorado-region ConfirmModal (or Colorado preset confirm). */
 export const COLORADO_MQTT_REGION_ACK_KEY = 'mesh-client:coloradoMqttRegionAck-v1';
 
@@ -27,14 +35,30 @@ export function meshcoreMqttNeedsColoradoRegionAck(): boolean {
   return readMeshcoreMqttSettingsFromStorage().server.trim() === COLORADO_MESH_HOST;
 }
 
-const PRESET_RECONCILE_PRESETS = new Set<MeshcoreMqttPreset>([
-  'letsmesh',
-  'coloradomesh',
-  'meshmapper',
-]);
+const PRESET_RECONCILE_PRESETS = DEVICE_SIGNING_MESHCORE_PRESETS;
 
-function meshcorePresetFieldsDiffer(preset: MeshcoreMqttPreset, settings: MQTTSettings): boolean {
+/**
+ * Preset fields that startup reconcile is allowed to rewrite. Only transport fields are reconciled;
+ * authentication fields (a manually stored password / username) are preserved so re-applying a
+ * preset's transport defaults never clobbers user-entered credentials.
+ */
+function reconcilablePresetFields(
+  preset: MeshcoreMqttPreset,
+  settings: MQTTSettings,
+): Partial<MQTTSettings> | null {
   const fields = meshcoreMqttPresetFields(preset, settings);
+  if (!fields) return null;
+  const transport: Partial<MQTTSettings> = { ...fields };
+  delete transport.password;
+  delete transport.username;
+  return transport;
+}
+
+function meshcorePresetTransportDiffers(
+  preset: MeshcoreMqttPreset,
+  settings: MQTTSettings,
+): boolean {
+  const fields = reconcilablePresetFields(preset, settings);
   if (!fields) return false;
   return (Object.keys(fields) as (keyof MQTTSettings)[]).some(
     (key) => settings[key] !== fields[key],
@@ -143,6 +167,29 @@ function migrateMeshcoreTopicIataShapeOnce(): void {
   localStorage.setItem(MESHCORE_TOPIC_IATA_SHAPE_MIGRATION_KEY, '1');
 }
 
+/**
+ * Rewrite mqtt.meshmapper.cc → mqtt.meshmapper.net (TLS on `.cc` fails with alert 80).
+ * Also runs when migration marker is set if the legacy host is still present (idempotent rewrite).
+ */
+function migrateMeshmapperHostToNetOnce(): void {
+  const raw = localStorage.getItem(MESHCORE_MQTT_SETTINGS_KEY);
+  if (raw) {
+    const parsed = parseStoredJson<Partial<MQTTSettings>>(raw, 'migrateMeshmapperHostToNetOnce');
+    if (parsed && typeof parsed.server === 'string') {
+      const nextServer = migrateMeshmapperServerHost(parsed.server);
+      if (nextServer !== parsed.server) {
+        localStorage.setItem(
+          MESHCORE_MQTT_SETTINGS_KEY,
+          JSON.stringify({ ...parsed, server: nextServer }),
+        );
+      }
+    }
+  }
+  if (localStorage.getItem(MESHMAPPER_HOST_NET_MIGRATION_KEY) === null) {
+    localStorage.setItem(MESHMAPPER_HOST_NET_MIGRATION_KEY, '1');
+  }
+}
+
 /** Re-apply saved MeshCore network preset defaults when stored fields are stale. */
 function reconcileMeshcoreMqttPresetSettings(): void {
   const preset = readStoredMeshcoreMqttPreset();
@@ -153,9 +200,11 @@ function reconcileMeshcoreMqttPresetSettings(): void {
     ? parseStoredJson<Partial<MQTTSettings>>(raw, 'reconcileMeshcoreMqttPresetSettings')
     : null;
   const current = (parsed ?? {}) as MQTTSettings;
-  if (!meshcorePresetFieldsDiffer(preset, current)) return;
+  const transport = reconcilablePresetFields(preset, current);
+  if (!transport || !meshcorePresetTransportDiffers(preset, current)) return;
 
-  const next = applyMeshcoreMqttPreset(preset, current);
+  // Merge only transport fields; a manually stored password / username is left untouched.
+  const next: MQTTSettings = { ...current, ...transport };
   localStorage.setItem(MESHCORE_MQTT_SETTINGS_KEY, JSON.stringify(next));
 }
 
@@ -166,6 +215,7 @@ export function runConnectionPanelStorageMigrations(): void {
   migrateColoradoMeshPortOnce();
   seedMeshcoreLetsMeshDefaultOnce();
   migrateMeshcoreTopicIataShapeOnce();
+  migrateMeshmapperHostToNetOnce();
   reconcileMeshcoreMqttPresetSettings();
 }
 
@@ -176,4 +226,7 @@ export {
   MESHCORE_MQTT_SETTINGS_KEY,
   MESHCORE_TOPIC_IATA_MIGRATION_KEY,
   MESHCORE_TOPIC_IATA_SHAPE_MIGRATION_KEY,
+  MESHMAPPER_HOST,
+  MESHMAPPER_HOST_LEGACY_CC,
+  MESHMAPPER_HOST_NET_MIGRATION_KEY,
 };

@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   expandWithSiblingTests,
   isForceFullSuitePath,
+  isManifestOnlyCommit,
   pickProjects,
   planPrecommitTests,
   runPrecommitTests,
@@ -16,7 +17,9 @@ import {
 describe('precommit-tests force-full', () => {
   it('detects vitest harness and lockfile', () => {
     expect(isForceFullSuitePath('vitest.harness.ts')).toBe(true);
+    expect(isForceFullSuitePath('vitest.harness.mts')).toBe(true);
     expect(isForceFullSuitePath('vitest.config.ts')).toBe(true);
+    expect(isForceFullSuitePath('vitest.config.mts')).toBe(true);
     expect(isForceFullSuitePath('package.json')).toBe(true);
     expect(isForceFullSuitePath('pnpm-lock.yaml')).toBe(true);
     expect(isForceFullSuitePath('src/renderer/vitest.setup.ts')).toBe(true);
@@ -35,6 +38,38 @@ describe('precommit-tests skip', () => {
     const plan = planPrecommitTests(['docs/ci-cd.md', 'README.md']);
     expect(plan.mode).toBe('skip');
     expect(plan.relatedPaths).toEqual([]);
+  });
+});
+
+describe('precommit-tests manifest-only fast path', () => {
+  it('recognizes dependency manifests and the flatpak manifest the pnpm sync re-stages', () => {
+    expect(isManifestOnlyCommit(['package.json', 'pnpm-lock.yaml'])).toBe(true);
+    expect(isManifestOnlyCommit(['package.json', 'org.coloradomesh.MeshClient.yml'])).toBe(true);
+    expect(isManifestOnlyCommit(['package.json', 'src/main/index.ts'])).toBe(false);
+    expect(isManifestOnlyCommit(['package.json', 'README.md'])).toBe(false);
+    expect(isManifestOnlyCommit([])).toBe(false);
+  });
+
+  it('skips Vitest for a pure dependency bump', () => {
+    const plan = planPrecommitTests(['package.json', 'pnpm-lock.yaml']);
+    expect(plan.mode).toBe('skip');
+    expect(plan.relatedPaths).toEqual([]);
+  });
+
+  it('still forces the full suite when source is staged alongside manifests', () => {
+    expect(planPrecommitTests(['package.json', 'src/main/index.ts']).mode).toBe('full');
+  });
+
+  it('explains the manifest-only skip in the log line', () => {
+    const lines = [];
+    const status = runPrecommitTests(['package.json', 'pnpm-lock.yaml'], {
+      log: (msg) => lines.push(msg),
+      spawnSyncFn: () => {
+        throw new Error('vitest should not spawn for a manifest-only commit');
+      },
+    });
+    expect(status).toBe(0);
+    expect(lines.join('\n')).toContain('manifest-only commit');
   });
 });
 
@@ -77,6 +112,18 @@ describe('precommit-tests related planning', () => {
     expect(plan.mode).toBe('related');
     expect(plan.projects).toEqual(['main']);
     expect(plan.relatedPaths).toContain('src/main/foo.ts');
+    expect(plan.relatedPaths).toContain('src/architecture/sourcePolicy.test.ts');
+  });
+
+  it('appends source-policy test for renderer staged files and includes main project', () => {
+    const plan = planPrecommitTests(['src/renderer/components/ChatPanel.tsx']);
+    expect(plan.mode).toBe('related');
+    expect(plan.relatedPaths).toContain('src/architecture/sourcePolicy.test.ts');
+    expect(plan.projects).toContain('main');
+  });
+
+  it('picks main for architecture paths', () => {
+    expect(pickProjects(['src/architecture/sourcePolicy.test.ts'])).toEqual(['main']);
   });
 });
 
@@ -95,7 +142,7 @@ describe('precommit-tests runPrecommitTests', () => {
 
   it('spawns full vitest run for force-full', () => {
     const spawnSyncFn = vi.fn(() => ({ status: 0 }));
-    const code = runPrecommitTests(['package.json'], {
+    const code = runPrecommitTests(['vitest.config.mts'], {
       spawnSyncFn,
       log: () => {},
     });
@@ -147,7 +194,7 @@ describe('precommit-tests runPrecommitTests', () => {
 
 describe('precommit-tests shouldForceFullSuite', () => {
   it('is true when any force-full path is present', () => {
-    expect(shouldForceFullSuite(['src/main/index.ts', 'vitest.config.ts'])).toBe(true);
+    expect(shouldForceFullSuite(['src/main/index.ts', 'vitest.config.mts'])).toBe(true);
     expect(shouldForceFullSuite(['src/main/index.ts'])).toBe(false);
   });
 });

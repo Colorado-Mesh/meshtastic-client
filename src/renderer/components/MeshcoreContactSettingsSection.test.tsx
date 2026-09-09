@@ -1,16 +1,12 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { ReactElement } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
 
+import { hydrateAxeThemeColors } from '../lib/a11yTestHelpers';
 import { enrichMeshCoreSelfInfo } from '../lib/meshcoreTelemetryPrivacy';
+import { renderWithToast } from '../lib/testRenderHelpers';
 import MeshcoreContactSettingsSection from './MeshcoreContactSettingsSection';
-import { ToastProvider } from './Toast';
-
-function renderWithToast(ui: ReactElement) {
-  return render(<ToastProvider>{ui}</ToastProvider>);
-}
 
 function minimalSelfInfo(manualAddContacts: boolean) {
   return enrichMeshCoreSelfInfo({
@@ -39,6 +35,8 @@ describe('MeshcoreContactSettingsSection', () => {
         onMeshcoreContactsShowPublicKeysChange={vi.fn()}
         meshcoreContactsShowRefreshControl={false}
         onMeshcoreContactsShowRefreshControlChange={vi.fn()}
+        meshcoreAutoOffloadWhenFull={false}
+        onMeshcoreAutoOffloadWhenFullChange={vi.fn()}
         onApply={onApply}
       />,
     );
@@ -68,6 +66,8 @@ describe('MeshcoreContactSettingsSection', () => {
         onMeshcoreContactsShowPublicKeysChange={vi.fn()}
         meshcoreContactsShowRefreshControl={false}
         onMeshcoreContactsShowRefreshControlChange={vi.fn()}
+        meshcoreAutoOffloadWhenFull={false}
+        onMeshcoreAutoOffloadWhenFullChange={vi.fn()}
         onApply={vi.fn().mockResolvedValue(undefined)}
         onClearAllContacts={onClearAllContacts}
       />,
@@ -96,6 +96,8 @@ describe('MeshcoreContactSettingsSection consistency', () => {
         onMeshcoreContactsShowPublicKeysChange={vi.fn()}
         meshcoreContactsShowRefreshControl={false}
         onMeshcoreContactsShowRefreshControlChange={vi.fn()}
+        meshcoreAutoOffloadWhenFull={false}
+        onMeshcoreAutoOffloadWhenFullChange={vi.fn()}
         onApply={vi.fn()}
       />,
     );
@@ -116,6 +118,8 @@ describe('MeshcoreContactSettingsSection consistency', () => {
         onMeshcoreContactsShowPublicKeysChange={vi.fn()}
         meshcoreContactsShowRefreshControl={false}
         onMeshcoreContactsShowRefreshControlChange={vi.fn()}
+        meshcoreAutoOffloadWhenFull={false}
+        onMeshcoreAutoOffloadWhenFullChange={vi.fn()}
         onApply={vi.fn()}
       />,
     );
@@ -138,9 +142,12 @@ describe('MeshcoreContactSettingsSection consistency', () => {
         onMeshcoreContactsShowPublicKeysChange={vi.fn()}
         meshcoreContactsShowRefreshControl={false}
         onMeshcoreContactsShowRefreshControlChange={vi.fn()}
+        meshcoreAutoOffloadWhenFull={false}
+        onMeshcoreAutoOffloadWhenFullChange={vi.fn()}
         onApply={vi.fn()}
       />,
     );
+    hydrateAxeThemeColors(container);
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });

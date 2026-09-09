@@ -247,7 +247,7 @@ describe('useReticulumNobleBleYieldWatcher lifecycle', () => {
     rerender({ active: false });
     await vi.advanceTimersByTimeAsync(0);
     const inactiveCall = syncReticulumNobleBleYieldMock.mock.calls.find(
-      (c) => (c[0] as { sidecarActive?: boolean })?.sidecarActive === false,
+      (c) => (c[0] as { sidecarActive?: boolean }).sidecarActive === false,
     );
     const inactiveInput = inactiveCall?.[0] as { signal?: AbortSignal } | undefined;
     expect(inactiveInput?.signal).toBeInstanceOf(AbortSignal);
@@ -257,5 +257,20 @@ describe('useReticulumNobleBleYieldWatcher lifecycle', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(inactiveInput?.signal?.aborted).toBe(true);
     resolveInactive?.();
+  });
+
+  it('passes AbortSignal on active ticks and aborts it on cleanup', async () => {
+    const { unmount } = renderHook(() => {
+      useReticulumNobleBleYieldWatcher(true);
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const activeCall = syncReticulumNobleBleYieldMock.mock.calls.find(
+      (c) => (c[0] as { sidecarActive?: boolean }).sidecarActive === true,
+    );
+    const activeInput = activeCall?.[0] as { signal?: AbortSignal } | undefined;
+    expect(activeInput?.signal).toBeInstanceOf(AbortSignal);
+    expect(activeInput?.signal?.aborted).toBe(false);
+    unmount();
+    expect(activeInput?.signal?.aborted).toBe(true);
   });
 });

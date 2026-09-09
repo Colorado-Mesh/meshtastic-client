@@ -85,6 +85,40 @@ describe('runSchemaUpgrade', { timeout: 30_000 }, () => {
     db.close();
   });
 
+  it('repairs NULL messages.status including rows with null received_via and packet_id', () => {
+    dir = mkdtempSync(join(tmpdir(), 'mesh-schema-null-status-'));
+    const db = new NodeSqliteDB(join(dir, 'test.db'));
+    db.pragma('journal_mode = WAL');
+    runSchemaUpgrade(db);
+
+    const ts = Date.now();
+    db.prepareOnce(
+      `INSERT INTO messages (sender_id, payload, channel, timestamp, packet_id, status, received_via)
+       VALUES (1, 'with packet', 0, ?, 42, NULL, 'rf')`,
+    ).run(ts);
+    db.prepareOnce(
+      `INSERT INTO messages (sender_id, payload, channel, timestamp, packet_id, status, received_via)
+       VALUES (2, 'emoji only', 0, ?, NULL, NULL, NULL)`,
+    ).run(ts + 1);
+
+    runSchemaUpgrade(db);
+
+    const nullCount = (
+      db.prepareOnce('SELECT COUNT(*) as c FROM messages WHERE status IS NULL').get() as {
+        c: number;
+      }
+    ).c;
+    expect(nullCount).toBe(0);
+    const statuses = db
+      .prepareOnce('SELECT payload, status FROM messages ORDER BY timestamp')
+      .all() as { payload: string; status: string }[];
+    expect(statuses).toEqual([
+      { payload: 'with packet', status: 'acked' },
+      { payload: 'emoji only', status: 'acked' },
+    ]);
+    db.close();
+  });
+
   it('converts millisecond nodes.last_heard to Unix seconds (v36)', () => {
     dir = mkdtempSync(join(tmpdir(), 'mesh-schema-last-heard-'));
     const db = new NodeSqliteDB(join(dir, 'test.db'));
@@ -245,6 +279,42 @@ describe('runSchemaUpgrade', { timeout: 30_000 }, () => {
     expect(rows[0]?.icon_name).toBe('star');
     expect(rows[0]?.icon_color).toBe('amber');
     expect(rows[0]?.last_heard).toBe(200);
+    db.close();
+  });
+
+  it('v48 backfill promotes last_heard rows to is_contact when upgrading from <48', () => {
+    dir = mkdtempSync(join(tmpdir(), 'mesh-schema-v48-backfill-'));
+    const db = new NodeSqliteDB(join(dir, 'test.db'));
+    db.pragma('journal_mode = WAL');
+    runSchemaUpgrade(db);
+
+    const hash = 'ab'.repeat(16);
+    db.prepareOnce(
+      `INSERT INTO reticulum_destinations (destination_hash, display_name, last_heard, is_contact, favorited)
+       VALUES (?, 'Legacy', 1700000000, 0, 0)`,
+    ).run(hash);
+    db.pragma('user_version = 47');
+
+    runSchemaUpgrade(db);
+
+    const row = db
+      .prepareOnce(
+        'SELECT is_contact, last_heard FROM reticulum_destinations WHERE destination_hash = ?',
+      )
+      .get(hash) as { is_contact: number; last_heard: number };
+    expect(row.is_contact).toBe(1);
+    expect(row.last_heard).toBe(1700000000);
+    expect(db.pragma('user_version', { simple: true })).toBe(CURRENT_SCHEMA_VERSION);
+
+    // Already at v48: clearing is_contact must not be re-promoted on startup.
+    db.prepareOnce(
+      `UPDATE reticulum_destinations SET is_contact = 0 WHERE destination_hash = ?`,
+    ).run(hash);
+    runSchemaUpgrade(db);
+    const after = db
+      .prepareOnce('SELECT is_contact FROM reticulum_destinations WHERE destination_hash = ?')
+      .get(hash) as { is_contact: number };
+    expect(after.is_contact).toBe(0);
     db.close();
   });
 

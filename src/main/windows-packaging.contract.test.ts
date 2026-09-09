@@ -99,10 +99,18 @@ describe('Windows packaging (contract)', () => {
       'utf-8',
     );
     expect(verifyScript).toContain('win-arm64-unpacked');
-    expect(verifyScript).toContain('-arm64.exe');
+    expect(verifyScript).toContain('collectWinSetupInstallers');
+    expect(verifyScript).toContain('win-setup-installer-names');
     expect(verifyScript).toContain('reticulum-sidecar');
     expect(verifyScript).toContain('assertBundledReticulumSidecarInBundle');
     expect(verifyScript).not.toContain('resedit');
+
+    const setupNamesScript = readFileSync(
+      join(REPO_ROOT, 'scripts', 'win-setup-installer-names.mjs'),
+      'utf-8',
+    );
+    expect(setupNamesScript).toContain('-arm64.exe');
+    expect(setupNamesScript).toContain('^-run\\d+-arm64$');
   });
 
   it('pins electron-builder to 26.15.4 or newer', () => {
@@ -130,6 +138,7 @@ describe('Windows packaging (contract)', () => {
     expect(installScript).toContain('assertBundledReticulumSidecarInBundle');
     expect(installScript).toContain('/LOG=');
     expect(installScript).toContain('find-nsis-app-archive.mjs');
+    expect(installScript).toContain("dumpDir('release dir (installer missing)'");
 
     const finderScript = readFileSync(
       join(REPO_ROOT, 'scripts', 'find-nsis-app-archive.mjs'),
@@ -150,12 +159,57 @@ describe('Windows packaging (contract)', () => {
     expect(buildWorkflow).toContain('label: x64 NSIS install');
     expect(buildWorkflow).toContain('node scripts/test-win-nsis-install.mjs --arch x64');
     expect(buildWorkflow).toContain('label: arm64 NSIS install (WoA)');
-    expect(buildWorkflow).toContain('- os: windows-11-arm');
+    expect(buildWorkflow).toContain('- os: windows-11-vs2026-arm');
     expect(buildWorkflow).toContain(
       'node scripts/test-win-nsis-install.mjs --arch arm64 --probe-7z',
     );
+    const buildPreferIdx = buildWorkflow.indexOf('ci-prefer-windows-pnpm-exe.mjs');
+    const buildSetupNodeIdx = buildWorkflow.indexOf('actions/setup-node@');
+    const buildVerifyIdx = buildWorkflow.indexOf('ci-verify-pnpm.mjs');
+    const buildInstallIdx = buildWorkflow.indexOf('pnpm install --frozen-lockfile');
+    const buildAssertIdx = buildWorkflow.indexOf('assert-win-setup-installers.mjs');
+    const buildUploadWinIdx = buildWorkflow.indexOf('Upload Windows Artifact');
+    expect(buildPreferIdx).toBeGreaterThan(-1);
+    expect(buildSetupNodeIdx).toBeGreaterThan(-1);
+    expect(buildVerifyIdx).toBeGreaterThan(-1);
+    expect(buildInstallIdx).toBeGreaterThan(-1);
+    expect(buildAssertIdx).toBeGreaterThan(-1);
+    expect(buildUploadWinIdx).toBeGreaterThan(-1);
+    expect(buildPreferIdx).toBeLessThan(buildSetupNodeIdx);
+    expect(buildSetupNodeIdx).toBeLessThan(buildInstallIdx);
+    expect(buildVerifyIdx).toBeLessThan(buildInstallIdx);
+    expect(buildAssertIdx).toBeLessThan(buildUploadWinIdx);
+    expect(buildWorkflow).toMatch(
+      /Prefer native pnpm\.exe on Windows PATH[\s\S]*?if: runner\.os == 'Windows'[\s\S]*?ci-prefer-windows-pnpm-exe\.mjs/,
+    );
     expect(buildWorkflow).toContain('needs: build');
     expect(buildWorkflow).not.toContain('win-arm64-install:');
+    // READ-ME-FIRST must live under release/ in uploads so artifact LCA stays release/
+    // (paths outside release/ nest as release/release/*.exe and break packaging-smoke).
+    const stageReadmeIdx = buildWorkflow.indexOf('Stage READ-ME-FIRST into release output');
+    expect(stageReadmeIdx).toBeGreaterThan(-1);
+    const firstUploadIdx = Math.min(
+      ...(
+        ['Upload macOS Artifact', 'Upload Linux Artifact', 'Upload Windows Artifact'] as const
+      ).map((name) => {
+        const idx = buildWorkflow.indexOf(name);
+        expect(idx, name).toBeGreaterThan(-1);
+        return idx;
+      }),
+    );
+    expect(stageReadmeIdx).toBeLessThan(firstUploadIdx);
+    for (const uploadName of [
+      'Upload macOS Artifact',
+      'Upload Linux Artifact',
+      'Upload Windows Artifact',
+    ] as const) {
+      const start = buildWorkflow.indexOf(`- name: ${uploadName}`);
+      expect(start, uploadName).toBeGreaterThan(-1);
+      const nextStep = buildWorkflow.indexOf('\n      - name:', start + 1);
+      const block = buildWorkflow.slice(start, nextStep === -1 ? undefined : nextStep);
+      expect(block).toContain('release/READ-ME-FIRST-test-build.md');
+      expect(block).not.toContain('release-warnings/READ-ME-FIRST-test-build.md');
+    }
 
     const buildJobBlock = buildWorkflow.slice(
       buildWorkflow.indexOf('  build:'),
@@ -170,21 +224,43 @@ describe('Windows packaging (contract)', () => {
       'utf-8',
     );
     expect(readFileSync(join(REPO_ROOT, 'scripts', 'resolve-release-matrix.mjs'), 'utf-8')).toMatch(
-      /platform_key:\s*'win'[\s\S]*build_script:\s*'pnpm run dist:win:publish'/,
+      /platform_key:\s*'win'[\s\S]*build_script:\s*'pnpm run dist:win'/,
+    );
+    expect(readFileSync(join(REPO_ROOT, 'scripts', 'resolve-release-matrix.mjs'), 'utf-8')).toMatch(
+      /platform_key:\s*'mac'[\s\S]*rust_targets:\s*'x86_64-apple-darwin,aarch64-apple-darwin'/,
     );
     expect(releaseWorkflow).toContain('scripts/resolve-release-matrix.mjs');
     expect(releaseWorkflow).toContain(
       "contains(matrix.build_script, 'dist:win') && matrix.os != 'windows-latest'",
     );
+    const releasePreferIdx = releaseWorkflow.indexOf('ci-prefer-windows-pnpm-exe.mjs');
+    const releaseSetupNodeIdx = releaseWorkflow.indexOf('actions/setup-node@');
+    const releaseVerifyIdx = releaseWorkflow.indexOf('ci-verify-pnpm.mjs');
+    const releaseInstallIdx = releaseWorkflow.indexOf('pnpm install --frozen-lockfile');
+    const releaseAssertIdx = releaseWorkflow.indexOf('assert-win-setup-installers.mjs');
+    const releaseUploadWinIdx = releaseWorkflow.indexOf('Upload Windows Artifact');
+    expect(releasePreferIdx).toBeGreaterThan(-1);
+    expect(releaseSetupNodeIdx).toBeGreaterThan(-1);
+    expect(releaseVerifyIdx).toBeGreaterThan(-1);
+    expect(releaseInstallIdx).toBeGreaterThan(-1);
+    expect(releaseAssertIdx).toBeGreaterThan(-1);
+    expect(releaseUploadWinIdx).toBeGreaterThan(-1);
+    expect(releasePreferIdx).toBeLessThan(releaseSetupNodeIdx);
+    expect(releaseSetupNodeIdx).toBeLessThan(releaseInstallIdx);
+    expect(releaseVerifyIdx).toBeLessThan(releaseInstallIdx);
+    expect(releaseAssertIdx).toBeLessThan(releaseUploadWinIdx);
+    expect(releaseWorkflow).toMatch(
+      /Prefer native pnpm\.exe on Windows PATH[\s\S]*?if: runner\.os == 'Windows'[\s\S]*?ci-prefer-windows-pnpm-exe\.mjs/,
+    );
     expect(releaseWorkflow).toContain('packaging-smoke:');
     expect(releaseWorkflow).toContain('label: x64 NSIS install');
     expect(releaseWorkflow).toContain('node scripts/test-win-nsis-install.mjs --arch x64');
     expect(releaseWorkflow).toContain('label: arm64 NSIS install (WoA)');
-    expect(releaseWorkflow).toContain('- os: windows-11-arm');
+    expect(releaseWorkflow).toContain('- os: windows-11-vs2026-arm');
     expect(releaseWorkflow).toContain(
       'node scripts/test-win-nsis-install.mjs --arch arm64 --probe-7z',
     );
-    expect(releaseWorkflow).toContain('needs: release');
+    expect(releaseWorkflow).toContain('needs: [release, finalize-github-release]');
     expect(releaseWorkflow).not.toContain('win-arm64-install:');
 
     const releaseJobBlock = releaseWorkflow.slice(
@@ -203,6 +279,7 @@ describe('Windows packaging (contract)', () => {
     for (const scriptName of ['dist:mac', 'dist:mac:publish'] as const) {
       const script = packageJson.scripts?.[scriptName];
       expect(script, scriptName).toBeDefined();
+      expect(script).toContain('--mac --x64 --arm64');
       expect(script).toContain('node scripts/verify-mac-packaging.mjs');
     }
     for (const scriptName of ['dist:linux', 'dist:linux:publish'] as const) {
@@ -219,6 +296,76 @@ describe('Windows packaging (contract)', () => {
     expect(macVerify).toContain('ditto -xk');
     expect(macVerify).toContain('hdiutil attach');
     expect(macVerify).toContain('isSymbolicLink');
+    expect(macVerify).toContain('assertApplicationsSymlink');
+    expect(macVerify).toContain('assertDmgInstallNotice');
+    expect(macVerify).toContain('assertDualArchMacArchives');
+    expect(macVerify).toContain('classifyMacArchiveArch');
+    expect(macVerify).toContain('resolveExpectedMacArch');
+    expect(macVerify).toContain('assertLipoArchsMatch');
+    expect(macVerify).toContain("lipo', ['-archs'");
+    expect(macVerify).toContain('stageMacosInstallNoticeReleaseAsset');
+    expect(macVerify).toContain('Squirrel.framework');
+    expect(macVerify).toContain('assertMacCodeSignatureIfDeveloperId');
+    expect(macVerify).toContain('isDeveloperIdApplicationAuthority');
+    expect(macVerify).toContain("codesign', ['--verify', '--deep', '--strict'");
+    expect(macVerify).toContain("stapler', 'validate'");
+    expect(macVerify).toContain('/Applications');
+    expect(macVerify).toMatch(
+      /function mountDmgAndValidate\([\s\S]*?assertApplicationsSymlink\(mountDir\)/,
+    );
+    expect(macVerify).toMatch(
+      /function mountDmgAndValidate[\s\S]*let attached = false[\s\S]*if \(attached\)[\s\S]*detachDmgMount\(mountDir\)/,
+    );
+    expect(macVerify).toMatch(
+      /} finally \{\s*\/\/ mountDmgAndValidate owns detach[\s\S]*rmSync\(dmgMountDir/,
+    );
+    expect(macVerify).not.toMatch(
+      /} finally \{\s*\/\/ mountDmgAndValidate owns detach[\s\S]*detachDmgMount\(dmgMountDir\)/,
+    );
+    expect(macVerify).toContain('mkdtempSync');
+    expect(macVerify).toContain('mesh-verify-mac-zip-');
+    expect(macVerify).toContain('mesh-verify-mac-dmg-');
+    expect(macVerify).toContain("assertDualArchMacArchives(dmgArchives, '.dmg')");
+    expect(macVerify).toContain("assertDualArchMacArchives(zipArchives, '.zip')");
+    expect(macVerify).toMatch(/for \(const zipPath of zipArchives\)/);
+    expect(macVerify).toMatch(/for \(const dmgPath of dmgArchives\)[\s\S]*mountDmgAndValidate/);
+    expect(macVerify).toMatch(/validateAppBundle\(zipBundle, zipLabel, expectedArch\)/);
+    expect(macVerify).toMatch(/validateAppBundle\(dmgBundle, dmgLabel, expectedArch\)/);
+
+    const buildWorkflow = readFileSync(
+      join(REPO_ROOT, '.github', 'workflows', 'build.yaml'),
+      'utf-8',
+    );
+    expect(buildWorkflow).toContain('rust_targets: x86_64-apple-darwin,aarch64-apple-darwin');
+    expect(buildWorkflow).toContain('release/mac-x64/**/*.dmg');
+    expect(buildWorkflow).toContain('release/mac-x64/**/*.zip');
+
+    const releaseWorkflowMacUpload = readFileSync(
+      join(REPO_ROOT, '.github', 'workflows', 'release.yaml'),
+      'utf-8',
+    );
+    expect(releaseWorkflowMacUpload).toContain('release/mac-x64/**/*.dmg');
+    expect(releaseWorkflowMacUpload).toContain('release/mac-x64/**/*.zip');
+
+    const sidecarWorkflow = readFileSync(
+      join(REPO_ROOT, '.github', 'workflows', 'reticulum-sidecar.yaml'),
+      'utf-8',
+    );
+    expect(sidecarWorkflow).toContain('target: x86_64-apple-darwin');
+    expect(sidecarWorkflow).toContain('mesh-client-reticulum-macos-x64');
+    expect(sidecarWorkflow).toContain('mesh-client-reticulum-rns-macos-x64');
+
+    const staging = readFileSync(
+      join(REPO_ROOT, 'scripts', 'reticulum-sidecar-staging.mjs'),
+      'utf-8',
+    );
+    expect(staging).toContain("cargoTarget: 'x86_64-apple-darwin'");
+    expect(staging).toContain("archKey: 'x64'");
+
+    const electronBuilder = readFileSync(join(REPO_ROOT, 'electron-builder.yml'), 'utf-8');
+    expect(electronBuilder).toMatch(/type:\s*link\s*\n\s*path:\s*\/Applications/);
+    expect(electronBuilder).toContain('IMPORTANT-Read-Me.txt');
+    expect(electronBuilder).toContain('resources/macos/IMPORTANT-macOS-install.txt');
 
     const linuxVerify = readFileSync(
       join(REPO_ROOT, 'scripts', 'verify-linux-packaging.mjs'),
@@ -256,5 +403,34 @@ describe('Windows packaging (contract)', () => {
     expect(releaseWorkflow).toContain('APPLE_TEAM_ID');
     expect(releaseWorkflow).toContain('CSC_IDENTITY_AUTO_DISCOVERY');
     expect(releaseWorkflow).toContain('Validate macOS signing secrets');
+  });
+
+  it('patches app-builder-lib so CSC_LINK signing uses the keychain password', () => {
+    const workspaceYaml = readFileSync(join(REPO_ROOT, 'pnpm-workspace.yaml'), 'utf-8');
+    const lockfile = readFileSync(join(REPO_ROOT, 'pnpm-lock.yaml'), 'utf-8');
+    const appBuilderLibLockRe = /^ {2}app-builder-lib@(26\.\d+\.\d+):$/m;
+    const resolvedMatch = appBuilderLibLockRe.exec(lockfile);
+    expect(resolvedMatch).not.toBeNull();
+    const resolvedVersion = resolvedMatch![1];
+    expect(workspaceYaml).toContain(
+      `app-builder-lib@${resolvedVersion}: patches/app-builder-lib@${resolvedVersion}.patch`,
+    );
+
+    const macCodeSign = readFileSync(
+      join(REPO_ROOT, 'node_modules', 'app-builder-lib', 'out', 'codeSign', 'macCodeSign.js'),
+      'utf-8',
+    );
+    expect(macCodeSign).toContain(
+      'importCerts(keychainFile, certPaths, cscPasswords, keychainPassword)',
+    );
+    expect(macCodeSign).toContain(
+      '["set-key-partition-list", "-S", "apple-tool:,apple:", "-s", "-k", keychainPassword, keychainFile]',
+    );
+    expect(macCodeSign).not.toMatch(
+      /set-key-partition-list", "-S", "apple-tool:,apple:", "-s", "-k", password,/,
+    );
+
+    const updateScript = readFileSync(join(REPO_ROOT, 'scripts', 'update.sh'), 'utf-8');
+    expect(updateScript).toMatch(/WATCH_ENTRIES=\([\s\S]*'app-builder-lib\|app-builder-lib\|/);
   });
 });

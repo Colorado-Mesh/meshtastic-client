@@ -4,18 +4,23 @@ import type {
   BlePeripheralOwner,
   BleScanOwner,
   ElectronAPI,
+  LongSessionRestartPayload,
   MeshNode,
   MeshProtocol,
   MQTTSettings,
   MQTTStatus,
   NobleBleConnectResult,
   NobleBleDevice,
+  NobleBleLinkRssiPayload,
   NobleBleSessionId,
   OutboxEntry,
   OutboxEntryInput,
   OutboxStatus,
   ReadReticulumAttachmentAsDataUrlOpts,
   ReadReticulumAttachmentAsDataUrlResult,
+  ReadReticulumAttachmentBytesResult,
+  ReticulumIdentityBackupImportDialogResult,
+  ReticulumIdentityExportSaveResult,
   ReticulumIdentityImportDialogResult,
   SerialPort,
   SpellcheckReplacePayload,
@@ -26,9 +31,15 @@ import type {
   ReticulumSidecarStartOptions,
   ReticulumSidecarStatus,
 } from '../shared/reticulum-types';
+import { throwIfReticulumProxyIpcError } from '../shared/reticulumProxyIpcError';
 import type { TAKClientInfo, TAKServerStatus, TAKSettings } from '../shared/tak-types';
 
 export type { NobleBleDevice, NobleBleSessionId, SerialPort };
+
+/** Unwrap reticulum proxy soft-failure envelopes so renderer catch paths stay the same. */
+async function unwrapReticulumProxy<T = unknown>(result: Promise<unknown>): Promise<T> {
+  return throwIfReticulumProxyIpcError(await result) as T;
+}
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // ─── Database operations ────────────────────────────────────────
@@ -44,6 +55,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     getMessages: (channel?: number, limit?: number) =>
       ipcRenderer.invoke('db:getMessages', channel, limit),
+    listMeshtasticDmPeers: (ownNodeId: number, limit?: number) =>
+      ipcRenderer.invoke('db:listMeshtasticDmPeers', ownNodeId, limit),
 
     saveNode: (node: MeshNode) => ipcRenderer.invoke('db:saveNode', node),
 
@@ -82,6 +95,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       body: string;
       timestamp: number;
     }) => ipcRenderer.invoke('db:insertRrcMessage', message),
+    listRrcNicks: (hubHash: string, limit?: number) =>
+      ipcRenderer.invoke('db:listRrcNicks', hubHash, limit),
+    upsertRrcNick: (nick: {
+      hub_hash: string;
+      identity_hash: string;
+      nickname: string;
+      last_seen: number;
+    }) => ipcRenderer.invoke('db:upsertRrcNick', nick),
     deleteRrcMessagesByRoom: (hubHash: string, room: string) =>
       ipcRenderer.invoke('db:deleteRrcMessagesByRoom', hubHash, room),
     pruneRrcMessagesByCount: (maxCount: number) =>
@@ -115,6 +136,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     getMeshcoreMessages: (channelIdx?: number, limit?: number) =>
       ipcRenderer.invoke('db:getMeshcoreMessages', channelIdx, limit),
+    listMeshcoreDmPeers: (ownNodeId: number, limit?: number) =>
+      ipcRenderer.invoke('db:listMeshcoreDmPeers', ownNodeId, limit),
     searchMessages: (query: string, limit?: number) =>
       ipcRenderer.invoke('db:searchMessages', query, limit),
     searchMeshcoreMessages: (query: string, limit?: number) =>
@@ -159,11 +182,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
       to_hash?: string | null;
       reply_to_hash?: string | null;
       message_hash?: string | null;
+      replaces_message_hash?: string | null;
       received_via?: string | null;
       delivery_status?: string | null;
+      delivery_method?: string | null;
       delivery_attempts?: number | null;
       next_delivery_attempt_at?: number | null;
       attachment_path?: string | null;
+      audio_mode?: number | null;
+      audio_duration_sec?: number | null;
     }) => ipcRenderer.invoke('db:saveReticulumMessage', message),
     markStaleReticulumOutbound: (identityId: string, staleAfterMs?: number) =>
       ipcRenderer.invoke('db:markStaleReticulumOutbound', identityId, staleAfterMs),
@@ -193,8 +220,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('db:blockContact', protocol, identityId, blockedHash),
     unblockContact: (protocol: string, identityId: string, blockedHash: string) =>
       ipcRenderer.invoke('db:unblockContact', protocol, identityId, blockedHash),
+    exportBlockedContacts: (protocol: string, identityId: string) =>
+      ipcRenderer.invoke('db:exportBlockedContacts', protocol, identityId),
+    importBlockedContacts: (protocol: string, identityId: string, hashes: string[]) =>
+      ipcRenderer.invoke('db:importBlockedContacts', protocol, identityId, hashes),
     getReticulumIdentityActivity: (destinationHash: string) =>
       ipcRenderer.invoke('db:getReticulumIdentityActivity', destinationHash),
+    getReticulumIdentityActivityByIdentity: (identityHash: string) =>
+      ipcRenderer.invoke('db:getReticulumIdentityActivityByIdentity', identityHash),
     upsertReticulumIdentityActivity: (row: {
       destination_hash: string;
       aspect: string;
@@ -345,6 +378,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     deleteMeshcoreContactsWithoutPubkey: () =>
       ipcRenderer.invoke('db:deleteMeshcoreContactsWithoutPubkey'),
     offloadAllMeshcoreContacts: () => ipcRenderer.invoke('db:offloadAllMeshcoreContacts'),
+    markMeshcoreContactOffRadio: (publicKeyHex: string) =>
+      ipcRenderer.invoke('db:markMeshcoreContactOffRadio', publicKeyHex),
     getMeshcoreContactById: (nodeId: number) =>
       ipcRenderer.invoke('db:getMeshcoreContactById', nodeId),
     updateMeshcoreContactNickname: (nodeId: number, nickname: string | null) =>
@@ -520,6 +555,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getClientId: (protocol?: MeshProtocol): Promise<string> =>
       ipcRenderer.invoke('mqtt:getClientId', protocol),
     getCachedNodes: () => ipcRenderer.invoke('mqtt:getCachedNodes'),
+    getChannelNameToIndex: () => ipcRenderer.invoke('mqtt:getChannelNameToIndex'),
     updateChannelKeys: (args: { entries: { name: string; pskBase64: string; index?: number }[] }) =>
       ipcRenderer.invoke('mqtt:updateChannelKeys', args),
     updateTopicPrefix: (args: { topicPrefix: string }) =>
@@ -645,6 +681,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('noble-ble-device-discovered', handler);
     return () => ipcRenderer.off('noble-ble-device-discovered', handler);
   },
+  onNobleBleLinkRssi: (cb: (payload: NobleBleLinkRssiPayload) => void) => {
+    const handler = (_: unknown, payload: NobleBleLinkRssiPayload) => {
+      cb(payload);
+    };
+    ipcRenderer.on('noble-ble-link-rssi', handler);
+    return () => ipcRenderer.off('noble-ble-link-rssi', handler);
+  },
   onNobleBleConnected: (cb: (sessionId: NobleBleSessionId) => void) => {
     const handler = (_: unknown, payload: { sessionId: NobleBleSessionId }) => {
       cb(payload.sessionId);
@@ -717,9 +760,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ─── Bluetooth device selection (Linux Web Bluetooth) ──────────────
   // Main process intercepts select-bluetooth-device and sends the device
   // list here. Renderer shows a picker, then calls selectBluetoothDevice.
-  onBluetoothDevicesDiscovered: (callback: (devices: NobleBleDevice[]) => void) => {
-    const handler = (_event: unknown, devices: NobleBleDevice[]) => {
-      callback(devices);
+  onBluetoothDevicesDiscovered: (
+    callback: (devices: NobleBleDevice[], generation?: number) => void,
+  ) => {
+    const handler = (_event: unknown, devices: NobleBleDevice[], generation?: number) => {
+      callback(devices, generation);
     };
     ipcRenderer.on('bluetooth-devices-discovered', handler);
     return () => {
@@ -731,8 +776,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send('bluetooth-device-selected', deviceId);
   },
 
-  cancelBluetoothSelection: () => {
-    ipcRenderer.send('bluetooth-device-cancelled');
+  // Awaitable invoke so Connect can clear a stale chooser before requestDevice()
+  // (fire-and-forget send raced behind select-bluetooth-device and cancelled the new session).
+  cancelBluetoothSelection: async (generation?: number | null): Promise<{ cancelled: boolean }> => {
+    const gen =
+      typeof generation === 'number' && Number.isFinite(generation) ? generation : undefined;
+    return (await ipcRenderer.invoke('bluetooth-device-cancel', gen)) as { cancelled: boolean };
   },
 
   // ─── Bluetooth pairing (Linux) ──────────────────────────────────────
@@ -867,6 +916,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send('set-tray-unread', count);
   },
   quitApp: () => ipcRenderer.invoke('app:quit'),
+  restartApp: () => ipcRenderer.invoke('app:relaunch'),
 
   // ─── OS emoji panel ──────────────────────────────────────────────────────────
   getPlatform: () => process.platform,
@@ -889,6 +939,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   notify: {
     show: (title: string, body: string): Promise<void> =>
       ipcRenderer.invoke('notify:message', title, body),
+    longSessionRestart: (opts: LongSessionRestartPayload): Promise<void> =>
+      ipcRenderer.invoke('notify:longSessionRestart', opts),
+    clearLongSessionNudge: (): Promise<void> => ipcRenderer.invoke('notify:clearLongSessionNudge'),
   },
 
   // ─── Safe storage (OS-keychain-backed encryption) ──────────────
@@ -928,6 +981,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sendRendererHeartbeat: (payload?: { ts: number }) =>
     ipcRenderer.invoke('app:rendererHeartbeat', payload),
   getProcessUptimeSec: (): Promise<number> => ipcRenderer.invoke('app:getProcessUptimeSec'),
+  app: {
+    getRendererLiveness: () => ipcRenderer.invoke('app:getRendererLiveness'),
+  },
   onSpellcheckReplace: (cb: (payload: SpellcheckReplacePayload) => void) => {
     const handler = (_: unknown, payload: SpellcheckReplacePayload) => {
       cb(payload);
@@ -978,12 +1034,34 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
   },
 
+  // ─── Host↔radio link quality (Connection panel) ───────────────────
+  hostLink: {
+    probeHttpRtt: (host: string, tls: boolean): Promise<number | null> =>
+      ipcRenderer.invoke('hostLink:probeHttpRtt', host, tls),
+    probeTcpRtt: (host: string, port: number): Promise<number | null> =>
+      ipcRenderer.invoke('hostLink:probeTcpRtt', host, port),
+    getSessionMeter: (
+      protocol: 'meshtastic' | 'meshcore',
+    ): Promise<{ rttMs: number | null } | null> =>
+      ipcRenderer.invoke('hostLink:getSessionMeter', protocol),
+  },
+
   // ─── Meshtastic TCP bridge ────────────────────────────────────────
   meshtastic: {
     tcp: {
       connect: (host: string, port: number): Promise<void> =>
         ipcRenderer.invoke('meshtastic:tcp-connect', host, port),
-      write: (bytes: number[]): Promise<void> => ipcRenderer.invoke('meshtastic:tcp-write', bytes),
+      write: async (bytes: number[]): Promise<void> => {
+        const result: unknown = await ipcRenderer.invoke('meshtastic:tcp-write', bytes);
+        // Main resolves 'no-socket' so Electron does not log handler [error].
+        // Reject here so TransportTcpIpc / the SDK see a failed write (do not replay bytes).
+        if (result === 'no-socket') {
+          throw new Error('meshtastic:tcp-write: no active socket');
+        }
+        if (result !== undefined) {
+          throw new Error('meshtastic:tcp-write: unexpected result');
+        }
+      },
       disconnect: (): Promise<void> => ipcRenderer.invoke('meshtastic:tcp-disconnect'),
       onData: (cb: (bytes: Uint8Array) => void): (() => void) => {
         const handler = (_: unknown, bytes: Uint8Array) => {
@@ -1045,13 +1123,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     syncInterfaceIssueScope: (enabledInterfaceNames: string[]): Promise<ReticulumSidecarStatus> =>
       ipcRenderer.invoke('reticulum:syncInterfaceIssueScope', enabledInterfaceNames),
     proxyGet: (apiPath: string): Promise<unknown> =>
-      ipcRenderer.invoke('reticulum:proxyGet', apiPath),
+      unwrapReticulumProxy(ipcRenderer.invoke('reticulum:proxyGet', apiPath)),
     proxyPost: (apiPath: string, body: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('reticulum:proxyPost', apiPath, body),
+      unwrapReticulumProxy(ipcRenderer.invoke('reticulum:proxyPost', apiPath, body)),
     proxyPut: (apiPath: string, body: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('reticulum:proxyPut', apiPath, body),
+      unwrapReticulumProxy(ipcRenderer.invoke('reticulum:proxyPut', apiPath, body)),
     proxyDelete: (apiPath: string): Promise<unknown> =>
-      ipcRenderer.invoke('reticulum:proxyDelete', apiPath),
+      unwrapReticulumProxy(ipcRenderer.invoke('reticulum:proxyDelete', apiPath)),
     factoryReset: (): Promise<unknown> => ipcRenderer.invoke('reticulum:factoryReset'),
     readDefaultConfigFile: (): Promise<{ path: string | null; content: string | null }> =>
       ipcRenderer.invoke('reticulum:readDefaultConfigFile'),
@@ -1059,6 +1137,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('reticulum:showConfigImportDialog'),
     showIdentityImportDialog: (): Promise<ReticulumIdentityImportDialogResult> =>
       ipcRenderer.invoke('reticulum:showIdentityImportDialog'),
+    showIdentityBackupImportDialog: (): Promise<ReticulumIdentityBackupImportDialogResult> =>
+      ipcRenderer.invoke('reticulum:showIdentityBackupImportDialog'),
+    saveIdentityExportDialog: (opts: {
+      defaultPath: string;
+      contentBase64: string;
+    }): Promise<ReticulumIdentityExportSaveResult> =>
+      ipcRenderer.invoke('reticulum:saveIdentityExportDialog', opts),
+    saveBlocklistDialog: (
+      hashes: string[],
+    ): Promise<{ path: string | null; error: string | null }> =>
+      ipcRenderer.invoke('reticulum:saveBlocklistDialog', hashes),
+    openBlocklistDialog: (): Promise<{
+      hashes: string[] | null;
+      skipped: number;
+      error: string | null;
+    }> => ipcRenderer.invoke('reticulum:openBlocklistDialog'),
     showNomadContentSourceDialog: (): Promise<{ canceled: boolean; path: string | null }> =>
       ipcRenderer.invoke('reticulum:showNomadContentSourceDialog'),
     setNomadContentSource: (path: string): Promise<unknown> =>
@@ -1071,6 +1165,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('reticulum:event', handler);
       return () => ipcRenderer.off('reticulum:event', handler);
     },
+    onVoiceAudio: (cb: (event: ReticulumSidecarEvent) => void): (() => void) => {
+      const handler = (_: unknown, event: ReticulumSidecarEvent) => {
+        cb(event);
+      };
+      ipcRenderer.on('reticulum:voiceAudio', handler);
+      return () => ipcRenderer.off('reticulum:voiceAudio', handler);
+    },
     onStatus: (cb: (status: ReticulumSidecarStatus) => void): (() => void) => {
       const handler = (_: unknown, status: ReticulumSidecarStatus) => {
         cb(status);
@@ -1079,49 +1180,115 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return () => ipcRenderer.off('reticulum:status', handler);
     },
     rrc: {
-      listHubs: () => ipcRenderer.invoke('reticulum:proxyGet', '/api/v1/rrc/hubs'),
+      listHubs: () =>
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:proxyGet', '/api/v1/rrc/hubs')),
       upsertHub: (opts: { dest_hash: string; label?: string; favorited?: boolean }) =>
-        ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rrc/hubs', opts),
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rrc/hubs', opts)),
       setFavorite: (destHash: string, favorited: boolean) =>
-        ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rrc/hubs/favorite', {
-          dest_hash: destHash,
-          favorited,
-        }),
+        unwrapReticulumProxy(
+          ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rrc/hubs/favorite', {
+            dest_hash: destHash,
+            favorited,
+          }),
+        ),
       connect: (opts: { dest_hash: string; nickname?: string }) =>
-        ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rrc/connect', opts),
+        unwrapReticulumProxy(
+          ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rrc/connect', opts),
+        ),
       disconnect: (opts?: { dest_hash?: string }) =>
-        ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rrc/disconnect', opts ?? {}),
-      getStatus: () => ipcRenderer.invoke('reticulum:proxyGet', '/api/v1/rrc/status'),
+        unwrapReticulumProxy(
+          ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rrc/disconnect', opts ?? {}),
+        ),
+      getStatus: () =>
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:proxyGet', '/api/v1/rrc/status')),
       join: (opts: { hub_dest_hash: string; room: string; key?: string }) =>
-        ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rrc/join', opts),
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rrc/join', opts)),
       part: (opts: { hub_dest_hash: string; room: string }) =>
-        ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rrc/part', opts),
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rrc/part', opts)),
       send: (opts: {
         hub_dest_hash: string;
         room?: string;
         body: string;
         type?: string;
         dst_hash?: string;
-      }) => ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rrc/send', opts),
+      }) =>
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rrc/send', opts)),
       setNickname: (opts: { nickname: string; hub_dest_hash?: string }) =>
-        ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rrc/nick', opts),
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rrc/nick', opts)),
       getRooms: (hubDestHash?: string) => {
         const q = hubDestHash?.trim()
           ? `?hub_dest_hash=${encodeURIComponent(hubDestHash.trim().toLowerCase())}`
           : '';
-        return ipcRenderer.invoke('reticulum:proxyGet', `/api/v1/rrc/rooms${q}`);
+        return unwrapReticulumProxy(
+          ipcRenderer.invoke('reticulum:proxyGet', `/api/v1/rrc/rooms${q}`),
+        );
       },
     },
     rnsh: {
       connect: (opts: { destination_hash: string }) =>
-        ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rnsh/connect', opts),
+        unwrapReticulumProxy(
+          ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rnsh/connect', opts),
+        ),
       input: (opts: { session_id: string; data: string; encoding?: 'base64' }) =>
-        ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rnsh/input', opts),
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rnsh/input', opts)),
       resize: (opts: { session_id: string; rows?: number; cols?: number }) =>
-        ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rnsh/resize', opts),
+        unwrapReticulumProxy(
+          ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rnsh/resize', opts),
+        ),
       disconnect: (opts: { session_id: string }) =>
-        ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rnsh/disconnect', opts),
-      getStatus: () => ipcRenderer.invoke('reticulum:proxyGet', '/api/v1/rnsh/status'),
+        unwrapReticulumProxy(
+          ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rnsh/disconnect', opts),
+        ),
+      getStatus: () =>
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:proxyGet', '/api/v1/rnsh/status')),
+    },
+    voice: {
+      getStatus: () =>
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:proxyGet', '/api/v1/voice/status')),
+      call: (opts: { identity_hash: string }) =>
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/voice/call', opts)),
+      answer: () =>
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/voice/answer', {})),
+      reject: () =>
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/voice/reject', {})),
+      hangup: () =>
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/voice/hangup', {})),
+      mute: (opts: { muted: boolean }) =>
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/voice/mute', opts)),
+      sendAudio: (opts: { profile?: number; channels: number; samples_b64: string }) =>
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:voiceSendAudio', opts)),
+    },
+    voiceMemo: {
+      start: () => unwrapReticulumProxy(ipcRenderer.invoke('reticulum:voiceMemoStart', {})),
+      sendAudio: (opts: { session_id: string; channels: 1; samples_b64: string }) =>
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:voiceMemoSendAudio', opts)),
+      stop: (opts: { session_id: string }) =>
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:voiceMemoStop', opts)),
+      cancel: (opts: { session_id: string }) =>
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:voiceMemoCancel', opts)),
+    },
+    /** LRGP games — dedicated IPC (blocked on generic proxy). */
+    games: {
+      getStatus: () => unwrapReticulumProxy(ipcRenderer.invoke('reticulum:gamesStatus')),
+      listApps: () => unwrapReticulumProxy(ipcRenderer.invoke('reticulum:gamesApps')),
+      listSessions: (peer?: string) =>
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:gamesSessions', peer)),
+      getSession: (sessionId: string) =>
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:gamesSessionDetail', sessionId)),
+      sendAction: (opts: {
+        dest_hash: string;
+        app_id: string;
+        command: string;
+        session_id?: string;
+        payload?: Record<string, unknown>;
+        delivery_method?: string;
+      }) => unwrapReticulumProxy(ipcRenderer.invoke('reticulum:gamesAction', opts)),
+      resend: (sessionId: string) =>
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:gamesResend', sessionId)),
+      markRead: (sessionId: string) =>
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:gamesMarkRead', sessionId)),
+      deleteSession: (sessionId: string) =>
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:gamesDeleteSession', sessionId)),
     },
     rncp: {
       send: (opts: { destination_hash: string; path: string }) =>
@@ -1129,13 +1296,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
       fetch: (opts: { destination_hash: string; remote_path: string; save_path?: string }) =>
         ipcRenderer.invoke('reticulum:rncpFetch', opts),
       cancel: (opts: { transfer_id: string }) =>
-        ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rncp/cancel', opts),
+        unwrapReticulumProxy(
+          ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rncp/cancel', opts),
+        ),
       accept: (opts: { transfer_id: string }) =>
-        ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rncp/accept', opts),
+        unwrapReticulumProxy(
+          ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rncp/accept', opts),
+        ),
       reject: (opts: { transfer_id: string }) =>
-        ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rncp/reject', opts),
-      getStatus: () => ipcRenderer.invoke('reticulum:proxyGet', '/api/v1/rncp/status'),
-      getListener: () => ipcRenderer.invoke('reticulum:proxyGet', '/api/v1/rncp/listener'),
+        unwrapReticulumProxy(
+          ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rncp/reject', opts),
+        ),
+      getStatus: () =>
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:proxyGet', '/api/v1/rncp/status')),
+      getListener: () =>
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:proxyGet', '/api/v1/rncp/listener')),
       setListener: (opts: {
         enabled: boolean;
         save_dir?: string;
@@ -1145,6 +1320,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
         allowed?: string[];
         blocked?: string[];
       }) => ipcRenderer.invoke('reticulum:setRncpListener', opts),
+      announce: (): Promise<{ ok: boolean; error?: string }> =>
+        unwrapReticulumProxy(
+          ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/rncp/announce', {}),
+        ),
       showOpenFileDialog: (): Promise<{ canceled: boolean; path: string | null }> =>
         ipcRenderer.invoke('reticulum:showRncpOpenFileDialog'),
       showSaveDirectoryDialog: (): Promise<{ canceled: boolean; path: string | null }> =>
@@ -1154,8 +1333,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     remote: {
       pathCapability: (opts: { destination_hash: string }) =>
-        ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/remote/path-capability', opts),
-      getIdentity: () => ipcRenderer.invoke('reticulum:proxyGet', '/api/v1/remote/identity'),
+        unwrapReticulumProxy(
+          ipcRenderer.invoke('reticulum:proxyPost', '/api/v1/remote/path-capability', opts),
+        ),
+      getIdentity: () =>
+        unwrapReticulumProxy(ipcRenderer.invoke('reticulum:proxyGet', '/api/v1/remote/identity')),
     },
   },
 
@@ -1197,6 +1379,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
         'chat:readReticulumAttachmentAsDataUrl',
         opts,
       ) as Promise<ReadReticulumAttachmentAsDataUrlResult>,
+    readReticulumAttachmentBytes: (filePath: string) =>
+      ipcRenderer.invoke(
+        'chat:readReticulumAttachmentBytes',
+        filePath,
+      ) as Promise<ReadReticulumAttachmentBytesResult>,
     linkPreview: {
       fetch: (url: string) =>
         ipcRenderer.invoke('chat:fetchLinkPreview', url) as Promise<{

@@ -7,7 +7,7 @@ This is a living document. Check items against VoiceOver (macOS), NVDA (Windows)
 ## Screen Reader Compatibility
 
 - [ ] App title announced on launch
-- [ ] Tab labels (Chat, Nodes, Config…) read correctly
+- [ ] Tab labels (Connection, Chat, Nodes, Radio, …) read correctly
 - [x] Connection status changes announced (`aria-live="polite"`) — device status in `App.tsx` header (`role="status" aria-live="polite"`); MQTT/TAK indicators still optional follow-up
 - [ ] Modal open/close announced as "dialog"
 - [x] Confirmation dialogs announced as "alert dialog" — `ConfirmModal` uses `role="alertdialog"` + `aria-describedby`
@@ -23,6 +23,7 @@ This is a living document. Check items against VoiceOver (macOS), NVDA (Windows)
 ## Visual / Perceivable (WCAG 1.x)
 
 - [ ] All text passes 4.5:1 contrast ratio (use Colour Contrast Analyser)
+- [ ] **Message action colors** (App → Appearance → Colors): with custom **message action** bar/button colors and **Show background** enabled, verify action icons/labels still meet **4.5:1** against the bar fill (and against chat bubble backgrounds when the bar is transparent)
 - [ ] Icon-only UI elements pass 3:1 against adjacent colors
 - [ ] Status dots have text alternative (not color-only)
 - [x] Charts (Recharts) have accessible text summary or table toggle — `TelemetryPanel` charts use `role="img"` + summarized `aria-label` (table toggle still optional)
@@ -46,6 +47,7 @@ This is a living document. Check items against VoiceOver (macOS), NVDA (Windows)
   - [ ] **Setting on — still allowed (essential feedback)**: Loading spinners (`animate-spin`, `Loader`), connection header status pulses (`animate-pulse` on MQTT/device labels and status dots).
   - [ ] Toggle persists across restart (SQLite + localStorage reconcile on mount, same pattern as `locale` / `chatCompactMode`).
   - [x] Optional first-run: if `reduceMotion` key is absent, initializer may default from `matchMedia('(prefers-reduced-motion: reduce)')` once; thereafter only the App toggle applies (not live-synced to OS changes). Implemented by `initReduceMotionDefaultIfAbsent()` in `reduceMotionPreference.ts` (called from `main.tsx` before React mount).
+- [ ] **24-hour time (in-app setting)**: **App → Appearance → Use 24-hour time** (`use24HourTime` via `timeFormatStore` / `formatDisplayTime`; SQLite + localStorage, same bundle as Reduce motion). When on, chat and other display clocks force 24-hour format; when off, follow the system locale.
 
 ---
 

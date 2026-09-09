@@ -20,11 +20,15 @@ export interface ReticulumLocalInterfaceInput {
   serial_port?: string | null;
   host?: string | null;
   port?: number | null;
+  /** rnsd interface mode (`full`, `boundary`, `access_point`, …). */
+  mode?: string | null;
+  /** RF RNode/KISS host→device ready-gate (`CMD_READY`); does not enlarge the host TX channel. */
+  flow_control?: boolean | null;
 }
 
 export interface ReticulumLocalInterfaceAlert {
   iface: ReticulumLocalInterfaceInput;
-  reason: 'stale_port' | 'enabled_down' | 'tcp_unreachable';
+  reason: 'stale_port' | 'enabled_down' | 'tcp_unreachable' | 'tcp_fast_flap';
 }
 
 /** True when mesh-client attached as a shared-instance client (local hubs not spawned). */
@@ -42,6 +46,11 @@ export interface ReticulumLocalInterfaceHealthOptions {
   /** When set and `now` is before this timestamp, enabled BLE RNodes show as connecting. */
   bleConnectGraceExpiresAt?: number;
   now?: number;
+  /**
+   * When true, enabled TCP hubs that are down use the fast-flap lockout copy
+   * (rapid stack restarts), not the generic unreachable hint.
+   */
+  stackFastFlapSuspected?: boolean;
 }
 
 function isWithinBleConnectGrace(options?: ReticulumLocalInterfaceHealthOptions): boolean {
@@ -111,6 +120,86 @@ export function reticulumLocalOfflineDisplayKind(
   return isReticulumBleRnodeSerialPort(iface.serial_port) ? 'ble' : 'serial';
 }
 
+/** Transport/bond-aware remediation kind for sidecar TX-queue-full alerts. */
+export type ReticulumTxDropHintKind = 'bleBondStale' | 'bleFlowControl' | 'ble' | 'tcp' | 'neutral';
+
+/**
+ * Classify a TX-drop interface name for Connection/Diagnostics hints.
+ * `bleBondRemoved` wins even when the row is missing or mis-typed.
+ * BLE + `flow_control === true` is congestion backpressure, not a stuck link.
+ */
+export function resolveReticulumTxDropHintKind(
+  name: string,
+  interfaces:
+    | readonly Pick<
+        ReticulumLocalInterfaceInput,
+        'name' | 'type' | 'serial_port' | 'flow_control'
+      >[]
+    | undefined,
+  bleBondRemovedNames?: readonly string[],
+): ReticulumTxDropHintKind {
+  if (bleBondRemovedNames?.includes(name)) {
+    return 'bleBondStale';
+  }
+  const row = interfaces?.find((iface) => iface.name === name);
+  if (!row) {
+    return 'neutral';
+  }
+  if (isReticulumBleRnodeSerialPort(row.serial_port)) {
+    return row.flow_control === true ? 'bleFlowControl' : 'ble';
+  }
+  if (isReticulumRemoteInterfaceType(row.type)) {
+    return 'tcp';
+  }
+  return 'neutral';
+}
+
+/** Connection-panel hint key for a TX-drop kind (under `connectionPanel.reticulumSidecarIssues`). */
+export function reticulumTxDropConnectionHintKey(
+  kind: ReticulumTxDropHintKind,
+):
+  | 'txQueueDropsHint'
+  | 'txQueueDropsHintBle'
+  | 'txQueueDropsHintBleBondStale'
+  | 'txQueueDropsHintBleFlowControl'
+  | 'txQueueDropsHintNeutral' {
+  switch (kind) {
+    case 'bleBondStale':
+      return 'txQueueDropsHintBleBondStale';
+    case 'bleFlowControl':
+      return 'txQueueDropsHintBleFlowControl';
+    case 'ble':
+      return 'txQueueDropsHintBle';
+    case 'tcp':
+      return 'txQueueDropsHint';
+    case 'neutral':
+      return 'txQueueDropsHintNeutral';
+  }
+}
+
+/** Diagnostics `diagnosticsPanel.reticulum.runtime.*` cause key suffix for a TX-drop kind. */
+export function reticulumTxDropDiagnosticsCauseKey(
+  kind: ReticulumTxDropHintKind,
+):
+  | 'txQueueDrops'
+  | 'txQueueDropsBle'
+  | 'txQueueDropsBleBondStale'
+  | 'txQueueDropsBleFlowControl'
+  | 'txQueueDropsNeutral' {
+  switch (kind) {
+    case 'bleBondStale':
+      return 'txQueueDropsBleBondStale';
+    case 'bleFlowControl':
+      return 'txQueueDropsBleFlowControl';
+    case 'ble':
+      return 'txQueueDropsBle';
+    case 'tcp':
+      return 'txQueueDrops';
+    case 'neutral':
+      return 'txQueueDropsNeutral';
+  }
+}
+
 export function classifyReticulumLocalInterface(
   iface: ReticulumLocalInterfaceInput,
   osSerialPorts: readonly string[],
@@ -159,16 +248,18 @@ export function collectReticulumLocalInterfaceAlerts(
 /** Enabled TCP hub interfaces that are unreachable (connection refused, etc.). */
 export function collectReticulumRemoteInterfaceAlerts(
   interfaces: readonly ReticulumLocalInterfaceInput[],
+  options?: Pick<ReticulumLocalInterfaceHealthOptions, 'stackFastFlapSuspected'>,
 ): ReticulumLocalInterfaceAlert[] {
   // Shared-instance client mode never spawns local TCP hubs — skip false unreachable.
   if (isReticulumSharedInstanceClientMode(interfaces)) {
     return [];
   }
+  const reason = options?.stackFastFlapSuspected ? 'tcp_fast_flap' : 'tcp_unreachable';
   const alerts: ReticulumLocalInterfaceAlert[] = [];
   for (const iface of interfaces) {
     const health = classifyReticulumRemoteInterface(iface);
     if (health === 'enabled_down') {
-      alerts.push({ iface, reason: 'tcp_unreachable' });
+      alerts.push({ iface, reason });
     }
   }
   return alerts;
@@ -181,7 +272,7 @@ export function collectReticulumInterfaceAlerts(
 ): ReticulumLocalInterfaceAlert[] {
   return [
     ...collectReticulumLocalInterfaceAlerts(interfaces, osSerialPorts, options),
-    ...collectReticulumRemoteInterfaceAlerts(interfaces),
+    ...collectReticulumRemoteInterfaceAlerts(interfaces, options),
   ];
 }
 

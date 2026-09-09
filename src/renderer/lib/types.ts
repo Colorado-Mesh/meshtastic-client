@@ -107,7 +107,8 @@ export interface RfDiagnosticRow {
     | 'edit'
     | 'restart_stack'
     | 'add_auto'
-    | 'disable_share_instance';
+    | 'disable_share_instance'
+    | 'open_interfaces';
 }
 
 export type DiagnosticRow = RoutingDiagnosticRow | RfDiagnosticRow;
@@ -130,10 +131,10 @@ export function nodeAnomalyToRoutingRow(a: NodeAnomaly): RoutingDiagnosticRow {
     severity: a.severity,
     description: a.description,
     detectedAt: a.detectedAt,
-    snr: a.snr,
-    hopsAway: a.hopsAway,
-    confidence: a.confidence,
-    descriptionI18n: a.descriptionI18n,
+    ...(a.snr !== undefined ? { snr: a.snr } : {}),
+    ...(a.hopsAway !== undefined ? { hopsAway: a.hopsAway } : {}),
+    ...(a.confidence !== undefined ? { confidence: a.confidence } : {}),
+    ...(a.descriptionI18n !== undefined ? { descriptionI18n: a.descriptionI18n } : {}),
   };
 }
 
@@ -144,10 +145,10 @@ export function routingRowToNodeAnomaly(r: RoutingDiagnosticRow): NodeAnomaly {
     severity: r.severity,
     description: r.description,
     detectedAt: r.detectedAt,
-    snr: r.snr,
-    hopsAway: r.hopsAway,
-    confidence: r.confidence,
-    descriptionI18n: r.descriptionI18n,
+    ...(r.snr !== undefined ? { snr: r.snr } : {}),
+    ...(r.hopsAway !== undefined ? { hopsAway: r.hopsAway } : {}),
+    ...(r.confidence !== undefined ? { confidence: r.confidence } : {}),
+    ...(r.descriptionI18n !== undefined ? { descriptionI18n: r.descriptionI18n } : {}),
   };
 }
 
@@ -208,6 +209,10 @@ export interface MeshNode {
   env_lux?: number;
   env_wind_speed?: number;
   env_wind_direction?: number;
+  env_lightning_strike_count_1h?: number;
+  env_lightning_distance_km?: number;
+  env_pm25?: number;
+  env_co2?: number;
   // Neighbor info from MQTT (session-only)
   neighbors?: MeshNeighbor[];
   // PaxCounter from MQTT (combined wifi + ble count)
@@ -216,6 +221,10 @@ export interface MeshNode {
   detection_text?: string;
   /** Meshtastic PKC public key from NodeInfo/User when available */
   public_key_hex?: string;
+  /** `NodeInfo.is_key_manually_verified`: operator-confirmed public key */
+  key_manually_verified?: boolean;
+  /** `NodeInfo.has_xeddsa_signed`: radio has verified an XEdDSA signature from this node */
+  has_xeddsa_signed?: boolean;
 }
 
 export type RemoteAdminStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -367,6 +376,11 @@ export interface CachedNode {
 
 export interface ChatMessage {
   id?: number;
+  /**
+   * Zustand `messageStore` key when `id` is not a numeric Meshtastic/MeshCore packet id
+   * (e.g. Reticulum `reticulum-pending-*` or LXMF message hash).
+   */
+  storeId?: string;
   sender_id: number;
   /** Reticulum LXMF destination hash when `sender_id` is a synthetic node id mapping. */
   reticulum_sender_hash?: string;
@@ -376,6 +390,12 @@ export interface ChatMessage {
   reticulum_reply_to_hash?: string;
   /** Local path when a Reticulum attachment was saved to disk. */
   reticulumAttachmentPath?: string;
+  /** Kind of attachment saved at reticulumAttachmentPath. */
+  reticulumAttachmentKind?: 'image' | 'audio';
+  /** LXMF FIELD_AUDIO mode (16 = AM_OPUS_OGG). */
+  reticulumAudioMode?: number;
+  /** Estimated audio duration in seconds. */
+  reticulumAudioDurationSec?: number;
   /** Reticulum LXMF delivery method for outbound status badge (direct / propagated / opportunistic / paper). */
   reticulumDeliveryMethod?: ReticulumDeliveryMethod;
   sender_name: string;
@@ -404,6 +424,7 @@ export interface ChatMessage {
     | 'both'
     | 'tcp'
     | 'network'
+    | 'paper'
     | `${'rf' | 'ble' | 'tcp' | 'network'}+${string}`;
   // true for backlog messages (e.g. MeshCore MsgWaiting catch-up); excluded from unread counter
   isHistory?: boolean;
@@ -449,6 +470,22 @@ export interface EnvironmentTelemetryPoint {
   weight?: number; // kg
   rainfall1h?: number;
   rainfall24h?: number;
+  /** AS3935 lightning sensor (rolling ~1h strike count and last-strike distance). */
+  lightningStrikeCount1h?: number;
+  lightningDistanceKm?: number;
+  /** Sparse per-channel ADC voltages / one-wire temperatures, indexed by channel 0-7. */
+  adcVoltages?: (number | undefined)[];
+  oneWireTemperatures?: (number | undefined)[];
+  /** Air-quality variant (SEN5X / SEN6X / SCD4X). */
+  pm10Standard?: number;
+  pm25Standard?: number;
+  pm40Standard?: number;
+  pm100Standard?: number;
+  co2?: number;
+  pmTemperature?: number;
+  pmHumidity?: number;
+  pmVocIdx?: number;
+  pmNoxIdx?: number;
 }
 
 export interface DeviceState {
@@ -478,6 +515,13 @@ export interface DeviceState {
 export interface NobleBleDevice {
   deviceId: string;
   deviceName: string;
+  /** Advertised / last-seen BLE RSSI in dBm; null/undefined when unknown. */
+  rssi?: number | null;
+  /**
+   * Hardware BLE MAC when the OS exposes one (Noble `peripheral.address`).
+   * On macOS this is typically empty until after a prior GATT connect (CoreBluetoothCache).
+   */
+  address?: string | null;
 }
 export type NobleBleSessionId = MeshProtocol;
 export type NobleBleConnectResult = { ok: true } | { ok: false; error: string };

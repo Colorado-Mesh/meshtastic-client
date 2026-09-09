@@ -23,6 +23,7 @@ export const DYNAMIC_T_PREFIXES = [
   { prefix: 'modulePanel.takTeamColors.', suffixes: ['label'] },
   { prefix: 'modulePanel.teamRoles.', suffixes: ['label'] },
   { prefix: 'radioPanel.displayUnits.', suffixes: ['label'] },
+  { prefix: 'radioPanel.lockdown.states.', leafKeys: true },
   { prefix: 'radioPanel.oledTypes.', suffixes: ['label'] },
   { prefix: 'radioPanel.displayModes.', suffixes: ['label'] },
   { prefix: 'radioPanel.btPairingModes.', suffixes: ['label'] },
@@ -38,6 +39,18 @@ export const DYNAMIC_T_PREFIXES = [
   { prefix: 'connectionPanel.reticulumInterfaces.status.', leafKeys: true },
   { prefix: 'connectionPanel.reticulumInterfaces.modeOption.', leafKeys: true },
   { prefix: 'connectionPanel.reticulumInterfaces.modeDescriptions.', leafKeys: true },
+  { prefix: 'connectionPanel.reticulumInterfaces.defaultHubRegion.', leafKeys: true },
+  // Purpose text and generic form fields are keyed off the shared interface
+  // catalog (src/shared/reticulumInterfaceCatalog.json), so no literal appears in src/.
+  // `purpose.` is alwaysActive: the key is composed in reticulumInterfaceHelp.ts and
+  // handed to callers as a value, so there is no `t(...)` template site to detect.
+  {
+    prefix: 'connectionPanel.reticulumInterfaces.purpose.',
+    leafKeys: true,
+    alwaysActive: true,
+  },
+  { prefix: 'connectionPanel.reticulumInterfaces.field.', leafKeys: true },
+  { prefix: 'connectionPanel.reticulumInterfaces.fieldOption.', leafKeys: true },
   { prefix: 'reticulumPropagation.nodeStatus.', leafKeys: true },
   { prefix: 'connectionPanel.bleOwner.', leafKeys: true },
   { prefix: 'reticulumMap.filter.', leafKeys: true },
@@ -51,6 +64,12 @@ export const DYNAMIC_T_PREFIXES = [
   { prefix: 'reticulumRemote.transfer.status.', leafKeys: true },
   { prefix: 'reticulumRemote.settings.inboundMode.', leafKeys: true },
   { prefix: 'reticulumRemote.settings.decision.', leafKeys: true },
+  { prefix: 'gamesPanel.apps.', leafKeys: true },
+  { prefix: 'gamesPanel.chess.promoteTo.', leafKeys: true },
+  { prefix: 'gamesPanel.delivery.', leafKeys: true },
+  { prefix: 'gamesPanel.status.', leafKeys: true },
+  { prefix: 'gamesPanel.filters.', leafKeys: true },
+  { prefix: 'gamesPanel.chess.pieceNames.', leafKeys: true },
 ];
 
 export function flatten(obj, prefix = '') {
@@ -158,7 +177,7 @@ export function collectUsedI18nKeys(
 
   const usedDynamic = new Set();
   for (const entry of DYNAMIC_T_PREFIXES) {
-    if (!activeDynamicPrefixes.has(entry.prefix)) continue;
+    if (!entry.alwaysActive && !activeDynamicPrefixes.has(entry.prefix)) continue;
     for (const key of enKeys) {
       if (!key.startsWith(entry.prefix)) continue;
       if (entry.leafKeys) {

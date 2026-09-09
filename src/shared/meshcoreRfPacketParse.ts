@@ -25,6 +25,57 @@ export function meshCorePacketFingerprintHex(raw: Uint8Array): string {
   return ((crc ^ 0xffffffff) >>> 0).toString(16).padStart(8, '0').toUpperCase();
 }
 
+/**
+ * Path-invariant flood identity for matching a packet to its rebroadcasts.
+ * Firmware `Packet::calculatePacketHash` is SHA-256(payload_type || payload) and **excludes**
+ * the path — hop growth does not change identity. We keep a CRC-32 of the same inputs as a
+ * short lookup key, but equality always validates `payloadTypeNibble` + full `innerPayload`
+ * so a CRC collision cannot bind foreign traffic to the heard-repeat window.
+ */
+export interface MeshCorePathInvariantPayloadId {
+  /** CRC-32 of (type||payload); display/lookup only — not authoritative alone. */
+  crcHex: string;
+  payloadTypeNibble: number;
+  innerPayload: Uint8Array;
+}
+
+export function meshCorePathInvariantPayloadId(
+  payloadTypeNibble: number,
+  innerPayload: Uint8Array,
+): MeshCorePathInvariantPayloadId {
+  const type = payloadTypeNibble & 0x0f;
+  const copy = new Uint8Array(innerPayload);
+  const buf = new Uint8Array(1 + copy.length);
+  buf[0] = type;
+  buf.set(copy, 1);
+  return {
+    crcHex: meshCorePacketFingerprintHex(buf),
+    payloadTypeNibble: type,
+    innerPayload: copy,
+  };
+}
+
+/** CRC-only form of {@link meshCorePathInvariantPayloadId} (tests / display). */
+export function meshCorePathInvariantPayloadIdHex(
+  payloadTypeNibble: number,
+  innerPayload: Uint8Array,
+): string {
+  return meshCorePathInvariantPayloadId(payloadTypeNibble, innerPayload).crcHex;
+}
+
+export function meshCorePathInvariantPayloadIdsEqual(
+  a: MeshCorePathInvariantPayloadId,
+  b: MeshCorePathInvariantPayloadId,
+): boolean {
+  if (a.crcHex !== b.crcHex) return false;
+  if (a.payloadTypeNibble !== b.payloadTypeNibble) return false;
+  if (a.innerPayload.length !== b.innerPayload.length) return false;
+  for (let i = 0; i < a.innerPayload.length; i++) {
+    if (a.innerPayload[i] !== b.innerPayload[i]) return false;
+  }
+  return true;
+}
+
 export interface MeshCoreAdvertParsed {
   publicKey: Uint8Array;
   timestampSec: number;
@@ -113,7 +164,8 @@ export function parseMeshCoreAdvertInner(inner: Uint8Array): MeshCoreAdvertParse
   const publicKey = inner.subarray(0, 32);
   const timestampSec = readU32LE(inner, 32);
   const signature = inner.subarray(36, 100);
-  const flags = inner[100];
+  const flags = inner.at(100);
+  if (flags === undefined) return null;
   const deviceRole = flags & 0x0f;
   const hasLocation = ((flags >> 4) & 1) === 1;
   const hasName = ((flags >> 7) & 1) === 1;
@@ -153,7 +205,10 @@ function buildStructure(
   pathEndOffset: number,
   transportCodes: readonly [number, number] | null,
 ): MeshCoreStructureAnalysis {
-  const byte0 = raw[0];
+  const byte0 = raw.at(0);
+  if (byte0 === undefined) {
+    throw new Error('Packet too short for structure analysis');
+  }
   const routeTypeString = meshCoreRouteTypeStringFromByte0(byte0);
   const payloadTypeString = meshCorePayloadTypeStringFromByte0(byte0);
   const segments: MeshCorePacketSegment[] = [
@@ -177,11 +232,15 @@ function buildStructure(
     });
     o = 5;
   }
+  const pathLengthByte = raw.at(o);
+  if (pathLengthByte === undefined) {
+    throw new Error('Packet too short for path length');
+  }
   segments.push({
     name: 'Path length + hash size',
     startByte: o,
     endByte: o,
-    valueHex: raw[o].toString(16).padStart(2, '0'),
+    valueHex: pathLengthByte.toString(16).padStart(2, '0'),
   });
   segments.push({
     name: 'Path hashes',
@@ -240,7 +299,10 @@ export function parseMeshCoreRfPacket(raw: Uint8Array): MeshCoreRfParseResult {
     };
   }
 
-  const byte0 = raw[0];
+  const byte0 = raw.at(0);
+  if (byte0 === undefined) {
+    return { ok: false, reason: 'buffer too short' };
+  }
   const routeTypeString = meshCoreRouteTypeStringFromByte0(byte0);
   const payloadTypeString = meshCorePayloadTypeStringFromByte0(byte0);
   const payloadTypeNibble = meshCorePayloadTypeNibble(byte0);
@@ -301,7 +363,9 @@ export async function meshCoreTransportCodeForRegion(
   );
   const sigBuf = await crypto.subtle.sign('HMAC', cryptoKey, msgBuf);
   const sig = new Uint8Array(sigBuf);
-  return sig[0] | (sig[1] << 8);
+  const low = sig.at(0) ?? 0;
+  const high = sig.at(1) ?? 0;
+  return low | (high << 8);
 }
 
 export async function meshCoreTransportCodeMatchesRegion(

@@ -4,6 +4,7 @@ import { resolveMeshtasticOutboundStoreKey } from '@/renderer/lib/sessions/mesht
 import { messageRecordsToChatMessages } from '@/renderer/lib/storeRecordAdapters';
 import type { ChatMessage } from '@/renderer/lib/types';
 import { updateMessageStatus, useMessageStore } from '@/renderer/stores/messageStore';
+import { isMeshtasticBroadcastNodeNum } from '@/shared/nodeNameUtils';
 
 import { meshtasticRoutingErrorName } from './meshtasticApplyErrorMessage';
 import {
@@ -69,6 +70,14 @@ export function humanizeMeshtasticSdkQueueRejectionError(reason: unknown): strin
   return i18nKey ? i18n.t(i18nKey) : parsed.errorName;
 }
 
+/**
+ * True for routing errors that mean we lack a usable public key for the DM recipient.
+ * Requesting the recipient's NODEINFO can recover the key so a retry succeeds.
+ */
+export function isMeshtasticMissingRecipientKeyError(errorName: string): boolean {
+  return errorName === 'PKI_SEND_FAIL_PUBLIC_KEY' || errorName === 'PKI_UNKNOWN_PUBKEY';
+}
+
 export function chatRoutingErrorKeyForSdkErrorName(errorName: string): string | null {
   switch (errorName) {
     case 'PKI_SEND_FAIL_PUBLIC_KEY':
@@ -98,6 +107,8 @@ export interface ApplyMeshtasticOutboundRoutingErrorContext {
   identityId: string | null;
   /** tempId → wire packet id assigned by the SDK (may differ from optimistic id). */
   tempIdToWirePacketId?: ReadonlyMap<number, number>;
+  /** Invoked with the recipient node num when a DM fails for lack of that node's public key. */
+  onMissingRecipientKey?: (recipientNodeNum: number) => void;
 }
 
 function outboundMatchesWirePacketId(
@@ -143,9 +154,15 @@ function storeOutboundMessagesAsChat(identityId: string, myNodeNum: number): Cha
   return messageRecordsToChatMessages(records);
 }
 
+/** Errors that are unsafe to attribute via the single-sending fallback. */
+function shouldAvoidSendingFallback(errorName: string): boolean {
+  return errorName === 'TIMEOUT' || errorName === 'NO_RESPONSE' || errorName === 'MAX_RETRANSMIT';
+}
+
 function findOutboundTargetForWirePacketId(
   wirePacketId: number,
   ctx: ApplyMeshtasticOutboundRoutingErrorContext,
+  errorName: string,
 ): ChatMessage | undefined {
   const { myNodeNum, identityId, tempIdToWirePacketId } = ctx;
   if (!identityId) return undefined;
@@ -159,6 +176,14 @@ function findOutboundTargetForWirePacketId(
   // An unmatched wire id may belong to a non-chat wantAck packet (e.g. the
   // share-location Waypoint) — do not misattribute its NAK to a pending chat row.
   if (hasMeshtasticNonChatOutboundInFlight()) return undefined;
+
+  // Unmatched TIMEOUT / MAX_RETRANSMIT / NO_RESPONSE must not steal the sole
+  // in-flight chat row (leftover queue TIMEOUTs were marking unrelated broadcasts
+  // failed). TransportManager still fails the matching sendText by tempId when
+  // the NAK belongs to that send.
+  if (shouldAvoidSendingFallback(errorName)) {
+    return undefined;
+  }
 
   return findFallbackSendingOutbound(messages, myNodeNum);
 }
@@ -185,12 +210,22 @@ export function applyMeshtasticOutboundRoutingError(
   if (isMeshtasticNonChatWirePacketId(parsed.packetId)) {
     return false;
   }
-  const target = findOutboundTargetForWirePacketId(parsed.packetId, ctx);
+  const target = findOutboundTargetForWirePacketId(parsed.packetId, ctx, parsed.errorName);
   if (!target || !identityId) {
     return false;
   }
   const storeMessageId = resolveStoreMessageId(target, parsed.packetId);
   updateMessageStatus(identityId, storeMessageId, 'failed', errorText);
+  // Missing recipient public key: fetch the recipient's NODEINFO so a retry can succeed.
+  // Only for real DM recipients — never the broadcast address (a PKI NAK there is not
+  // a per-node key gap, and 0xffffffff has no NODEINFO to fetch).
+  if (
+    isMeshtasticMissingRecipientKeyError(parsed.errorName) &&
+    target.to != null &&
+    !isMeshtasticBroadcastNodeNum(target.to)
+  ) {
+    ctx.onMissingRecipientKey?.(target.to);
+  }
   // The DB row may still hold the optimistic temp packet id (device never acked,
   // so updateMessagePacketId never ran) — key the update on the row's own id,
   // not the wire id from the radio NAK, or the UPDATE matches zero rows.

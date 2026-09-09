@@ -1,5 +1,7 @@
 import '@testing-library/jest-dom';
 import 'vitest-axe/extend-expect';
+// emoji-picker-element (ChatPanel) opens IndexedDB; jsdom has none.
+import 'fake-indexeddb/auto';
 
 import { cleanup } from '@testing-library/react';
 import i18next from 'i18next';
@@ -11,6 +13,59 @@ import en from './locales/en/translation.json';
 import { createElectronAPIMock, resetElectronAPIOutboxMock } from './vitest.electronApiMock';
 
 expect.extend(matchers);
+
+// jsdom omits structuredClone; fake-indexeddb requires it (Node engines provide it).
+if (typeof globalThis.structuredClone === 'function') {
+  vi.stubGlobal('structuredClone', globalThis.structuredClone.bind(globalThis));
+}
+
+/** Empty DOMRect for jsdom Range / IntersectionObserver stubs. */
+function emptyDomRect(): DOMRect {
+  return {
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    toJSON() {
+      return this;
+    },
+  };
+}
+
+// emoji-picker-element uses IntersectionObserver after IndexedDB opens (jsdom has none).
+interface IntersectionObserverStubInstance {
+  root: null;
+  rootMargin: string;
+  thresholds: number[];
+  observe: ReturnType<typeof vi.fn>;
+  unobserve: ReturnType<typeof vi.fn>;
+  disconnect: ReturnType<typeof vi.fn>;
+  takeRecords: ReturnType<typeof vi.fn>;
+}
+vi.stubGlobal(
+  'IntersectionObserver',
+  vi.fn(function IntersectionObserverStub(this: IntersectionObserverStubInstance) {
+    this.root = null;
+    this.rootMargin = '';
+    this.thresholds = [];
+    this.observe = vi.fn();
+    this.unobserve = vi.fn();
+    this.disconnect = vi.fn();
+    this.takeRecords = vi.fn(() => []);
+  }),
+);
+
+// emoji-picker-element ZWJ checks call Range#getBoundingClientRect (incomplete in jsdom).
+if (typeof Range !== 'undefined' && typeof Range.prototype.getBoundingClientRect !== 'function') {
+  Range.prototype.getBoundingClientRect = emptyDomRect;
+}
+if (typeof Range !== 'undefined' && typeof Range.prototype.getClientRects !== 'function') {
+  Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
+}
 afterEach(() => {
   cleanup();
   resetElectronAPIOutboxMock();
@@ -18,12 +73,12 @@ afterEach(() => {
 
 /** Fail tests on [object Object] in console.warn (use mockConsoleWarn when expecting warnings). */
 const originalConsoleWarn = console.warn.bind(console);
-console.warn = (...args: Parameters<typeof console.warn>) => {
+console.warn = (...args: unknown[]) => {
   const text = args.map(String).join(' ');
   if (text.includes('[object Object]')) {
     throw new Error(`Unexpected console.warn containing [object Object]: ${text}`);
   }
-  originalConsoleWarn(...args);
+  Reflect.apply(originalConsoleWarn, console, args);
 };
 
 // Node.js 25+ exposes a native localStorage global that emits a warning when accessed
@@ -47,6 +102,15 @@ vi.stubGlobal('localStorage', {
     return Object.keys(_localStorageStore).length;
   },
   key: (i: number) => Object.keys(_localStorageStore)[i] ?? null,
+});
+
+// jsdom's document.hasFocus() defaults to false; the app treats an unfocused window as
+// inactive (appWindowActivity). Default to focused so mark-read/notification tests match a
+// normal foreground window; tests simulate blur with vi.spyOn(document, 'hasFocus').
+Object.defineProperty(document, 'hasFocus', {
+  configurable: true,
+  writable: true,
+  value: () => true,
 });
 
 // jsdom doesn't implement scroll APIs

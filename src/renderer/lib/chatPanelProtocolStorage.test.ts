@@ -1,12 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  activeChannelStorageKey,
+  activeDmStorageKey,
   clearDraft,
+  clearFloodScopeOverride,
+  clearPersistedRoomsLastRead,
   draftsStorageKey,
   ensureMeshcoreChatLastReadSanitized,
+  FLOOD_SCOPE_OVERRIDE_UNSCOPED,
+  floodScopeOverridesStorageKey,
   getSanitizedMeshtasticChatLastRead,
   lastReadStorageKey,
+  loadActiveChannelInitial,
+  loadActiveDmInitial,
   loadDraftsInitial,
+  loadFloodScopeOverridesInitial,
   loadMutedViews,
   loadOpenDmTabsInitial,
   loadPersistedLastReadInitial,
@@ -19,12 +28,16 @@ import {
   sanitizeMeshcoreRoomsLastRead,
   sanitizeMeshtasticChatLastRead,
   sanitizeReticulumChatLastRead,
+  saveActiveChannel,
+  saveActiveDm,
   saveDraft,
+  saveFloodScopeOverride,
   saveMutedViews,
   savePersistedRoomsLastRead,
   saveStarred,
   type StarredMessage,
   subscribeMutedViewsChanged,
+  subscribePersistedRoomsLastRead,
 } from './chatPanelProtocolStorage';
 import { computeChannelUnreadCounts, totalUnreadCount } from './chatUnreadCounts';
 import { effectiveMessageTimestampMs } from './nodeStatus';
@@ -46,6 +59,66 @@ describe('chatPanelProtocolStorage', () => {
     const mc = loadOpenDmTabsInitial('meshcore');
     expect(mc).toEqual([]);
     expect(localStorage.getItem(openDmTabsStorageKey('meshcore'))).toBeNull();
+  });
+
+  it('persists and loads last-focused active DM per protocol', () => {
+    expect(loadActiveDmInitial('reticulum')).toBeNull();
+    saveActiveDm('reticulum', 0xdeadbeef);
+    expect(localStorage.getItem(activeDmStorageKey('reticulum'))).toBe(String(0xdeadbeef >>> 0));
+    expect(loadActiveDmInitial('reticulum')).toBe(0xdeadbeef >>> 0);
+    expect(loadActiveDmInitial('meshcore')).toBeNull();
+
+    saveActiveDm('reticulum', null);
+    expect(localStorage.getItem(activeDmStorageKey('reticulum'))).toBeNull();
+    expect(loadActiveDmInitial('reticulum')).toBeNull();
+  });
+
+  it('persists and loads last-selected channel per protocol + node number', () => {
+    expect(loadActiveChannelInitial('meshtastic', 0x12345678)).toBeNull();
+    saveActiveChannel('meshtastic', 0x12345678, 3);
+    expect(localStorage.getItem(activeChannelStorageKey('meshtastic', 0x12345678))).toBe('3');
+    expect(loadActiveChannelInitial('meshtastic', 0x12345678)).toBe(3);
+
+    // Different node number (e.g. connected to a different physical device that
+    // happens to reuse the same internal identity slot) must not see it.
+    expect(loadActiveChannelInitial('meshtastic', 0x87654321)).toBeNull();
+    // Different protocol must not see it either.
+    expect(loadActiveChannelInitial('meshcore', 0x12345678)).toBeNull();
+  });
+
+  it('ignores invalid inputs for active-channel persistence', () => {
+    saveActiveChannel('meshtastic', 0, 3); // no node number yet — no-op
+    expect(loadActiveChannelInitial('meshtastic', 0)).toBeNull();
+
+    localStorage.setItem(activeChannelStorageKey('meshtastic', 5), 'not-a-number');
+    expect(loadActiveChannelInitial('meshtastic', 5)).toBeNull();
+
+    saveActiveChannel('meshtastic', 5, NaN);
+    expect(loadActiveChannelInitial('meshtastic', 5)).toBeNull();
+    saveActiveChannel('meshtastic', 5, 1.5);
+    expect(loadActiveChannelInitial('meshtastic', 5)).toBeNull();
+    saveActiveChannel('meshtastic', 5, -2); // below the -1 sentinel floor
+    expect(loadActiveChannelInitial('meshtastic', 5)).toBeNull();
+  });
+
+  it('rejects malformed node numbers and whitespace-only stored values', () => {
+    // Fractional/infinite node numbers must not read or write a key at all.
+    saveActiveChannel('meshtastic', 1.5, 3);
+    expect(loadActiveChannelInitial('meshtastic', 1.5)).toBeNull();
+    saveActiveChannel('meshtastic', Infinity, 3);
+    expect(loadActiveChannelInitial('meshtastic', Infinity)).toBeNull();
+    expect(loadActiveChannelInitial('meshtastic', NaN)).toBeNull();
+
+    // A whitespace-only stored value must not silently parse as channel 0
+    // (Number(' ') === 0 in JS).
+    localStorage.setItem(activeChannelStorageKey('meshtastic', 9), '   ');
+    expect(loadActiveChannelInitial('meshtastic', 9)).toBeNull();
+  });
+
+  it('persists and loads the MeshCore primary-channel sentinel (-1)', () => {
+    saveActiveChannel('meshcore', 7, -1);
+    expect(localStorage.getItem(activeChannelStorageKey('meshcore', 7))).toBe('-1');
+    expect(loadActiveChannelInitial('meshcore', 7)).toBe(-1);
   });
 
   it('migrates legacy lastRead only into meshtastic key', () => {
@@ -135,6 +208,66 @@ describe('chatPanelProtocolStorage — drafts', () => {
 
     localStorage.setItem(draftsStorageKey('meshtastic'), 'not json{');
     expect(loadDraftsInitial('meshtastic')).toEqual({});
+  });
+});
+
+describe('chatPanelProtocolStorage — flood scope overrides', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('returns empty object when nothing stored', () => {
+    expect(loadFloodScopeOverridesInitial('meshcore')).toEqual({});
+  });
+
+  it('keeps Unscoped and named scopes distinct from Default', () => {
+    saveFloodScopeOverride('meshcore', 'ch:0', FLOOD_SCOPE_OVERRIDE_UNSCOPED);
+    saveFloodScopeOverride('meshcore', 'ch:1', '#metro');
+    saveFloodScopeOverride('meshcore', 'ch:2', '');
+    expect(loadFloodScopeOverridesInitial('meshcore')).toEqual({
+      'ch:0': FLOOD_SCOPE_OVERRIDE_UNSCOPED,
+      'ch:1': '#metro',
+    });
+    expect(localStorage.getItem(floodScopeOverridesStorageKey('meshcore'))).toBe(
+      JSON.stringify({
+        'ch:0': FLOOD_SCOPE_OVERRIDE_UNSCOPED,
+        'ch:1': '#metro',
+      }),
+    );
+  });
+
+  it('Default clears a previously stored Unscoped choice', () => {
+    saveFloodScopeOverride('meshcore', 'ch:0', FLOOD_SCOPE_OVERRIDE_UNSCOPED);
+    clearFloodScopeOverride('meshcore', 'ch:0');
+    expect(loadFloodScopeOverridesInitial('meshcore')).toEqual({});
+  });
+
+  it('does not coerce Unscoped to Default on load', () => {
+    localStorage.setItem(
+      floodScopeOverridesStorageKey('meshcore'),
+      JSON.stringify({ 'ch:0': FLOOD_SCOPE_OVERRIDE_UNSCOPED, 'ch:1': '' }),
+    );
+    expect(loadFloodScopeOverridesInitial('meshcore')).toEqual({
+      'ch:0': FLOOD_SCOPE_OVERRIDE_UNSCOPED,
+    });
+  });
+
+  it('scopes overrides per protocol', () => {
+    saveFloodScopeOverride('meshcore', 'ch:0', '#metro');
+    saveFloodScopeOverride('meshtastic', 'ch:0', '#ignored');
+    expect(loadFloodScopeOverridesInitial('meshcore')['ch:0']).toBe('#metro');
+    expect(loadFloodScopeOverridesInitial('meshtastic')['ch:0']).toBe('#ignored');
+  });
+
+  it('ignores non-string values and corrupt JSON', () => {
+    localStorage.setItem(
+      floodScopeOverridesStorageKey('meshcore'),
+      JSON.stringify({ 'ch:0': 42, 'ch:1': '#metro', 'ch:2': '#' }),
+    );
+    expect(loadFloodScopeOverridesInitial('meshcore')).toEqual({ 'ch:1': '#metro' });
+
+    localStorage.setItem(floodScopeOverridesStorageKey('meshcore'), 'not json{');
+    expect(loadFloodScopeOverridesInitial('meshcore')).toEqual({});
   });
 });
 
@@ -448,5 +581,15 @@ describe('rooms last read storage', () => {
   it('mergeRoomLastReadWatermark only advances forward', () => {
     expect(mergeRoomLastReadWatermark({ 0xabc: 5000 }, 0xabc, 4000)).toEqual({ 0xabc: 5000 });
     expect(mergeRoomLastReadWatermark({ 0xabc: 5000 }, 0xabc, 6000)).toEqual({ 0xabc: 6000 });
+  });
+
+  it('clearPersistedRoomsLastRead notifies subscribers', () => {
+    savePersistedRoomsLastRead({ 0xabc: 5000 });
+    const listener = vi.fn();
+    const unsub = subscribePersistedRoomsLastRead(listener);
+    clearPersistedRoomsLastRead();
+    expect(loadPersistedRoomsLastRead()).toEqual({});
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsub();
   });
 });

@@ -1,10 +1,20 @@
 import type { MeshDevice } from '@meshtastic/core';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MESHTASTIC_BLE_CONFIGURE_TIMEOUT_MS } from '../timeConstants';
 import type { ConnectionType, DeviceState } from '../types';
+import {
+  resetMeshtasticConfigurePhaseForTests,
+  touchMeshtasticConfigureProgress,
+} from './meshtasticConfigurePhase';
 import { attachMeshtasticRuntimeWireEffects } from './meshtasticRuntimeWireEffects';
 
-function makeDeps() {
+/** DeviceConfiguring — see Types.DeviceStatusEnum */
+const DEVICE_CONFIGURING = 6;
+/** DeviceConfigured — see Types.DeviceStatusEnum */
+const DEVICE_CONFIGURED = 7;
+
+function makeDeps(opts?: { isBleReconnectAttemptActive?: () => boolean }) {
   const touchLastData = vi.fn();
   const schedulePostCommitRebootRecovery = vi.fn();
   const clearPostCommitRebootRecovery = vi.fn();
@@ -12,7 +22,6 @@ function makeDeps() {
   const stopWatchdog = vi.fn();
   const stopGpsInterval = vi.fn();
   const cleanupSubscriptions = vi.fn();
-  const clearConfigureTimeout = vi.fn();
   const startWatchdog = vi.fn();
   const startGpsInterval = vi.fn();
   const refreshOurPosition = vi.fn().mockResolvedValue(null);
@@ -24,6 +33,12 @@ function makeDeps() {
     current: { type: 'ble' as ConnectionType, blePeripheralId: 'p1' },
   };
   const configureTimeoutRef = { current: null as ReturnType<typeof setTimeout> | null };
+  const clearConfigureTimeout = vi.fn(() => {
+    if (configureTimeoutRef.current != null) {
+      clearTimeout(configureTimeoutRef.current);
+      configureTimeoutRef.current = null;
+    }
+  });
   const meshtasticIngestSessionRef = {
     current: {
       setConfiguring: vi.fn(),
@@ -88,6 +103,7 @@ function makeDeps() {
     isDuplicate: vi.fn().mockReturnValue(false),
     ensureNodeExists: vi.fn(),
     clearConfigureTimeout,
+    isBleReconnectAttemptActive: opts?.isBleReconnectAttemptActive ?? (() => false),
     applyMeshtasticForeignLoraFromLog: vi.fn(),
     emptyNode: vi.fn(),
     setMeshtasticIdentityId: noopSet,
@@ -131,6 +147,7 @@ function makeDeps() {
 
   return {
     deps,
+    configureTimeoutRef,
     touchLastData,
     schedulePostCommitRebootRecovery,
     clearPostCommitRebootRecovery,
@@ -138,6 +155,39 @@ function makeDeps() {
     isConfiguringRef,
     setState,
   };
+}
+
+function attachWithStatusSubscribers(
+  deps: ReturnType<typeof makeDeps>['deps'],
+  type: ConnectionType = 'ble',
+): Set<(status: number) => void> {
+  const statusSubscribers = new Set<(status: number) => void>();
+  const noopSub = { subscribe: () => () => {} };
+  const device = {
+    events: new Proxy({} as MeshDevice['events'], {
+      get: (_target, prop) => {
+        if (prop === 'onDeviceStatus') {
+          return {
+            subscribe: (cb: (status: number) => void) => {
+              statusSubscribers.add(cb);
+              return () => statusSubscribers.delete(cb);
+            },
+          };
+        }
+        return noopSub;
+      },
+    }),
+    setHeartbeatInterval: vi.fn(),
+    heartbeat: vi.fn().mockResolvedValue(undefined),
+  } as unknown as MeshDevice;
+  attachMeshtasticRuntimeWireEffects(device, type, { driverIdentityId: 'id-1' }, deps);
+  return statusSubscribers;
+}
+
+function attachBleWithStatusSubscribers(
+  deps: ReturnType<typeof makeDeps>['deps'],
+): Set<(status: number) => void> {
+  return attachWithStatusSubscribers(deps, 'ble');
 }
 
 describe('meshtasticRuntimeWireEffects DeviceRestarting', () => {
@@ -212,5 +262,188 @@ describe('meshtasticRuntimeWireEffects DeviceRestarting', () => {
     for (const cb of statusSubscribers) cb(7);
 
     expect(clearPostCommitRebootRecovery).toHaveBeenCalled();
+  });
+});
+
+describe('meshtasticRuntimeWireEffects BLE configure timeout arming', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    resetMeshtasticConfigurePhaseForTests();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    resetMeshtasticConfigurePhaseForTests();
+  });
+
+  it('arms stall timeout on DeviceConfiguring when reconnect is inactive', () => {
+    const { deps, configureTimeoutRef } = makeDeps({
+      isBleReconnectAttemptActive: () => false,
+    });
+    const statusSubscribers = attachBleWithStatusSubscribers(deps);
+
+    for (const cb of statusSubscribers) cb(DEVICE_CONFIGURING);
+
+    expect(configureTimeoutRef.current).not.toBeNull();
+  });
+
+  it('does not arm timeout on DeviceConfiguring when reconnect owns the attempt', () => {
+    const { deps, configureTimeoutRef } = makeDeps({
+      isBleReconnectAttemptActive: () => true,
+    });
+    const statusSubscribers = attachBleWithStatusSubscribers(deps);
+
+    for (const cb of statusSubscribers) cb(DEVICE_CONFIGURING);
+
+    expect(configureTimeoutRef.current).toBeNull();
+  });
+
+  it('fires handleConnectionLost after BLE configure stall timeout when armed', () => {
+    const { deps, configureTimeoutRef } = makeDeps({
+      isBleReconnectAttemptActive: () => false,
+    });
+    const onLost = vi.mocked(deps.handleConnectionLostRef.current);
+    const statusSubscribers = attachBleWithStatusSubscribers(deps);
+
+    for (const cb of statusSubscribers) cb(DEVICE_CONFIGURING);
+    expect(configureTimeoutRef.current).not.toBeNull();
+
+    vi.advanceTimersByTime(MESHTASTIC_BLE_CONFIGURE_TIMEOUT_MS);
+
+    expect(onLost).toHaveBeenCalledTimes(1);
+    expect(configureTimeoutRef.current).toBeNull();
+  });
+
+  it('resets stall timer when configure progress arrives mid-stream', () => {
+    const { deps, configureTimeoutRef } = makeDeps({
+      isBleReconnectAttemptActive: () => false,
+    });
+    const onLost = vi.mocked(deps.handleConnectionLostRef.current);
+    const statusSubscribers = attachBleWithStatusSubscribers(deps);
+
+    for (const cb of statusSubscribers) cb(DEVICE_CONFIGURING);
+    vi.advanceTimersByTime(MESHTASTIC_BLE_CONFIGURE_TIMEOUT_MS - 5_000);
+    touchMeshtasticConfigureProgress();
+    vi.advanceTimersByTime(MESHTASTIC_BLE_CONFIGURE_TIMEOUT_MS - 5_000);
+    expect(onLost).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(10_000);
+    expect(onLost).toHaveBeenCalledTimes(1);
+    expect(configureTimeoutRef.current).toBeNull();
+  });
+
+  it('resets stall timer after DeviceConfigured when configure runs again', () => {
+    const { deps, configureTimeoutRef } = makeDeps({
+      isBleReconnectAttemptActive: () => false,
+    });
+    const onLost = vi.mocked(deps.handleConnectionLostRef.current);
+    const statusSubscribers = attachBleWithStatusSubscribers(deps);
+
+    for (const cb of statusSubscribers) cb(DEVICE_CONFIGURING);
+    for (const cb of statusSubscribers) cb(DEVICE_CONFIGURED);
+    for (const cb of statusSubscribers) cb(DEVICE_CONFIGURING);
+
+    vi.advanceTimersByTime(MESHTASTIC_BLE_CONFIGURE_TIMEOUT_MS - 5_000);
+    touchMeshtasticConfigureProgress();
+    vi.advanceTimersByTime(MESHTASTIC_BLE_CONFIGURE_TIMEOUT_MS - 5_000);
+    expect(onLost).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(10_000);
+    expect(onLost).toHaveBeenCalledTimes(1);
+    expect(configureTimeoutRef.current).toBeNull();
+  });
+});
+
+describe('meshtasticRuntimeWireEffects serial configure timeout arming', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    resetMeshtasticConfigurePhaseForTests();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    resetMeshtasticConfigurePhaseForTests();
+  });
+
+  it('arms stall timeout on DeviceConfiguring for serial when reconnect is inactive', () => {
+    const { deps, configureTimeoutRef } = makeDeps({
+      isBleReconnectAttemptActive: () => false,
+    });
+    const statusSubscribers = attachWithStatusSubscribers(deps, 'serial');
+
+    for (const cb of statusSubscribers) cb(DEVICE_CONFIGURING);
+
+    expect(configureTimeoutRef.current).not.toBeNull();
+  });
+
+  it('fires handleConnectionLost after serial configure stall timeout', () => {
+    const { deps, configureTimeoutRef } = makeDeps({
+      isBleReconnectAttemptActive: () => false,
+    });
+    const onLost = vi.mocked(deps.handleConnectionLostRef.current);
+    const statusSubscribers = attachWithStatusSubscribers(deps, 'serial');
+
+    for (const cb of statusSubscribers) cb(DEVICE_CONFIGURING);
+    expect(configureTimeoutRef.current).not.toBeNull();
+
+    vi.advanceTimersByTime(MESHTASTIC_BLE_CONFIGURE_TIMEOUT_MS);
+
+    expect(onLost).toHaveBeenCalledTimes(1);
+    expect(configureTimeoutRef.current).toBeNull();
+  });
+
+  it('does not arm serial stall when reconnect owns the attempt', () => {
+    const { deps, configureTimeoutRef } = makeDeps({
+      isBleReconnectAttemptActive: () => true,
+    });
+    const statusSubscribers = attachWithStatusSubscribers(deps, 'serial');
+
+    for (const cb of statusSubscribers) cb(DEVICE_CONFIGURING);
+
+    expect(configureTimeoutRef.current).toBeNull();
+  });
+});
+
+/** DeviceDisconnected — see Types.DeviceStatusEnum */
+const DEVICE_DISCONNECTED = 2;
+
+describe('meshtasticRuntimeWireEffects DeviceDisconnected cancels deferred getMetadata', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('does not call getMetadata when disconnect arrives before defer expires', async () => {
+    const { deps } = makeDeps();
+    deps.myNodeNumRef.current = 0x1234;
+    const getMetadata = vi.fn().mockResolvedValue(undefined);
+    const statusSubscribers = new Set<(status: number) => void>();
+    const noopSub = { subscribe: () => () => {} };
+    const device = {
+      events: new Proxy({} as MeshDevice['events'], {
+        get: (_target, prop) => {
+          if (prop === 'onDeviceStatus') {
+            return {
+              subscribe: (cb: (status: number) => void) => {
+                statusSubscribers.add(cb);
+                return () => statusSubscribers.delete(cb);
+              },
+            };
+          }
+          return noopSub;
+        },
+      }),
+      setHeartbeatInterval: vi.fn(),
+      heartbeat: vi.fn().mockResolvedValue(undefined),
+      getMetadata,
+      getConfig: vi.fn().mockResolvedValue(undefined),
+    } as unknown as MeshDevice;
+
+    attachMeshtasticRuntimeWireEffects(device, 'ble', { driverIdentityId: 'id-1' }, deps);
+
+    for (const cb of statusSubscribers) cb(DEVICE_CONFIGURED);
+    expect(getMetadata).not.toHaveBeenCalled();
+
+    for (const cb of statusSubscribers) cb(DEVICE_DISCONNECTED);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(getMetadata).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,5 @@
 import { Bell, BellOff, Clock, LogOut, Trash2, X } from 'lucide-react-motion';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ConfirmModal } from '@/renderer/components/ConfirmModal';
@@ -11,15 +11,37 @@ import { RrcTopicBar } from '@/renderer/components/rrc/RrcTopicBar';
 import { runRrcHubAutoConnectBatch } from '@/renderer/hooks/useRrcStartupAutoConnect';
 import { loadMutedViews, saveMutedViews } from '@/renderer/lib/chatPanelProtocolStorage';
 import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
+import { withReticulumIpcSendDeadline } from '@/renderer/lib/reticulum/reticulumIpcDeadline';
 import { isReticulumSidecarRunning } from '@/renderer/lib/reticulum/reticulumSidecarReads';
+import {
+  isRrcDmRoom,
+  parseRrcDmRoomKey,
+  rrcDmDisplayLabel,
+  rrcDmRoomKey,
+} from '@/renderer/lib/rrcDmRoom';
 import { formatRrcErrorMessage } from '@/renderer/lib/rrcErrorHumanize';
+import { clearRrcHubAutoJoinBackoff } from '@/renderer/lib/rrcHubAutoJoinBackoff';
 import { setRrcHubDisconnectSuppressed } from '@/renderer/lib/rrcHubDisconnectSuppress';
 import { isRrcHubAutoJoin, toggleRrcHubAutoJoin } from '@/renderer/lib/rrcHubPrefs';
 import { isRrcHubLinked } from '@/renderer/lib/rrcHubSession';
-import { clearRrcRoomHistory, hydrateRrcRoomMessages } from '@/renderer/lib/rrcMessagePersist';
+import { migrateLegacyWhispersForHub } from '@/renderer/lib/rrcLegacyWhispersMigrate';
+import {
+  applyRrcHistoryNicksToMembers,
+  collectRrcNicksForHub,
+} from '@/renderer/lib/rrcMemberNicksFromHistory';
+import { hydrateRrcHubNicks } from '@/renderer/lib/rrcNickCacheHydrate';
+import { buildRrcWhisperCompleteMembers } from '@/renderer/lib/rrcNickComplete';
+import { loadRrcOpenDms } from '@/renderer/lib/rrcOpenDms';
 import { loadRrcRecentRooms, pushRrcRecentRoom } from '@/renderer/lib/rrcRecentRooms';
+import { clearRrcRoomHistory, hydrateRrcRoomMessages } from '@/renderer/lib/rrcRoomHistory';
 import { dedupeRrcMembers, rrcIdentityHashesMatch } from '@/renderer/lib/rrcRoomMembers';
-import { resolveRrcJoinRoomName, rrcRoomMatchKey, rrcRoomsMatch } from '@/renderer/lib/rrcRoomName';
+import {
+  resolveRrcJoinRoomName,
+  resolveRrcWhoTranscriptForceRoom,
+  rrcRoomMatchKey,
+  rrcRoomsMatch,
+  rrcWhoCommandToken,
+} from '@/renderer/lib/rrcRoomName';
 import {
   loadRrcAutoJoinRooms,
   loadRrcRoomFavourites,
@@ -27,19 +49,23 @@ import {
   toggleRrcRoomFavourite,
 } from '@/renderer/lib/rrcRoomPrefs';
 import {
+  expandRrcHubSlashBody,
   parseRrcSlashInput,
   resolveRrcMsgTarget,
   RRC_HELP_I18N_KEYS,
 } from '@/renderer/lib/rrcSlashCommands';
+import { RRC_WHO_REPLY_TIMEOUT_MS } from '@/renderer/lib/timeConstants';
 import { useRrcHubStore } from '@/renderer/stores/rrcHubStore';
 import {
   MAX_RRC_HUB_SESSIONS,
   RRC_HUB_STREAM_ROOM,
   RRC_NICKNAME_STORAGE_KEY,
-  RRC_WHISPERS_ROOM,
+  selectRrcActiveRoomMessages,
+  selectRrcFocusedHubNicks,
   useRrcSessionStore,
 } from '@/renderer/stores/rrcSessionStore';
 import type { RrcHubInfo, RrcRoomMember } from '@/shared/rrc-types';
+import { touch } from '@/shared/touch';
 
 const COLLAPSED_KEY = 'mesh-client:rrcHubListCollapsed';
 const ROOM_LIST_COLLAPSED_KEY = 'mesh-client:rrc:roomListCollapsed';
@@ -72,11 +98,27 @@ function persistCollapsed(key: string, next: boolean) {
   }
 }
 
-export interface RrcPanelProps {
-  isActive: boolean;
+type RrcSendArgs = Parameters<typeof window.electronAPI.reticulum.rrc.send>[0];
+type RrcSendResult = Awaited<ReturnType<typeof window.electronAPI.reticulum.rrc.send>>;
+
+/** Bound RRC send so a stuck proxy cannot hang the composer. */
+function rrcSendBounded(args: RrcSendArgs): Promise<RrcSendResult> {
+  return withReticulumIpcSendDeadline(window.electronAPI.reticulum.rrc.send(args));
 }
 
-export default function RrcPanel({ isActive }: RrcPanelProps) {
+export interface RrcPanelProps {
+  isActive: boolean;
+  /** Keep RRC per-message copy visible (same App Appearance setting as Chat). */
+  alwaysShowMessageActions?: boolean;
+  /** Open a Chat DM for an LXMF destination hash posted in a room. */
+  onOpenDm?: (destinationHash: string) => void;
+}
+
+export default function RrcPanel({
+  isActive,
+  alwaysShowMessageActions = false,
+  onOpenDm,
+}: RrcPanelProps) {
   const { t } = useTranslation();
   const hubs = useRrcHubStore((s) => s.hubs);
   const refreshFromSidecar = useRrcHubStore((s) => s.refreshFromSidecar);
@@ -89,7 +131,6 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
   const nickname = useRrcSessionStore((s) => s.nickname);
   const rooms = useRrcSessionStore((s) => s.rooms);
   const listedRooms = useRrcSessionStore((s) => s.listedRooms);
-  const messages = useRrcSessionStore((s) => s.messages);
   const activeRoom = useRrcSessionStore((s) => s.activeRoom);
   const lastError = useRrcSessionStore((s) => s.lastError);
   const moderationBanner = useRrcSessionStore((s) => s.moderationBanner);
@@ -99,16 +140,18 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
   const capabilities = useRrcSessionStore((s) => s.capabilities);
   const setNickname = useRrcSessionStore((s) => s.setNickname);
   const setFocusedHub = useRrcSessionStore((s) => s.setFocusedHub);
+  const setRrcPanelFocused = useRrcSessionStore((s) => s.setRrcPanelFocused);
   const setActiveRoom = useRrcSessionStore((s) => s.setActiveRoom);
   const setShowTimestamps = useRrcSessionStore((s) => s.setShowTimestamps);
   const clearUnread = useRrcSessionStore((s) => s.clearUnread);
   const clearActiveRoomMessages = useRrcSessionStore((s) => s.clearActiveRoomMessages);
   const addMessage = useRrcSessionStore((s) => s.addMessage);
-  const messagesForActiveRoom = useRrcSessionStore((s) => s.messagesForActiveRoom);
   const markPartIntent = useRrcSessionStore((s) => s.markPartIntent);
   const localIdentityHash = useRrcSessionStore((s) => s.localIdentityHash);
   const setDisconnectIntent = useRrcSessionStore((s) => s.setDisconnectIntent);
   const setModerationBanner = useRrcSessionStore((s) => s.setModerationBanner);
+  const openDm = useRrcSessionStore((s) => s.openDm);
+  const closeDm = useRrcSessionStore((s) => s.closeDm);
   const setError = useRrcSessionStore((s) => s.setError);
   const clearHubSession = useRrcSessionStore((s) => s.clearHubSession);
 
@@ -134,8 +177,6 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
   const [mutedViews, setMutedViews] = useState(() => loadMutedViews('reticulum'));
   const [draft, setDraft] = useState('');
   const [confirmClearHistory, setConfirmClearHistory] = useState(false);
-  /** Per-hub room keys we already requested `/who` for (rrcd JOINED often has no roster). */
-  const whoRequestedRef = useRef(new Set<string>());
 
   useEffect(() => {
     try {
@@ -151,21 +192,37 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
     void hydrateRrcRoomMessages(hubDestHash, activeRoom);
   }, [hubDestHash, activeRoom]);
 
+  useEffect(() => {
+    if (!hubDestHash) return;
+    void hydrateRrcHubNicks(hubDestHash);
+  }, [hubDestHash]);
+
+  // Restore open DMs + migrate legacy [whispers] after hub is live.
+  useEffect(() => {
+    if (!hubDestHash || status !== 'active') return;
+    const hub = hubDestHash;
+    for (const dm of loadRrcOpenDms(hub)) {
+      openDm(dm, hub, { focus: false, persist: false });
+      void hydrateRrcRoomMessages(hub, rrcDmRoomKey(dm.identity_hash));
+    }
+    void migrateLegacyWhispersForHub(hub);
+  }, [hubDestHash, status, openDm]);
+
   const recentRooms = useMemo(() => {
     if (!hubDestHash) return [];
-    void recentRoomsEpoch;
+    touch(recentRoomsEpoch);
     return loadRrcRecentRooms(hubDestHash);
   }, [hubDestHash, recentRoomsEpoch]);
 
   const roomFavourites = useMemo(() => {
     if (!hubDestHash) return [];
-    void prefsEpoch;
+    touch(prefsEpoch);
     return loadRrcRoomFavourites(hubDestHash);
   }, [hubDestHash, prefsEpoch]);
 
   const autoJoinRooms = useMemo(() => {
     if (!hubDestHash) return [];
-    void prefsEpoch;
+    touch(prefsEpoch);
     return loadRrcAutoJoinRooms(hubDestHash);
   }, [hubDestHash, prefsEpoch]);
 
@@ -197,27 +254,99 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
   }, [refreshFromSidecar]);
 
   useEffect(() => {
-    if (isActive && activeRoom) clearUnread(activeRoom);
-  }, [isActive, activeRoom, clearUnread, messages]);
+    setRrcPanelFocused(isActive);
+    return () => {
+      setRrcPanelFocused(false);
+    };
+  }, [isActive, setRrcPanelFocused]);
+
+  const handleCaughtUp = useCallback(() => {
+    if (!isActive || !activeRoom || !hubDestHash) return;
+    clearUnread(activeRoom, hubDestHash);
+  }, [isActive, activeRoom, hubDestHash, clearUnread]);
+
+  /**
+   * Stock rrcd `/who` uses emit_notice → a single Packet.send (no chunk/resource),
+   * so busy rooms exceed the Link MDU (~431) and the hub drops the reply silently.
+   * Leave one system line instead of letting the command look ignored.
+   */
+  const scheduleWhoReplyWatchdog = useCallback(
+    (room: string, opts: { forced: boolean }) => {
+      if (!hubDestHash) return;
+      const hub = hubDestHash.toLowerCase();
+      window.setTimeout(() => {
+        const s = useRrcSessionStore.getState();
+        if (s.status !== 'active' || s.hubDestHash?.toLowerCase() !== hub) return;
+        if (opts.forced) {
+          // A displayed reply consumes the reservation; still pending means nothing arrived.
+          if (!s.hasWhoTranscriptForce(room, hub)) return;
+        } else {
+          const session = s.sessionsByHub.get(hub);
+          const info = session
+            ? [...session.rooms.values()].find((r) => rrcRoomsMatch(r.name, room))
+            : undefined;
+          if (!info) return;
+          if ((info.members?.length ?? 0) > 0) return;
+        }
+        s.addMessage(
+          {
+            id: `who-miss-${hub.slice(0, 8)}-${rrcRoomMatchKey(room)}-${Date.now()}`,
+            room,
+            kind: 'system',
+            body: t('rrc.whoReplyMissing', { room }),
+            timestamp: Date.now(),
+          },
+          { hubDestHash: hub },
+        );
+      }, RRC_WHO_REPLY_TIMEOUT_MS);
+    },
+    [hubDestHash, t],
+  );
 
   const sendHubCommand = useCallback(
     async (body: string) => {
       if (status !== 'active' || !hubDestHash) return;
-      await window.electronAPI.reticulum.rrc.send({
-        hub_dest_hash: hubDestHash,
-        room: activeRoom && !activeRoom.startsWith('[') ? activeRoom : undefined,
-        body,
-        type: 'msg',
-      });
+      const expanded = expandRrcHubSlashBody(body, activeRoom);
+      const isWho = /^\s*\/(?:who|names)(?:\s|$)/i.test(expanded);
+      const whoForceRoom = isWho
+        ? resolveRrcWhoTranscriptForceRoom(
+            expanded.replace(/^\s*\/names\b/i, '/who'),
+            activeRoom,
+            rooms.keys(),
+          )
+        : null;
+      // Prefer the /who target room; otherwise the focused joined room (Python always sets K_ROOM).
+      const hubRoom =
+        (isWho ? whoForceRoom : null) ??
+        (activeRoom && !activeRoom.startsWith('[') && !isRrcDmRoom(activeRoom)
+          ? activeRoom
+          : undefined);
+      if (whoForceRoom) {
+        useRrcSessionStore.getState().reserveWhoTranscriptForce(whoForceRoom, hubDestHash);
+      }
+      try {
+        const res = await rrcSendBounded({
+          hub_dest_hash: hubDestHash,
+          room: hubRoom,
+          body: expanded,
+          type: 'msg',
+        });
+        if (!res.ok && whoForceRoom) {
+          useRrcSessionStore.getState().releaseWhoTranscriptForce(whoForceRoom, hubDestHash);
+        } else if (res.ok && whoForceRoom) {
+          scheduleWhoReplyWatchdog(whoForceRoom, { forced: true });
+        }
+      } catch (e: unknown) {
+        if (whoForceRoom) {
+          useRrcSessionStore.getState().releaseWhoTranscriptForce(whoForceRoom, hubDestHash);
+        }
+        const msg = errLikeToLogString(e);
+        console.debug('[RrcPanel] sendHubCommand failed ' + msg);
+        setError(formatRrcErrorMessage(msg, t), hubDestHash);
+      }
     },
-    [activeRoom, hubDestHash, status],
+    [activeRoom, hubDestHash, rooms, scheduleWhoReplyWatchdog, setError, status, t],
   );
-
-  useEffect(() => {
-    if (sessionsByHub.size === 0) {
-      whoRequestedRef.current.clear();
-    }
-  }, [sessionsByHub]);
 
   const requestRoomWho = useCallback(
     (roomRaw: string, force = false) => {
@@ -226,35 +355,52 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
         listed: listedRooms,
         joined: [...rooms.keys()].map((name) => ({ name })),
       });
-      if (!room || room.startsWith('[')) return;
-      const reqKey = `${hubDestHash}::${rrcRoomMatchKey(room)}`;
-      if (!force && whoRequestedRef.current.has(reqKey)) return;
-      whoRequestedRef.current.add(reqKey);
-      void window.electronAPI.reticulum.rrc
-        .send({ hub_dest_hash: hubDestHash, room, body: `/who ${room}`, type: 'msg' })
-        .catch((e: unknown) => {
-          whoRequestedRef.current.delete(reqKey);
+      // Never /who synthetic streams or per-peer DMs (client-local only).
+      if (!room || room.startsWith('[') || isRrcDmRoom(room)) return;
+      const token = rrcWhoCommandToken(room);
+      if (!token) return;
+      const session = useRrcSessionStore.getState();
+      if (!force) {
+        if (!session.markWhoRequested(room, hubDestHash)) return;
+      } else {
+        session.markWhoRequested(room, hubDestHash);
+        session.reserveWhoTranscriptForce(room, hubDestHash);
+      }
+      // Python rrc-web always sets K_ROOM on MSG (including /who). Roomless /who
+      // works on some hubs but not others; slash commands are handled before
+      // forward so K_ROOM does not turn this into room chat.
+      void (async () => {
+        try {
+          const res = await window.electronAPI.reticulum.rrc.send({
+            hub_dest_hash: hubDestHash,
+            room,
+            body: `/who ${token}`,
+            type: 'msg',
+          });
+          if (!res.ok) {
+            const next = useRrcSessionStore.getState();
+            next.releaseWhoRequested(room, hubDestHash);
+            if (force) next.releaseWhoTranscriptForce(room, hubDestHash);
+          } else {
+            scheduleWhoReplyWatchdog(room, { forced: force });
+          }
+        } catch (e: unknown) {
+          const next = useRrcSessionStore.getState();
+          next.releaseWhoRequested(room, hubDestHash);
+          if (force) next.releaseWhoTranscriptForce(room, hubDestHash);
           console.debug('[RrcPanel] /who ' + errLikeToLogString(e));
-        });
+        }
+      })();
     },
-    [status, hubDestHash, listedRooms, rooms],
+    [status, hubDestHash, listedRooms, rooms, scheduleWhoReplyWatchdog],
   );
 
-  // rrcd JOINED member lists are optional (off by default) — request `/who` per joined room.
+  // rrcd JOINED member lists are optional (off by default) — request `/who` once per join.
   useEffect(() => {
     if (status !== 'active' || !hubDestHash) return;
-    const live = new Set<string>();
     for (const key of rooms.keys()) {
-      if (!key || key.startsWith('[')) continue;
-      const reqKey = `${hubDestHash}::${rrcRoomMatchKey(key)}`;
-      live.add(reqKey);
+      if (!key || key.startsWith('[') || isRrcDmRoom(key)) continue;
       requestRoomWho(key, false);
-    }
-    // Drop parted rooms so a later re-join triggers a fresh `/who`.
-    for (const prev of [...whoRequestedRef.current]) {
-      if (prev.startsWith(`${hubDestHash}::`) && !live.has(prev)) {
-        whoRequestedRef.current.delete(prev);
-      }
     }
   }, [status, hubDestHash, rooms, requestRoomWho]);
 
@@ -281,10 +427,25 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
         keys.add(rrcRoomMatchKey(name));
       }
     };
-    ensureSynthetic(RRC_WHISPERS_ROOM);
+    // Per-peer DMs live in `rooms` via openDm; only ensure hub stream synthetically.
     ensureSynthetic(RRC_HUB_STREAM_ROOM);
     return list;
   }, [rooms, unreadByRoom, activeRoom]);
+
+  const dmRoomLabels = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const room of rooms.values()) {
+      if (!isRrcDmRoom(room.name)) continue;
+      const hash = parseRrcDmRoomKey(room.name);
+      if (!hash) continue;
+      const nick = room.members?.[0]?.nickname ?? null;
+      map.set(
+        rrcRoomMatchKey(room.name),
+        rrcDmDisplayLabel({ identity_hash: hash, nickname: nick }),
+      );
+    }
+    return map;
+  }, [rooms]);
 
   const unreadForHub = useRrcSessionStore((s) => s.unreadForHub);
 
@@ -302,10 +463,25 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
     [recentRooms, joinedKeys, listedRooms],
   );
 
-  const activeMessages = messagesForActiveRoom();
+  const activeMessages = useRrcSessionStore(selectRrcActiveRoomMessages);
+  /** All transcripts for this hub — the fallback source for hash-only nicklist rows. */
+  const hubMessages = useRrcSessionStore((s) => s.messages);
+  const cachedHubNicks = useRrcSessionStore(selectRrcFocusedHubNicks);
   const activeRoomInfo = activeRoom ? rooms.get(activeRoom) : undefined;
   const muteKey = hubDestHash && activeRoom ? `rrc:${hubDestHash}:${activeRoom}` : null;
   const isMuted = muteKey ? mutedViews.has(muteKey) : false;
+  const activeDmPeerHash = activeRoom ? parseRrcDmRoomKey(activeRoom) : null;
+  const activeDmLabel = activeDmPeerHash
+    ? (dmRoomLabels.get(rrcRoomMatchKey(activeRoom!)) ??
+      rrcDmDisplayLabel({ identity_hash: activeDmPeerHash, nickname: null }))
+    : null;
+
+  const whisperComposerPlaceholder = useMemo(() => {
+    if (!activeDmLabel) return undefined;
+    return t('rrc.whisperReplyPlaceholder', { name: activeDmLabel });
+  }, [activeDmLabel, t]);
+
+  const activeRoomHeaderLabel = activeDmLabel ?? activeRoom;
   const connected =
     status === 'active' || status === 'awaiting_welcome' || status === 'reconnecting';
   const connectInFlight = status === 'connecting' || status === 'awaiting_welcome';
@@ -317,10 +493,22 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
     status === 'active';
   const cancelSessionLabel = connectInFlight || status === 'reconnecting';
   const showNicklist =
-    Boolean(activeRoom) && activeRoom !== RRC_HUB_STREAM_ROOM && !activeRoom?.startsWith('[');
+    Boolean(activeRoom) &&
+    activeRoom !== RRC_HUB_STREAM_ROOM &&
+    !activeRoom?.startsWith('[') &&
+    !isRrcDmRoom(activeRoom);
+
+  const historyNicks = useMemo(
+    // Transcript sightings first — `applyRrcHistoryNicksToMembers` takes the first
+    // match, and a loaded transcript is fresher than the SQLite cache row.
+    () => [...collectRrcNicksForHub(hubMessages, hubDestHash), ...cachedHubNicks],
+    [cachedHubNicks, hubMessages, hubDestHash],
+  );
 
   const nicklistMembers = useMemo(() => {
-    let members = dedupeRrcMembers([...(activeRoomInfo?.members ?? [])]);
+    let members = dedupeRrcMembers(
+      applyRrcHistoryNicksToMembers(activeRoomInfo?.members ?? [], historyNicks),
+    );
     if (localIdentityHash || nickname) {
       const selfIdx = members.findIndex((m) => {
         if (localIdentityHash && rrcIdentityHashesMatch(m.identity_hash, localIdentityHash)) {
@@ -355,7 +543,26 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
       members = dedupeRrcMembers(members);
     }
     return members;
-  }, [activeRoomInfo?.members, localIdentityHash, nickname]);
+  }, [activeRoomInfo?.members, historyNicks, localIdentityHash, nickname]);
+
+  const chatCompleteMembers = useMemo(() => {
+    if (!isRrcDmRoom(activeRoom)) return nicklistMembers;
+    const peerHash = parseRrcDmRoomKey(activeRoom);
+    const peerNick = activeRoomInfo?.members?.[0]?.nickname ?? null;
+    return buildRrcWhisperCompleteMembers({
+      lastWhisperPeer: peerHash ? { identity_hash: peerHash, nickname: peerNick } : null,
+      messages: activeMessages,
+      localIdentityHash,
+      selfNickname: nickname,
+    });
+  }, [
+    activeRoom,
+    activeRoomInfo?.members,
+    activeMessages,
+    localIdentityHash,
+    nickname,
+    nicklistMembers,
+  ]);
 
   const displayError = lastError ? formatRrcErrorMessage(lastError, t) : null;
 
@@ -384,6 +591,7 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
       // this also creates the hub's session before the intent/error mutations below.
       useRrcSessionStore.getState().applyStatus('connecting', target, null);
       setRrcHubDisconnectSuppressed(target, false);
+      clearRrcHubAutoJoinBackoff(target);
       setDisconnectIntent(false, target);
       setError(null, target);
       try {
@@ -420,7 +628,7 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
   // Shared with App-level useRrcStartupAutoConnect so cold start works without this panel.
   useEffect(() => {
     if (!sidecarRunning) return;
-    void hubAutoJoinEpoch;
+    touch(hubAutoJoinEpoch);
     void runRrcHubAutoConnectBatch(nickname);
     // Do not depend on sessionsByHub — clearHubSession after Disconnect must not re-fire auto-join.
   }, [sidecarRunning, hubAutoJoinEpoch, nickname]);
@@ -463,11 +671,15 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
         joined: [...rooms.keys()].map((name) => ({ name })),
       });
       if (!room) return;
-      // Already in this channel (possibly under `#name` vs `name`) — focus + refresh roster.
+      // Never hub-JOIN synthetic streams or per-peer DMs.
+      if (room.startsWith('[') || isRrcDmRoom(room)) {
+        if (isRrcDmRoom(room)) setActiveRoom(room);
+        return;
+      }
+      // Already in this channel (possibly under `#name` vs `name`) — focus only.
       const existingKey = [...rooms.keys()].find((k) => rrcRoomsMatch(k, room));
       if (existingKey) {
         setActiveRoom(existingKey);
-        requestRoomWho(existingKey, true);
         return;
       }
       setActionBusy(true);
@@ -483,8 +695,6 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
           setActiveRoom(room);
           pushRrcRecentRoom(hubDestHash, rrcRoomMatchKey(room));
           setRecentRoomsEpoch((n) => n + 1);
-          // Always refresh people list — rrcd JOINED often has no member body.
-          requestRoomWho(room, true);
         }
       } catch (e) {
         // catch-no-log-ok error surfaced via setError
@@ -493,7 +703,7 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
         setActionBusy(false);
       }
     },
-    [hubDestHash, listedRooms, rooms, requestRoomWho, setActiveRoom, setError, t],
+    [hubDestHash, listedRooms, rooms, setActiveRoom, setError, t],
   );
 
   const handlePart = useCallback(
@@ -501,6 +711,11 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
       if (!hubDestHash) return;
       const raw = (room ?? activeRoom)?.trim();
       if (!raw || raw.startsWith('[')) return;
+      // Client-local leave for per-peer DMs (no hub PART).
+      if (isRrcDmRoom(raw)) {
+        closeDm(raw, hubDestHash);
+        return;
+      }
       // Wire PART must use the same spelling as JOIN (rrcd treats #general ≠ general).
       const joinedKey = [...rooms.keys()].find((k) => rrcRoomsMatch(k, raw));
       const target =
@@ -509,7 +724,7 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
           listed: listedRooms,
           joined: [...rooms.values()],
         });
-      if (!target) return;
+      if (!target || isRrcDmRoom(target)) return;
       markPartIntent(target);
       setActionBusy(true);
       try {
@@ -529,7 +744,7 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
         setActionBusy(false);
       }
     },
-    [activeRoom, hubDestHash, listedRooms, markPartIntent, rooms, setError, t],
+    [activeRoom, closeDm, hubDestHash, listedRooms, markPartIntent, rooms, setError, t],
   );
 
   const appendSystemLines = useCallback(
@@ -588,7 +803,7 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
             }
             // Update local nicklist entry for self immediately.
             const selfHash = useRrcSessionStore.getState().localIdentityHash;
-            if (selfHash && activeRoom && !activeRoom.startsWith('[')) {
+            if (selfHash && activeRoom && !activeRoom.startsWith('[') && !isRrcDmRoom(activeRoom)) {
               const members = activeRoomInfo?.members ?? [];
               const next = members.map((m) =>
                 m.identity_hash.toLowerCase() === selfHash
@@ -619,11 +834,11 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
               useRrcSessionStore.getState().setError(t('rrc.sendFailed'));
               return;
             }
-            if (!activeRoom || activeRoom.startsWith('[')) {
+            if (!activeRoom || activeRoom.startsWith('[') || isRrcDmRoom(activeRoom)) {
               useRrcSessionStore.getState().setError(t('rrc.joinRoomPrompt'));
               return;
             }
-            const res = await window.electronAPI.reticulum.rrc.send({
+            const res = await rrcSendBounded({
               hub_dest_hash: hubDestHash,
               room: activeRoom,
               body: parsed.action,
@@ -652,7 +867,7 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
               useRrcSessionStore.getState().setError(t('rrc.slash.msgTargetNotFound'));
               return;
             }
-            const res = await window.electronAPI.reticulum.rrc.send({
+            const res = await rrcSendBounded({
               hub_dest_hash: hubDestHash,
               body: parsed.text,
               type: 'notice',
@@ -662,13 +877,22 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
               useRrcSessionStore.getState().setError(res.error ?? t('rrc.sendFailed'));
               return;
             }
-            const label = resolved.nickname || resolved.identity_hash.slice(0, 8);
-            if (activeRoom !== RRC_WHISPERS_ROOM) setActiveRoom(RRC_WHISPERS_ROOM);
+            const dmRoom = rrcDmRoomKey(resolved.identity_hash);
+            openDm(
+              {
+                identity_hash: resolved.identity_hash,
+                nickname: resolved.nickname ?? null,
+              },
+              hubDestHash,
+              { focus: true },
+            );
             addMessage({
               id: `whisper-out-${Date.now()}`,
-              room: RRC_WHISPERS_ROOM,
-              kind: 'system',
-              body: t('rrc.slash.msgSent', { name: label, text: parsed.text }),
+              room: dmRoom,
+              kind: 'msg',
+              body: parsed.text,
+              nickname: nickname || null,
+              sender_hash: localIdentityHash,
               timestamp: Date.now(),
               dst_hash: resolved.identity_hash,
             });
@@ -692,21 +916,83 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
             useRrcSessionStore.getState().setError(t('rrc.sendFailed'));
             return;
           }
-          const res = await window.electronAPI.reticulum.rrc.send({
+          const expanded = expandRrcHubSlashBody(parsed.body, activeRoom);
+          const isWho = /^\s*\/(?:who|names)(?:\s|$)/i.test(expanded);
+          const whoForceRoom = isWho
+            ? resolveRrcWhoTranscriptForceRoom(
+                expanded.replace(/^\s*\/names\b/i, '/who'),
+                activeRoom,
+                rooms.keys(),
+              )
+            : null;
+          if (whoForceRoom) {
+            useRrcSessionStore.getState().reserveWhoTranscriptForce(whoForceRoom, hubDestHash);
+          }
+          const commandRoom =
+            (isWho ? whoForceRoom : null) ??
+            (activeRoom && !activeRoom.startsWith('[') && !isRrcDmRoom(activeRoom)
+              ? activeRoom
+              : undefined);
+          let res: RrcSendResult;
+          try {
+            res = await rrcSendBounded({
+              hub_dest_hash: hubDestHash,
+              room: commandRoom,
+              body: expanded,
+              type: 'msg',
+            });
+          } catch (e) {
+            if (whoForceRoom) {
+              useRrcSessionStore.getState().releaseWhoTranscriptForce(whoForceRoom, hubDestHash);
+            }
+            throw e;
+          }
+          if (!res.ok) {
+            if (whoForceRoom) {
+              useRrcSessionStore.getState().releaseWhoTranscriptForce(whoForceRoom, hubDestHash);
+            }
+            useRrcSessionStore.getState().setError(res.error ?? t('rrc.sendFailed'));
+            return;
+          }
+          if (whoForceRoom) scheduleWhoReplyWatchdog(whoForceRoom, { forced: true });
+          appendSystemLines([t('rrc.slash.commandSent', { cmd: expanded })]);
+          setDraft('');
+          return;
+        }
+
+        const activeDmHash = activeRoom ? parseRrcDmRoomKey(activeRoom) : null;
+        if (activeRoom && activeDmHash) {
+          if (status !== 'active' || !hubDestHash) {
+            useRrcSessionStore.getState().setError(t('rrc.sendFailed'));
+            return;
+          }
+          if (!capabilities.direct_notice) {
+            useRrcSessionStore.getState().setError(t('rrc.directNoticeUnsupported'));
+            return;
+          }
+          const res = await rrcSendBounded({
             hub_dest_hash: hubDestHash,
-            room: activeRoom && !activeRoom.startsWith('[') ? activeRoom : undefined,
             body: parsed.body,
-            type: 'msg',
+            type: 'notice',
+            dst_hash: activeDmHash,
           });
           if (!res.ok) {
             useRrcSessionStore.getState().setError(res.error ?? t('rrc.sendFailed'));
             return;
           }
-          appendSystemLines([t('rrc.slash.commandSent', { cmd: parsed.body })]);
+          addMessage({
+            id: `whisper-out-${Date.now()}`,
+            room: activeRoom,
+            kind: 'msg',
+            body: parsed.body,
+            nickname: nickname || null,
+            sender_hash: localIdentityHash,
+            timestamp: Date.now(),
+            dst_hash: activeDmHash,
+          });
           setDraft('');
           return;
         }
-
         if (!activeRoom || activeRoom.startsWith('[')) {
           useRrcSessionStore.getState().setError(t('rrc.joinRoomPrompt'));
           return;
@@ -715,7 +1001,7 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
           useRrcSessionStore.getState().setError(t('rrc.sendFailed'));
           return;
         }
-        const res = await window.electronAPI.reticulum.rrc.send({
+        const res = await rrcSendBounded({
           hub_dest_hash: hubDestHash,
           room: activeRoom,
           body: parsed.body,
@@ -742,9 +1028,12 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
       handlePart,
       hubDestHash,
       joinRoom,
+      localIdentityHash,
+      nickname,
+      openDm,
       rooms,
+      scheduleWhoReplyWatchdog,
       sendHubCommand,
-      setActiveRoom,
       setNickname,
       status,
       t,
@@ -767,7 +1056,7 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
     : null;
 
   return (
-    <div className="bg-primary-dark flex h-full w-full min-w-0 text-amber-50">
+    <div className="flex h-full min-h-0 w-full min-w-0 text-gray-100">
       <RrcHubBrowser
         collapsed={collapsed}
         onToggleCollapsed={() => {
@@ -798,7 +1087,7 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
           return sessionsByHub.get(key)?.status ?? null;
         }}
         isHubAutoJoin={(hash) => {
-          void hubAutoJoinEpoch;
+          touch(hubAutoJoinEpoch);
           return isRrcHubAutoJoin(hash);
         }}
         manualHash={manualHash}
@@ -859,18 +1148,19 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
             setPrefsEpoch((n) => n + 1);
           }}
           autoJoin={autoJoinRooms}
+          dmRoomLabels={dmRoomLabels}
         />
       )}
 
-      <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex flex-wrap items-center gap-2 border-b border-amber-800/40 px-3 py-2">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="flex flex-wrap items-center gap-2 border-b border-gray-700 px-3 py-2">
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-semibold text-amber-100">
+            <div className="truncate text-sm font-semibold text-gray-100">
               {hubName ?? hubDestHash ?? t('rrc.selectHubPrompt')}
             </div>
-            <div className="text-xs text-amber-200/50">
+            <div className="text-xs text-gray-400">
               {t(`rrc.status.${status}`)}
-              {activeRoom ? ` · ${activeRoom}` : ''}
+              {activeRoomHeaderLabel ? ` · ${activeRoomHeaderLabel}` : ''}
               {capabilities.direct_notice ? ` · ${t('rrc.capDirectNotice')}` : ''}
             </div>
           </div>
@@ -878,7 +1168,7 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
             <>
               <button
                 type="button"
-                className={`rounded p-1.5 hover:bg-amber-950/50 ${showTimestamps ? 'text-amber-400' : 'text-amber-200/60'}`}
+                className={`rounded p-1.5 hover:bg-gray-800/60 ${showTimestamps ? 'text-bright-green' : 'text-gray-400'}`}
                 aria-label={t('rrc.toggleTimestamps')}
                 title={t('rrc.toggleTimestamps')}
                 onClick={() => {
@@ -889,7 +1179,7 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
               </button>
               <button
                 type="button"
-                className={`rounded p-1.5 hover:bg-amber-950/50 ${isMuted ? 'text-amber-400' : 'text-amber-200/60'}`}
+                className={`rounded p-1.5 hover:bg-gray-800/60 ${isMuted ? 'text-bright-green' : 'text-gray-400'}`}
                 aria-label={isMuted ? t('rrc.unmuteRoom') : t('rrc.muteRoom')}
                 title={isMuted ? t('rrc.unmuteRoom') : t('rrc.muteRoom')}
                 disabled={!muteKey}
@@ -900,7 +1190,7 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
               {activeRoom && (
                 <button
                   type="button"
-                  className="rounded p-1.5 text-amber-200/60 hover:bg-amber-950/50"
+                  className="rounded p-1.5 text-gray-400 hover:bg-gray-800/60"
                   aria-label={t('rrc.clearHistory')}
                   title={t('rrc.clearHistory')}
                   disabled={actionBusy}
@@ -911,10 +1201,10 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
                   <Trash2 size={16} />
                 </button>
               )}
-              {activeRoom && !activeRoom.startsWith('[') && (
+              {activeRoom && (!activeRoom.startsWith('[') || isRrcDmRoom(activeRoom)) && (
                 <button
                   type="button"
-                  className="rounded p-1.5 text-amber-200/60 hover:bg-amber-950/50"
+                  className="rounded p-1.5 text-gray-400 hover:bg-gray-800/60"
                   aria-label={t('rrc.leaveRoom')}
                   title={t('rrc.leaveRoom')}
                   disabled={actionBusy}
@@ -928,7 +1218,7 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
           {canCancelSession && (
             <button
               type="button"
-              className="rounded bg-amber-900/60 px-2 py-1 text-xs text-amber-100"
+              className="rounded border border-gray-600 px-2 py-1 text-xs text-gray-200 hover:bg-gray-800/60"
               aria-label={cancelSessionLabel ? t('rrc.cancelConnect') : t('rrc.disconnect')}
               title={cancelSessionLabel ? t('rrc.cancelConnect') : t('rrc.disconnect')}
               disabled={actionBusy}
@@ -939,11 +1229,11 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
           )}
         </header>
         {bannerText && (
-          <div className="flex items-start gap-2 border-b border-amber-700/60 bg-amber-900/40 px-3 py-1.5 text-xs text-amber-100">
+          <div className="flex items-start gap-2 border-b border-gray-700 bg-slate-800/80 px-3 py-1.5 text-xs text-gray-200">
             <span className="min-w-0 flex-1">{bannerText}</span>
             <button
               type="button"
-              className="shrink-0 p-0.5 text-amber-200/70 hover:text-amber-50"
+              className="shrink-0 p-0.5 text-gray-400 hover:text-gray-100"
               aria-label={t('rrc.dismissBanner')}
               onClick={() => {
                 setModerationBanner(null);
@@ -976,6 +1266,7 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
         <div className="flex min-h-0 flex-1">
           <RrcChatView
             connected={connected}
+            hubDestHash={hubDestHash}
             activeRoom={activeRoom}
             messages={activeMessages}
             showTimestamps={showTimestamps}
@@ -985,6 +1276,12 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
             canSend={status === 'active'}
             isMuted={isMuted}
             nickname={nickname}
+            members={chatCompleteMembers}
+            alwaysShowMessageActions={alwaysShowMessageActions}
+            placeholder={whisperComposerPlaceholder}
+            isActive={isActive}
+            onCaughtUp={handleCaughtUp}
+            onOpenDm={onOpenDm}
           />
           {showNicklist && (
             <RrcNickList
@@ -1000,7 +1297,7 @@ export default function RrcPanel({ isActive }: RrcPanelProps) {
               busy={actionBusy}
               onRefreshWho={() => {
                 const room = activeRoom;
-                if (!room || room.startsWith('[')) return;
+                if (!room || room.startsWith('[') || isRrcDmRoom(room)) return;
                 requestRoomWho(room, true);
               }}
               onNickClick={(member: RrcRoomMember) => {

@@ -112,11 +112,11 @@ describe('nomadNetworkStore', () => {
 
     expect(fetchReticulumInterfaces).toHaveBeenCalledTimes(2);
     expect(proxyGet).toHaveBeenLastCalledWith(
-      '/api/v1/nomadnetwork/page/abc?path=%2Fpage%2Findex.mu&hops=8&egress=rf',
+      '/api/v1/nomadnetwork/page/abc?path=%2Fpage%2Findex.mu',
     );
   });
 
-  it('fetchNomadPage requests page path with hops and egress', async () => {
+  it('fetchNomadPage requests page path without unused hops/egress query params', async () => {
     getStatus.mockResolvedValue({ running: true, port: 1, pid: 1 });
     fetchReticulumInterfaces.mockResolvedValue([{ type: 'rnode', enabled: true }]);
     useNomadNetworkStore.setState({
@@ -136,9 +136,7 @@ describe('nomadNetworkStore', () => {
 
     const res = await useNomadNetworkStore.getState().fetchNomadPage('abc', '/page/index.mu');
 
-    expect(proxyGet).toHaveBeenCalledWith(
-      '/api/v1/nomadnetwork/page/abc?path=%2Fpage%2Findex.mu&hops=3&egress=rf',
-    );
+    expect(proxyGet).toHaveBeenCalledWith('/api/v1/nomadnetwork/page/abc?path=%2Fpage%2Findex.mu');
     expect(res).toEqual({ ok: true, content: 'page body', content_type: 'micron' });
   });
 
@@ -152,11 +150,11 @@ describe('nomadNetworkStore', () => {
       .fetchNomadPage('abc', '/page/index.mu', undefined, { forcePathRefresh: true });
 
     expect(proxyGet).toHaveBeenCalledWith(
-      '/api/v1/nomadnetwork/page/abc?path=%2Fpage%2Findex.mu&hops=8&egress=tcp&force_path_refresh=true',
+      '/api/v1/nomadnetwork/page/abc?path=%2Fpage%2Findex.mu&force_path_refresh=true',
     );
   });
 
-  it('fetchNomadFile requests file path with hops and egress', async () => {
+  it('fetchNomadFile requests file path without unused hops/egress query params', async () => {
     getStatus.mockResolvedValue({ running: true, port: 1, pid: 1 });
     fetchReticulumInterfaces.mockResolvedValue([{ type: 'tcp', enabled: true }]);
     useNomadNetworkStore.setState({
@@ -181,29 +179,81 @@ describe('nomadNetworkStore', () => {
     const res = await useNomadNetworkStore.getState().fetchNomadFile('abc', '/file/readme.txt');
 
     expect(proxyGet).toHaveBeenCalledWith(
-      '/api/v1/nomadnetwork/file/abc?path=%2Ffile%2Freadme.txt&hops=2&egress=tcp',
+      '/api/v1/nomadnetwork/file/abc?path=%2Ffile%2Freadme.txt',
     );
     expect(res).toEqual({ ok: true, file_name: 'readme.txt', content_base64: 'aGVsbG8=' });
   });
 
-  it('logs a warning when page fetch returns ok:false', async () => {
+  it('logs failure warning with link budget when page fetch returns ok:false', async () => {
     const { spy, restore } = mockConsoleWarn();
     try {
       getStatus.mockResolvedValue({ running: true, port: 1, pid: 1 });
       fetchReticulumInterfaces.mockResolvedValue([{ type: 'tcp', enabled: true }]);
-      proxyGet.mockResolvedValue({ ok: false, error: 'link_timeout' });
+      proxyGet.mockResolvedValue({
+        ok: false,
+        error: 'link_timeout',
+        egress: 'tcp',
+        path_hops: 1,
+        link_hops: 3,
+        proof_budget_secs: 45,
+        timeout_secs: 45,
+        force_path_ok: true,
+        path_ensure_kind: 'rediscovered',
+        elapsed_ms: 18250,
+        raw_error: 'timed out waiting for link proof',
+        tried_interfaces: ['TTP_TCP', 'Local Transport Pi'],
+        failover_rounds: 1,
+        iface: 'Local Transport Pi',
+      });
 
       const res = await useNomadNetworkStore
         .getState()
         .fetchNomadPage('abcdef12', '/page/index.mu');
 
-      expect(res).toEqual({ ok: false, error: 'link_timeout' });
-      expect(spy).toHaveBeenCalled();
-      const firstArg = spy.mock.calls[0]?.[0];
-      expect(typeof firstArg).toBe('string');
-      expect(firstArg).toContain('[nomadNetworkStore] page fetch failed');
-      expect(firstArg).toContain('error=link_timeout');
-      expect(firstArg).toContain('hash=abcdef12');
+      expect(res).toMatchObject({ ok: false, error: 'link_timeout', link_hops: 3 });
+      const messages = spy.mock.calls
+        .map((c) => c[0])
+        .filter((m): m is string => typeof m === 'string');
+      const failed = messages.find((m) => m.includes('[nomadNetworkStore] page fetch failed'));
+      expect(failed).toBeTruthy();
+      expect(failed).toContain('error=link_timeout');
+      expect(failed).toContain('hash=abcdef12');
+      expect(failed).toContain('link_hops=3');
+      expect(failed).toContain('proof_budget_secs=45');
+      expect(failed).toContain('timeout_secs=45');
+      expect(failed).toContain('force_path_ok=true');
+      expect(failed).toContain('path_ensure=rediscovered');
+      expect(failed).toContain('elapsed_ms=18250');
+      expect(failed).toContain('tried_interfaces=TTP_TCP,Local Transport Pi');
+      expect(failed).toContain('failover_rounds=1');
+      expect(failed).toContain('iface=Local Transport Pi');
+      expect(failed).toContain('raw=timed out waiting for link proof');
+    } finally {
+      restore();
+    }
+  });
+
+  it('sanitizes newlines in tried_interfaces and iface before logging', async () => {
+    const { spy, restore } = mockConsoleWarn();
+    try {
+      getStatus.mockResolvedValue({ running: true, port: 1, pid: 1 });
+      fetchReticulumInterfaces.mockResolvedValue([{ type: 'tcp', enabled: true }]);
+      proxyGet.mockResolvedValue({
+        ok: false,
+        error: 'link_timeout',
+        tried_interfaces: ['TTP\nTCP', 'Local\r\nPi'],
+        iface: 'Local\nPi',
+      });
+
+      await useNomadNetworkStore.getState().fetchNomadPage('abcdef12', '/page/index.mu');
+      const messages = spy.mock.calls
+        .map((c) => c[0])
+        .filter((m): m is string => typeof m === 'string');
+      const failed = messages.find((m) => m.includes('[nomadNetworkStore] page fetch failed'));
+      expect(failed).toBeTruthy();
+      expect(failed).toContain('tried_interfaces=TTP TCP,Local Pi');
+      expect(failed).toContain('iface=Local Pi');
+      expect(failed).not.toMatch(/tried_interfaces=[^\s]*\n/);
     } finally {
       restore();
     }
@@ -221,11 +271,12 @@ describe('nomadNetworkStore', () => {
         .fetchNomadFile('abcdef12', '/file/readme.txt');
 
       expect(res).toEqual({ ok: false, error: 'path_timeout' });
-      expect(spy).toHaveBeenCalled();
-      const firstArg = spy.mock.calls[0]?.[0];
-      expect(typeof firstArg).toBe('string');
-      expect(firstArg).toContain('[nomadNetworkStore] file fetch failed');
-      expect(firstArg).toContain('error=path_timeout');
+      const messages = spy.mock.calls
+        .map((c) => c[0])
+        .filter((m): m is string => typeof m === 'string');
+      const failed = messages.find((m) => m.includes('[nomadNetworkStore] file fetch failed'));
+      expect(failed).toBeTruthy();
+      expect(failed).toContain('error=path_timeout');
     } finally {
       restore();
     }

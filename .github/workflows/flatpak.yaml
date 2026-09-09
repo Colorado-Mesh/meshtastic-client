@@ -1,5 +1,6 @@
 name: Build Flatpak
-run-name: Build Flatpak${{ github.event_name == 'workflow_dispatch' && ' (no release)' || '' }}
+# Dual-purpose: manual dispatch = test (no release); tag push = publish to GitHub Release.
+run-name: ${{ github.event_name == 'workflow_dispatch' && 'Build Flatpak (no release)' || 'Build Flatpak' }}
 
 on:
   workflow_dispatch:
@@ -7,13 +8,47 @@ on:
     tags: ['v*']
 
 jobs:
+  schema-release-compare:
+    name: Schema vs last official release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      schema_bumped: ${{ steps.compare.outputs.schema_bumped }}
+      curr_schema: ${{ steps.compare.outputs.curr_schema }}
+      prev_schema: ${{ steps.compare.outputs.prev_schema }}
+      prev_tag: ${{ steps.compare.outputs.prev_tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Compare schema to last published release
+        id: compare
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WORKFLOW_LABEL: >-
+            ${{ github.event_name == 'workflow_dispatch'
+            && 'Build Flatpak (no release)'
+            || 'Build Flatpak' }}
+        run: >
+          node scripts/ci-schema-release-compare.mjs
+          --workflow-label "${WORKFLOW_LABEL}"
+          --write-readme READ-ME-FIRST-flatpak.md
+
+      - name: Upload READ-ME-FIRST warning
+        uses: actions/upload-artifact@v7
+        with:
+          name: READ-ME-FIRST-flatpak
+          path: READ-ME-FIRST-flatpak.md
+          retention-days: 30
+
   # Sidecar is built on bare Ubuntu runners (apt). The flathub-infra Flatpak container is a
   # minimal freedesktopsdk/sdk rootfs with no apt/dnf — host cargo builds cannot install deps there.
   reticulum-sidecar:
     name: Reticulum sidecar (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
-    env:
-      RS_RETICULUM_REF: 6d2b28475321bc15c8f60796513d8878b47ed3ab
     permissions:
       contents: read
     strategy:
@@ -31,7 +66,7 @@ jobs:
 
       - name: Clone Ratspeak stack (rsReticulum, rsLXMF)
         env:
-          WORKSPACE_ROOT: ${{ github.workspace }}/..
+          WORKSPACE_ROOT: ${{ github.workspace }}/.rsstack
         run: bash scripts/clone-ratspeak-stack.sh
 
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
@@ -62,7 +97,7 @@ jobs:
   # "Flatpak system operation Deploy not allowed for user".
   flatpak:
     name: Flatpak (${{ matrix.arch }})
-    needs: reticulum-sidecar
+    needs: [reticulum-sidecar, schema-release-compare]
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -86,6 +121,20 @@ jobs:
           name: mesh-client-reticulum-${{ matrix.arch }}
           path: resources/reticulum-sidecar
 
+      - name: Write schema upgrade installer notice
+        env:
+          MESH_CLIENT_SCHEMA_BUMPED: ${{ needs.schema-release-compare.outputs.schema_bumped }}
+          MESH_CLIENT_SCHEMA_CURR: ${{ needs.schema-release-compare.outputs.curr_schema }}
+          MESH_CLIENT_SCHEMA_PREV: ${{ needs.schema-release-compare.outputs.prev_schema }}
+          MESH_CLIENT_SCHEMA_PREV_TAG: ${{ needs.schema-release-compare.outputs.prev_tag }}
+        run: node scripts/write-schema-upgrade-notice.mjs
+
+      - name: Download READ-ME-FIRST warning
+        uses: actions/download-artifact@v8
+        with:
+          name: READ-ME-FIRST-flatpak
+          path: flatpak-warnings
+
       - name: Generate offline pnpm sources
         run: |
           FBTOOLS=git+https://github.com/flatpak/flatpak-builder-tools
@@ -94,10 +143,35 @@ jobs:
           # version makes plain pip install a no-op (leaves storeDir= generator).
           pip3 install --force-reinstall --no-cache-dir \
             "${FBTOOLS}@ac5a296ac6111aa2319daf532f609a067b88d8a9#subdirectory=node"
-          # pnpm 11+ uses store v11; flatpak-node-generator defaults to v10 for lockfile 9.
-          PNPM_MAJOR="$(node -p "require('./package.json').packageManager.match(/^pnpm@(\\d+)/)[1]")"
-          STORE_VERSION="v${PNPM_MAJOR}"
-          flatpak-node-generator pnpm pnpm-lock.yaml \
+          # GitHub github.com/.../raw/... 404s; skip Playwright browser zips (Electron E2E).
+          node scripts/patch-flatpak-node-generator-playwright.mjs
+          # pnpm 11/12 use store v11 with lockfile 9; generator defaults to v10 and
+          # rejects unknown store versions (no v12 yet). Derive via shared helper.
+          # pnpm 12 may write a two-document lockfile; generator only accepts one document.
+          STORE_VERSION="$(
+            node --input-type=module <<'EOF'
+          import fs from 'node:fs';
+          import { storeVersionFromPackageManager } from './scripts/flatpakPnpmStoreVersion.mjs';
+          // Failure point: missing/invalid packageManager → null.
+          // Fallback: throw so set -euo / command substitution aborts before the generator.
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const storeVersion = storeVersionFromPackageManager(pkg.packageManager);
+          if (storeVersion == null) {
+            throw new Error(
+              `storeVersionFromPackageManager returned null for packageManager=${JSON.stringify(pkg.packageManager)}`,
+            );
+          }
+          console.log(storeVersion);
+          EOF
+          )"
+          node --input-type=module <<'EOF'
+          import fs from 'node:fs';
+          import { extractProjectPnpmLockfile } from './scripts/flatpakPnpmStoreVersion.mjs';
+          const project = extractProjectPnpmLockfile(fs.readFileSync('pnpm-lock.yaml', 'utf8'));
+          fs.mkdirSync('flatpak', { recursive: true });
+          fs.writeFileSync('flatpak/pnpm-lock.project.yaml', project);
+          EOF
+          flatpak-node-generator pnpm flatpak/pnpm-lock.project.yaml \
             --pnpm-store-version "$STORE_VERSION" \
             -o flatpak/generated-sources.json
           # Fail fast if a stale generator still emitted npmrc-style storeDir=.
@@ -113,8 +187,22 @@ jobs:
           console.log('generated-sources storeDir YAML: ok');
           EOF
 
+      # Embed buildChannel=test|release + Actions runUrl into the Flatpak main bundle.
+      - name: Stamp CI build info
+        env:
+          MESH_CLIENT_BUILD_CHANNEL: ${{ github.event_name == 'workflow_dispatch' && 'test' || 'release' }}
+          MESH_CLIENT_BUILD_WORKFLOW: >-
+            ${{ github.event_name == 'workflow_dispatch'
+            && 'Build Flatpak (no release)'
+            || 'Build Flatpak' }}
+        run: |
+          set -euo pipefail
+          node scripts/ci-write-build-info-env.mjs
+          node scripts/write-flatpak-ci-build-info.mjs
+
       # flatpak/flatpak-github-actions v6 appends -${arch} to the artifact name on upload;
       # keep bundle arch-agnostic here to avoid org.coloradomesh.MeshClient-aarch64-aarch64.flatpak.
+      # upload-artifact: false — we upload once after smoke (+ optional -run{N} rename on dispatch).
       - uses: flatpak/flatpak-github-actions/flatpak-builder@401fe28a8384095fc1531b9d320b292f0ee45adb
         with:
           bundle: org.coloradomesh.MeshClient.flatpak
@@ -122,7 +210,7 @@ jobs:
           arch: ${{ matrix.arch }}
           branch: stable
           cache-key: flatpak-builder-${{ matrix.arch }}-${{ github.sha }}
-          upload-artifact: true
+          upload-artifact: false
 
       - name: Smoke test Flatpak install
         run: |
@@ -151,6 +239,29 @@ jobs:
             exit 1
           fi
 
+      # Test (dispatch) only: stamp downloadable basename with -run{N}. Tag releases stay clean.
+      - name: Rename test Flatpak bundle with run number
+        if: github.event_name == 'workflow_dispatch'
+        run: node scripts/rename-test-build-artifacts.mjs --flatpak .
+
+      # Artifact name ends with .flatpak so publish flatten → flatpak-dist/*.flatpak matches.
+      - name: Upload Flatpak bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: org.coloradomesh.MeshClient.flatpak-${{ matrix.arch }}.flatpak
+          path: |
+            org.coloradomesh.MeshClient*.flatpak
+          if-no-files-found: error
+          retention-days: 30
+
+      # Schema warning beside the bundle for Actions downloads.
+      - name: Upload READ-ME-FIRST with Flatpak artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: flatpak-schema-warning-${{ matrix.arch }}
+          path: flatpak-warnings/READ-ME-FIRST-flatpak.md
+          retention-days: 30
+
   publish:
     name: Publish to GitHub Release
     needs: flatpak
@@ -166,7 +277,7 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
-          pattern: 'org.coloradomesh.MeshClient-*'
+          pattern: 'org.coloradomesh.MeshClient.flatpak-*.flatpak'
           path: flatpak-dist
 
       - name: Flatten arch-suffixed bundles for release
@@ -190,18 +301,16 @@ jobs:
         id: release_tag
         run: echo "value=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
-      - name: Ensure draft GitHub release exists
+      # Never POST /releases here — wait for Electron prepare-github-release draft.
+      - name: Wait for draft GitHub release
+        id: draft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_SHA: ${{ github.sha }}
           RELEASE_TAG: ${{ steps.release_tag.outputs.value }}
-        run: node scripts/ci-ensure-github-draft-release.mjs
+        run: node scripts/ci-wait-github-draft-release.mjs
 
-      - name: Attach Flatpak to release
-        # softprops/action-gh-release v3 (Node 24)
-        # draft: true — required so we do not auto-publish an existing draft release
-        # after uploading assets (default behavior when draft is omitted).
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda
-        with:
-          draft: true
-          files: flatpak-dist/*.flatpak
+      - name: Attach Flatpak to draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ steps.draft.outputs.release_id }}
+        run: node scripts/ci-upload-release-assets.mjs flatpak-dist/*.flatpak

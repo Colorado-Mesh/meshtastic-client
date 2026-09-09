@@ -5,8 +5,9 @@ import {
 } from '@/shared/nodeNameUtils';
 import { MESHTASTIC_TAPBACK_DATA_EMOJI_FLAG } from '@/shared/reactionEmoji';
 import { parseReticulumDeliveryMethod } from '@/shared/reticulumDeliveryMethod';
+import { isAllowedReticulumReceivedVia } from '@/shared/reticulumMessageTransport';
 
-import type { MessageRecord } from '../stores/messageStore';
+import type { MessageRecord, MessageTransport } from '../stores/messageStore';
 import type { NodeRecord } from '../stores/nodeStore';
 import type { NeighborInfoEvent, TraceRouteEvent, WaypointEvent } from './protocols/Protocol';
 import {
@@ -97,6 +98,7 @@ export function groupChatReactionsByParentKey(messages: ChatMessage[]): {
 
 export function messageRecordToChatMessage(record: MessageRecord): ChatMessage {
   const packetId = /^\d+$/.test(record.id) ? Number(record.id) : undefined;
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Runtime guard protects external or callback-mutated state.
   const to = record.to != null && !isMeshtasticBroadcastNodeNum(record.to) ? record.to : undefined;
   const reactionScalar = record.tapback
     ? normalizeReactionEmoji(MESHTASTIC_TAPBACK_DATA_EMOJI_FLAG, record.payload)
@@ -105,6 +107,7 @@ export function messageRecordToChatMessage(record: MessageRecord): ChatMessage {
   const rxHops = record.rxHops ?? record.hopCount;
   return {
     ...(packetId != null ? { id: packetId } : {}),
+    ...(packetId == null ? { storeId: record.id } : {}),
     sender_id: record.from,
     sender_name:
       record.senderName?.trim() || (record.from > 0 ? formatMeshtasticNodeId(record.from) : ''),
@@ -131,6 +134,16 @@ export function messageRecordToChatMessage(record: MessageRecord): ChatMessage {
     ...(record.roomServerId != null ? { roomServerId: record.roomServerId } : {}),
     ...(record.reticulumDeliveryMethod
       ? { reticulumDeliveryMethod: record.reticulumDeliveryMethod }
+      : {}),
+    ...(record.reticulumAttachmentPath
+      ? { reticulumAttachmentPath: record.reticulumAttachmentPath }
+      : {}),
+    ...(record.reticulumAttachmentKind
+      ? { reticulumAttachmentKind: record.reticulumAttachmentKind }
+      : {}),
+    ...(record.reticulumAudioMode != null ? { reticulumAudioMode: record.reticulumAudioMode } : {}),
+    ...(record.reticulumAudioDurationSec != null
+      ? { reticulumAudioDurationSec: record.reticulumAudioDurationSec }
       : {}),
   };
 }
@@ -173,12 +186,18 @@ export function nodeRecordToMeshNode(record: NodeRecord): MeshNode {
     env_lux: record.lux,
     env_wind_speed: record.windSpeed,
     env_wind_direction: record.windDirection,
+    env_lightning_strike_count_1h: record.lightningStrikeCount1h,
+    env_lightning_distance_km: record.lightningDistanceKm,
+    env_pm25: record.pm25Standard,
+    env_co2: record.co2,
     lastPositionWarning: record.lastPositionWarning,
     num_packets_rx_bad: record.numPacketsRxBad,
     num_rx_dupe: record.numRxDupe,
     num_packets_rx: record.numPacketsRx,
     num_packets_tx: record.numPacketsTx,
     meshcore_local_stats: record.meshcoreLocalStats,
+    key_manually_verified: record.keyManuallyVerified,
+    has_xeddsa_signed: record.hasXeddsaSigned,
     ...(record.publicKeyHex ? { public_key_hex: record.publicKeyHex } : {}),
     ...(record.reticulumDestinationHash
       ? { reticulum_destination_hash: record.reticulumDestinationHash }
@@ -231,7 +250,13 @@ function nodeRecordsShallowEqual(a: NodeRecord, b: NodeRecord): boolean {
     a.numPacketsTx === b.numPacketsTx &&
     a.meshcoreLocalStats === b.meshcoreLocalStats &&
     a.publicKeyHex === b.publicKeyHex &&
-    a.reticulumDestinationHash === b.reticulumDestinationHash
+    a.reticulumDestinationHash === b.reticulumDestinationHash &&
+    a.lightningStrikeCount1h === b.lightningStrikeCount1h &&
+    a.lightningDistanceKm === b.lightningDistanceKm &&
+    a.pm25Standard === b.pm25Standard &&
+    a.co2 === b.co2 &&
+    a.keyManuallyVerified === b.keyManuallyVerified &&
+    a.hasXeddsaSigned === b.hasXeddsaSigned
   );
 }
 
@@ -313,6 +338,10 @@ export function meshNodeToNodeRecord(node: MeshNode): NodeRecord {
     lux: node.env_lux,
     windSpeed: node.env_wind_speed,
     windDirection: node.env_wind_direction,
+    lightningStrikeCount1h: node.env_lightning_strike_count_1h,
+    lightningDistanceKm: node.env_lightning_distance_km,
+    pm25Standard: node.env_pm25,
+    co2: node.env_co2,
     lastPositionWarning: node.lastPositionWarning,
     numPacketsRxBad: node.num_packets_rx_bad,
     numRxDupe: node.num_rx_dupe,
@@ -320,6 +349,8 @@ export function meshNodeToNodeRecord(node: MeshNode): NodeRecord {
     numPacketsTx: node.num_packets_tx,
     meshcoreLocalStats: node.meshcore_local_stats,
     publicKeyHex: node.public_key_hex,
+    keyManuallyVerified: node.key_manually_verified,
+    hasXeddsaSigned: node.has_xeddsa_signed,
     reticulumDestinationHash: node.reticulum_destination_hash,
   };
 }
@@ -374,6 +405,7 @@ export function traceRouteEventsToResultsMap(
 
 export function chatMessageToMessageRecord(msg: ChatMessage): MessageRecord {
   const id =
+    msg.storeId ??
     msg.reticulum_message_hash ??
     (msg.packetId != null
       ? String(msg.packetId)
@@ -420,19 +452,17 @@ export function reticulumDbRowToMessageRecord(row: {
   delivery_status?: string | null;
   delivery_method?: string | null;
   attachment_path?: string | null;
+  audio_mode?: number | null;
+  audio_duration_sec?: number | null;
 }): MessageRecord {
   const from = reticulumHashToNodeId(row.sender_id);
   registerReticulumDestinationHash(from, row.sender_id);
   const messageHash =
     row.message_hash ?? computeReticulumMessageHash(row.sender_id, row.timestamp, row.payload);
   const isTapback = isReticulumTapbackDbRow(row);
-  const receivedVia =
-    row.received_via === 'rf' ||
-    row.received_via === 'tcp' ||
-    row.received_via === 'network' ||
-    row.received_via === 'mqtt' ||
-    row.received_via === 'both'
-      ? row.received_via
+  const receivedVia: MessageTransport | undefined =
+    typeof row.received_via === 'string' && isAllowedReticulumReceivedVia(row.received_via)
+      ? (row.received_via as MessageTransport)
       : undefined;
   const deliveryMethod = parseReticulumDeliveryMethod(row.delivery_method);
   const status: MessageRecord['status'] =
@@ -462,5 +492,15 @@ export function reticulumDbRowToMessageRecord(row: {
     ...(receivedVia ? { receivedVia } : {}),
     ...(deliveryMethod ? { reticulumDeliveryMethod: deliveryMethod } : {}),
     ...(row.attachment_path ? { reticulumAttachmentPath: row.attachment_path } : {}),
+    ...(row.attachment_path &&
+    (row.audio_mode != null ||
+      row.attachment_path.toLowerCase().endsWith('.ogg') ||
+      /^\[voice:/i.test(row.payload))
+      ? { reticulumAttachmentKind: 'audio' as const }
+      : {}),
+    ...(row.audio_mode != null ? { reticulumAudioMode: row.audio_mode } : {}),
+    ...(row.audio_duration_sec != null
+      ? { reticulumAudioDurationSec: row.audio_duration_sec }
+      : {}),
   };
 }

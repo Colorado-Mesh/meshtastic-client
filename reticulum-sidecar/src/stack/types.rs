@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use super::path_medium::PathMediumSetting;
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StackIdentity {
     pub configured: bool,
@@ -31,6 +33,11 @@ pub struct InterfaceRow {
     pub callsign: Option<String>,
     pub id_interval: Option<u32>,
     pub mode: Option<String>,
+    /// Effective RNS interface mode from live `GetInterfaceStats` (Debug name
+    /// mapped to canonical rnsd values). None when offline / unknown. Config
+    /// `mode` remains the user-configured value; the UI compares the two.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_mode: Option<String>,
     #[serde(default)]
     pub seed_addresses: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -55,6 +62,21 @@ pub struct InterfaceRow {
     /// IFAC authentication passphrase (common interface option).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub passphrase: Option<String>,
+    /// RNode/KISS TX ready-gate (`CMD_READY`). Defaults on for RF interfaces so
+    /// bursts do not overflow the bounded TX queue. Only meaningful for RF types.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flow_control: Option<bool>,
+    /// Upstream RNS opt-out: keep configured mode when `discoverable` would
+    /// otherwise auto-correct to Access Point / Gateway. Derived by mesh-client
+    /// when publish is on and mode is not AP/Gateway.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ignore_config_warnings: Option<bool>,
+    /// Host outbound TX mpsc fill from live `GetInterfaceStats` (None when offline / unknown).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tx_queue_used: Option<u64>,
+    /// Host outbound TX mpsc capacity from live stats.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tx_queue_max: Option<u64>,
     /// Unknown INI keys preserved across CRUD so typed writes do not drop them.
     #[serde(default)]
     pub extra_config: HashMap<String, String>,
@@ -93,6 +115,9 @@ pub struct PeerRow {
     pub path_hash: Option<String>,
     #[serde(default)]
     pub via_hash: Option<String>,
+    /// 64-byte X25519+Ed25519 public key as 128 hex chars when known from announces.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub public_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -133,6 +158,13 @@ pub struct DiscoveredPropagationRow {
     /// Actively serving when true (from PN announce `node_state`).
     pub node_state: bool,
     pub peering_cost: u8,
+    /// Medium the announce path was learned over, when a path is known.
+    ///
+    /// Auto ranking deprioritizes RF: a propagation node reachable only over LoRa
+    /// cannot serve a 256 KB propagation limit at usable speed, so a hop-count-only
+    /// ranking would pick it over a slightly more distant IP node and then time out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub medium: Option<PathMediumSetting>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -251,8 +283,21 @@ pub struct AddInterfaceRequest {
     pub network_name: Option<String>,
     #[serde(default)]
     pub passphrase: Option<String>,
+    /// RNode/KISS TX ready-gate. When omitted, RF interfaces default to `true`.
+    #[serde(default)]
+    pub flow_control: Option<bool>,
+    #[serde(default)]
+    pub ignore_config_warnings: Option<bool>,
     #[serde(default)]
     pub extra_config: HashMap<String, String>,
+}
+
+/// Native LXMF `FIELD_AUDIO` payload for chat voice memos (Ratspeak parity).
+#[derive(Debug, Clone, Deserialize)]
+pub struct LxmfAudioRequest {
+    /// LXMF audio mode (`AM_OPUS_OGG` = 0x10).
+    pub mode: u8,
+    pub data_base64: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -266,6 +311,17 @@ pub struct LxmfSendRequest {
     /// Optional UTF-8 quote snippet for LXMF `FIELD_REPLY_QUOTE` (0x31).
     #[serde(default)]
     pub reply_preview_text: Option<String>,
+    /// Optional native LXMF audio field (Ogg/Opus voice memo).
+    #[serde(default)]
+    pub audio: Option<LxmfAudioRequest>,
+}
+
+/// Create an encrypted `lxm://` paper URI (no network send).
+pub type LxmfPaperCreateRequest = LxmfSendRequest;
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct LxmfPaperIngestRequest {
+    pub uri: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -273,4 +329,119 @@ pub struct LxmfReactionRequest {
     pub destination_hash: String,
     pub target_hash: String,
     pub emoji: String,
+}
+
+#[cfg(test)]
+mod tx_queue_serde_tests {
+    use super::InterfaceRow;
+    use serde_json::Value;
+    use std::collections::HashMap;
+
+    fn minimal_row() -> InterfaceRow {
+        InterfaceRow {
+            id: "rnode-1".into(),
+            name: "RNode USB".into(),
+            iface_type: "rnode".into(),
+            enabled: true,
+            status: "up".into(),
+            host: None,
+            port: None,
+            preset: None,
+            serial_port: None,
+            frequency: None,
+            bandwidth: None,
+            txpower: None,
+            spreading_factor: None,
+            coding_rate: None,
+            callsign: None,
+            id_interval: None,
+            mode: None,
+            runtime_mode: None,
+            seed_addresses: Vec::new(),
+            discoverable: None,
+            latitude: None,
+            longitude: None,
+            height: None,
+            discovery_name: None,
+            announce_interval_min: None,
+            connectable: None,
+            reachable_on: None,
+            network_name: None,
+            passphrase: None,
+            flow_control: None,
+            ignore_config_warnings: None,
+            tx_queue_used: None,
+            tx_queue_max: None,
+            extra_config: HashMap::default(),
+        }
+    }
+
+    #[test]
+    fn none_tx_queue_fields_omitted_from_serialization() {
+        let row = minimal_row();
+        let value = serde_json::to_value(&row).expect("serialize");
+        let obj = value.as_object().expect("object");
+        assert!(!obj.contains_key("tx_queue_used"));
+        assert!(!obj.contains_key("tx_queue_max"));
+        assert!(!obj.contains_key("runtime_mode"));
+        assert!(!obj.contains_key("ignore_config_warnings"));
+    }
+
+    #[test]
+    fn missing_payload_fields_deserialize_as_none() {
+        let row = minimal_row();
+        let value = serde_json::to_value(&row).expect("serialize");
+        let obj = value.as_object().expect("object");
+        assert!(!obj.contains_key("tx_queue_used"));
+        assert!(!obj.contains_key("tx_queue_max"));
+        let roundtrip: InterfaceRow = serde_json::from_value(value).expect("deserialize");
+        assert_eq!(roundtrip.tx_queue_used, None);
+        assert_eq!(roundtrip.tx_queue_max, None);
+        assert_eq!(roundtrip.runtime_mode, None);
+        assert_eq!(roundtrip.ignore_config_warnings, None);
+    }
+
+    #[test]
+    fn online_live_stats_preserve_both_values() {
+        let mut row = minimal_row();
+        row.tx_queue_used = Some(64);
+        row.tx_queue_max = Some(256);
+        let value = serde_json::to_value(&row).expect("serialize");
+        assert_eq!(value.get("tx_queue_used"), Some(&Value::from(64)));
+        assert_eq!(value.get("tx_queue_max"), Some(&Value::from(256)));
+        let roundtrip: InterfaceRow = serde_json::from_value(value).expect("deserialize");
+        assert_eq!(roundtrip.tx_queue_used, Some(64));
+        assert_eq!(roundtrip.tx_queue_max, Some(256));
+    }
+
+    #[test]
+    fn runtime_mode_and_ignore_warnings_round_trip() {
+        let mut row = minimal_row();
+        row.runtime_mode = Some("access_point".into());
+        row.ignore_config_warnings = Some(true);
+        let value = serde_json::to_value(&row).expect("serialize");
+        assert_eq!(
+            value.get("runtime_mode"),
+            Some(&Value::from("access_point"))
+        );
+        assert_eq!(
+            value.get("ignore_config_warnings"),
+            Some(&Value::Bool(true))
+        );
+        let roundtrip: InterfaceRow = serde_json::from_value(value).expect("deserialize");
+        assert_eq!(roundtrip.runtime_mode.as_deref(), Some("access_point"));
+        assert_eq!(roundtrip.ignore_config_warnings, Some(true));
+    }
+
+    #[test]
+    fn offline_live_statistics_yield_none() {
+        let mut row = minimal_row();
+        row.status = "down".into();
+        row.tx_queue_used = None;
+        row.tx_queue_max = None;
+        let value = serde_json::to_value(&row).expect("serialize");
+        let obj = value.as_object().expect("object");
+        assert!(!obj.contains_key("tx_queue_used"));
+        assert!(!obj.contains_key("tx_queue_max"));
+    }
 }

@@ -32,6 +32,7 @@ function isLinuxWebBluetoothPlatform(): boolean {
 function isNobleBleStartScanBusyResult(
   result: NobleBleStartScanResult,
 ): result is Extract<NobleBleStartScanResult, { ok: false; code: 'scan_busy' }> {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Runtime guard protects external or callback-mutated state.
   return !result.ok && result.code === 'scan_busy';
 }
 
@@ -108,6 +109,28 @@ export async function connectNobleBleWithScanBusyRetry(
   throw new Error(lastError);
 }
 
+/**
+ * Race `work` against a deadline. Does not cancel `work`; callers must ignore late success
+ * (generation / attemptActive guards) and tear down any transport opened after the race loses.
+ */
+export async function raceWithDeadline<T>(
+  work: Promise<T>,
+  budgetMs: number,
+  timeoutMessage: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(timeoutMessage));
+    }, budgetMs);
+  });
+  try {
+    return await Promise.race([work, timeoutPromise]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 /** Verify Noble BLE GATT is still connected after configure (macOS/Windows). */
 export async function verifyNobleBleRfLink(
   rfType: 'ble' | 'serial' | 'tcp' | 'http',
@@ -144,7 +167,11 @@ export async function reconnectBleWithScan(
     await connect();
     return;
   } catch (err) {
-    if (isMeshcoreSetupAbortError(err)) {
+    // AbortError (setup cancel / RF auto-connect cancel) must not fall through to scan.
+    if (
+      isMeshcoreSetupAbortError(err) ||
+      (err instanceof DOMException && err.name === 'AbortError')
+    ) {
       throw err;
     }
     const message = errLikeToLogString(err);

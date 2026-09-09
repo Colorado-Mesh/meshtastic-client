@@ -24,11 +24,13 @@ import {
 } from '../../../shared/nodeNameUtils';
 import { upsertNodeRecord } from '../../stores/nodeStore';
 import { usePositionHistoryStore } from '../../stores/positionHistoryStore';
+import { getConnectedMeshcoreBleMac } from '../connectedMeshcoreBleMac';
 import { validateCoords } from '../coordUtils';
 import { persistDbWrite } from '../dbPersistRetry';
 import { attachTypedPacketListeners } from '../drivers/attachTypedPacketListener';
 import { shouldPreserveStaticGpsForSelfNode } from '../gpsSource';
 import { getIdentityNode } from '../identityStoreReads';
+import { shouldSuppressMeshtasticNodeHear } from '../meshcoreBleMacMeshtasticNodeId';
 import {
   computeNodeInfoLastHeardMs,
   mergeMeshtasticLivePacketLastHeard,
@@ -48,6 +50,11 @@ import type {
 } from '../types';
 import { processMeshtasticNodeDiagnostics } from './meshtasticProcessNodeDiagnostics';
 import { cacheTransportDisplayName } from './transportDisplayNameCache';
+
+/** Skip hear bumps for MeshCore BLE MAC-derived Meshtastic ghost nodes. */
+function shouldSuppressGhostNodeHear(nodeNum: number): boolean {
+  return shouldSuppressMeshtasticNodeHear(nodeNum, getConnectedMeshcoreBleMac());
+}
 
 const ROLE_CLIENT_MUTE = 1;
 const BLE_DEVICE_NAMES_KEY = 'mesh-client:bleDeviceNames';
@@ -140,6 +147,7 @@ function handleUserPacketNodeInfo(
   deps: MeshtasticNodeSideEffectsDeps,
 ): void {
   const nodeNum = info.nodeId;
+  if (shouldSuppressGhostNodeHear(nodeNum)) return;
   deps.rfHeardNodeIds.current.add(nodeNum);
   const existing = getIdentityNode(identityId, nodeNum) ?? deps.emptyNode(nodeNum);
   const long_name = preferNonEmptyTrimmedString(info.longName, existing.long_name, {
@@ -158,6 +166,9 @@ function handleUserPacketNodeInfo(
     hw_model: info.hwModel ?? existing.hw_model,
     role: info.role ?? existing.role,
     public_key_hex: meshtasticPublicKeyHex(info.publicKey) ?? existing.public_key_hex,
+    // Only NodeDB NodeInfo carries these flags; a live UserPacket must not clear them.
+    key_manually_verified: info.keyManuallyVerified ?? existing.key_manually_verified,
+    has_xeddsa_signed: info.hasXeddsaSigned ?? existing.has_xeddsa_signed,
     // During configure, skip rxTime bumps (NodeDB replay). After configure, use mesh rxTime.
     last_heard: mergeMeshtasticUserPacketLastHeard(
       existing.last_heard || 0,
@@ -210,6 +221,7 @@ function handleNodeDbNodeInfo(
   deps: MeshtasticNodeSideEffectsDeps,
 ): void {
   const nodeNum = info.nodeId;
+  if (shouldSuppressGhostNodeHear(nodeNum)) return;
   const myNodeNum = deps.getMyNodeNum();
   const isSelf = nodeNum === myNodeNum;
   deps.rfHeardNodeIds.current.add(nodeNum);
@@ -314,7 +326,9 @@ function handlePosition(
 ): void {
   deps.touchLastData();
   const nodeNum = position.nodeId;
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Runtime guard protects external or callback-mutated state.
   if (position.latitude == null || position.longitude == null) return;
+  if (shouldSuppressGhostNodeHear(nodeNum)) return;
   const myNodeNum = deps.getMyNodeNum();
   if (nodeNum !== 0) {
     deps.rfHeardNodeIds.current.add(nodeNum);
@@ -369,6 +383,7 @@ function handleEnvironmentTelemetry(
   deps: MeshtasticNodeSideEffectsDeps,
 ): void {
   const nodeNum = telemetry.nodeId;
+  if (shouldSuppressGhostNodeHear(nodeNum)) return;
   const point: EnvironmentTelemetryPoint = {
     timestamp: Date.now(),
     nodeNum,
@@ -385,6 +400,19 @@ function handleEnvironmentTelemetry(
     weight: telemetry.weight,
     rainfall1h: telemetry.rainfall1h,
     rainfall24h: telemetry.rainfall24h,
+    lightningStrikeCount1h: telemetry.lightningStrikeCount1h,
+    lightningDistanceKm: telemetry.lightningDistanceKm,
+    adcVoltages: telemetry.adcVoltages,
+    oneWireTemperatures: telemetry.oneWireTemperatures,
+    pm10Standard: telemetry.pm10Standard,
+    pm25Standard: telemetry.pm25Standard,
+    pm40Standard: telemetry.pm40Standard,
+    pm100Standard: telemetry.pm100Standard,
+    co2: telemetry.co2,
+    pmTemperature: telemetry.pmTemperature,
+    pmHumidity: telemetry.pmHumidity,
+    pmVocIdx: telemetry.pmVocIdx,
+    pmNoxIdx: telemetry.pmNoxIdx,
   };
   deps.setEnvironmentTelemetry((prev) => [...prev, point].slice(-MAX_TELEMETRY_POINTS));
   const existing = getIdentityNode(identityId, nodeNum) ?? deps.emptyNode(nodeNum);
@@ -398,6 +426,11 @@ function handleEnvironmentTelemetry(
     env_lux: telemetry.lux ?? existing.env_lux,
     env_wind_speed: telemetry.windSpeed ?? existing.env_wind_speed,
     env_wind_direction: telemetry.windDirection ?? existing.env_wind_direction,
+    env_lightning_strike_count_1h:
+      telemetry.lightningStrikeCount1h ?? existing.env_lightning_strike_count_1h,
+    env_lightning_distance_km: telemetry.lightningDistanceKm ?? existing.env_lightning_distance_km,
+    env_pm25: telemetry.pm25Standard ?? existing.env_pm25,
+    env_co2: telemetry.co2 ?? existing.env_co2,
     last_heard: mergeMeshtasticLivePacketLastHeard(
       existing.last_heard || 0,
       telemetry.timestamp,
@@ -441,6 +474,7 @@ function handleDeviceMetricsTelemetry(
   deps: MeshtasticNodeSideEffectsDeps,
 ): void {
   const nodeNum = telemetry.nodeId;
+  if (shouldSuppressGhostNodeHear(nodeNum)) return;
   const myNodeNum = deps.getMyNodeNum();
   const point: TelemetryPoint = {
     timestamp: Date.now(),
@@ -485,7 +519,12 @@ function handleTelemetry(
   // No variant case means the packet carried neither `variant.value` nor
   // `deviceMetrics`, so there is nothing to chart or patch.
   if (!telemetry.variantCase) return;
-  if (telemetry.variantCase === 'environmentMetrics') {
+  // Air-quality metrics are environmental readings from a separate variant; they share
+  // the environment chart stream so particulates/CO2 land on the same timeline.
+  if (
+    telemetry.variantCase === 'environmentMetrics' ||
+    telemetry.variantCase === 'airQualityMetrics'
+  ) {
     handleEnvironmentTelemetry(identityId, telemetry, deps);
     return;
   }

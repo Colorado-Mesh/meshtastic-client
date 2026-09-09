@@ -39,10 +39,94 @@ describe('ReticulumMessageStatusBadge', () => {
     expect(screen.getByText(/reticulumPnAbbrev/)).toBeTruthy();
   });
 
-  it('shows Queued at PN while propagated Sending', () => {
-    render(<ReticulumMessageStatusBadge status="sending" via="tcp" deliveryMethod="propagated" />);
+  it('does not show the delivered check for a remote PN deposit', async () => {
+    // The proof came from the propagation node, not the recipient.
+    const view = await renderAndAssertAxe(
+      <ReticulumMessageStatusBadge status="acked" via="tcp" deliveryMethod="propagated" />,
+    );
+    expect(screen.getByText(/reticulumPnAbbrev\s+\u{1F4E5}/u)).toBeTruthy();
+    expect(screen.queryByText(/✓/)).toBeNull();
+    expect(view.container.querySelector('.text-bright-green')).toBeNull();
+    expect(view.container.querySelector('.text-amber-400')).not.toBeNull();
+  });
+
+  it('shows Paper for paper Completes', async () => {
+    await renderAndAssertAxe(
+      <ReticulumMessageStatusBadge status="acked" via="tcp" deliveryMethod="paper" />,
+    );
+    expect(screen.getByLabelText('chatPanel.reticulumSendPaperTooltip')).toBeTruthy();
+    expect(screen.getByText(/reticulumSendPaper/)).toBeTruthy();
+  });
+
+  it('keeps failure status in tooltip for failed paper messages', async () => {
+    await renderAndAssertAxe(
+      <ReticulumMessageStatusBadge
+        status="failed"
+        via="paper"
+        deliveryMethod="paper"
+        error="decrypt boom"
+      />,
+    );
+    expect(screen.getByLabelText('chatPanel.reticulumSendPaperTooltip: decrypt boom')).toBeTruthy();
+  });
+
+  it('shows PN abbrev while propagated send is still in flight', async () => {
+    await renderAndAssertAxe(
+      <ReticulumMessageStatusBadge status="sending" via="tcp" deliveryMethod="propagated" />,
+    );
+    expect(screen.getByText(/reticulumPnAbbrev/)).toBeTruthy();
     expect(
       screen.getByLabelText('chatPanel.sentViaPropagation: chatPanel.reticulumSendPropagated'),
     ).toBeTruthy();
+  });
+
+  it('shows awaiting-peer-receipt wording for direct sending state', async () => {
+    await renderAndAssertAxe(
+      <ReticulumMessageStatusBadge status="sending" via="rf" deliveryMethod="direct" />,
+    );
+    expect(
+      screen.getByLabelText('chatPanel.sentViaRf: chatPanel.reticulumSendAwaitingPeerReceipt'),
+    ).toBeTruthy();
+  });
+
+  it('shows PN with house icon for local-prop stored_locally (not green check)', async () => {
+    await renderAndAssertAxe(
+      <ReticulumMessageStatusBadge status="acked" via="tcp" deliveryMethod="stored_locally" />,
+    );
+    expect(
+      screen.getByLabelText(
+        'chatPanel.sentViaLocalPropagation: chatPanel.reticulumSendStoredLocally',
+      ),
+    ).toBeTruthy();
+    // Label PN + house emoji — not a delivery checkmark.
+    expect(screen.getByText(/reticulumPnAbbrev\s+\u{1F3E0}/u)).toBeTruthy();
+    expect(screen.queryByText(/✓/)).toBeNull();
+  });
+
+  it('shows storing-locally tooltip while sending with stored_locally', async () => {
+    await renderAndAssertAxe(
+      <ReticulumMessageStatusBadge status="sending" via="tcp" deliveryMethod="stored_locally" />,
+    );
+    expect(
+      screen.getByLabelText(
+        'chatPanel.sentViaLocalPropagation: chatPanel.reticulumSendStoringLocally',
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText(/reticulumPnAbbrev\s+\u{1F3E0}/u)).toBeTruthy();
+  });
+
+  it('shows Direct-only notice for message_too_large_for_propagation', async () => {
+    await renderAndAssertAxe(
+      <ReticulumMessageStatusBadge
+        status="failed"
+        via="tcp"
+        deliveryMethod="propagated"
+        error="message_too_large_for_propagation"
+      />,
+    );
+    // Notice tooltip (not "Propagation: failed") and info icon (not ✗).
+    expect(screen.getByLabelText('chatPanel.voiceMemo.tooLargeForPropagation')).toBeTruthy();
+    expect(screen.getByText(/reticulumPnAbbrev\s+\u2139/u)).toBeTruthy();
+    expect(screen.queryByText(/\u2717/u)).toBeNull();
   });
 });

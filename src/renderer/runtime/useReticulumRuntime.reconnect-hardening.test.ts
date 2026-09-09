@@ -2,18 +2,15 @@
 /**
  * Source contract tests for useReticulumRuntime sidecar reconnect hardening.
  */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { describe, expect, it } from 'vitest';
 
 import {
   assertPowerResumeSkipsOnExplicitDisconnect,
   extractUseCallbackBody,
+  loadRuntimeSource,
 } from '../lib/sourceContractTestHelpers';
 
-const TEST_DIR = import.meta.dirname ?? __dirname;
-const SOURCE = readFileSync(join(TEST_DIR, 'useReticulumRuntime.ts'), 'utf-8');
+const SOURCE = loadRuntimeSource('useReticulumRuntime.ts');
 
 describe('useReticulumRuntime reconnect hardening (regression)', () => {
   it('ignores sidecar stop status while connect is in flight', () => {
@@ -29,6 +26,20 @@ describe('useReticulumRuntime reconnect hardening (regression)', () => {
     expect(SOURCE).not.toMatch(
       /const connect = useCallback\(async \(\) => \{[\s\S]*?if \(connectInFlightRef\.current\) return;/,
     );
+  });
+
+  it('re-runs connect after coalescing when reuseIfRunning is false', () => {
+    const connectBody = extractUseCallbackBody(SOURCE, 'connect');
+    expect(connectBody).toContain('opts?.reuseIfRunning !== false');
+    const awaitPendingIdx = connectBody.indexOf('await pending.catch');
+    const coalescedReturnIdx = connectBody.indexOf(
+      'if (opts?.reuseIfRunning !== false)',
+      awaitPendingIdx,
+    );
+    expect(awaitPendingIdx).toBeGreaterThan(-1);
+    expect(coalescedReturnIdx).toBeGreaterThan(awaitPendingIdx);
+    // Fresh-start falls through into a new flight rather than returning early.
+    expect(connectBody.slice(coalescedReturnIdx, coalescedReturnIdx + 120)).toContain('return;');
   });
 
   it('restartStack awaits in-flight connect before restarting', () => {
@@ -125,7 +136,7 @@ describe('useReticulumRuntime resume-generation cancel (H7)', () => {
   it('connect captures the resume generation before starting the async flight', () => {
     const connectBody = extractUseCallbackBody(SOURCE, 'connect');
     expect(connectBody).toMatch(
-      /connectInFlightRef\.current = true;\s*const generation = resumeGenerationRef\.current;\s*const flight = \(async \(\) => \{/,
+      /connectInFlightRef\.current = true;\s*const generation = resumeGenerationRef\.current;\s*const reuseIfRunning = opts\?\.reuseIfRunning \?\? true;\s*const flight = \(async \(\) => \{/,
     );
   });
 
@@ -155,11 +166,44 @@ describe('useReticulumRuntime resume-generation cancel (H7)', () => {
     expect(resumeBody).toContain('suppressReconnectRef.current');
     expect(resumeBody).not.toContain('resumeGenerationRef');
   });
+
+  it('onPowerSuspend stops the sidecar when an enabled BLE RNode is configured', () => {
+    expect(SOURCE).toMatch(/powerSuspendHadBleRnodeRef/);
+    expect(SOURCE).toMatch(/isReticulumBleRnodeInterfaceRow\(row\)/);
+    const suspendRe = /const onPowerSuspend = useCallback\([\s\S]*?\}, \[\]\);/;
+    const suspendBody = suspendRe.exec(SOURCE)?.[0];
+    expect(suspendBody).toBeDefined();
+    expect(suspendBody).toContain('electronAPI.reticulum.stop()');
+    expect(suspendBody).toContain('powerSuspendHadBleRnodeRef.current = hadBleRnode');
+  });
+
+  it('onPowerResume forces reuseIfRunning false after BLE RNode suspend', () => {
+    const resumeRe = /const onPowerResume = useCallback\([\s\S]*?\}, \[connect\]\);/;
+    const resumeBody = resumeRe.exec(SOURCE)?.[0];
+    expect(resumeBody).toBeDefined();
+    expect(resumeBody).toContain('reuseIfRunning: !forceFresh');
+    expect(resumeBody).toContain('powerSuspendHadBleRnodeRef.current');
+  });
+
+  it('latches bleBondRemoved to release Noble and set bond-desync sticky flag', () => {
+    expect(SOURCE).toMatch(/setReticulumBleBondDesyncActive\(true\)/);
+    expect(SOURCE).toMatch(/releaseReticulumBleRnodeConnect\(\)/);
+    expect(SOURCE).toMatch(/status\.interfaceIssueAlert\?\.bleBondRemoved/);
+  });
+
+  it('wires LXMF send rekey with replacesMessageHash for pending orphan cleanup', () => {
+    expect(SOURCE).toMatch(/shouldDeletePriorReticulumOutboundHash\(pendingId, hash\)/);
+    expect(SOURCE).toMatch(
+      /replacesMessageHash[\s\S]*?ingestReticulumLxmfPayloadWithSideEffects\([\s\S]*?replacesMessageHash/,
+    );
+  });
 });
 
 describe('useReticulumRuntime RMAP discovery map', () => {
   it('routes rmap.discovery WS events through setDiscovered', () => {
-    expect(SOURCE).toMatch(/evt\.type === 'rmap\.discovery'[\s\S]*?setDiscovered\(p\.discovered\)/);
+    expect(SOURCE).toMatch(
+      /evt\.type === 'rmap\.discovery'[\s\S]*?setDiscovered\(normalizeRmapDiscoveryRows\(p\.discovered\)\)/,
+    );
   });
 
   it('clears discovery map and peer store on disconnect and sidecar stop', () => {
@@ -212,17 +256,63 @@ describe('useReticulumRuntime contact → nodeStore label preservation', () => {
     );
     expect(SOURCE).not.toMatch(/records\.push\(reticulumContactToNodeRecord\(contact\)\)/);
   });
+
+  it('applyContactNodesFromStore keeps History peers in nodeStore', () => {
+    expect(SOURCE).toMatch(/for \(const contact of history\.values\(\)\)/);
+    expect(SOURCE).toMatch(/keepNodeIds\.has\(nodeId\)/);
+  });
+});
+
+describe('useReticulumRuntime chat LXMF send timeout wiring', () => {
+  it('maps IPC send timeout and proxy readiness errors via shared humanize', () => {
+    expect(SOURCE).toContain('withReticulumIpcSendDeadline');
+    expect(SOURCE).toContain('isReticulumIpcSendTimeout');
+    expect(SOURCE).toContain('reticulumProxyErrorToI18nKey');
+    expect(SOURCE).toContain("i18n.t('chatPanel.reticulumSendTimeout')");
+    expect(SOURCE).toMatch(/withReticulumIpcSendDeadline\(\s*[\s\S]*?proxyPost\(/);
+  });
+
+  it('bounds LXMF reaction sends with the same IPC deadline', () => {
+    expect(SOURCE).toMatch(
+      /withReticulumIpcSendDeadline\(\s*[\s\S]*?proxyPost\('\/api\/v1\/lxmf\/reaction'/,
+    );
+    expect(SOURCE).toMatch(/res\?\.ok === false/);
+  });
 });
 
 describe('useReticulumRuntime outbound delivery persistence', () => {
   it('persists Completes/Fails via applyReticulumOutboundDeliveryStatus', () => {
     expect(SOURCE).toMatch(
-      /evt\.type === 'lxmf_outbound_status'[\s\S]*?applyReticulumOutboundDeliveryStatus\(identityId, p\.message_hash, p\.status,\s*\{\s*sentVia: p\.sent_via,\s*deliveryMethod: p\.delivery_method,\s*\}\)/,
+      /evt\.type === 'lxmf_outbound_status'[\s\S]*?applyReticulumOutboundDeliveryStatus\(identityId, p\.message_hash, p\.status,\s*\{\s*sentVia: p\.sent_via,\s*deliveryMethod: p\.delivery_method,\s*deliveryAttempts: p\.delivery_attempts,\s*error: p\.error,\s*\}\)/,
     );
   });
 
   it('flushes buffered early delivery status after LXMF hash rename', () => {
     expect(SOURCE).toMatch(/flushPendingReticulumOutboundDeliveryStatus\(identityId, hash\)/);
+  });
+
+  it('skips link-timeout failure bridge when PN cascade is available', () => {
+    expect(SOURCE).toContain('shouldApplyLinkDeliveryTimeoutFailureBridge');
+    expect(SOURCE).toMatch(
+      /shouldApplyLinkDeliveryTimeoutFailureBridge\(\s*propState\.nodes,\s*propState\.preferredId,\s*readReticulumPropagationMode\(\),\s*propState\.discovered,\s*propState\.autoBlacklist,\s*\)/,
+    );
+    expect(SOURCE).toContain('propagationHydratedForBridgeRef');
+    expect(SOURCE).toContain('identityIdRef');
+    expect(SOURCE).toMatch(/if \(!applyBridge\) \{/);
+    expect(SOURCE).toContain('cascade eligible');
+    expect(SOURCE).toContain('propagation hydrate failed/uncertain');
+    expect(SOURCE).toMatch(
+      /processedLinkTimeoutDestsRef\.current\.add\(norm\);\s*failReticulumSendingOutboundToDestHash/,
+    );
+  });
+
+  it('aborts link-timeout bridge after delayed hydrate when generation is stale', () => {
+    expect(SOURCE).toContain('linkTimeoutBridgeGenerationRef');
+    expect(SOURCE).toMatch(/const bridgeGeneration = linkTimeoutBridgeGenerationRef\.current/);
+    expect(SOURCE).toContain('generation stale after hydrate');
+    // Generation bumps on identity change, tearDown, and disconnect.
+    const bumps = SOURCE.match(/linkTimeoutBridgeGenerationRef\.current \+= 1/g) ?? [];
+    expect(bumps.length).toBeGreaterThanOrEqual(3);
   });
 
   it('wires propagation store + sidecar health into Reticulum diagnostics', () => {
@@ -243,6 +333,23 @@ describe('useReticulumRuntime outbound delivery persistence', () => {
     );
     expect(SOURCE).not.toMatch(
       /markStaleReticulumOutboundMessages\(identityId, 5 \* MS_PER_MINUTE\)/,
+    );
+  });
+
+  it('guards queueStatus updates with queueRefreshGeneration across disconnect', () => {
+    expect(SOURCE).toContain('queueRefreshGenerationRef');
+    expect(SOURCE).toMatch(
+      /const refreshLocalInterfacesFromSidecar = useCallback\(async \(\) => \{[\s\S]*?const generation = queueRefreshGenerationRef\.current;[\s\S]*?if \(generation !== queueRefreshGenerationRef\.current\)/,
+    );
+    expect(SOURCE).toMatch(
+      /const generation = queueRefreshGenerationRef\.current;[\s\S]*?if \(cancelled \|\| generation !== queueRefreshGenerationRef\.current\)/,
+    );
+    // Disconnect + tearDown bump generation before clearing queue state.
+    const bumps = SOURCE.match(/queueRefreshGenerationRef\.current \+= 1/g) ?? [];
+    expect(bumps.length).toBeGreaterThanOrEqual(2);
+    const disconnectBody = extractUseCallbackBody(SOURCE, 'disconnect');
+    expect(disconnectBody).toMatch(
+      /queueRefreshGenerationRef\.current \+= 1;[\s\S]*?setQueueStatus\(null\)/,
     );
   });
 });

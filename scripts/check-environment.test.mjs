@@ -5,10 +5,76 @@ import {
   formatCheckResult,
   formatLocalActDockerNote,
   evaluateContainerEngineCheck,
+  evaluatePlaywrightCheck,
+  evaluateWindowsBuildDepsCheck,
+  parseCheckEnvironmentArgs,
   parseVersion,
   resolveExitCode,
+  resolvePnpmBinCandidates,
   versionGte,
 } from './check-environment.mjs';
+
+describe('check-environment resolvePnpmBinCandidates', () => {
+  it('returns Windows PNPM_HOME shim paths including bin/', () => {
+    expect(resolvePnpmBinCandidates('C:\\pnpm-home', 'win32')).toEqual([
+      'C:\\pnpm-home\\pnpm.CMD',
+      'C:\\pnpm-home\\pnpm.cmd',
+      'C:\\pnpm-home\\pnpm.exe',
+      'C:\\pnpm-home\\bin\\pnpm.CMD',
+      'C:\\pnpm-home\\bin\\pnpm.cmd',
+      'C:\\pnpm-home\\bin\\pnpm.exe',
+    ]);
+  });
+
+  it('returns empty for non-Windows or missing PNPM_HOME', () => {
+    expect(resolvePnpmBinCandidates('C:\\pnpm-home', 'linux')).toEqual([]);
+    expect(resolvePnpmBinCandidates(undefined, 'win32')).toEqual([]);
+  });
+});
+
+describe('check-environment evaluateWindowsBuildDepsCheck', () => {
+  it('passes when cl is on PATH', () => {
+    expect(
+      evaluateWindowsBuildDepsCheck({ clOnPath: true, vswhereInstallPath: null }),
+    ).toMatchObject({
+      status: 'pass',
+      detail: 'MSVC compiler (cl) found',
+    });
+  });
+
+  it('passes when vswhere reports a VC Tools install', () => {
+    expect(
+      evaluateWindowsBuildDepsCheck({
+        clOnPath: false,
+        vswhereInstallPath: 'C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise',
+      }),
+    ).toMatchObject({
+      status: 'pass',
+      detail: expect.stringContaining('vswhere'),
+    });
+  });
+
+  it('fails when neither cl nor vswhere VC Tools are available', () => {
+    expect(
+      evaluateWindowsBuildDepsCheck({ clOnPath: false, vswhereInstallPath: null }),
+    ).toMatchObject({
+      status: 'fail',
+      label: 'Windows build dependencies missing',
+    });
+  });
+});
+
+describe('check-environment parseCheckEnvironmentArgs', () => {
+  it('defaults skipNodeModules to false', () => {
+    expect(parseCheckEnvironmentArgs([])).toEqual({ skipNodeModules: false });
+  });
+
+  it('enables skipNodeModules for --skip-node-modules', () => {
+    expect(parseCheckEnvironmentArgs(['--skip-node-modules'])).toEqual({
+      skipNodeModules: true,
+    });
+  });
+});
 
 describe('check-environment parseVersion', () => {
   it('parses v-prefixed semver strings', () => {
@@ -232,5 +298,94 @@ describe('check-environment evaluateContainerEngineCheck', () => {
       label: 'Container engine not found (optional)',
     });
     expect(result.hint).toContain('/opt/podman/bin');
+  });
+});
+
+describe('check-environment evaluatePlaywrightCheck', () => {
+  it('passes when package resolves and version is available', () => {
+    const results = evaluatePlaywrightCheck({
+      packageResolves: true,
+      versionOutput: 'Version 1.62.1',
+      platform: 'darwin',
+    });
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      status: 'pass',
+      severity: 'optional',
+      label: 'Playwright',
+      detail: 'Version 1.62.1',
+    });
+  });
+
+  it('warns when Playwright is missing', () => {
+    const results = evaluatePlaywrightCheck({
+      packageResolves: false,
+      versionOutput: null,
+      platform: 'darwin',
+    });
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      status: 'warn',
+      severity: 'optional',
+      label: 'Playwright not found (optional)',
+    });
+    expect(results[0].hint).toContain('pnpm install');
+  });
+
+  it('warns when package resolves but CLI version check fails', () => {
+    const results = evaluatePlaywrightCheck({
+      packageResolves: true,
+      versionOutput: null,
+      platform: 'darwin',
+    });
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      status: 'warn',
+      severity: 'optional',
+      label: 'Playwright CLI failed (optional)',
+    });
+    expect(results[0].hint).toContain('playwright --version');
+    expect(results[0].hint).not.toContain('pnpm install');
+  });
+
+  it('warns on Linux when DISPLAY is unset even if xvfb-run is installed', () => {
+    const results = evaluatePlaywrightCheck({
+      packageResolves: true,
+      versionOutput: 'Version 1.62.1',
+      platform: 'linux',
+      hasDisplay: false,
+      hasXvfbRun: true,
+    });
+    expect(results).toHaveLength(2);
+    expect(results[0].status).toBe('pass');
+    expect(results[1]).toMatchObject({
+      status: 'warn',
+      label: 'Linux display for E2E (optional)',
+    });
+    expect(results[1].hint).toContain('xvfb-run -a');
+  });
+
+  it('warns on Linux when DISPLAY is unset and xvfb-run is missing', () => {
+    const results = evaluatePlaywrightCheck({
+      packageResolves: true,
+      versionOutput: 'Version 1.62.1',
+      platform: 'linux',
+      hasDisplay: false,
+      hasXvfbRun: false,
+    });
+    expect(results).toHaveLength(2);
+    expect(results[1].hint).toContain('install xvfb');
+  });
+
+  it('skips Linux display warn when DISPLAY is set', () => {
+    const results = evaluatePlaywrightCheck({
+      packageResolves: true,
+      versionOutput: 'Version 1.62.1',
+      platform: 'linux',
+      hasDisplay: true,
+      hasXvfbRun: false,
+    });
+    expect(results).toHaveLength(1);
+    expect(results[0].status).toBe('pass');
   });
 });

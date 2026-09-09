@@ -56,15 +56,118 @@ function nomadHashPrefixForLog(hash: string): string {
   return clean.slice(0, 8) || 'unknown';
 }
 
+interface NomadFetchLogDiag {
+  pathHops?: number;
+  linkHops?: number;
+  proofBudgetSecs?: number;
+  timeoutSecs?: number;
+  forcePathOk?: boolean;
+  pathEnsureKind?: string;
+  elapsedMs?: number;
+  rawError?: string;
+  triedInterfaces?: string[];
+  failoverRounds?: number;
+  iface?: string;
+}
+
+function optionalFiniteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function optionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function diagFieldsFromResponse(res: unknown): NomadFetchLogDiag {
+  const r = res as {
+    path_hops?: unknown;
+    link_hops?: unknown;
+    proof_budget_secs?: unknown;
+    timeout_secs?: unknown;
+    force_path_ok?: unknown;
+    path_ensure_kind?: unknown;
+    elapsed_ms?: unknown;
+    raw_error?: unknown;
+    tried_interfaces?: unknown;
+    failover_rounds?: unknown;
+    iface?: unknown;
+  };
+  const rawError = typeof r.raw_error === 'string' ? r.raw_error.trim() : undefined;
+  const pathEnsureKind =
+    typeof r.path_ensure_kind === 'string' && r.path_ensure_kind.trim()
+      ? r.path_ensure_kind.trim()
+      : undefined;
+  const sanitizeIfaceName = (value: string): string =>
+    value
+      .replace(/[\r\n]+/g, ' ')
+      .trim()
+      .slice(0, 200);
+  const triedInterfaces = Array.isArray(r.tried_interfaces)
+    ? r.tried_interfaces
+        .filter((n): n is string => typeof n === 'string')
+        .map(sanitizeIfaceName)
+        .filter((n) => n.length > 0)
+    : undefined;
+  const iface =
+    typeof r.iface === 'string' && r.iface.trim() ? sanitizeIfaceName(r.iface) : undefined;
+  const ifaceOrUndefined = iface && iface.length > 0 ? iface : undefined;
+  return {
+    pathHops: optionalFiniteNumber(r.path_hops),
+    linkHops: optionalFiniteNumber(r.link_hops),
+    proofBudgetSecs: optionalFiniteNumber(r.proof_budget_secs),
+    timeoutSecs: optionalFiniteNumber(r.timeout_secs),
+    forcePathOk: optionalBoolean(r.force_path_ok),
+    pathEnsureKind,
+    elapsedMs: optionalFiniteNumber(r.elapsed_ms),
+    rawError: rawError || undefined,
+    triedInterfaces: triedInterfaces?.length ? triedInterfaces : undefined,
+    failoverRounds: optionalFiniteNumber(r.failover_rounds),
+    iface: ifaceOrUndefined,
+  };
+}
+
+function appendNomadDiagParts(parts: string[], diag: NomadFetchLogDiag): void {
+  if (diag.pathHops != null) parts.push(`path_hops=${diag.pathHops}`);
+  if (diag.linkHops != null) parts.push(`link_hops=${diag.linkHops}`);
+  if (diag.proofBudgetSecs != null) parts.push(`proof_budget_secs=${diag.proofBudgetSecs}`);
+  if (diag.timeoutSecs != null) parts.push(`timeout_secs=${diag.timeoutSecs}`);
+  if (diag.forcePathOk != null) parts.push(`force_path_ok=${diag.forcePathOk}`);
+  if (diag.pathEnsureKind) parts.push(`path_ensure=${diag.pathEnsureKind}`);
+  if (diag.elapsedMs != null) parts.push(`elapsed_ms=${diag.elapsedMs}`);
+  if (diag.triedInterfaces?.length) {
+    parts.push(`tried_interfaces=${diag.triedInterfaces.join(',')}`);
+  }
+  if (diag.failoverRounds != null) parts.push(`failover_rounds=${diag.failoverRounds}`);
+  if (diag.iface) parts.push(`iface=${diag.iface}`);
+  if (diag.rawError) {
+    parts.push(`raw=${diag.rawError.replace(/[\r\n]+/g, ' ').slice(0, 200)}`);
+  }
+}
+
+/** Failure-only warn — keep link-budget / path-ensure fields for triage (not success spam). */
 function logNomadFetchFailure(
   kind: 'page' | 'file',
-  opts: { hash: string; path: string; hops: number; egress: string; error: string },
+  opts: {
+    hash: string;
+    path: string;
+    hops: number;
+    egress: string;
+    error: string;
+    diag?: NomadFetchLogDiag;
+  },
 ): void {
   const pathSafe = opts.path.replace(/[\r\n]+/g, ' ').slice(0, 200);
   const errorSafe = opts.error.replace(/[\r\n]+/g, ' ').slice(0, 200);
+  const parts = [
+    `path=${pathSafe}`,
+    `hops=${opts.hops}`,
+    `egress=${opts.egress}`,
+    `error=${errorSafe}`,
+  ];
+  appendNomadDiagParts(parts, opts.diag ?? {});
   console.warn(
     `[nomadNetworkStore] ${kind} fetch failed hash=${nomadHashPrefixForLog(opts.hash)}… ` +
-      `path=${pathSafe} hops=${opts.hops} egress=${opts.egress} error=${errorSafe}`,
+      parts.join(' '),
   );
 }
 
@@ -80,6 +183,8 @@ async function fetchNomadResource<T extends { ok: boolean; error?: string }>(
     nodes: Map<string, NomadNodeRow>;
     requestData?: NomadPageRequestData;
     forcePathRefresh?: boolean;
+    /** Echoed on sidecar `nomad.page_progress` for load correlation. */
+    requestId?: string;
   },
 ): Promise<T> {
   const hops = hopsForNomadHash(opts.nodes, opts.hash);
@@ -94,29 +199,37 @@ async function fetchNomadResource<T extends { ok: boolean; error?: string }>(
     return { ok: false, error: 'sidecar_not_running' } as T;
   }
   try {
-    const egress = await resolveNomadEgress();
-    const qs = new URLSearchParams({
-      path: opts.path,
-      hops: String(hops),
-      egress,
+    // Sidecar recomputes path-table egress for its Link deadline; main uses a flat
+    // Nomad proxy timeout. Cached local egress is logging-only (never block on GET).
+    const egress = cachedNomadEgressAt > 0 ? cachedNomadEgress : 'network';
+    void resolveNomadEgress().catch((e: unknown) => {
+      console.warn('[nomadNetworkStore] resolveNomadEgress ' + errLikeToLogString(e));
     });
+    const qs = new URLSearchParams({ path: opts.path });
     if (opts.requestData && Object.keys(opts.requestData).length > 0) {
       qs.set('data', btoa(JSON.stringify(opts.requestData)));
     }
     if (opts.forcePathRefresh) {
       qs.set('force_path_refresh', 'true');
     }
+    const requestId = opts.requestId?.trim();
+    if (requestId) {
+      qs.set('request_id', requestId);
+    }
     const cleanHash = opts.hash.replace(/[^a-fA-F0-9]/g, '');
-    const res = (await window.electronAPI.reticulum.proxyGet(
-      `/api/v1/nomadnetwork/${kind}/${cleanHash}?${qs.toString()}`,
-    )) as T;
+    const apiPath = `/api/v1/nomadnetwork/${kind}/${cleanHash}?${qs.toString()}`;
+    const res = (await window.electronAPI.reticulum.proxyGet(apiPath)) as T;
     if (!res.ok) {
+      const resRecord = res as { egress?: unknown };
+      const resEgress = typeof resRecord.egress === 'string' ? resRecord.egress : egress;
+      const diag = diagFieldsFromResponse(res);
       logNomadFetchFailure(kind, {
         hash: cleanHash,
         path: opts.path,
         hops,
-        egress,
+        egress: resEgress,
         error: res.error?.trim() || 'unknown',
+        diag,
       });
     }
     return res;
@@ -136,6 +249,7 @@ async function fetchNomadResource<T extends { ok: boolean; error?: string }>(
 
 export interface FetchNomadPageOpts {
   forcePathRefresh?: boolean;
+  requestId?: string;
 }
 
 interface NomadNetworkStoreState {
@@ -175,7 +289,9 @@ export const useNomadNetworkStore = create<NomadNetworkStoreState>((set, get) =>
       }
       set({ nodes: map, lastRefreshAt: Date.now(), nomadApiAvailable: true });
       invalidateNomadEgressCache();
-      void resolveNomadEgress();
+      void resolveNomadEgress().catch((err: unknown) => {
+        console.warn('[nomadNetworkStore] resolveNomadEgress ' + errLikeToLogString(err));
+      });
     } catch (e) {
       if (isReticulumSidecar404Error(e)) {
         set({ nomadApiAvailable: false });
@@ -192,6 +308,7 @@ export const useNomadNetworkStore = create<NomadNetworkStoreState>((set, get) =>
       nodes: get().nodes,
       requestData,
       forcePathRefresh: opts?.forcePathRefresh,
+      requestId: opts?.requestId,
     }),
 
   fetchNomadFile: async (hash, path, opts) =>
@@ -200,6 +317,7 @@ export const useNomadNetworkStore = create<NomadNetworkStoreState>((set, get) =>
       path,
       nodes: get().nodes,
       forcePathRefresh: opts?.forcePathRefresh,
+      requestId: opts?.requestId,
     }),
 
   toggleFavorite: async (hash, favorited) => {

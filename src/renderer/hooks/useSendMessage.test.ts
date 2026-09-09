@@ -3,11 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { mergeAppSetting } from '../lib/appSettingsStorage';
 import { connectionDriver } from '../lib/drivers/ConnectionDriver';
+import { resetHeardRepeatWindowsForTests } from '../lib/meshcore/heardRepeatTracker';
+import { setMeshcoreTcpOpenHopDeadAccepted } from '../lib/meshcore/meshcoreTcpInitBurst';
 import { meshcoreProtocol } from '../lib/protocols/MeshCoreProtocol';
 import { meshtasticProtocol } from '../lib/protocols/MeshtasticProtocol';
 import { reticulumProtocol } from '../lib/protocols/ReticulumProtocol';
+import { useRelayCoverageStore } from '../lib/relayCoverage/relayCoverageStore';
 import { registerReticulumDestinationHash } from '../lib/reticulum/destHash';
-import { registerMeshcoreSession } from '../lib/sessions/meshcoreSession';
+import { type MeshcoreSessionApi, registerMeshcoreSession } from '../lib/sessions/meshcoreSession';
 import {
   type MeshtasticSessionApi,
   registerMeshtasticSession,
@@ -16,6 +19,7 @@ import {
   registerReticulumSession,
   type ReticulumSessionApi,
 } from '../lib/sessions/reticulumSession';
+import { mockConsoleWarn } from '../lib/vitestConsoleMock';
 import { setConnection } from '../stores/connectionStore';
 import { addIdentity, useIdentityStore } from '../stores/identityStore';
 import { addMessage, useMessageStore } from '../stores/messageStore';
@@ -46,14 +50,31 @@ function createMeshtasticSessionStub(): MeshtasticSessionApi {
   };
 }
 
+function createMeshcoreSessionStub(
+  overrides: Partial<MeshcoreSessionApi> = {},
+): MeshcoreSessionApi {
+  return {
+    connect: vi.fn(),
+    prepareRfConnect: vi.fn(),
+    attachRfSession: vi.fn(),
+    handleRfConnectFailure: vi.fn(),
+    finalizeDriverDisconnect: vi.fn(),
+    connectAutomatic: vi.fn(),
+    ...overrides,
+  };
+}
+
 describe('useSendMessage', () => {
   beforeEach(() => {
     vi.mocked(connectionDriver.getHandle).mockClear();
     registerMeshtasticSession(null);
     registerMeshcoreSession(null);
     registerReticulumSession(null);
+    setMeshcoreTcpOpenHopDeadAccepted(false);
     useIdentityStore.setState({ identities: {}, activeIdentityId: null });
     useMessageStore.setState({ messages: {} });
+    useRelayCoverageStore.setState({ coverage: {} });
+    resetHeardRepeatWindowsForTests();
     vi.mocked(connectionDriver.getHandle).mockReturnValue(null);
     vi.spyOn(window.electronAPI.db, 'saveMeshcoreMessage').mockResolvedValue(undefined);
   });
@@ -168,6 +189,83 @@ describe('useSendMessage', () => {
     sendSpy.mockRestore();
   });
 
+  it('opens MeshCore heard-repeat window for channel sends (not DMs)', async () => {
+    const sendSpy = vi.spyOn(meshcoreProtocol, 'sendMessage').mockResolvedValue({});
+    const handle = { kind: 'rf' };
+    vi.mocked(connectionDriver.getHandle).mockReturnValue(handle);
+    addIdentity({
+      id: ID_MC,
+      protocol: meshcoreProtocol,
+      signature: 'sig-mc',
+      transports: [],
+      createdAt: 1,
+      lastSeenAt: 1,
+    });
+    setConnection(ID_MC, { status: 'configured', myNodeNum: 7 });
+
+    const { result } = renderHook(() => useSendMessage(ID_MC));
+    result.current('heard window', 8);
+
+    await vi.waitFor(() => {
+      expect(sendSpy).toHaveBeenCalled();
+    });
+    const rows = Object.values(useMessageStore.getState().messages[ID_MC] ?? {});
+    expect(rows).toHaveLength(1);
+    const msgId = rows[0].id;
+    expect(msgId.startsWith('out:')).toBe(true);
+    expect(useRelayCoverageStore.getState().coverageFor(ID_MC, msgId)).toMatchObject({
+      protocol: 'meshcore',
+      mode: 'confirmed',
+      heardRepeaters: [],
+    });
+    sendSpy.mockRestore();
+  });
+
+  it('removes empty MeshCore coverage from a prior channel send when sending again', async () => {
+    const sendSpy = vi.spyOn(meshcoreProtocol, 'sendMessage').mockResolvedValue({});
+    const handle = { kind: 'rf' };
+    vi.mocked(connectionDriver.getHandle).mockReturnValue(handle);
+    addIdentity({
+      id: ID_MC,
+      protocol: meshcoreProtocol,
+      signature: 'sig-mc',
+      transports: [],
+      createdAt: 1,
+      lastSeenAt: 1,
+    });
+    setConnection(ID_MC, { status: 'configured', myNodeNum: 7 });
+
+    const { result } = renderHook(() => useSendMessage(ID_MC));
+    result.current('first', 0);
+    await vi.waitFor(() => {
+      expect(Object.values(useMessageStore.getState().messages[ID_MC] ?? {})).toHaveLength(1);
+    });
+    const firstRow = Object.values(useMessageStore.getState().messages[ID_MC] ?? {})[0];
+    expect(firstRow).toBeDefined();
+    if (!firstRow) throw new Error('expected first outbound message');
+    const firstId = firstRow.id;
+    expect(useRelayCoverageStore.getState().coverageFor(ID_MC, firstId)?.heardRepeaters).toEqual(
+      [],
+    );
+
+    result.current('second', 0);
+    await vi.waitFor(() => {
+      expect(
+        Object.values(useMessageStore.getState().messages[ID_MC] ?? {}).length,
+      ).toBeGreaterThanOrEqual(2);
+    });
+    const rows = Object.values(useMessageStore.getState().messages[ID_MC] ?? {});
+    const secondRow = rows.find((r) => r.id !== firstId);
+    expect(secondRow).toBeDefined();
+    if (!secondRow) throw new Error('expected second outbound message');
+    const secondId = secondRow.id;
+    expect(useRelayCoverageStore.getState().coverageFor(ID_MC, firstId)).toBeUndefined();
+    expect(useRelayCoverageStore.getState().coverageFor(ID_MC, secondId)?.heardRepeaters).toEqual(
+      [],
+    );
+    sendSpy.mockRestore();
+  });
+
   it('sends MeshCore channel reply with keyless @[Name] wire prefix when parent is in store', async () => {
     const sendSpy = vi.spyOn(meshcoreProtocol, 'sendMessage').mockResolvedValue({});
     const handle = { kind: 'rf' };
@@ -205,6 +303,43 @@ describe('useSendMessage', () => {
     const outbound = rows.find((m) => m.payload === 'reply test');
     expect(outbound?.payload).toBe('reply test');
     expect(outbound?.replyTo).toBe('99');
+    sendSpy.mockRestore();
+  });
+
+  it('does not open heard-repeat window for MeshCore DMs', async () => {
+    const sendSpy = vi.spyOn(meshcoreProtocol, 'sendMessage').mockResolvedValue({
+      packetId: 0xabcd,
+    });
+    const handle = { kind: 'rf' };
+    vi.mocked(connectionDriver.getHandle).mockReturnValue(handle);
+    const peerId = 0x22;
+    const pubKey = new Uint8Array(32).fill(3);
+    addIdentity({
+      id: ID_MC_DM,
+      protocol: meshcoreProtocol,
+      signature: 'sig-mc-dm',
+      transports: [],
+      createdAt: 1,
+      lastSeenAt: 1,
+    });
+    setConnection(ID_MC_DM, { status: 'configured', myNodeNum: 7 });
+    upsertNode(ID_MC_DM, {
+      nodeId: peerId,
+      longName: 'Peer',
+      publicKey: pubKey,
+    });
+
+    const { result } = renderHook(() => useSendMessage(ID_MC_DM));
+    result.current('dm hello', -1, peerId);
+
+    await vi.waitFor(() => {
+      const rows = Object.values(useMessageStore.getState().messages[ID_MC_DM] ?? {});
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.status).toBe('acked');
+    });
+    const rows = Object.values(useMessageStore.getState().messages[ID_MC_DM] ?? {});
+    const msgId = rows[0].id;
+    expect(useRelayCoverageStore.getState().coverageFor(ID_MC_DM, msgId)).toBeUndefined();
     sendSpy.mockRestore();
   });
 
@@ -274,6 +409,126 @@ describe('useSendMessage', () => {
     });
     mergeAppSetting('meshcoreOpenWireCompatEnabled', false, 'useSendMessage.test');
     sendSpy.mockRestore();
+  });
+
+  it('OpenHop dead-accepted: sends via runMeshcoreUserTxWithLiveTcp without RF handle', async () => {
+    setMeshcoreTcpOpenHopDeadAccepted(true);
+    const liveHandle = { kind: 'openhop-live' };
+    let runTxCalls = 0;
+    const runTx: NonNullable<MeshcoreSessionApi['runMeshcoreUserTxWithLiveTcp']> = async (op) => {
+      runTxCalls += 1;
+      vi.mocked(connectionDriver.getHandle).mockReturnValue(liveHandle);
+      return op();
+    };
+    registerMeshcoreSession(
+      createMeshcoreSessionStub({
+        runMeshcoreUserTxWithLiveTcp: runTx,
+      }),
+    );
+    const sendSpy = vi.spyOn(meshcoreProtocol, 'sendMessage').mockResolvedValue({
+      packetId: 0xbeef01,
+    });
+    vi.mocked(connectionDriver.getHandle).mockReturnValue(null);
+    addIdentity({
+      id: ID_MC,
+      protocol: meshcoreProtocol,
+      signature: 'sig-mc',
+      transports: [],
+      createdAt: 1,
+      lastSeenAt: 1,
+    });
+    setConnection(ID_MC, { status: 'configured', myNodeNum: 7 });
+
+    const { result } = renderHook(() => useSendMessage(ID_MC));
+    result.current('openhop hi', 1);
+
+    await vi.waitFor(() => {
+      expect(runTxCalls).toBe(1);
+      expect(sendSpy).toHaveBeenCalledWith(
+        liveHandle,
+        expect.objectContaining({ text: 'openhop hi', channelIndex: 1 }),
+      );
+      const rows = Object.values(useMessageStore.getState().messages[ID_MC] ?? {});
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.status).toBe('acked');
+      expect(rows[0]?.id).toBe(String(0xbeef01));
+    });
+    sendSpy.mockRestore();
+  });
+
+  it('OpenHop dead-accepted: falls back to ensureTcpLiveForUserTx when runTx missing', async () => {
+    setMeshcoreTcpOpenHopDeadAccepted(true);
+    const liveHandle = { kind: 'openhop-ensure' };
+    const ensureTcpLiveForUserTx = vi.fn(() => {
+      vi.mocked(connectionDriver.getHandle).mockReturnValue(liveHandle);
+      return Promise.resolve();
+    });
+    registerMeshcoreSession(
+      createMeshcoreSessionStub({
+        ensureTcpLiveForUserTx,
+      }),
+    );
+    const sendSpy = vi.spyOn(meshcoreProtocol, 'sendMessage').mockResolvedValue({
+      packetId: 0xbeef2,
+    });
+    vi.mocked(connectionDriver.getHandle).mockReturnValue(null);
+    addIdentity({
+      id: ID_MC,
+      protocol: meshcoreProtocol,
+      signature: 'sig-mc',
+      transports: [],
+      createdAt: 1,
+      lastSeenAt: 1,
+    });
+    setConnection(ID_MC, { status: 'configured', myNodeNum: 7 });
+
+    const { result } = renderHook(() => useSendMessage(ID_MC));
+    result.current('openhop ensure', 2);
+
+    await vi.waitFor(() => {
+      expect(ensureTcpLiveForUserTx).toHaveBeenCalledTimes(1);
+      expect(sendSpy).toHaveBeenCalledWith(
+        liveHandle,
+        expect.objectContaining({ text: 'openhop ensure', channelIndex: 2 }),
+      );
+      const rows = Object.values(useMessageStore.getState().messages[ID_MC] ?? {});
+      expect(rows[0]?.status).toBe('acked');
+    });
+    sendSpy.mockRestore();
+  });
+
+  it('OpenHop dead-accepted: marks failed when live reopen yields no handle', async () => {
+    setMeshcoreTcpOpenHopDeadAccepted(true);
+    const { spy: warn, restore } = mockConsoleWarn();
+    try {
+      registerMeshcoreSession(
+        createMeshcoreSessionStub({
+          runMeshcoreUserTxWithLiveTcp: vi.fn((op) => op()),
+        }),
+      );
+      vi.mocked(connectionDriver.getHandle).mockReturnValue(null);
+      addIdentity({
+        id: ID_MC,
+        protocol: meshcoreProtocol,
+        signature: 'sig-mc',
+        transports: [],
+        createdAt: 1,
+        lastSeenAt: 1,
+      });
+      setConnection(ID_MC, { status: 'configured', myNodeNum: 7 });
+
+      const { result } = renderHook(() => useSendMessage(ID_MC));
+      result.current('openhop fail', 1);
+
+      await vi.waitFor(() => {
+        const rows = Object.values(useMessageStore.getState().messages[ID_MC] ?? {});
+        expect(rows).toHaveLength(1);
+        expect(rows[0]?.status).toBe('failed');
+      });
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('OpenHop live reopen failed'));
+    } finally {
+      restore();
+    }
   });
 
   it('marks MeshCore DM acked when send resolves with packetId', async () => {
@@ -348,7 +603,7 @@ describe('useSendMessage', () => {
   it('marks optimistic message failed when protocol send rejects', async () => {
     const sendSpy = vi
       .spyOn(meshcoreProtocol, 'sendMessage')
-      .mockRejectedValue(new Error('rf down'));
+      .mockImplementation(() => Promise.reject(new Error('rf down')));
     const handle = { kind: 'rf' };
     vi.mocked(connectionDriver.getHandle).mockReturnValue(handle);
     addIdentity({
@@ -369,6 +624,8 @@ describe('useSendMessage', () => {
       expect(rows).toHaveLength(1);
       expect(rows[0]?.status).toBe('failed');
       expect(rows[0]?.error).toContain('rf down');
+      const msgId = rows[0].id;
+      expect(useRelayCoverageStore.getState().coverageFor(ID_MC_FAIL, msgId)).toBeUndefined();
     });
     sendSpy.mockRestore();
   });
@@ -510,6 +767,72 @@ describe('useSendMessage', () => {
     const outbound = rows.find((r) => r.payload === 'orphan reply');
     expect(outbound?.reticulumReplyToHash).toBe(missingHash);
     expect(outbound?.replyPreviewText).toBeUndefined();
+    saveReticulum.mockRestore();
+  });
+
+  it('reuses the failed Reticulum row on retry instead of adding a second bubble', () => {
+    const saveReticulum = vi
+      .spyOn(window.electronAPI.db, 'saveReticulumMessage')
+      .mockResolvedValue(undefined);
+    const sendMessage = vi.fn().mockResolvedValue(undefined);
+    registerReticulumSession({
+      connect: vi.fn(),
+      connectAutomatic: vi.fn(),
+      disconnect: vi.fn(),
+      finalizeDriverDisconnect: vi.fn(),
+      selfNodeId: 0xabcd,
+      getFullNodeLabel: () => 'Self',
+      sendMessage,
+    } satisfies ReticulumSessionApi);
+    registerReticulumDestinationHash(0xabcd, 'cc'.repeat(16));
+    registerReticulumDestinationHash(0x1234, 'dd'.repeat(16));
+    addIdentity({
+      id: ID_RT,
+      protocol: reticulumProtocol,
+      signature: 'sig-rt',
+      transports: [],
+      createdAt: 1,
+      lastSeenAt: 1,
+    });
+    const failedHash = 'ee'.repeat(32);
+    const failedAt = 1_700_000_000_000;
+    addMessage(ID_RT, {
+      id: failedHash,
+      from: 0xabcd,
+      senderName: 'Self',
+      to: 0x1234,
+      payload: 'retry me',
+      channelIndex: 0,
+      timestamp: failedAt,
+      status: 'failed',
+      error: 'delivery failed',
+      reticulumMessageHash: failedHash,
+      reticulumDeliveryMethod: 'propagated',
+      receivedVia: 'tcp',
+    });
+
+    const { result } = renderHook(() => useSendMessage(ID_RT));
+    result.current('retry me', 0, 0x1234, undefined, failedHash);
+
+    const byId = useMessageStore.getState().messages[ID_RT] ?? {};
+    expect(Object.keys(byId)).toHaveLength(1);
+    expect(byId[failedHash]).toMatchObject({
+      id: failedHash,
+      payload: 'retry me',
+      timestamp: failedAt,
+      status: 'sending',
+      error: undefined,
+      reticulumDeliveryMethod: undefined,
+      reticulumMessageHash: undefined,
+    });
+    expect(byId[failedHash]?.reticulumMessageHash).toBeUndefined();
+    expect(sendMessage).toHaveBeenCalledWith(
+      'retry me',
+      'dd'.repeat(16),
+      undefined,
+      failedHash,
+      undefined,
+    );
     saveReticulum.mockRestore();
   });
 });

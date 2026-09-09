@@ -20,10 +20,51 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  schema-release-compare:
+    name: Schema vs last official release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      schema_bumped: ${{ steps.compare.outputs.schema_bumped }}
+      curr_schema: ${{ steps.compare.outputs.curr_schema }}
+      prev_schema: ${{ steps.compare.outputs.prev_schema }}
+      prev_tag: ${{ steps.compare.outputs.prev_tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Resolve release tag from package.json
+        id: release_tag
+        run: echo "value=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Compare schema to last published release
+        id: compare
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release_tag.outputs.value }}
+        run: >
+          node scripts/ci-schema-release-compare.mjs --release
+          --write-readme READ-ME-FIRST-schema.md
+
+      - name: Upload schema compare readme
+        uses: actions/upload-artifact@v7
+        with:
+          name: READ-ME-FIRST-schema-${{ github.sha }}
+          path: READ-ME-FIRST-schema.md
+          retention-days: 30
+
   prepare-github-release:
+    needs: schema-release-compare
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      release_tag: ${{ steps.release_tag.outputs.value }}
+      release_id: ${{ steps.ensure.outputs.release_id }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -34,12 +75,28 @@ jobs:
         id: release_tag
         run: echo "value=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
+      # Sole job allowed to POST /releases (MESH_CLIENT_ALLOW_DRAFT_CREATE=1).
       - name: Ensure draft GitHub release exists
+        id: ensure
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_SHA: ${{ github.sha }}
           RELEASE_TAG: ${{ steps.release_tag.outputs.value }}
+          MESH_CLIENT_ALLOW_DRAFT_CREATE: '1'
         run: node scripts/ci-ensure-github-draft-release.mjs
+
+      # Rebuild schema note from compare-job outputs (not the downloaded artifact) so the
+      # patch script never does file→HTTP (CodeQL js/file-access-to-http).
+      - name: Patch draft release body with schema note
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ steps.release_tag.outputs.value }}
+          RELEASE_ID: ${{ steps.ensure.outputs.release_id }}
+          MESH_CLIENT_SCHEMA_CURR: ${{ needs.schema-release-compare.outputs.curr_schema }}
+          MESH_CLIENT_SCHEMA_PREV: ${{ needs.schema-release-compare.outputs.prev_schema }}
+          MESH_CLIENT_SCHEMA_PREV_TAG: ${{ needs.schema-release-compare.outputs.prev_tag }}
+        run: node scripts/ci-patch-draft-release-schema-note.mjs
 
   resolve-release-matrix:
     needs: prepare-github-release
@@ -62,7 +119,7 @@ jobs:
         run: echo "include=$(node scripts/resolve-release-matrix.mjs)" >> "$GITHUB_OUTPUT"
 
   release:
-    needs: [prepare-github-release, resolve-release-matrix]
+    needs: [schema-release-compare, prepare-github-release, resolve-release-matrix]
     if: ${{ !cancelled() && needs.prepare-github-release.result != 'failure' }}
     runs-on: ${{ matrix.os }}
     defaults:
@@ -81,13 +138,21 @@ jobs:
           ref: ${{ github.sha }}
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+
+      # pnpm 12 native bootstrap: PowerShell prefers broken .bin/pnpm.ps1 (silent exit 0).
+      - name: Prefer native pnpm.exe on Windows PATH
+        if: runner.os == 'Windows'
+        run: node scripts/ci-prefer-windows-pnpm-exe.mjs
 
       - name: Install Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: 'pnpm'
+
+      - name: Verify pnpm
+        run: node scripts/ci-verify-pnpm.mjs
 
       - name: Install Linux build dependencies
         if: matrix.os == 'ubuntu-latest'
@@ -108,7 +173,7 @@ jobs:
 
       - name: Build Reticulum sidecar for Electron packaging
         env:
-          WORKSPACE_ROOT: ${{ github.workspace }}/..
+          WORKSPACE_ROOT: ${{ github.workspace }}/.rsstack
         run: node scripts/build-reticulum-sidecar-release.mjs --platform ${{ matrix.sidecar_platform }}
 
       - name: Verify staged Reticulum sidecars
@@ -125,6 +190,14 @@ jobs:
 
       - name: Rebuild native dependencies
         run: pnpm run rebuild
+
+      - name: Write schema upgrade installer notice
+        env:
+          MESH_CLIENT_SCHEMA_BUMPED: ${{ needs.schema-release-compare.outputs.schema_bumped }}
+          MESH_CLIENT_SCHEMA_CURR: ${{ needs.schema-release-compare.outputs.curr_schema }}
+          MESH_CLIENT_SCHEMA_PREV: ${{ needs.schema-release-compare.outputs.prev_schema }}
+          MESH_CLIENT_SCHEMA_PREV_TAG: ${{ needs.schema-release-compare.outputs.prev_tag }}
+        run: node scripts/write-schema-upgrade-notice.mjs
 
       - name: Validate macOS signing secrets
         if: matrix.os == 'macos-latest' && github.event_name == 'release'
@@ -149,10 +222,15 @@ jobs:
             exit 1
           fi
 
-      - name: Build and Publish
+      # Embeds buildChannel=release + tag + Actions runUrl into the main bundle (support exports / logs).
+      - name: Stamp CI build info
         env:
-          # electron-publish reads GH_TOKEN; GITHUB_TOKEN alone is not used for uploads
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MESH_CLIENT_BUILD_CHANNEL: release
+          MESH_CLIENT_BUILD_WORKFLOW: Build/Release Electron App
+        run: node scripts/ci-write-build-info-env.mjs
+
+      - name: Build packages
+        env:
           # ── macOS code signing (only effective on macOS runners) ────────────
           # CSC_LINK: base64-encoded .p12 Developer ID Application certificate.
           # CSC_KEY_PASSWORD: password protecting the .p12 file.
@@ -165,8 +243,27 @@ jobs:
           APPLE_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_ID || '' }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_TEAM_ID || '' }}
-        # dist:*:publish scripts run electron-builder with --publish always
+        # dist:* uses --publish never so electron-builder never POSTs a draft release.
         run: ${{ matrix.build_script }}
+
+      - name: Assert Windows NSIS installers present
+        if: matrix.os == 'windows-latest'
+        run: node scripts/assert-win-setup-installers.mjs --root release
+
+      - name: Upload assets to draft GitHub release
+        if: >-
+          ${{ needs.prepare-github-release.result == 'success'
+          && needs.prepare-github-release.outputs.release_id != '' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.prepare-github-release.outputs.release_id }}
+          UPLOAD_GLOBS: ${{ matrix.upload_globs }}
+        # Attach only — never create a release (prepare owns POST /releases).
+        # UPLOAD_GLOBS is an intentional space-separated glob list from the matrix.
+        run: |
+          # shellcheck disable=SC2086
+          node scripts/ci-upload-release-assets.mjs $UPLOAD_GLOBS
 
       # Do not upload raw Mesh-client.app — upload-artifact@v7 dereferences framework
       # symlinks (~3× Electron Framework size). DMG/ZIP preserve correct layout.
@@ -178,6 +275,8 @@ jobs:
           path: |
             release/mac/**/*.dmg
             release/mac/**/*.zip
+            release/mac-x64/**/*.dmg
+            release/mac-x64/**/*.zip
             release/mac-arm64/**/*.dmg
             release/mac-arm64/**/*.zip
             release/mac-universal/**/*.dmg
@@ -212,12 +311,14 @@ jobs:
             release/win-unpacked/**/*
             release/win-arm64-unpacked/**/*
             release/win-x64-unpacked/**/*
+          if-no-files-found: error
           retention-days: 30
 
   finalize-github-release:
     name: Consolidate draft release assets
-    needs: release
-    if: ${{ !cancelled() && needs.release.result != 'failure' }}
+    needs: [release, prepare-github-release]
+    # Require a successful build matrix — skipped/cancelled release must not consolidate.
+    if: ${{ !cancelled() && needs.release.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -234,9 +335,18 @@ jobs:
       - name: Consolidate duplicate draft releases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_PUSH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN }}
           GITHUB_SHA: ${{ github.sha }}
           RELEASE_TAG: ${{ steps.release_tag.outputs.value }}
         run: node scripts/ci-ensure-github-draft-release.mjs
+
+      - name: Verify draft release tag_name
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_PUSH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN }}
+          RELEASE_TAG: ${{ steps.release_tag.outputs.value }}
+          RELEASE_ID: ${{ needs.prepare-github-release.outputs.release_id }}
+        run: node scripts/ci-verify-github-draft-release.mjs
 
   packaging-smoke:
     name: Smoke test ${{ matrix.label }}
@@ -259,7 +369,7 @@ jobs:
             label: x64 NSIS install
             artifact: mesh-client-windows-${{ github.sha }}
             smoke_run: node scripts/test-win-nsis-install.mjs --arch x64
-          - os: windows-11-arm
+          - os: windows-11-vs2026-arm
             label: arm64 NSIS install (WoA)
             artifact: mesh-client-windows-${{ github.sha }}
             smoke_run: node scripts/test-win-nsis-install.mjs --arch arm64 --probe-7z
@@ -299,7 +409,7 @@ jobs:
           retention-days: 7
 
       - name: Upload Windows arm64 install failure logs
-        if: failure() && matrix.os == 'windows-11-arm'
+        if: failure() && matrix.os == 'windows-11-vs2026-arm'
         uses: actions/upload-artifact@v7
         with:
           name: mesh-client-win-arm64-install-logs-${{ github.sha }}

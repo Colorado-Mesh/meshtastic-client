@@ -9,21 +9,57 @@ export interface NomadNodeRow {
   status?: string | null;
 }
 
-export interface NomadPageResponse {
+/** Optional Link-budget diagnostics on Nomad page/file fetches (ok or error). */
+export interface NomadLinkFailureDiagnostics {
+  /** Path-table hop count used for overall timeout classification. */
+  path_hops?: number;
+  /** Hops passed to Link::new_initiator (TCP/network: path hops clamped 3–7). */
+  link_hops?: number;
+  /** Effective link-proof wait (seconds): link_hops × 6. */
+  proof_budget_secs?: number;
+  /**
+   * True only when DropPath→RequestPath rediscovered a path after absence.
+   * First-attempt cache hits set false — not a reachability proof.
+   */
+  force_path_ok?: boolean;
+  /**
+   * Path-ensure outcome: `cached_hit` | `rediscovered` | `stale_accept` | `missing`.
+   * Not a separate peer probe — used to humanize link vs path failures.
+   */
+  path_ensure_kind?: string;
+  /** Sidecar wall time for the Link query attempt (milliseconds). */
+  elapsed_ms?: number;
+  /** Unmapped LinkClient error string before sidecar code mapping. */
+  raw_error?: string;
+  /** Local interface names tried across via-aware failovers (errors only). */
+  tried_interfaces?: string[];
+  /** In-request via/iface failover rounds completed (errors only). */
+  failover_rounds?: number;
+  /** Last local interface used for the Link attempt (errors only). */
+  iface?: string;
+}
+
+export interface NomadPageResponse extends NomadLinkFailureDiagnostics {
   ok: boolean;
   content?: string;
   content_type?: string;
   error?: string;
+  /** Sidecar path-aware egress atom (`tcp` / `rf` / `ble` / `network`). */
+  egress?: string;
+  /** Sidecar LinkClient overall timeout used for this attempt (seconds). */
+  timeout_secs?: number;
 }
 
 /** NomadNet link request field map (`field_*` / `var_*` keys). */
 export type NomadPageRequestData = Record<string, string>;
 
-export interface NomadFileResponse {
+export interface NomadFileResponse extends NomadLinkFailureDiagnostics {
   ok: boolean;
   file_name?: string;
   content_base64?: string;
   error?: string;
+  egress?: string;
+  timeout_secs?: number;
 }
 
 export interface NomadServeStats {

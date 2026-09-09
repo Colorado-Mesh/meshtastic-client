@@ -90,7 +90,9 @@ export function isValidConnectHost(host: string): boolean {
 export function isPrivateNetworkHost(host: string): boolean {
   const octets = parseIpv4Octets(stripConnectHostBrackets(host));
   if (!octets) return false;
-  const [a, b] = octets;
+  const a = octets.at(0);
+  const b = octets.at(1);
+  if (a === undefined || b === undefined) return false;
   if (a === 10) return true;
   if (a === 172 && b >= 16 && b <= 31) return true;
   if (a === 192 && b === 168) return true;
@@ -101,7 +103,9 @@ export function isPrivateNetworkHost(host: string): boolean {
 export function isUniqueLocalIpv6(host: string): boolean {
   const hextets = parseIpv6Hextets(host);
   if (!hextets) return false;
-  const firstByte = hextets[0] >> 8;
+  const firstHextet = hextets.at(0);
+  if (firstHextet === undefined) return false;
+  const firstByte = firstHextet >> 8;
   return firstByte === 0xfc || firstByte === 0xfd;
 }
 
@@ -109,7 +113,8 @@ export function isUniqueLocalIpv6(host: string): boolean {
 export function isLinkLocalIpv6(host: string): boolean {
   const hextets = parseIpv6Hextets(host);
   if (!hextets) return false;
-  return (hextets[0] & 0xffc0) === 0xfe80;
+  const firstHextet = hextets.at(0);
+  return firstHextet !== undefined && (firstHextet & 0xffc0) === 0xfe80;
 }
 
 /** IPv4 loopback (127.0.0.0/8) or IPv6 loopback (::1). */
@@ -120,8 +125,15 @@ export function isLoopbackHost(host: string): boolean {
   return octets !== null && octets[0] === 127;
 }
 
-function isMdnsLocalHostname(host: string): boolean {
-  const normalized = host.toLowerCase();
+/**
+ * mDNS / Bonjour hostnames only (*.local, meshtastic.local).
+ * Do not fold into isLocalConnectHost for UI error copy — #610 did that and attached
+ * Bonjour/meshtastic.local hints to bare private IPs (e.g. MeshCore TCP 192.168.x.x).
+ * Keep private/ULA/loopback locality on isLocalConnectHost for SSRF / RNode primary.
+ */
+export function isMdnsConnectHost(host: string): boolean {
+  const normalized = stripConnectHostBrackets(host.trim()).toLowerCase();
+  if (!normalized) return false;
   return (
     normalized === 'meshtastic.local' ||
     normalized.endsWith('.meshtastic.local') ||
@@ -130,12 +142,13 @@ function isMdnsLocalHostname(host: string): boolean {
 }
 
 /**
- * Local connect targets for error hints: RFC1918, RFC4193 ULA, link-local, loopback, mDNS.
+ * Local connect targets: RFC1918, RFC4193 ULA, link-local, loopback, mDNS.
+ * For Connection-panel Bonjour/mDNS hint copy, use isMdnsConnectHost — not this.
  */
 export function isLocalConnectHost(host: string): boolean {
   const bare = stripConnectHostBrackets(host.trim()).toLowerCase();
   if (!bare) return false;
-  if (isMdnsLocalHostname(bare)) return true;
+  if (isMdnsConnectHost(bare)) return true;
   if (isLoopbackHost(bare)) return true;
   if (isPrivateNetworkHost(bare)) return true;
   if (isUniqueLocalIpv6(bare)) return true;
@@ -153,6 +166,7 @@ function hostContainsIpv6(host: string): boolean {
 export function formatHostForUrl(host: string, port?: number): string {
   const bare = stripConnectHostBrackets(host.trim());
   const hostPart = hostContainsIpv6(bare) ? `[${bare}]` : bare;
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Runtime guard protects external or callback-mutated state.
   if (port === undefined || port === null) return hostPart;
   return `${hostPart}:${port}`;
 }

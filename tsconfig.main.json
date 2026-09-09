@@ -15,14 +15,17 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"]
-    }
+    },
+    "allowImportingTsExtensions": true,
+    "noEmit": true
   },
   "include": [
     "src/main/**/*",
     "src/preload/**/*",
     "src/shared/**/*",
+    "src/architecture/**/*",
     "src/main/types/**/*",
-    "vitest.harness.ts",
+    "vitest.harness.mts",
     "vitest.harness.test.ts"
   ],
   "exclude": ["node_modules", "dist"]

@@ -5,7 +5,7 @@ import { errLikeToLogString } from '../errLikeToLogString';
 import type { ConnectionType } from '../types';
 
 const TRANSPORT_LOST_MESSAGE =
-  /device has been lost|device was lost|port is (?:not )?open|stream is closed|broken pipe|connection.*lost/i;
+  /device has been lost|device was lost|port is not open|stream is closed|broken pipe|connection.*lost|not connected|gatt server is disconnected/i;
 
 /** True when a serial/BLE transport write or read failed because the link is gone. */
 export function isMeshtasticTransportLostError(err: unknown): boolean {
@@ -53,7 +53,15 @@ export function createSerializedWritableStream(
 
   const writeInner = async (chunk: Uint8Array): Promise<void> => {
     await runExclusive(async () => {
-      const writer = inner.getWriter();
+      let writer: WritableStreamDefaultWriter<Uint8Array>;
+      try {
+        writer = inner.getWriter();
+      } catch (err) {
+        if (onWriteError && isMeshtasticTransportLostError(err)) {
+          onWriteError(err);
+        }
+        throw err;
+      }
       try {
         await writer.write(chunk);
       } catch (err) {
@@ -62,26 +70,49 @@ export function createSerializedWritableStream(
         }
         throw err;
       } finally {
-        writer.releaseLock();
+        try {
+          writer.releaseLock();
+        } catch {
+          // catch-no-log-ok stream already closed/errored during teardown
+        }
       }
     });
   };
 
   const closeInner = async (): Promise<void> => {
     await runExclusive(async () => {
-      const writer = inner.getWriter();
       try {
-        await writer.close();
-      } finally {
-        writer.releaseLock();
+        const writer = inner.getWriter();
+        try {
+          await writer.close();
+        } finally {
+          try {
+            writer.releaseLock();
+          } catch {
+            // catch-no-log-ok stream already closed/errored during teardown
+          }
+        }
+      } catch {
+        // catch-no-log-ok closed/errored inner stream during teardown (Illegal invocation)
       }
     });
+  };
+
+  const abortInner = (reason?: unknown): Promise<void> => {
+    try {
+      return Promise.resolve(inner.abort(reason)).catch(() => {
+        // catch-no-log-ok async abort rejection during teardown
+      });
+    } catch {
+      // catch-no-log-ok sync abort throw on closed/errored stream during teardown
+      return Promise.resolve();
+    }
   };
 
   const body = new WritableStream<Uint8Array>({
     write: writeInner,
     close: closeInner,
-    abort: (reason) => inner.abort(reason),
+    abort: abortInner,
   });
 
   return new Proxy(body, {
@@ -104,10 +135,11 @@ export function createSerializedWritableStream(
             return closeInner();
           },
           abort(reason?: unknown): Promise<void> {
-            return inner.abort(reason);
+            return abortInner(reason);
           },
         });
       }
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return -- External SDK value is validated by surrounding boundary logic.
       return Reflect.get(target, prop, receiver);
     },
   });
@@ -121,17 +153,18 @@ function createLossAwareWritableStream(
 }
 
 /**
- * Detect serial unplug (`disconnect` event) and immediate write failures such as
- * `NetworkError: The device has been lost` after a firmware reboot. Also serializes
- * concurrent SDK `getWriter()` calls (queue, NODEINFO/GetMetadata retries, heartbeat)
- * on serial, BLE, HTTP, and TCP transports so overlapping writes do not throw
- * `WritableStream is locked` and get silently dropped.
+ * Detect serial unplug (`disconnect` event), immediate write failures, and read-pipe
+ * failures such as `NetworkError: The device has been lost` after a firmware reboot /
+ * wedged CDC. Also serializes concurrent SDK `getWriter()` calls (queue, NODEINFO/
+ * GetMetadata retries, heartbeat) on serial, BLE, HTTP, and TCP transports so
+ * overlapping writes do not throw `WritableStream is locked` and get silently dropped.
  */
 export function attachMeshtasticTransportLossWatch(
   device: MeshDevice,
   type: ConnectionType,
   onConnectionLost: () => void,
 ): () => void {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Runtime guard protects external or callback-mutated state.
   if (type !== 'serial' && type !== 'ble' && type !== 'http' && type !== 'tcp') {
     return () => {};
   }
@@ -149,6 +182,26 @@ export function attachMeshtasticTransportLossWatch(
     onConnectionLost();
   };
 
+  // Patched @meshtastic/core MeshDevice invokes this from _fromDevicePipe.catch (#895 follow-up).
+  type DeviceWithPipeHook = MeshDevice & {
+    onFromDevicePipeError?: (err: unknown) => void;
+  };
+  const deviceWithHook = device as DeviceWithPipeHook;
+  const previousPipeHook = deviceWithHook.onFromDevicePipeError;
+  deviceWithHook.onFromDevicePipeError = (err: unknown) => {
+    previousPipeHook?.(err);
+    if (isMeshtasticTransportLostError(err)) {
+      notify('read-pipe-failure', err);
+    }
+  };
+  cleanups.push(() => {
+    if (previousPipeHook) {
+      deviceWithHook.onFromDevicePipeError = previousPipeHook;
+    } else {
+      delete deviceWithHook.onFromDevicePipeError;
+    }
+  });
+
   if (type === 'serial') {
     const port = getSerialPortFromMeshTransport(device.transport);
     if (port && typeof port.addEventListener === 'function') {
@@ -162,22 +215,55 @@ export function attachMeshtasticTransportLossWatch(
     }
   }
 
+  if (type === 'tcp') {
+    // Main process reports the socket's own 'close'/'error' event within milliseconds of the
+    // real network failure (clean FIN or RST alike). Without this, TCP relied solely on the
+    // passive stale/dead watchdog noticing silence — up to 3 minutes after a connection that
+    // was already gone. Preload rejects writes with "no active socket", but that message does
+    // not match TRANSPORT_LOST_MESSAGE below, so onDisconnected is still the fast path for TCP.
+    const unsubTcpDisconnected = window.electronAPI.meshtastic.tcp.onDisconnected(() => {
+      notify('tcp-socket-closed');
+    });
+    cleanups.push(unsubTcpDisconnected);
+  }
+
   const transport = device.transport as { toDevice?: WritableStream<Uint8Array> } | undefined;
   if (transport?.toDevice) {
-    const wrapped = createLossAwareWritableStream(transport.toDevice, (err) => {
+    const transportObj = device.transport as object;
+    const originalDesc = Object.getOwnPropertyDescriptor(transportObj, 'toDevice');
+    const originalToDevice = transport.toDevice;
+    const wrapped = createLossAwareWritableStream(originalToDevice, (err) => {
       notify('write-failure', err);
     });
-    Object.defineProperty(device.transport, 'toDevice', {
+    Object.defineProperty(transportObj, 'toDevice', {
       configurable: true,
+      enumerable: true,
       get() {
         return wrapped;
       },
     });
     cleanups.push(() => {
+      // Never delete toDevice — in-flight SDK processQueue/getWriter needs a defined stream.
       try {
-        delete (device.transport as { toDevice?: WritableStream<Uint8Array> }).toDevice;
+        if (originalDesc) {
+          Object.defineProperty(transportObj, 'toDevice', originalDesc);
+        } else {
+          Object.defineProperty(transportObj, 'toDevice', {
+            configurable: true,
+            enumerable: true,
+            writable: true,
+            value: originalToDevice,
+          });
+        }
       } catch {
-        // catch-no-log-ok restore original getter after teardown
+        // catch-no-log-ok leave a soft-fail stub if restore fails
+        Object.defineProperty(transportObj, 'toDevice', {
+          configurable: true,
+          enumerable: true,
+          get() {
+            return createSerializedWritableStream(null);
+          },
+        });
       }
     });
   }

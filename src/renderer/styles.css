@@ -1,4 +1,7 @@
-@import 'tailwindcss';
+@import 'tailwindcss' source(none);
+@source './index.html';
+@source './**/*.{ts,tsx}';
+@source not './**/*.test.{ts,tsx}';
 
 @theme {
   --color-app-bg: #020617;
@@ -13,6 +16,11 @@
      color-mixes to a light/white ring on Chromium/Electron. */
   --color-chat-incoming-bg: rgb(30 41 59 / 0.38);
   --color-chat-incoming-border: #1e293b;
+  /* Message actions bar background — hidden by default (opacity 0); toggled to
+     fully opaque via App → Colors "Show background" checkbox (see applyThemeColors). */
+  --color-message-actions-bar-bg: rgb(15 23 42 / 0);
+  /* Message action button hover color */
+  --color-message-action-button-hover: #94a3b8;
 }
 
 /* Leaflet container needs explicit height */
@@ -332,19 +340,28 @@ html[data-reduce-motion='true'] .cm-watermark-mesh-tube--flicker-off .cm-waterma
   background: #94a3b8;
 }
 
-/* Nomad Micron pages: monospace + optional locally installed Nerd Fonts for alignment.
+/* Nomad Micron pages: bundled Nerd Mono so FA/Nerd PUA icons render without an OS font.
    Open width grows with ASCII/Micron content so the page scroll parent can dual-axis scroll.
-   Fit width (--fit-width) constrains to the viewer so prose wraps without horizontal scrolling. */
+   Fit width (--fit-width) constrains to the viewer so prose wraps without horizontal scrolling.
+   Preserve padding spaces so Unicode/ASCII box borders stay aligned (HTML defaults collapse them). */
+@font-face {
+  font-family: MeshClientNomadMono;
+  src: url('./assets/fonts/MeshClientNomadMono.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
 .nomad-micron-page {
   width: max-content;
   min-width: 100%;
+  white-space: pre;
   font-family:
-    'JetBrainsMono Nerd Font', 'FiraCode Nerd Font', 'Hack Nerd Font', ui-monospace, SFMono-Regular,
-    Menlo, Monaco, Consolas, monospace;
+    MeshClientNomadMono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 .nomad-micron-page--fit-width {
   width: 100%;
   max-width: 100%;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .nomad-micron-page--fit-width pre,
@@ -352,4 +369,31 @@ html[data-reduce-motion='true'] .cm-watermark-mesh-tube--flicker-off .cm-waterma
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   max-width: 100%;
+}
+
+/* Message actions bar — use theme CSS custom property for background */
+.message-actions-bar {
+  background-color: var(--color-message-actions-bar-bg);
+}
+
+/* Message action button hover colors — use theme CSS custom property.
+   .message-action covers copy/reply/react/dm; .message-action-star is separate
+   so its "starred" resting state (fixed amber, not user-customizable) stays
+   visually distinct from the shared hover color. */
+.message-action,
+.message-action-star {
+  transition: color 0.2s;
+}
+
+.message-action:hover,
+.message-action-star:hover {
+  color: var(--color-message-action-button-hover);
+}
+
+.message-action-star.starred {
+  color: #fbbf24;
+}
+
+.message-action-star.starred:hover {
+  color: #fde68a;
 }

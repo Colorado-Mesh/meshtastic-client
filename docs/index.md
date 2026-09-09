@@ -18,6 +18,8 @@ Key outcomes:
 - Multi-language support (16 languages) with offline static bundles.
 - Cross-platform desktop support for macOS, Linux, and Windows.
 
+**Protocol scope:** Mesh-Client focuses on RF mesh (LoRa and related). Additional protocols are in scope when they support that RF mesh path. Internet-only stacks are out of scope; ham protocols are fine when they meet the RF-mesh bar. Mesh-Client is for everyone, everywhere—not gated or targeted specifically at licensed amateurs. Protocols that already ship may still use internet transports _alongside_ RF. See [README — Why](https://github.com/Colorado-Mesh/mesh-client/blob/main/README.md#why).
+
 ---
 
 ## Visuals
@@ -45,6 +47,10 @@ Key outcomes:
 
 Pre-built binaries are available in [GitHub Releases](https://github.com/Colorado-Mesh/mesh-client/releases).
 
+**macOS:** prefer the **`.dmg`**. If you use the **`.zip`**, extract with **[Keka](https://www.keka.io/en/)** or `ditto -xk` — not **7-Zip** (can break framework symlinks and crash at launch). See [Troubleshooting — Squirrel.framework](troubleshooting.md#macos-library-not-loaded-squirrelframework-after-zip-extract).
+
+Arch Linux users may also find a **third-party** AUR package ([`mesh-client`](https://aur.archlinux.org/packages/mesh-client)) — not maintained by Colorado Mesh; prefer GitHub Releases for official builds.
+
 For development setup, scripts, test harness, and git hooks, see [Development Guide](development-environment.md).
 
 Also useful:
@@ -62,7 +68,8 @@ Also useful:
   - [Development Guide](development-environment.md) — prerequisites, all `pnpm` scripts, pre-commit hook, i18n workflow
   - [Accessibility Checklist](accessibility-checklist.md)
   - [Contributing](contributing.md)
-  - Renderer hook/runtime/store boundaries — [AGENTS.md](https://github.com/Colorado-Mesh/mesh-client/blob/main/AGENTS.md#renderer-hook-architecture-multi-protocol) and [ARCHITECTURE.md](https://github.com/Colorado-Mesh/mesh-client/blob/main/ARCHITECTURE.md)
+  - Renderer hook/runtime/store boundaries — [docs/agents/renderer-hooks.md](https://github.com/Colorado-Mesh/mesh-client/blob/main/docs/agents/renderer-hooks.md) and [ARCHITECTURE.md](https://github.com/Colorado-Mesh/mesh-client/blob/main/ARCHITECTURE.md)
+  - Agent subsystem reference (deep, on-demand) — [docs/agents/](https://github.com/Colorado-Mesh/mesh-client/blob/main/docs/agents/README.md)
 - **Meshtastic & MeshCore**
   - [Feature Parity](meshcore-meshtastic-parity.md) (includes **Rooms** BBS and shared **ChatComposer**)
   - [MQTT Auth](letsmesh-mqtt-auth.md)
@@ -74,7 +81,7 @@ Also useful:
   - Noble BLE coexistence when a Reticulum BLE RNode is connected — [Troubleshooting](troubleshooting.md#reticulum-ble-rnode-blocks-meshtasticmeshcore-noble-ble)
   - Sidecar build / start failures — [Troubleshooting](troubleshooting.md#reticulum-sidecar-wont-start-or-health-poll-times-out)
 - **Support**
-  - [Diagnostics](diagnostics.md) — LoRa routing/RF (Meshtastic & MeshCore), foreign LoRa overhear (Meshtastic tab), Reticulum interface audit; protocol-scoped row filtering
+  - [Diagnostics](diagnostics.md) — LoRa routing/RF (Meshtastic & MeshCore), foreign LoRa overhear (Meshtastic & MeshCore tabs), Reticulum interface audit; protocol-scoped row filtering
   - [Key backup and cryptography](key-backup-and-crypto.md) (per-node full key pair backup; MT → MC migration)
   - [Troubleshooting](troubleshooting.md)
   - Export for GitHub / stuck Chat — [Troubleshooting](troubleshooting.md#reporting-bugs-export-for-github-app-tab)
@@ -83,6 +90,11 @@ Also useful:
 - **Project**
   - [License](license.md)
   - [Credits](credits.md)
+  - [Third-party licenses](third-party-licenses.md)
+  - [CI/CD](ci-cd.md) — workflows, local `act` runs, packaging
+  - [Release process](release-process.md)
+  - [Reticulum Games parity](reticulum-games-parity.md) — Ratspeak Games tab checklist
+  - [Nomad hosting interop](nomad-hosting-interop.md)
 
 ---
 

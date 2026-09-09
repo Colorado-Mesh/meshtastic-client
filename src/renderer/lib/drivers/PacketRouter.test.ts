@@ -6,6 +6,11 @@ import { addIdentity, useIdentityStore } from '../../stores/identityStore';
 import { useMessageStore } from '../../stores/messageStore';
 import { useNodeStore } from '../../stores/nodeStore';
 import {
+  prearmMeshcoreBleMacSuppressionFromStorage,
+  resetConnectedMeshcoreBleMacForTests,
+  setConnectedMeshcoreBleMac,
+} from '../connectedMeshcoreBleMac';
+import {
   clearMeshtasticConfigIngressGuardsForTests,
   setMeshtasticRemoteConfigTarget,
 } from '../meshtastic/meshtasticConfigIngressGuard';
@@ -29,6 +34,7 @@ describe('PacketRouter', () => {
     useIdentityStore.setState({ identities: {}, activeIdentityId: null });
     useDeviceStore.setState({ devices: {} });
     clearMeshtasticConfigIngressGuardsForTests();
+    resetConnectedMeshcoreBleMacForTests();
   });
 
   const cases: { event: DomainEvent; assert: () => void }[] = [
@@ -406,5 +412,90 @@ describe('PacketRouter', () => {
     expect(() => {
       packetRouter.dispatch({ type: 'nonexistent' } as unknown as DomainEvent, ID);
     }).not.toThrow();
+  });
+
+  it('skips Meshtastic node_info store writes for MeshCore BLE MAC ghost nodes', () => {
+    addIdentity({
+      id: ID_MT,
+      protocol: meshtasticProtocol,
+      signature: 'sig-mt-ghost',
+      transports: [],
+      createdAt: 1,
+      lastSeenAt: 1,
+    });
+    const ghostId = 0xe3da2e2f;
+    const priorHeard = 1_700_000_000_000;
+    useNodeStore.setState({
+      nodes: {
+        [ID_MT]: {
+          [ghostId]: {
+            nodeId: ghostId,
+            longName: 'Blue',
+            shortName: 'BLUE',
+            lastHeardAt: priorHeard,
+          },
+        },
+      },
+    });
+    setConnectedMeshcoreBleMac('cc:2e:e3:da:2e:2f');
+    const listener = vi.fn();
+    const detach = packetRouter.addListener(listener);
+    packetRouter.dispatch(
+      {
+        type: 'node_info',
+        payload: {
+          nodeId: ghostId,
+          longName: 'Blue',
+          shortName: 'BLUE',
+          lastHeardAt: Date.now(),
+        },
+      },
+      ID_MT,
+    );
+    expect(useNodeStore.getState().nodes[ID_MT][ghostId].lastHeardAt).toBe(priorHeard);
+    expect(listener).not.toHaveBeenCalled();
+    detach();
+  });
+
+  it('skips node_info last_heard bumps when suppress MAC is only pre-armed from storage', () => {
+    addIdentity({
+      id: ID_MT,
+      protocol: meshtasticProtocol,
+      signature: 'sig-mt-ghost-prearm',
+      transports: [],
+      createdAt: 1,
+      lastSeenAt: 1,
+    });
+    const ghostId = 0xe3da2e2f;
+    const priorHeard = 1_700_000_000_000;
+    useNodeStore.setState({
+      nodes: {
+        [ID_MT]: {
+          [ghostId]: {
+            nodeId: ghostId,
+            longName: 'Blue',
+            shortName: 'BLUE',
+            lastHeardAt: priorHeard,
+          },
+        },
+      },
+    });
+    // Simulate prior session: persist then clear live MAC, then pre-arm before MeshCore BLE.
+    setConnectedMeshcoreBleMac('cc:2e:e3:da:2e:2f');
+    setConnectedMeshcoreBleMac(null);
+    expect(prearmMeshcoreBleMacSuppressionFromStorage(null)).toBe('cc:2e:e3:da:2e:2f');
+    packetRouter.dispatch(
+      {
+        type: 'node_info',
+        payload: {
+          nodeId: ghostId,
+          longName: 'Blue',
+          shortName: 'BLUE',
+          lastHeardAt: Date.now(),
+        },
+      },
+      ID_MT,
+    );
+    expect(useNodeStore.getState().nodes[ID_MT][ghostId].lastHeardAt).toBe(priorHeard);
   });
 });

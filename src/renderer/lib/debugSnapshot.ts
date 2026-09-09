@@ -1,3 +1,6 @@
+import type { RendererLivenessSnapshot } from '@/shared/electron-api.types';
+
+import { isMeshcoreRoomChatMessage } from '../hooks/meshcore/meshcoreHookPreamble';
 import type { ConnectionStatus } from '../stores/connectionStore';
 import { getConnection } from '../stores/connectionStore';
 import { useIdentityStore } from '../stores/identityStore';
@@ -5,16 +8,20 @@ import { useMessageStore } from '../stores/messageStore';
 import { useNodeStore } from '../stores/nodeStore';
 import {
   getSanitizedMeshcoreChatLastRead,
+  getSanitizedMeshcoreRoomsLastRead,
   lastReadStorageKey,
   loadPersistedLastReadInitial,
+  loadPersistedRoomsLastRead,
 } from './chatPanelProtocolStorage';
 import { computeChannelUnreadCounts, filterRegularChatMessages } from './chatUnreadCounts';
 import {
   type DebugSnapshotMeshtasticChannelConfigSummary,
   type DebugSnapshotMeshtasticChannelPill,
   getDebugSnapshotMeshtasticContext,
+  setDebugSnapshotMeshtasticContext,
 } from './debugSnapshotMeshtasticContext';
 import { getDebugSnapshotUiContext } from './debugSnapshotUiContext';
+import { errLikeToLogString } from './errLikeToLogString';
 import {
   resolveIdentityIdForProtocol,
   resolvePrimaryIdentityIdForProtocol,
@@ -23,16 +30,20 @@ import {
   fetchMeshcoreContactPathDiagnostics,
   type MeshcoreContactPathDiagnosticRow,
 } from './meshcoreContactPathDiagnostics';
+import { meshcoreRoomServerIdsFromNodes } from './meshcoreDbCacheHydration';
+import { loadPersistedMeshcoreSelfNodeId } from './meshcoreLastSelfNodeId';
+import { totalRoomsUnreadCount } from './meshcoreRoomsUnread';
 import { effectiveMessageTimestampMs, isUnreasonablyFutureMessageTimestampMs } from './nodeStatus';
 import { getOfflineIdentityIdForProtocol } from './offlineProtocolIdentities';
 import { parseStoredJson } from './parseStoredJson';
+import { getProtocolRegistration } from './protocols/protocolRegistry';
 import {
   buildReticulumDiagnosticSnapshotSync,
   fetchReticulumDiagnosticSnapshot,
   type ReticulumDiagnosticSidecarSnapshot,
 } from './reticulum/reticulumDiagnosticSnapshot';
 import { getStoredMeshProtocol } from './storedMeshProtocol';
-import { messageRecordsToChatMessages } from './storeRecordAdapters';
+import { messageRecordsToChatMessages, nodeRecordToMeshNode } from './storeRecordAdapters';
 import type { ChatMessage, IdentityId, MeshProtocol, MQTTStatus } from './types';
 import { writeClipboardText } from './writeClipboardText';
 
@@ -98,6 +109,12 @@ export interface DebugIdentityBucketSnapshot {
   /** Per-channel unread triage: watermark vs newest non-self inbound (top channels by volume). */
   channelLastReadTriage: DebugChannelLastReadTriageRow[];
   connection: DebugConnectionSnapshot | null;
+  /** MeshCore Rooms badge triage (only populated for the meshcore bucket). */
+  roomNodeCount?: number;
+  roomMessageCount?: number;
+  roomsUnreadEstimate?: number;
+  orphanRoomMessageCount?: number;
+  roomsLastReadKeyCount?: number;
 }
 
 /** Meshtastic bucket adds channel layout for inbound/outbound channel triage (no PSK). */
@@ -105,6 +122,8 @@ export interface DebugMeshtasticBucketSnapshot extends DebugIdentityBucketSnapsh
   channelPills: DebugSnapshotMeshtasticChannelPill[];
   channelConfigsSummary: DebugSnapshotMeshtasticChannelConfigSummary[];
   mqttChannelKeyEntryCount: number | null;
+  /** Main MQTTManager topic→slot map (no PSKs). */
+  mqttChannelNameToIndex: Record<string, number> | null;
 }
 
 export interface DebugChannelLastReadTriageRow {
@@ -154,6 +173,8 @@ export interface DebugSnapshot {
   meshtastic: DebugMeshtasticBucketSnapshot;
   meshcore: DebugIdentityBucketSnapshot;
   reticulum: DebugReticulumSnapshot;
+  /** Main-process uptime / heartbeat age (export path only). */
+  mainLiveness?: RendererLivenessSnapshot | null;
   /** MeshCore SQLite contact hops + best path history bytes (redacted pubkeys). */
   meshcoreContactPathDiagnostics?: MeshcoreContactPathDiagnosticRow[];
   warnings: DebugSnapshotWarning[];
@@ -162,6 +183,7 @@ export interface DebugSnapshot {
 function newestMessageTimestamp(identityId: IdentityId | null): number | null {
   if (!identityId) return null;
   const bucket = useMessageStore.getState().messages[identityId];
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Runtime guard protects external or callback-mutated state.
   if (!bucket) return null;
   let max = 0;
   for (const row of Object.values(bucket)) {
@@ -182,6 +204,7 @@ function loadLastReadSanitizedFlag(protocol: MeshProtocol): string | null {
 function listChatMessagesForIdentity(identityId: IdentityId | null): ChatMessage[] {
   if (!identityId) return [];
   const bucket = useMessageStore.getState().messages[identityId];
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Runtime guard protects external or callback-mutated state.
   if (!bucket) return [];
   return messageRecordsToChatMessages(Object.values(bucket));
 }
@@ -349,6 +372,9 @@ function buildProtocolBucketSnapshot(protocol: MeshProtocol): DebugIdentityBucke
   const primaryTransportStatuses = connectRec?.transports.map((t) => t.status) ?? [];
   const lastReadByViewKey = loadLastReadByViewKey(protocol);
   const ownNodeId = connection?.myNodeNum ?? 0;
+  const roomsTriage = getProtocolRegistration(protocol)?.capabilities.hasRoomServersPanel
+    ? buildMeshcoreRoomsTriage(uiStoreIdentityId, ownNodeId)
+    : undefined;
 
   return {
     hydrationSlotId,
@@ -389,6 +415,50 @@ function buildProtocolBucketSnapshot(protocol: MeshProtocol): DebugIdentityBucke
       ownNodeId,
     ),
     connection,
+    ...roomsTriage,
+  };
+}
+
+function buildMeshcoreRoomsTriage(
+  uiStoreIdentityId: IdentityId | null,
+  connectionOwnNodeId: number,
+): Pick<
+  DebugIdentityBucketSnapshot,
+  | 'roomNodeCount'
+  | 'roomMessageCount'
+  | 'roomsUnreadEstimate'
+  | 'orphanRoomMessageCount'
+  | 'roomsLastReadKeyCount'
+> {
+  const chatMessages = listChatMessagesForIdentity(uiStoreIdentityId);
+  const nodeBucket = uiStoreIdentityId
+    ? useNodeStore.getState().nodes[uiStoreIdentityId]
+    : undefined;
+  const meshNodes = nodeBucket ? Object.values(nodeBucket).map((r) => nodeRecordToMeshNode(r)) : [];
+  const knownRoomIds = meshcoreRoomServerIdsFromNodes(meshNodes);
+  const selfId = connectionOwnNodeId > 0 ? connectionOwnNodeId : loadPersistedMeshcoreSelfNodeId();
+  const ownNodeIds = new Set(selfId > 0 ? [selfId] : []);
+  let roomMessageCount = 0;
+  let orphanRoomMessageCount = 0;
+  for (const msg of chatMessages) {
+    if (!isMeshcoreRoomChatMessage(msg)) continue;
+    roomMessageCount += 1;
+    const roomId = msg.roomServerId ?? msg.to;
+    if (roomId == null || !knownRoomIds.has(roomId)) orphanRoomMessageCount += 1;
+  }
+  const roomsLastRead = getSanitizedMeshcoreRoomsLastRead(chatMessages);
+  return {
+    roomNodeCount: knownRoomIds.size,
+    roomMessageCount,
+    roomsUnreadEstimate: totalRoomsUnreadCount(
+      chatMessages,
+      roomsLastRead,
+      ownNodeIds,
+      undefined,
+      knownRoomIds,
+    ),
+    orphanRoomMessageCount,
+    roomsLastReadKeyCount: Object.keys(loadPersistedRoomsLastRead()).length,
   };
 }
 
@@ -507,6 +577,7 @@ function buildMeshtasticBucketSnapshot(): DebugMeshtasticBucketSnapshot {
     channelPills: channelCtx.channelPills,
     channelConfigsSummary: channelCtx.channelConfigsSummary,
     mqttChannelKeyEntryCount: channelCtx.mqttChannelKeyEntryCount,
+    mqttChannelNameToIndex: channelCtx.mqttChannelNameToIndex,
   };
 }
 
@@ -585,10 +656,23 @@ export function buildDebugSnapshot(): DebugSnapshot {
 /** Full support snapshot including live Reticulum sidecar state for GitHub/developer bundles. */
 export async function buildDebugSnapshotAsync(): Promise<DebugSnapshot> {
   const reticulumSidecar = await fetchReticulumDiagnosticSnapshot();
+  try {
+    const map = await window.electronAPI.mqtt.getChannelNameToIndex();
+    setDebugSnapshotMeshtasticContext({ mqttChannelNameToIndex: map });
+  } catch (e: unknown) {
+    console.warn('[debugSnapshot] mqtt.getChannelNameToIndex failed ' + errLikeToLogString(e));
+  }
+  let mainLiveness: RendererLivenessSnapshot | null = null;
+  try {
+    mainLiveness = await window.electronAPI.app.getRendererLiveness();
+  } catch (e: unknown) {
+    console.warn('[debugSnapshot] getRendererLiveness failed ' + errLikeToLogString(e));
+  }
   const base = buildDebugSnapshotBase(reticulumSidecar);
   const meshcoreContactPathDiagnostics = await fetchMeshcoreContactPathDiagnostics();
   return {
     ...base,
+    mainLiveness,
     meshcoreContactPathDiagnostics,
     warnings: analyzeDebugSnapshot(base),
   };

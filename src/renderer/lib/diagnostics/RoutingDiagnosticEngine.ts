@@ -34,7 +34,7 @@ export function detectHopGoblin(
 
   // Only distance-proven over-hopping. SNR+hops heuristics removed: rxSnr is
   // last-hop only and meaningless for multi-hop originators and MQTT-only nodes.
-  if (homeNode?.latitude && homeNode?.longitude && node.latitude && node.longitude) {
+  if (homeNode?.latitude && homeNode.longitude && node.latitude && node.longitude) {
     const distKm = haversineDistanceKm(
       homeNode.latitude,
       homeNode.longitude,
@@ -98,7 +98,7 @@ export function detectBadRoute(
   if (
     hopCountMeaningfulForNodeDiagnostics(node) &&
     homeNode?.latitude != null &&
-    homeNode?.longitude != null &&
+    homeNode.longitude != null &&
     node.latitude != null &&
     node.longitude != null
   ) {
@@ -136,7 +136,7 @@ export function detectBadRoute(
 export function detectImpossibleHop(node: MeshNode, homeNode: MeshNode | null): NodeAnomaly | null {
   if (!hopCountMeaningfulForNodeDiagnostics(node)) return null;
   if (node.hops_away !== 0) return null;
-  if (!homeNode?.latitude || !homeNode?.longitude) return null;
+  if (!homeNode?.latitude || !homeNode.longitude) return null;
   if (!node.latitude || !node.longitude) return null;
   const distKm = haversineDistanceKm(
     homeNode.latitude,
@@ -284,13 +284,12 @@ export function analyzeNode(
     : null;
   if (flapping) return flapping;
 
-  const hopGoblin = detectHopGoblin(
-    node,
-    homeNode,
-    distanceMultiplier,
-    distanceOffsetKm,
-    hopsThreshold,
-  );
+  // MeshCore: nearby multi-hop contacts are poorly connected / repeater-mediated,
+  // not Meshtastic-style critical over-hopping — skip GPS+hop heuristics.
+  const hopGoblin =
+    capabilities?.hasDistanceBasedHopAnomalies === false
+      ? null
+      : detectHopGoblin(node, homeNode, distanceMultiplier, distanceOffsetKm, hopsThreshold);
   if (hopGoblin) return hopGoblin;
 
   // MeshCore per-hop SNR weak link (only when trace data is present)
@@ -299,7 +298,9 @@ export function analyzeNode(
     if (weakLink) return weakLink;
   }
 
-  if (badRoute?.severity === 'warning') return badRoute;
+  if (badRoute?.severity === 'warning' && capabilities?.hasDistanceBasedHopAnomalies !== false) {
+    return badRoute;
+  }
 
   if (noisyNode) return noisyNode;
 

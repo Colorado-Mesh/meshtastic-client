@@ -12,11 +12,16 @@ vi.mock('@/renderer/lib/appSettingsStorage', () => ({
   setReticulumAutostartEnabled: vi.fn(),
 }));
 
+vi.mock('@/renderer/lib/reticulum/reticulumGamesSession', () => ({
+  refreshGamesSessions: vi.fn(async () => {}),
+}));
+
 vi.mock('@/renderer/lib/sessions/reticulumSession', () => ({
   tryGetReticulumSession: vi.fn(() => ({ connectAutomatic: vi.fn() })),
 }));
 
 import { isReticulumAutostartEnabled } from '@/renderer/lib/appSettingsStorage';
+import { refreshGamesSessions } from '@/renderer/lib/reticulum/reticulumGamesSession';
 import {
   resetReticulumIdentityStoreForTests,
   useReticulumIdentityStore,
@@ -31,6 +36,7 @@ describe('useReticulumSidecarApi', () => {
     onStatus.mockReset();
     onEvent.mockReset();
     onStartStack.mockReset();
+    vi.mocked(refreshGamesSessions).mockClear();
     resetReticulumManualStackStopSuppressForTests();
     vi.mocked(isReticulumAutostartEnabled).mockReturnValue(false);
     resetReticulumIdentityStoreForTests();
@@ -75,6 +81,34 @@ describe('useReticulumSidecarApi', () => {
       expect(result.current.sidecarUiRunning).toBe(true);
     });
     expect(result.current.sidecarApiReady).toBe(false);
+  });
+
+  it('refreshes games sessions when sidecarApiReady becomes true', async () => {
+    getStatus.mockResolvedValue({ running: true, port: 59477, pid: 42 });
+
+    const { result, rerender } = renderHook(
+      ({ connecting }: { connecting: boolean }) =>
+        useReticulumSidecarApi({
+          connecting,
+          onStartStack,
+        }),
+      { initialProps: { connecting: true } },
+    );
+
+    await waitFor(() => {
+      expect(result.current.sidecarUiRunning).toBe(true);
+    });
+    expect(result.current.sidecarApiReady).toBe(false);
+    expect(refreshGamesSessions).not.toHaveBeenCalled();
+
+    rerender({ connecting: false });
+
+    await waitFor(() => {
+      expect(result.current.sidecarApiReady).toBe(true);
+    });
+    await waitFor(() => {
+      expect(refreshGamesSessions).toHaveBeenCalled();
+    });
   });
 
   it('shares refreshed identity status across hook instances', async () => {
@@ -131,7 +165,42 @@ describe('useReticulumSidecarApi', () => {
       identity_hash: 'identity-hash',
       lxmf_hash: 'lxmf-hash',
       display_name: 'Mesh User',
+      public_key: null,
     });
+  });
+
+  it('refreshIdentity maps a valid 128-hex public_key into shared identity', async () => {
+    const pub = 'cd'.repeat(64);
+    getStatus.mockResolvedValue({ running: true, port: 59477, pid: 42 });
+    window.electronAPI.reticulum.proxyGet = vi.fn((path: string) => {
+      if (path === '/api/v1/identity/status') {
+        return Promise.resolve({
+          configured: true,
+          identity_hash: 'identity-hash',
+          lxmf_hash: 'lxmf-hash',
+          display_name: 'Mesh User',
+          public_key: pub,
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    const { result } = renderHook(() =>
+      useReticulumSidecarApi({
+        connecting: false,
+        onStartStack,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.sidecarApiReady).toBe(true);
+    });
+
+    await act(async () => {
+      await result.current.refreshIdentity();
+    });
+
+    expect(result.current.identity?.public_key).toBe(pub);
   });
 
   it('does not clear shared identity while a new hook hydrates sidecar status', async () => {

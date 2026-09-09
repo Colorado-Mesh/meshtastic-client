@@ -1,8 +1,8 @@
 # Mesh-Client
 
-> Cross-platform **Electron** desktop client for **Meshtastic**, **MeshCore**, and **Reticulum (LXMF)** on **macOS**, **Linux**, and **Windows** with **BLE**, **USB serial**, **Wi-Fi/TCP**, **MQTT**, local **SQLite** history, **routing diagnostics**, and **16-language UI**.
+> Cross-platform **Electron** desktop client for **Meshtastic**, **MeshCore**, and **Reticulum (LXMF)** on **macOS**, **Linux**, and **Windows** — **BLE**, **USB serial**, **Wi-Fi/TCP**, **MQTT**, local **SQLite** history, **routing diagnostics**, **16-language UI**, plus a Ratspeak-compatible Reticulum sidecar (**Games**, **encrypted paper**, **LXST voice**, Nomad, RRC, Remote).
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)
 [![CI Build](https://github.com/Colorado-Mesh/mesh-client/actions/workflows/ci.yaml/badge.svg)](https://github.com/Colorado-Mesh/mesh-client/actions/workflows/ci.yaml)
 [![Build/Release Electron App](https://github.com/Colorado-Mesh/mesh-client/actions/workflows/release.yaml/badge.svg?event=push)](https://github.com/Colorado-Mesh/mesh-client/actions/workflows/release.yaml?query=event%3Apush)
@@ -12,6 +12,8 @@
 ![Discord](https://img.shields.io/discord/1436156966648152271?label=chat&logo=discord)
 
 **For everyone, everywhere.** We welcome community participation and collaboration in the development of this project!
+
+Releases and build artifacts are published on [GitHub](https://github.com/Colorado-Mesh/mesh-client); source is also manually mirrored to [gitworkshop](https://gitworkshop.dev/npub1wwaq5gyk7yljly3cwl3wleuk79nz63ukpp2a6lq5x4q9s9r4nrgqjk3dlv/relay.ngit.dev/mesh-client).
 
 ---
 
@@ -28,12 +30,14 @@ With a dedicated local SQLite database, Mesh-Client keeps message history and me
 **Why Mesh-Client?**
 
 - **True message persistence:** Local SQLite storage for reliable long-term history, without lost chats or broken logs.
-- **Universal protocol support:** One consistent interface for Meshtastic, MeshCore, and Reticulum (amber protocol pill; LXMF DMs and RRC hub chat via sidecar).
+- **Universal protocol support:** One consistent interface for Meshtastic, MeshCore, and Reticulum (amber protocol pill; LXMF DMs, RRC hub chat, Nomad, Remote, Games, and LXST voice via sidecar).
 - **Advanced mesh visibility:** Routing diagnostics and mesh health insight that mobile apps often skip.
-- **Desktop-first workflow:** MQTT integration (Meshtastic/MeshCore), LXMF DMs / propagation / RRC (Reticulum), and a full-featured interface for power users.
+- **Desktop-first workflow:** MQTT integration (Meshtastic/MeshCore); for Reticulum, LXMF DMs / encrypted paper / propagation, RRC, LRGP Games, LXST voice, and rnsh/rncp Remote — aimed at Ratspeak-compatible peers.
 - **Cross-platform stability:** A feature-rich experience across macOS, Linux, and Windows.
 
 From real-time diagnostics to permanent message archives, Mesh-Client delivers the desktop visibility serious mesh users require.
+
+**Protocol scope:** Mesh-Client focuses on **RF mesh** networking—LoRa and related radio meshes. Additional protocols are in scope when they support that kind of RF mesh path. Internet-only messaging stacks are out of scope. Amateur-radio (ham) protocols are welcome when they meet the same RF-mesh bar; Mesh-Client is for everyone, everywhere, and is not gated or targeted specifically at people with a ham radio license. Protocols that already ship may still use internet transports _alongside_ RF.
 
 **Known Bugs:**
 
@@ -81,11 +85,11 @@ From real-time diagnostics to permanent message archives, Mesh-Client delivers t
 
 Mesh-Client supports **three mesh stacks** in one desktop app. Use the header **protocol switcher** (Meshtastic green, MeshCore cyan, Reticulum amber) to focus a tab; the other sessions stay connected in the background.
 
-| Protocol   | Transport focus                                    | Deep-dive doc                                                                          |
-| ---------- | -------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Meshtastic | BLE, USB serial, HTTP, TCP (4403), MQTT (protobuf) | Sections below + [diagnostics](docs/diagnostics.md)                                    |
-| MeshCore   | BLE, USB serial, TCP, MQTT (JSON v1)               | Below + [parity doc](docs/meshcore-meshtastic-parity.md)                               |
-| Reticulum  | Sidecar stack: TCP, Auto, RNode USB/BLE/Wi‑Fi      | [docs/reticulum.md](docs/reticulum.md) + [IPC contract](docs/reticulum-sidecar-ipc.md) |
+| Protocol   | Transport focus                                    | Deep-dive doc                                                                                                      |
+| ---------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Meshtastic | BLE, USB serial, HTTP, TCP (4403), MQTT (protobuf) | Sections below + [diagnostics](docs/diagnostics.md)                                                                |
+| MeshCore   | BLE, USB serial, TCP, MQTT (JSON v1)               | Below + [parity doc](docs/meshcore-meshtastic-parity.md)                                                           |
+| Reticulum  | Sidecar stack: TCP, I2P, Auto, RNode USB/BLE/Wi‑Fi | [reticulum.md](docs/reticulum.md) · [Games](docs/reticulum-games-parity.md) · [IPC](docs/reticulum-sidecar-ipc.md) |
 
 ### Meshtastic Features
 
@@ -130,7 +134,7 @@ Mesh-Client supports **three mesh stacks** in one desktop app. Use the header **
 - **Single table** from `diagnosticRows` (routing trace rows + RF rows), searchable; rows persist across sessions with an optional restore banner; **max age** (1–168 hours) trims stale routing (24 h default) and RF (1 h default) rows
 - **Foreign LoRa overhear** (Meshtastic tab): MeshCore-heard, Reticulum RNS, other-Meshtastic, and unknown LoRa classes from decode-fail logs and dual-radio RX; 90-minute window; MeshCore repeater conflict escalation above 5 pkt/min
 - **Mesh congestion attribution**: orange banner when mesh-wide routing stress is present; duplicate-traffic block in node detail when relevant
-- Routing anomaly detection: **hop_goblin** (distance-proven over-hopping), **bad_route** (high duplication), **route_flapping** / **path_instability** (MeshCore PathUpdated events), **impossible_hop**, **weak_link** (MeshCore per-hop SNR from trace); with remediation suggestions and severity levels
+- Routing anomaly detection: **hop_goblin** (distance-proven over-hopping; **Meshtastic-only**), **bad_route** (high duplication; close-in distance variant Meshtastic-only), **route_flapping** / **path_instability** (MeshCore PathUpdated events), **impossible_hop**, **weak_link** (MeshCore per-hop SNR from trace); with remediation suggestions and severity levels
 - **Channel Utilization History**: 24h CU timeline chart for the connected node in DiagnosticsPanel (fed by LocalStats / device-metrics ingest, not only NodeInfo)
 - Anomaly badges inline in node list; status aura circles on the map; congestion halos toggle; global and per-node MQTT ignore
 - **Environment Profile** segmented control; Standard (3 km), City (1.6× threshold), Canyon (2.6× threshold)
@@ -158,9 +162,10 @@ Mesh-Client supports **three mesh stacks** in one desktop app. Use the header **
 
 ### Desktop shell (all protocols)
 
-- **Tri-protocol switcher**: Meshtastic, MeshCore, and Reticulum run simultaneously; per-protocol unread badges (green / cyan / amber); passive toast notifications when an inactive protocol receives traffic
+- **Tri-protocol switcher**: Meshtastic, MeshCore, and Reticulum run simultaneously; per-protocol unread badges (green / cyan / amber — Reticulum amber = LXMF Chat + **RRC** unread, not Games; Games has its own sidebar badge); passive toast notifications when an inactive protocol receives traffic
 - **Localization**: 16 languages via static JSON bundles; fully offline — see [Localization & Languages](docs/localization.md)
-- **Accessibility**: modal focus trap, screen reader labels, reduce-motion toggle — see [Accessibility Checklist](docs/accessibility-checklist.md)
+- **Accessibility**: modal focus trap, screen reader labels, reduce-motion and **Use 24-hour time** toggles in App → Appearance — see [Accessibility Checklist](docs/accessibility-checklist.md)
+- **Colors** (App → Appearance): customize theme tokens including chat/RRC **message action** bar and button hover colors; optional **Show background** on the action bar and **Always show message actions**
 - **Log panel**: live stream, **Analyze** heuristics, export/delete; Reticulum sidecar lines tagged `[ReticulumSidecar]`
 - **SQLite persistence**: protocol-scoped history and settings; DB export/import/clear in the App tab; **Export for GitHub** (zip: debug snapshot + logs) and **Export for Developer** (includes full SQLite — share privately only)
 - **Updates & tray**: footer update status; system tray unread badge when the window is backgrounded
@@ -173,7 +178,7 @@ These sections apply to the two LoRa companion-radio stacks. Reticulum uses the 
 
 - **Bluetooth LE**: pair wirelessly; on macOS/Windows, startup auto-reconnect can run without a user gesture (Noble backend). On Linux, Web Bluetooth requires user gesture and picker selection. **Reticulum** BLE (RNode / BLE Peer interfaces) uses the sidecar `btleplug` stack and may coexist on a **different** MAC while Meshtastic/MeshCore use Noble/Web Bluetooth — see [Reticulum BLE coexistence](docs/reticulum.md#interface-management-connection-tab).
 - **USB Serial**: plug in via USB; auto-reconnects silently on startup (saved port signature matches the same physical device across re-enumeration)
-- **WiFi / HTTP / TCP**: Meshtastic offers **WiFi/HTTP** (REST, one packet per request) and **WiFi/TCP (fast)** (native binary streaming on port **4403**, same framing as USB serial — much faster NodeDB sync on large networks); MeshCore uses TCP on port **5000** by default; saves last address for quick reconnect
+- **WiFi / HTTP / TCP**: Meshtastic offers **WiFi/HTTP** (REST, one packet per request) and **WiFi/TCP (fast)** (native binary streaming on port **4403**, same framing as USB serial — much faster NodeDB sync on large networks); MeshCore uses TCP on port **5000** by default; remembered addresses **auto-connect on launch** (same coordinator as serial/BLE) and support quick reconnect after drops
 - **Dual LoRa mode**: Meshtastic and MeshCore stay connected while you switch views; per-protocol unread badges; passive toasts on background traffic
 - **Connection status in header**: device, MQTT, and TAK indicators pulse **red** after an unexpected disconnect; manual stop/disconnect stays gray; in-progress connect keeps yellow
 
@@ -181,8 +186,8 @@ These sections apply to the two LoRa companion-radio stacks. Reticulum uses the 
 
 - Send/receive messages across channels with per-transport delivery badges and delivery ACK / failure states
 - **Durable outbox**: outgoing messages are queued in SQLite and retried until delivered; survive app restarts and connection drops
-- **Long message chunking**: messages over the payload limit are auto-split into sequential `[N/T]`-prefixed chunks (word-boundary split, max 9 chunks); MeshCore MQTT-only connections are guarded from sending when no RF path is available
-- **Shared composer** (`ChatComposer`): drafts, mentions, chunking, spellcheck, and emoji picker used by **Chat** and **MeshCore Rooms**; right‑click misspelling replacements (Electron spellchecker for both protocols)
+- **Long message chunking (Meshtastic / Reticulum)**: messages over the payload limit are auto-split into sequential `[N/T]`-prefixed chunks (word-boundary split, max 9 chunks). **MeshCore is single-packet**: each message is sent as one radio packet and longer text is blocked with an explanatory notice (busy repeaters drop split parts — see [Limitations](#limitations)). MeshCore MQTT-only connections are also guarded from sending when no RF path is available
+- **Shared composer** (`ChatComposer`): drafts, mentions, protocol-aware length limits (chunking for Meshtastic / Reticulum; single-packet for MeshCore, see above), spellcheck, and emoji picker used by **Chat** and **MeshCore Rooms**; right‑click misspelling replacements (Electron spellchecker for both protocols)
 - **Emoji reactions / tapbacks**: Meshtastic — 12 quick-pick reactions plus compose emoji (native panel on macOS/Windows; `emoji-picker-element` on Linux); wire tapbacks decode payload UTF-8 glyphs (flags, ZWJ sequences, and legacy index 1–12). MeshCore — same picker UX; **default** outbound tapbacks and text replies use keyless companion wire `@[Display Name] …` (inbound keyed `@[Name#key]`, Open `r:HASH:INDEX`, and `g:GIFID` also parsed). Optional **MeshCore Open compatibility** in App settings enables keyed replies, `r:` reactions, and Giphy GIF send — see [docs/meshcore-meshtastic-parity.md](docs/meshcore-meshtastic-parity.md#meshcore-emoji-reactions-tapbacks); reply-to-message with quoted preview in bubble (including room BBS posts)
 - **System tray**: docked/minimized on macOS and Windows shows an unread indicator when chat or MeshCore **Rooms** traffic arrives while the window is in the background
 - **`@[Display Name]` tokens** (Meshtastic / MeshCore reply, tapback, path, and inline-reference syntax) render as compact inline labels in the bubble instead of raw brackets; see [docs/meshcore-meshtastic-parity.md](docs/meshcore-meshtastic-parity.md#chat-mention-tokens)
@@ -202,7 +207,7 @@ These sections apply to the two LoRa companion-radio stacks. Reticulum uses the 
 **Node Management**
 
 - Node list with SNR, battery, GPS, **last heard** (any live RF packet—position, telemetry, traceroute, text—not only chat); **signal bars** appear only for direct (0-hop) RF neighbors; multi-hop and MQTT-only paths omit bars; SNR in traces and neighbor views uses **color-coded quality** (good / marginal / poor)
-- **Cross-Protocol Signal Analyzer**: foreign LoRa traffic detection (MeshCore, Reticulum RNS, other Meshtastic, unknown) on the **Meshtastic** Diagnostics tab and in node detail when RF rows are present; not shown on MeshCore/Reticulum tabs
+- **Cross-Protocol Signal Analyzer**: foreign LoRa traffic detection (MeshCore, Reticulum RNS, other Meshtastic, unknown) on the **Meshtastic** and **MeshCore** Diagnostics tabs and in node detail when RF rows are present; not shown on the Reticulum Diagnostics tab
 - Distance filter, favorite/pin nodes, device role icons
 - Node Detail Modal: DM, trace route with per-hop display, delete node, neighbor info, **Map Report** (Meshtastic), PaxCounter, Detection Sensor, **channel utilization** (Meshtastic), **export/share contact** (MeshCore), **node notes** (free-text, SQLite-persisted), **watch / notify** (OS desktop notification on online/offline transition)
 - **Node Health Score**: composite 0–100 badge on each node row (signal 40 pts, recency 30 pts, load 20 pts, battery 10 pts); color-coded green / yellow / red with tooltip breakdown
@@ -225,7 +230,7 @@ These sections apply to the two LoRa companion-radio stacks. Reticulum uses the 
 
 ### MeshCore Features
 
-MeshCore runs simultaneously alongside Meshtastic and Reticulum. Use the protocol switcher in the header to bring MeshCore into view; the other sessions stay connected in the background. **Meshtastic** shows **16** sidebar tabs (including **Administration**, **Security**, **TAK**, **Stats**, and **Sniffer**; no **Rooms** tab). **MeshCore** shows **16** tabs (**TAK** is hidden; **Contacts** replaces **Nodes**, **Repeaters** replaces **Modules**, and **Rooms** is MeshCore-only; **Security** shows backup/restore and crypto tools only). **Reticulum** shows **14** tabs (Connection, Chat, **RRC**, Nomad Network, **Remote**, Peers, **Map**, Network, Admin, App, Diagnostics, **Stats**, **Sniffer**, Topology). **Stats** and **Sniffer** are available in all three protocols; **RF** and **Graph** are LoRa-only (Meshtastic and MeshCore).
+MeshCore runs simultaneously alongside Meshtastic and Reticulum. Use the protocol switcher in the header to bring MeshCore into view; the other sessions stay connected in the background. **Meshtastic** shows **16** sidebar tabs (including **Administration**, **Security**, **TAK**, **Stats**, and **Sniffer**; no **Rooms** tab). **MeshCore** shows **16** tabs (**TAK** is hidden; **Contacts** replaces **Nodes**, **Repeaters** replaces **Modules**, and **Rooms** is MeshCore-only; **Security** shows backup/restore and crypto tools only). **Reticulum** shows **15** tabs (Connection, Chat, **Games**, **RRC**, Nomad Network, **Remote**, Peers, **Map**, Network, Admin, App, Diagnostics, **Stats**, **Sniffer**, Topology). **Stats** and **Sniffer** are available in all three protocols; **RF** and **Graph** are LoRa-only (Meshtastic and MeshCore).
 
 - **Transmit queue**: header badge (with tooltip) when the connected radio reports outbound queue depth (STATS).
 
@@ -247,16 +252,16 @@ MeshCore runs simultaneously alongside Meshtastic and Reticulum. Use the protoco
 - Channel messaging and **direct messages (DMs)** with delivery ACK tracking (`expectedAckCrc`) and failure timeout; **DM threads can be closed** from the chat UI
 - **Transport badges** on received messages; **RF**, **MQTT**, or **both** (persisted as `received_via` in `meshcore_messages`); MQTT JSON chat can be used when RF is down
 - **Inbound dedup** (`meshcoreStoreDedup.ts`): merges duplicate RF/MQTT echoes, companion TX echoes, and tapback self-echoes so chat and Rooms stay readable
-- **MeshCore Open GIFs**: inbound `g:GIFID` (and Giphy URLs) render inline in chat; outbound send via App **MeshCore Open compatibility** toggle (paste URL/ID or **GIF** composer button) — see [parity doc](docs/meshcore-meshtastic-parity.md#meshcore-open-gif-wire-ggifid)
+- **MeshCore Open GIFs**: inbound `g:GIFID` (and Giphy URLs) render inline in chat; outbound send via Radio **MeshCore Open compatibility** toggle (paste URL/ID or **GIF** composer button) — see [parity doc](docs/meshcore-meshtastic-parity.md#meshcore-open-gif-wire-ggifid)
 - Incoming push events: periodic advert (0x80), path update (0x81), send confirmed (0x82), message waiting (0x83), new contact (0x8A), incoming DM (7), incoming channel message (8)
 - All messages and contacts persisted to SQLite (`meshcore_messages`, `meshcore_contacts` tables)
 
 **Room servers (BBS)** — **Rooms** tab (RF only; not MQTT)
 
-- Login to room-server contacts (guest read-only or admin post); **Continue read-only** when the server guest password is empty (zero-byte password, matching the official Android client)
+- Login to room-server contacts; **blank** guest password for read-only when allowed; **`"hello"`** as the default read/write guest password; **Continue read-only** also sends blank
 - Post plain UTF-8 after login; inbound **SignedPlain** pushes show author prefix stripped in the UI
 - **Remember password**, **Auto-sync** (periodic re-login while connected, minimum 60 minutes per room), per-room unread badges (sidebar **Rooms** tab; separate from **Chat** badges)
-- Room admin CLI in the Rooms panel; session/login queue and path sync in `meshcoreRoom*.ts` — see [docs/meshcore-meshtastic-parity.md](docs/meshcore-meshtastic-parity.md#meshcore-room-servers) and [Troubleshooting](docs/troubleshooting.md#meshcore-room-server-login-posts-and-windows-10)
+- Room admin CLI / ACL setperm on the **Repeaters** tab (room rows); Rooms Members still call `get acl` via the same CLI path. Session/login queue and path sync in `meshcoreRoom*.ts` — see [docs/meshcore-meshtastic-parity.md](docs/meshcore-meshtastic-parity.md#meshcore-room-servers) and [Troubleshooting](docs/troubleshooting.md#meshcore-room-server-login-posts-and-windows-10)
 
 **Diagnostics & Remote Queries**
 
@@ -267,8 +272,8 @@ MeshCore runs simultaneously alongside Meshtastic and Reticulum. Use the protoco
 
 **Repeaters**
 
-- **Repeaters panel** (MeshCore-only tab): list repeaters with on-demand status (noise floor, RSSI/SNR, packet counts, air time, uptime, TX queue); **Path** column shows a per-hop SNR sparkline from the last trace (last trace/path hop data is also stored in local SQLite so sparklines can survive app restarts); per-row **Neighbors** expands an inline neighbor list (same query as node detail, including **Load more**)
-- **Per-repeater admin passwords**: optional **Remember** saves credentials per repeater in SQLite `app_settings` (`meshcoreRepeaterCredential:<nodeId>`); collapsible **Saved repeater passwords** sidebar section with per-repeater Forget
+- **Repeaters panel** (MeshCore-only tab): list **repeaters and room servers** (All / Repeaters / Rooms filter) with on-demand status (noise floor, RSSI/SNR, packet counts, air time, uptime, TX queue); **Path** column shows a per-hop SNR sparkline from the last trace (last trace/path hop data is also stored in local SQLite so sparklines can survive app restarts); per-row **Neighbors** expands an inline neighbor list (same query as node detail, including **Load more**); room rows add **Open room** (jump to Rooms) plus room CLI pills (`get acl`, `allow.read.only`, ACL setperm)
+- **Per-node admin passwords**: optional **Remember** saves credentials per repeater/room in SQLite `app_settings` (`meshcoreRepeaterCredential:<nodeId>` / room admin password); collapsible **Saved passwords** sidebar section with per-node Forget
 - **Waiting-message drain**: header status indicator (queued backlog and active sync on any protocol tab; **paused/deferred** state only on the MeshCore tab) during serial companion backlog drain; **Sync now** for manual catch-up
 - **Repeater CLI**: per-repeater expandable **CLI** interface; command input with Enter to send, scrollable command/response history, Up/Down arrow history navigation, quick-command bar (get name, get radio, neighbors, version, clock, clock sync, clear stats, advert, board, …), flood vs. auto (saved path) routing toggle; responses are correlated to commands via 2-character hex prefix tokens; configurable retries with dynamic timeout; **auto Ping** before the first multi-hop CLI command when no trace exists this session (info toast while establishing route); **destructive-command confirm** modal for reboot/erase/factory-reset patterns
 - **Remote session authentication (optional)**: Password may be required for **CLI** and some **telemetry** paths when firmware ACL demands it. **Status** and **Neighbors** use pubkey-framed companion commands and typically work without login on direct (0-hop) repeaters; the auth modal offers “Continue without password.” Saved passwords persist when **Remember** is checked. Admin RPCs share a serialized companion queue — expect up to ~2 minutes blocked while a ping or multi-hop request runs. Status/Telemetry/Neighbors toast when the radio is disconnected.
@@ -297,39 +302,64 @@ MeshCore runs simultaneously alongside Meshtastic and Reticulum. Use the protoco
 - BLE: waits for GATT init (`connected` event) before issuing commands; includes nudge timeout for stuck `deviceQuery` on some devices. On **Windows**, **pair the MeshCore device in Settings → Bluetooth & devices** before connecting in the app; WinRT may need a bonded device for a stable Nordic UART session. On **Linux**, the app checks BlueZ pairing and may prompt for the PIN **before** Web Bluetooth completes when the radio is not bonded. A **second connect attempt** may run automatically after some transient GATT discovery or handshake timeouts (retry reuses the granted device without a new picker gesture).
 - Serial: auto-reconnects on startup using a saved port signature so reconnect targets the same physical device when possible
 - TCP: connects to MeshCore companion radio; default port **5000**, configurable per connection
-- **MQTT (JSON v1):** The Connection tab MQTT card includes **Network Preset** buttons (order: **LetsMesh**, **MeshMapper**, **Colorado Mesh**, **Ripple Networks**, **Custom**). New installs default to **LetsMesh** (WebSocket on port 443, topic prefix `meshcore/test`; broker auth uses `@michaelhart/meshcore-decoder`'s `createAuthToken`; MQTT username `v1_<64-hex public key>`, password token with JWT `aud` matching the **MQTT server hostname**; optional **Packet logger** forwards RX packet summaries to the broker when enabled; see [docs/letsmesh-mqtt-auth.md](docs/letsmesh-mqtt-auth.md)). **MeshMapper** uses the same transport/topic shape (`meshcore/test`). **Colorado Mesh** is regional (Colorado residents only; WebSocket on port 443, topic prefix `meshcore/DEN`; confirm dialog on select; existing Colorado users get a one-time stay-or-switch prompt). IATA-scoped brokers require topic `meshcore/{IATA}` or `meshcore/test`. **Ripple Networks** (TLS on port 8883, topic prefix `meshcore`, shared credentials, insecure TLS confirm) and **Custom** remain available for other brokers.
+- **MQTT (JSON v1):** The Connection tab MQTT card includes a **Network Preset** picker (order: **LetsMesh**, **MeshMapper**, **Colorado Mesh**, **Waev**, **Meshat.se**, **MeshCore.CA**, **EastMesh**, **Ripple Networks**, **Custom**). New installs default to **LetsMesh** (WebSocket on port 443, topic prefix `meshcore/test`; broker auth uses `@michaelhart/meshcore-decoder`'s `createAuthToken`; MQTT username `v1_<64-hex public key>`, password token with JWT `aud` matching the **MQTT server hostname**; optional **Packet logger** forwards RX packet summaries to the broker when enabled; see [docs/letsmesh-mqtt-auth.md](docs/letsmesh-mqtt-auth.md)). **LetsMesh**, **MeshMapper**, **Waev**, **Meshat.se**, **MeshCore.CA**, and **EastMesh** share that device-signing JWT flow (WebSocket path `/ws` for LetsMesh/MeshMapper, `/mqtt` for Waev/Meshat.se/MeshCore.CA/EastMesh; **MeshCore.CA** adds a Primary/Backup broker toggle). **Colorado Mesh** is regional (Colorado residents only; WebSocket on port 443, topic prefix `meshcore/DEN`; confirm dialog on select; existing Colorado users get a one-time stay-or-switch prompt). IATA-scoped brokers require topic `meshcore/{IATA}` or `meshcore/test`. **Ripple Networks** (TLS on port 8883, topic prefix `meshcore`, shared credentials, insecure TLS confirm) and **Custom** remain available for other brokers.
 
 ---
 
 ### Reticulum Features
 
-Reticulum is the third protocol tab (**amber** pill). The stack runs in an **AGPL Rust sidecar** (`mesh-client-reticulum`) spawned by Electron main; the MIT renderer talks to it through `electronAPI.reticulum` (HTTP/WS proxy). Chat history and LXMF contacts persist in SQLite. Primary interop target: [Ratspeak](https://github.com/ratspeak/Ratspeak) peers on rsReticulum/rsLXMF; Nomad page hosting uses sibling [rsNomad](https://github.com/Colorado-Mesh/rsNomad). Architecture and API details: [docs/reticulum.md](docs/reticulum.md).
+Reticulum is the third protocol tab (**amber** pill). The stack runs in an **AGPL-3.0-or-later Rust sidecar** (`mesh-client-reticulum`) spawned by Electron main; the GPL-3.0-or-later renderer talks to it through `electronAPI.reticulum` (HTTP/WS proxy). Chat history and LXMF contacts persist in SQLite.
+
+**Ratspeak-compatible stack.** Primary interop target is [Ratspeak](https://github.com/ratspeak/Ratspeak) peers on [rsReticulum](https://github.com/ratspeak/rsReticulum) / [rsLXMF](https://github.com/ratspeak/rsLXMF), with sibling crates for the same surfaces Ratspeak ships:
+
+| Surface                      | Sibling / library                                   | mesh-client UI                  |
+| ---------------------------- | --------------------------------------------------- | ------------------------------- |
+| LXMF DMs, paper, propagation | rsLXMF                                              | Chat, Network                   |
+| Nomad pages                  | [rsNomad](https://github.com/Colorado-Mesh/rsNomad) | Nomad Network                   |
+| Live voice                   | [rsLXST](https://github.com/ratspeak/rsLXST)        | Call on Peers / Chat DM         |
+| Games (TTT / Chess)          | [lrgp-rs](https://github.com/ratspeak/lrgp-rs)      | **Games** tab + Challenge       |
+| Relay chat / Remote          | rsReticulum + sidecar                               | **RRC**, **Remote** (rnsh/rncp) |
+
+Architecture and API: [docs/reticulum.md](docs/reticulum.md). Games wire parity: [docs/reticulum-games-parity.md](docs/reticulum-games-parity.md).
 
 **Stack & interfaces (Connection tab)**
 
 - **Start stack** / **Stop stack**, **Auto-start**, **Disconnect & quit**
-- **Interfaces** CRUD: TCP client, Auto (discovery), RNode over USB serial, **Bluetooth** (`ble://…`), or **Wi‑Fi** (`tcp://host:7633`)
+- **Interfaces** CRUD: TCP client, **I2P**, Auto (discovery), RNode over USB serial, **Bluetooth** (`ble://…`), or **Wi‑Fi** (`tcp://host:7633`); **Add default backbones** regional hub picker
 - Config **audit/repair** for ghost TCP rows, unreachable hubs, and RF preset mismatches (Diagnostics + inline hints)
 
 **Network & identity (Network tab)**
 
-- Generate or import LXMF identity (mnemonic); import/export rnsd-style config from standard system paths
-- Stack settings (`enable_transport`, `share_instance`, log level), announce interval, **Clear announces**
-- **Propagation nodes**: preferred node for offline DMs, per-node sync, optional **local propagation inbox**
+- Generate or import LXMF identity (mnemonic); Ratspeak `.rsi` PIN backup and official raw identity file export/import; optional **identity vault**; import/export rnsd-style config from standard system paths
+- Stack settings (`enable_transport`, `share_instance`, log level), announce interval, **Clear announces**, **RMAP v4 discovery** publish controls
+- **Propagation nodes** (Network tab): **Propagation mode** Off (default) / Auto / Manual, Preferred node for offline DMs, per-node sync, optional **local propagation inbox** / Advanced PN hosting policy
 
-**Messaging (Chat + RRC)**
+**Messaging (Chat + encrypted paper + RRC)**
 
-- **Chat tab:** **DM-only** LXMF text and reactions (peer file transfer via Remote rncp; historic LXMF attachment labels still render; **cached raster images** on disk under `reticulum/attachments/` also display inline)
-- **RRC tab:** multi-hub relay chat (rooms, nicklists, slash commands, favourites, auto-join, reconnect; up to 8 hubs)
-- **Remote tab:** **rnsh** interactive shell sessions and **rncp** file transfer (send / receive / fetch) over Reticulum, with saved addresses and inbound-policy controls; also available from Chat DMs as send-file (distinct from Meshtastic remote admin)
-- **Direct** delivery when the destination is in the path table (then **one-shot remote PN fallback** on Direct fail when a preferred remote PN is set); **propagated (PN)** when offline — Completes show **Stored at propagation node**, not recipient Delivered
+- **Chat tab:** **DM-only** LXMF text and reactions (peer file transfer via Remote rncp; historic LXMF attachment labels still render; **cached raster images** under `reticulum/attachments/` display inline)
+- **Encrypted paper (Ratspeak / LXMF paper):** Chat DM **Share as paper** encrypts offline to a QR / `lxm://` URI with **no network send** (Completes immediately, **Paper** delivery badge); **Scan paper** (Chat or Network **Scan / import**) decrypts into the local inbox when the identity matches. OS `lxm://` paper deep links ingest without a confirm prompt; contact / MeshCore imports still confirm
+- **LXST voice Call** on DM headers and Peers rows — live telephony over rsLXST (not an LXMF voice-note clip)
+- **RRC tab:** multi-hub relay chat (rooms, nicklists, slash commands, favourites, auto-join, reconnect; up to 8 hubs); @mentions badge Chat + the amber protocol pill
+- **Remote tab:** **rnsh** interactive shell sessions and **rncp** file transfer (send / receive / fetch), saved addresses and inbound-policy controls; Chat DM send-file convenience (distinct from Meshtastic remote admin)
+- **Delivery:** **Direct** when the destination is in the path table; after Direct exhausts, **multi-PN cascade** (preferred remote → other enabled remotes hop-sorted → local-prop last). Remote PN Completes show **Stored at propagation node** (`delivered`); local-prop Completes as local inbox (`stored_locally`) — neither is recipient Delivered
 
-**Peers, topology, Nomad Network**
+**Games (LRGP)**
 
-- **Peers** tab: RNS path-table peers and LXMF contacts (separate sub-tabs); virtualized large lists, path probe, and peer detail modal
+- **Games** tab (Reticulum-only): **Tic-Tac-Toe** and **Chess** over [LRGP](https://github.com/ratspeak/lrgp-rs), wire-compatible with Ratspeak — challenge, accept, play, draw/resign, session list + unread badge (sidebar; **not** folded into the amber protocol-pill total)
+- **Challenge** from Peers rows and Chat DM headers; deep links `lrgp:<session>` and `lxm://game/<id>` open the Games tab to that session
+- See [Games parity checklist](docs/reticulum-games-parity.md) for command/UI interop status vs Ratspeak
+
+**Peers, topology, Nomad Network, Map**
+
+- **Peers** tab: RNS path-table peers, messaged **History**, saved **Contacts**, and **Favorites** (sub-tabs); LXMFace avatars; virtualized large lists, path probe, **LXST Call**, **LRGP Challenge**, and peer detail modal (Save as contact is manual — messaging alone does not add Contacts)
 - **Map** tab: local RMAP v4 discovery map (Leaflet + OSM basemaps; heard opt-in interfaces with GPS; interface-type filters; reachable vs heard-only sidebar list; publish via Network + Connection); **Global map** link to [rmap.world](https://rmap.world/) — no position trails or waypoints (contrast with Meshtastic/MeshCore Map)
 - **Topology** tab: best-effort graph from the RNS path table (next-hop edges, force layout)
-- **Nomad Network** tab: collapsible favourites/announces list (default **Favourites** sub-tab); **My Pages** hosts a static Nomad site (rsNomad `nomad-core`) — **Choose folder** for a watched site root (e.g. sibling `nomad-page` with `pages/*.mu`) or pages directory, set a display name, Start serving (off by default; auto-restores when the stack comes back up); edit pages on disk (read-only list in the UI); fit-width pages by default with an open-width toggle; panel lazy-mounts after first visit and keeps browse state across tab switches (`mesh-client:nomadNodeListCollapsed` for sidebar width)
+- **Nomad Network** tab: collapsible favourites/announces list (default **Favourites** sub-tab); **My Pages** hosts a static Nomad site (rsNomad `nomad-core`) — **Choose folder** for a watched site root (e.g. sibling `nomad-page` with `pages/*.mu`) or pages directory, set a display name, Start serving (off by default; auto-restores when the stack comes back up); Micron browser with fit-width default + open-width toggle; panel lazy-mounts after first visit
+
+**Deep links & QR**
+
+- Registered OS scheme **`lxm://`** (identity / contact / paper / game); Columba-compatible **`lxma://`** contact+key when pasting or opening; MeshCore `meshcore://` ingest when pasted/opened (not OS-registered)
+- Network **Scan / import** and Chat paper controls share one ingest path (`handleReticulumQrIngest`)
 
 **Admin & hardware**
 
@@ -355,7 +385,8 @@ Reticulum is the third protocol tab (**amber** pill). The stack runs in an **AGP
 - **MQTT → RF (MeshCore JSON)**: Not supported; MeshCore MQTT is chat ingest only.
 - **Meshtastic - PKC remote admin**: Configure-node-over-MQTT is not supported; a connected local RF radio is required to reach remote nodes (firmware 2.5+).
 - **MeshCore - MQTT (JSON v1)**: The Connection tab can connect to an MQTT broker in MeshCore mode using a small JSON chat envelope (see [docs/meshcore-meshtastic-parity.md](docs/meshcore-meshtastic-parity.md)). This is separate from Meshtastic's protobuf MQTT pipeline.
-- **MeshCore - partial routing diagnostics**: MeshCore now supports `route_flapping` / `path_instability` (PathUpdated events), `hop_goblin` / `bad_route` (when `hasHopCount`), and `weak_link` (when `hasPerHopSnr` and a trace is completed). Full hop-anomaly detection and Meshtastic-style LocalStats RF findings require Meshtastic packets; MeshCore provides its own RF findings (Elevated Noise Floor, Excessive Flooding) from Repeater Status packet stats. **Foreign LoRa** tables render on the Meshtastic tab only (MeshCore may record overhear internally).
+- **Breaking change — MeshCore single-packet messages (no multi-part / multi-split)**: mesh-client **no longer** auto-splits outbound MeshCore chat, DM, or room messages into numbered `[i/N]` packets. Each send is one radio packet (max ~130-160 characters depending on context and sender name); longer text is **blocked** with an explanatory notice in the composer. On a busy mesh, repeaters routinely drop some split parts, so recipients previously got silently incomplete messages. **Migration:** shorten long messages, or send them as a few separate shorter messages. A non-blocking advisory also appears if you send faster than the mesh can relay (~5s). Call this out in release notes. Upstream: [meshcore-dev/MeshCore#1502](https://github.com/meshcore-dev/MeshCore/issues/1502), [#2820](https://github.com/meshcore-dev/MeshCore/issues/2820), [#3053](https://github.com/meshcore-dev/MeshCore/issues/3053). Inbound multi-part from other clients is still merged for display. Meshtastic multi-split (up to 9 parts) is unchanged.
+- **MeshCore - partial routing diagnostics**: MeshCore supports `route_flapping` / `path_instability` (PathUpdated events) and `weak_link` (when `hasPerHopSnr` and a trace is completed). Distance-based `hop_goblin` / close-in `bad_route` are Meshtastic-only (`hasDistanceBasedHopAnomalies`). Full hop-anomaly detection and Meshtastic-style LocalStats RF findings require Meshtastic packets; MeshCore provides its own RF findings (Elevated Noise Floor, Excessive Flooding) from Repeater Status packet stats. **Foreign LoRa** tables render on the Meshtastic tab only (MeshCore may record overhear internally).
 - **MeshCore - channel editing**: Can add/edit/delete channels (name + PSK) via the Radio tab, but does not expose Meshtastic-style full protobuf config. Radio parameters (frequency, bandwidth, spreading factor, coding rate, TX power) can be set via the Radio tab.
 - **MeshCore - remote telemetry availability**: `getTelemetry` requires the remote node to have environment sensors. A timeout is returned if the node has no sensor data.
 - **MeshCore - neighbor info availability**: `getNeighbours` is supported only by Repeater-type nodes running firmware v1.9.0+. The button is hidden for Chat and Room contacts.
@@ -364,12 +395,22 @@ Reticulum is the third protocol tab (**amber** pill). The stack runs in an **AGP
 - **MeshCore - Security tab (partial)**: Meshtastic-style PKI admin is not on MeshCore firmware; the **Security** tab shows per-node key backup/restore, sign, and export/import only. LetsMesh MQTT uses a separate **active identity cache** (`mesh-client:meshcoreIdentity`); per-node archives do not overwrite each other — see [Key backup and cryptography](docs/key-backup-and-crypto.md).
 - **Map tiles; OpenStreetMap Referer requirement**: Packaged desktop builds load the UI from the local filesystem. The main process now loads the renderer with an explicit HTTP referrer so OpenStreetMap tile requests include a valid `Referer` header and comply with the [tile usage policy](https://operations.osmfoundation.org/policies/tiles/). If you point the app at a different tile server, ensure its usage policy permits this client.
 - **Reticulum — no LoRa companion parity**: Reticulum does not use Meshtastic/MeshCore `ConnectionDriver`, MQTT hybrid, channel pills, Rooms BBS, or Hop Goblins diagnostics. The **Chat** tab is **DM-only**; hub room chat lives on the **RRC** tab. Interface add/edit/delete updates config on disk — **restart the stack** after changes under `rns-stack`.
-- **Reticulum — sidecar license**: The spawned `mesh-client-reticulum` binary is **AGPL-3.0** (separate process from the MIT Electron shell). See [docs/reticulum.md](docs/reticulum.md) and [docs/credits.md](docs/credits.md#bundled-binaries).
-- **Reticulum — propagation required for offline peers**: LXMF send fails with `no_propagation_node` when the destination is not in the path table and no preferred **remote** propagation node is set. Local inbox ≠ remote store-and-forward. When a path exists, Direct is tried first; Direct fail with a remote preferred PN triggers one-shot PN deposit.
+- **Reticulum — sidecar license**: The spawned `mesh-client-reticulum` binary is **AGPL-3.0-or-later** (separate process from the GPL-3.0-or-later Electron shell). See [docs/reticulum.md](docs/reticulum.md) and [docs/credits.md](docs/credits.md#bundled-binaries). Flatpak AppStream `metadata_license` remains MIT (metadata file only); `project_license` is GPL-3.0-or-later.
+- **Graph / Topology visible-node cap**: Meshtastic and MeshCore **Graph** and Reticulum **Topology** render at most **400** nodes after hop filters (force-layout budget). Numeric **Max hops** is applied even when Show distant is off. Unknown hops are omitted unless Max hops is **All hops** and Show distant is on (they are not 1-hop neighbors). The nearby hop ceiling (Mesh hops > 1, Reticulum hops > 2) applies only when Max hops is **All hops**. Reticulum Topology can also filter **RF only** (RNode / KISS / BLE; hides TCP/I2P/Auto). Reticulum path-table ingest is a separate layer (renderer feed **800**, sidecar **2,000**).
+- **Noble BLE long sessions (macOS observed; Windows precautionary):** The Noble BLE driver can hard-crash the app (`EXC_BREAKPOINT` / native abort) if a LoRa BLE session stays up for ~**5+ days** without a full app restart. This is **confirmed on macOS**; Windows is nudged as a precaution because the same failure class there is **unconfirmed**. The crash is outside JavaScript control (not catchable with `try/catch`); the mechanism is **suspected** to be a native teardown race and is tracked upstream as [stoprocent/noble#140](https://github.com/stoprocent/noble/issues/140). mesh-client **prompts on day 4 while Noble BLE is connected** (in-app banner + OS notification / Dock badge / taskbar flash + Restart). Prefer Serial/TCP for always-on desks. Linux uses Web Bluetooth (a different stack; this prompt is not shown).
+- **Reticulum — propagation required for offline peers**: LXMF send fails with `no_propagation_node` when the destination is not in the path table and no cascade candidates exist (enabled remotes or local-prop). Local inbox Completes (`stored_locally`) ≠ peer delivery at a remote PN. When a path exists, Direct is tried first; on Direct fail the sidecar cascades preferred remote → other enabled remotes (hop-sorted) → local-prop last.
 
 ---
 
 ## Quick Start
+
+### System requirements
+
+| Platform    | Minimum                                                               |
+| ----------- | --------------------------------------------------------------------- |
+| **macOS**   | **13 Ventura** or later (Electron 44; Monterey is not supported)      |
+| **Windows** | Windows 10 version **1809+** or Windows 11 (x64 and arm64 installers) |
+| **Linux**   | x86_64 or aarch64; AppImage, `.deb`, `.rpm`, or Flatpak               |
 
 **Pre-built binaries** for **macOS**, **Linux**, and **Windows** are available in the [GitHub Releases](https://github.com/Colorado-Mesh/mesh-client/releases) area. Download the installer or archive for your platform; no Node.js or build tools required.
 
@@ -385,8 +426,18 @@ flatpak run org.coloradomesh.MeshClient
 
 VMware guests and other GPU edge cases: [Flatpak troubleshooting](docs/troubleshooting.md#flatpak-vmwgfx-driver-missing-vmware-on-macos).
 
+**Arch Linux (AUR, third-party):** community package [`mesh-client`](https://aur.archlinux.org/packages/mesh-client) (maintainer `victorix`) — **not** maintained by Colorado Mesh. Prefer [GitHub Releases](https://github.com/Colorado-Mesh/mesh-client/releases) AppImage / `.deb` / `.rpm` / Flatpak for official builds. Report packaging issues on the AUR package page; report app bugs on GitHub.
+
+```bash
+yay -S mesh-client # or: paru -S mesh-client
+```
+
 **macOS (release download):**
 
+- Requires **macOS 13 Ventura** or later.
+- **Apple Silicon (M1/M2/M3/…):** download the **arm64 `.dmg`**, open it, and drag **Mesh-client** to **Applications**.
+- **Intel Mac:** download the **x64 `.dmg`** (file name includes `x64`, or has no `arm64` suffix), open it, and drag **Mesh-client** to **Applications**.
+- If you use the **`.zip`** instead: extract with **[Keka](https://www.keka.io/en/)** or `ditto -xk` — **do not use 7-Zip** (or Finder Archive Utility). Those tools flatten macOS framework symlinks and can cause a launch crash: `Library not loaded: Squirrel.framework`.
 - **Official [GitHub Releases](https://github.com/Colorado-Mesh/mesh-client/releases) (v5.22.0+):** macOS builds are **Developer ID signed and notarized**. Drag to **Applications** and open normally — you should **not** need `xattr` or Right-click → Open.
 - **Unsigned local or fork builds** (`pnpm run dist:mac` without signing secrets, CI artifacts from forks): Gatekeeper may show **"Mesh-client" is damaged and can't be opened** (or **File is damaged and cannot be opened**), especially on **Apple silicon**. That is quarantine on unsigned downloads, not a corrupt file.
 
@@ -401,7 +452,7 @@ xattr -r -d com.apple.quarantine /Applications/Mesh-client.app
 
 After running `xattr`, check Privacy & Security again (scroll to the bottom); the entry should now appear with an **Allow** button.
 
-See [Troubleshooting; macOS: File is damaged…](docs/troubleshooting.md#macos-file-is-damaged-and-cannot-be-opened) and [this explanation for a similar Electron app](https://github.com/jeffvli/feishin/issues/104#issuecomment-1553914730).
+See [Troubleshooting; macOS: File is damaged…](docs/troubleshooting.md#macos-file-is-damaged-and-cannot-be-opened), [macOS: Library not loaded: Squirrel.framework…](docs/troubleshooting.md#macos-library-not-loaded-squirrelframework-after-zip-extract), and [this explanation for a similar Electron app](https://github.com/jeffvli/feishin/issues/104#issuecomment-1553914730).
 
 **Building from source / development setup:** see [docs/development-environment.md](docs/development-environment.md) for complete shared requirements, clone/install steps, test harness setup, and detailed macOS/Windows/Linux instructions.
 
@@ -409,7 +460,7 @@ See [Troubleshooting; macOS: File is damaged…](docs/troubleshooting.md#macos-f
 
 ## Run Locally
 
-**Prerequisites:** [Node.js 22.13.0+](https://nodejs.org/) and [pnpm 11+](https://pnpm.io/installation) (repo pins an exact `packageManager` — Corepack, or `npm i -g pnpm` / `npm i -g corepack` on Node 25+). After a pnpm major bump, `pnpm install` / `pnpm run dev` print upgrade instructions if your local pnpm is too old.
+**Prerequisites:** [Node.js 22.13.0+](https://nodejs.org/) and [pnpm 12+](https://pnpm.io/installation) (repo pins an exact `packageManager` — Corepack, or `npm i -g pnpm` / `npm i -g corepack` on Node 25+). After a pnpm major bump, `pnpm install` / `pnpm run dev` print upgrade instructions if your local pnpm is too old.
 
 ```bash
 git clone https://github.com/Colorado-Mesh/mesh-client
@@ -453,7 +504,7 @@ All three protocols can run at the same time. Use the **Meshtastic / MeshCore / 
 2. Open the **Connection** tab and click **Start stack** (enable **Auto-start** to skip this on future launches)
 3. On **Network**, generate or import your LXMF identity (the sidecar must be running)
 4. On **Connection → Interfaces**, add transports (TCP hub, Auto, or RNode over USB/BLE/Wi‑Fi) and enable them; restart the stack after interface changes when using the full `rns-stack` build
-5. Use **Chat** for LXMF DMs; **Remote** for rnsh/rncp; **RRC** for hub rooms; **Peers** and **Topology** for path-table visibility; **Nomad Network** for browse + **My Pages** watched-folder hosting
+5. Use **Chat** for LXMF DMs (and **Share as paper** / **Scan paper** for offline encrypted handoff); **Games** for Tic-Tac-Toe / Chess (or Challenge from Peers / Chat); **Call** for LXST voice; **Remote** for rnsh/rncp; **RRC** for hub rooms; **Peers** and **Topology** for path-table visibility; **Nomad Network** for browse + **My Pages** watched-folder hosting
 
 Dev builds need the sidecar binary once: `pnpm run reticulum:sidecar:build`. Packaged releases include it automatically. See [docs/reticulum.md](docs/reticulum.md) and [Troubleshooting — Reticulum](docs/troubleshooting.md#reticulum-sidecar-wont-start-or-health-poll-times-out).
 
@@ -464,7 +515,7 @@ After a successful connection, Mesh-Client remembers your last device per protoc
 - **Serial**: auto-connects silently in the background (Meshtastic and MeshCore)
 - **Bluetooth (macOS/Windows)**: auto-scans on launch and reconnects when the last device is discovered (no user gesture required)
 - **Bluetooth (Linux)**: Web Bluetooth requires a user gesture; click **Reconnect** or **Connect** to open the picker. **MeshCore:** if the device is not paired in BlueZ, enter the PIN from the radio when prompted (OS pairing runs before the connection finishes).
-- **WiFi / TCP**: a one-click reconnect card appears; click **Reconnect**
+- **WiFi / HTTP / TCP**: remembered Meshtastic HTTP/TCP and MeshCore TCP addresses **auto-connect silently on launch** via `ProtocolAutoConnectCoordinator` (stays alive across tab switches). A one-click **Reconnect** card appears only when auto-connect fails or was cancelled by a manual Connect. Manual Connect cancels any in-flight auto-connect first (`cancelProtocolRfAutoConnect`).
 - **MQTT**: auto-reconnects using saved broker settings (Meshtastic protobuf pipeline; MeshCore JSON v1 adapter; select transport when connecting)
 - **Reticulum**: with **Auto-start** enabled, the sidecar starts on launch; otherwise click **Start stack** on the Connection tab after opening the app
 
@@ -472,7 +523,7 @@ When both Meshtastic and MeshCore have different saved BLE peripherals, dual-rad
 
 ### MQTT
 
-Enter your broker URL, topic, and optional credentials in the MQTT section of the Connection tab. When connected, the section collapses to a compact info card showing the server, client ID, and topic. You can send messages via MQTT without a radio when using **Meshtastic**, or **MeshCore** with brokers other than the public **LetsMesh** presets (Ripple / Custom still use the JSON v1 chat envelope for MQTT-only sends). **LetsMesh** public MQTT targets the **Analyzer** packet-logger model: optional RX summaries to `{topicPrefix}/meshcore/packets` when your radio is connected ([docs/letsmesh-mqtt-auth.md](docs/letsmesh-mqtt-auth.md)); MQTT-only channel chat to LetsMesh without a radio is not supported. **Meshtastic** uses the protobuf MQTT stack; **MeshCore** broker details are in [docs/meshcore-meshtastic-parity.md](docs/meshcore-meshtastic-parity.md). In **MeshCore** mode, **LetsMesh** / **Ripple Networks** / **Colorado Mesh** presets fill those fields for the corresponding public networks. **LetsMesh** uses the same contract as [meshcore-mqtt-broker](https://github.com/michaelhart/meshcore-mqtt-broker) with JWT `aud` matching the **regional broker hostname** you connect to (e.g. `mqtt-us-v1.letsmesh.net` / `mqtt-eu-v1.letsmesh.net`); mesh-client generates tokens from your imported MeshCore identity (`public_key` + `private_key` in config JSON). **Colorado Mesh** uses JWT auth with custom audience mapping for `meshcore_mqtt.coloradomesh.org`. Use **Custom** and paste credentials manually if your operator issued different rules.
+Enter your broker URL, topic, and optional credentials in the MQTT section of the Connection tab. When connected, the section collapses to a compact info card showing the server, client ID, and topic. You can send messages via MQTT without a radio when using **Meshtastic**, or **MeshCore** with brokers other than the public **LetsMesh** presets (Ripple / Custom still use the JSON v1 chat envelope for MQTT-only sends). **LetsMesh** public MQTT targets the **Analyzer** packet-logger model: optional RX summaries to `{topicPrefix}/meshcore/packets` when your radio is connected ([docs/letsmesh-mqtt-auth.md](docs/letsmesh-mqtt-auth.md)); MQTT-only channel chat to LetsMesh without a radio is not supported. **Meshtastic** uses the protobuf MQTT stack; **MeshCore** broker details are in [docs/meshcore-meshtastic-parity.md](docs/meshcore-meshtastic-parity.md). In **MeshCore** mode, the **LetsMesh** / **MeshMapper** / **Colorado Mesh** / **Waev** / **Meshat.se** / **MeshCore.CA** / **EastMesh** / **Ripple Networks** presets fill those fields for the corresponding public networks. The device-signing presets (everything except Ripple / Custom) use the same contract as [meshcore-mqtt-broker](https://github.com/michaelhart/meshcore-mqtt-broker) with JWT `aud` matching the **broker hostname** you connect to (e.g. `mqtt-us-v1.letsmesh.net`, `mqtt.waev.app`, `mqtt1.meshcore.ca`); mesh-client generates tokens from your imported MeshCore identity (`public_key` + `private_key` in config JSON). **Custom** settings also use device signing when the configured server matches a known device-signing broker hostname (e.g. `mqtt.waev.app`); Custom is only non-device-signing for unmatched hosts. Use **Custom** and paste credentials manually if your operator issued different rules.
 
 ---
 
@@ -498,13 +549,13 @@ Enter your broker URL, topic, and optional credentials in the MQTT section of th
 
 **Reticulum** uses the AGPL sidecar (no Meshtastic/MeshCore MQTT card). Interfaces are configured on the Connection tab after **Start stack**:
 
-| Platform | TCP client | Auto (discovery) | RNode USB serial | RNode BLE | RNode Wi‑Fi (`tcp://:7633`) |
-| -------- | ---------- | ---------------- | ---------------- | --------- | --------------------------- |
-| macOS    | Yes        | Yes              | Yes              | Yes       | Yes                         |
-| Windows  | Yes        | Yes              | Yes              | Yes       | Yes                         |
-| Linux    | Yes        | Yes              | Yes              | Yes       | Yes                         |
+| Platform | TCP client | I2P | Auto (discovery) | RNode USB serial | RNode BLE | RNode Wi‑Fi (`tcp://:7633`) |
+| -------- | ---------- | --- | ---------------- | ---------------- | --------- | --------------------------- |
+| macOS    | Yes        | Yes | Yes              | Yes              | Yes       | Yes                         |
+| Windows  | Yes        | Yes | Yes              | Yes              | Yes       | Yes                         |
+| Linux    | Yes        | Yes | Yes              | Yes              | Yes       | Yes                         |
 
-Sidecar dev build: `pnpm run reticulum:sidecar:build` ([Rust](https://rustup.rs/) required). Full stack needs sibling checkouts `../rsReticulum`, `../rsLXMF`, and `../rsNomad` — see [docs/reticulum.md](docs/reticulum.md#building-the-sidecar).
+Sidecar dev build: `pnpm run reticulum:sidecar:build` ([Rust](https://rustup.rs/) required). Full stack lives in the repo-local `.rsstack/` workspace (`rsReticulum`, `rsLXMF`, `rsNomad`, `rsLXST`, `lrgp-rs`) — see [docs/reticulum.md](docs/reticulum.md#building-the-sidecar).
 
 ### Tech Stack
 
@@ -516,7 +567,7 @@ Sidecar dev build: `pnpm run reticulum:sidecar:build` ([Rust](https://rustup.rs/
 | Localization | i18next + react-i18next; 16 languages; static JSON bundles                                                                                                    |
 | Meshtastic   | @meshtastic/core + transport-http, transport-web-serial (JSR); BLE via @stoprocent/noble (macOS/Windows) and Web Bluetooth (Linux)                            |
 | MeshCore     | @liamcottle/meshcore.js (BLE, Web Serial, TCP via main-process IPC)                                                                                           |
-| Reticulum    | `mesh-client-reticulum` sidecar (Rust, rsReticulum/rsLXMF/rsNomad); `reticulum:*` IPC proxy; LXMF in SQLite (`reticulum_messages`, `reticulum_destinations`)  |
+| Reticulum    | Sidecar (rsReticulum/rsLXMF/rsNomad/rsLXST/lrgp-rs): LXMF paper, LXST, LRGP Games, Nomad/RRC/Remote                                                           |
 | Maps         | Leaflet + OpenStreetMap (Meshtastic/MeshCore node positions; Reticulum **Map** = local RMAP v4 discovery + link to rmap.world; **Topology** = RNS path graph) |
 | Charts       | Recharts                                                                                                                                                      |
 | Database     | SQLite (node:sqlite built-in, via db-compat.ts shim)                                                                                                          |
@@ -556,7 +607,7 @@ See [Troubleshooting](docs/troubleshooting.md) for complete troubleshooting guid
 
 ## License
 
-MIT; see [LICENSE](LICENSE)
+GPL-3.0-or-later; see [LICENSE](LICENSE) and [docs/license.md](docs/license.md).
 
 ## Credits
 

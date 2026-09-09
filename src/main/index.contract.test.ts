@@ -4,10 +4,12 @@ import { join } from 'path';
 import { describe, expect, it } from 'vitest';
 
 const INDEX_SOURCE = readFileSync(join(__dirname, 'index.ts'), 'utf-8');
+const PRELOAD_SOURCE = readFileSync(join(__dirname, '../preload/index.ts'), 'utf-8');
 
 describe('IPC payload size limits (source contract)', () => {
   it('defines meshcore tcp-write, http:write, and noble-ble limits and uses them in handlers', () => {
     expect(INDEX_SOURCE).toContain('const MESHCORE_TCP_WRITE_MAX_BYTES = 256 * 1024');
+    expect(INDEX_SOURCE).toContain('MESHCORE_TCP_DATA_MAX_BYTES');
     expect(INDEX_SOURCE).toContain('const HTTP_WRITE_TO_RADIO_MAX_BYTES = 256 * 1024');
     expect(INDEX_SOURCE).toContain('const NOBLE_BLE_TO_RADIO_MAX_BYTES = 512');
     expect(INDEX_SOURCE).toMatch(/maxBytes: NOBLE_BLE_TO_RADIO_MAX_BYTES/);
@@ -25,6 +27,16 @@ describe('Noble BLE disconnect handling (source contract)', () => {
     expect(INDEX_SOURCE).toMatch(
       /noble-ble-to-radio: disconnected during write, ignoring session=/,
     );
+  });
+
+  it('resolves meshtastic:tcp-write with no-socket instead of rejecting when the socket is gone', () => {
+    expect(INDEX_SOURCE).toMatch(
+      /meshtastic:tcp-write[\s\S]{0,800}console\.debug\('\[IPC\] meshtastic:tcp-write: no active socket'\)[\s\S]{0,80}return 'no-socket'/,
+    );
+    expect(INDEX_SOURCE).toContain('meshtasticTcpWriteErrorIsNoSocket');
+    expect(INDEX_SOURCE).toMatch(/sock\.destroyed \|\| sock\.writableEnded/);
+    expect(PRELOAD_SOURCE).toMatch(/result === 'no-socket'/);
+    expect(PRELOAD_SOURCE).toMatch(/throw new Error\('meshtastic:tcp-write: no active socket'\)/);
   });
 
   it('returns scan_busy result instead of throwing when Reticulum holds the scan mutex', () => {
@@ -57,9 +69,31 @@ describe('Meshtastic MQTT waypoint IPC (source contract)', () => {
 
 describe('MQTT forwarder dropped-event logs (source contract)', () => {
   it('sanitizes dynamic MQTT fields when mainWindow is not ready', () => {
-    expect((INDEX_SOURCE.match(/sanitizeLogMessage\(String\(s\)\)/g) ?? []).length).toBe(2);
-    expect((INDEX_SOURCE.match(/sanitizeLogMessage\(String\(msg\)\)/g) ?? []).length).toBe(3);
-    expect((INDEX_SOURCE.match(/sanitizeLogMessage\(String\(id\)\)/g) ?? []).length).toBe(2);
+    // Path-specific (not aggregate counts): each dropped-event branch sanitizes its payload.
+    expect(INDEX_SOURCE).toMatch(
+      /mqtt:status dropped \(mainWindow not ready\)',\s*sanitizeLogMessage\(s\)/,
+    );
+    expect(INDEX_SOURCE).toMatch(
+      /mqtt:error dropped \(mainWindow not ready\)',\s*sanitizeLogMessage\(msg\)/,
+    );
+    expect(INDEX_SOURCE).toMatch(
+      /mqtt:clientId dropped \(mainWindow not ready\)',\s*sanitizeLogMessage\(id\)/,
+    );
+    expect(INDEX_SOURCE).toMatch(
+      /mqtt:status \(meshcore\) dropped \(mainWindow not ready\)',[\s\S]{0,40}sanitizeLogMessage\(s\)/,
+    );
+    expect(INDEX_SOURCE).toMatch(
+      /mqtt:error \(meshcore\) dropped \(mainWindow not ready\)',[\s\S]{0,40}sanitizeLogMessage\(msg\)/,
+    );
+    expect(INDEX_SOURCE).toMatch(
+      /mqtt:clientId \(meshcore\) dropped \(mainWindow not ready\)',[\s\S]{0,40}sanitizeLogMessage\(id\)/,
+    );
+  });
+
+  it('sanitizes Linux bluetoothctl spawn-error log paths', () => {
+    expect(INDEX_SOURCE).toMatch(/bluetooth-unpair error:',\s*sanitizeLogMessage\(msg\)/);
+    expect(INDEX_SOURCE).toMatch(/bluetooth-start-scan error:',\s*sanitizeLogMessage\(msg\)/);
+    expect(INDEX_SOURCE).toMatch(/bluetooth-connect error:',\s*sanitizeLogMessage\(msg\)/);
   });
 });
 
@@ -126,11 +160,16 @@ describe('Persistent app settings IPC (source contract)', () => {
     expect(INDEX_SOURCE).toMatch(/key not allowed/);
     expect(INDEX_SOURCE).toContain("'meshtasticLastRfSelfNodeId'");
     expect(INDEX_SOURCE).toContain("'meshcoreLastSelfNodeId'");
-    expect(INDEX_SOURCE).toContain('meshtasticRemoteAdminKey:');
-    expect(INDEX_SOURCE).toContain('meshcoreRoomSync:');
-    expect(INDEX_SOURCE).toContain('meshcoreRoomLastPost:');
-    expect(INDEX_SOURCE).toContain('meshcoreRoomCredential:');
-    expect(INDEX_SOURCE).toContain('meshcoreRepeaterCredential:');
+    // Missing allowlist entries fail silently, so pin the Reticulum keys explicitly.
+    expect(INDEX_SOURCE).toContain("'reticulumAutostart'");
+    expect(INDEX_SOURCE).toContain("'reticulumAutoResendOnAnnounce'");
+    expect(INDEX_SOURCE).toContain("'reticulumLastSelfLxmfHash'");
+    expect(INDEX_SOURCE).toContain("'use24HourTime'");
+    expect(INDEX_SOURCE).toContain('MESHTASTIC_REMOTE_ADMIN_KEY_SETTING_PREFIX');
+    expect(INDEX_SOURCE).toContain('MESHCORE_ROOM_SYNC_SETTING_PREFIX');
+    expect(INDEX_SOURCE).toContain('MESHCORE_ROOM_LAST_POST_SETTING_PREFIX');
+    expect(INDEX_SOURCE).toContain('MESHCORE_ROOM_CREDENTIAL_SETTING_PREFIX');
+    expect(INDEX_SOURCE).toContain('MESHCORE_REPEATER_CREDENTIAL_SETTING_PREFIX');
     expect(INDEX_SOURCE).toContain('isAppSettingsKeyAllowed');
   });
 
@@ -209,6 +248,15 @@ describe('IPC sender validation on high-value handlers (source contract)', () =>
     );
   });
 
+  it('db:listMeshtasticDmPeers and db:listMeshcoreDmPeers assert IPC sender', () => {
+    expect(INDEX_SOURCE).toMatch(
+      /ipcMain\.handle\('db:listMeshtasticDmPeers'[\s\S]*?assertIpcSender\(event, 'db:listMeshtasticDmPeers'\)/,
+    );
+    expect(INDEX_SOURCE).toMatch(
+      /ipcMain\.handle\('db:listMeshcoreDmPeers'[\s\S]*?assertIpcSender\(event, 'db:listMeshcoreDmPeers'\)/,
+    );
+  });
+
   it('http:preflight and http:connect validate IPC sender before executing', () => {
     expect(INDEX_SOURCE).toMatch(
       /ipcMain\.handle\('http:preflight'[\s\S]*?validateIpcSender\(event\)/,
@@ -253,6 +301,10 @@ describe('MQTT IPC handlers (source contract)', () => {
     expect(INDEX_SOURCE).toContain('createRendererHeartbeatWatchdog');
     expect(INDEX_SOURCE).toContain('rendererHeartbeatWatchdog.recordHeartbeat');
     expect(INDEX_SOURCE).toContain('rendererHeartbeatWatchdog.startResumeWatchdog');
+    expect(INDEX_SOURCE).toContain('rendererHeartbeatWatchdog.startStallWatchdog');
+    expect(INDEX_SOURCE).toContain("webContents.on('unresponsive'");
+    expect(INDEX_SOURCE).toContain("webContents.on('responsive'");
+    expect(INDEX_SOURCE).toContain("ipcMain.handle('app:getRendererLiveness'");
   });
 
   it('registers support bundle export IPC', () => {
@@ -270,8 +322,6 @@ describe('Reticulum sidecar IPC handlers (source contract)', () => {
     join(__dirname, 'ipc/reticulum-db-handlers.ts'),
     'utf8',
   );
-  const PRELOAD_SOURCE = readFileSync(join(__dirname, '../preload/index.ts'), 'utf8');
-
   it('registers reticulum lifecycle and proxy handlers', () => {
     expect(INDEX_SOURCE).toContain('registerReticulumIpcHandlers');
     expect(RETICULUM_HANDLERS_SOURCE).toContain("ipcMain.handle('reticulum:start'");
@@ -279,9 +329,16 @@ describe('Reticulum sidecar IPC handlers (source contract)', () => {
     expect(RETICULUM_HANDLERS_SOURCE).toContain("ipcMain.handle('reticulum:getStatus'");
     expect(RETICULUM_HANDLERS_SOURCE).toContain("'reticulum:syncInterfaceIssueScope'");
     expect(RETICULUM_HANDLERS_SOURCE).toContain("ipcMain.handle('reticulum:proxyGet'");
+    expect(RETICULUM_HANDLERS_SOURCE).toContain('settleReticulumProxyFailure');
+    expect(RETICULUM_HANDLERS_SOURCE).toContain('reticulumProxyIpcErrorEnvelope');
+    expect(PRELOAD_SOURCE).toContain('unwrapReticulumProxy');
+    expect(PRELOAD_SOURCE).toContain('throwIfReticulumProxyIpcError');
     expect(PRELOAD_SOURCE).toContain("'/api/v1/rrc/hubs'");
     expect(PRELOAD_SOURCE).toContain('rrc:');
     expect(RETICULUM_HANDLERS_SOURCE).toContain("ipcMain.handle('reticulum:proxyPost'");
+    expect(RETICULUM_HANDLERS_SOURCE).toContain("ipcMain.handle('reticulum:voiceSendAudio'");
+    expect(RETICULUM_HANDLERS_SOURCE).toContain("ipcMain.handle('reticulum:gamesStatus'");
+    expect(RETICULUM_HANDLERS_SOURCE).toContain("ipcMain.handle('reticulum:gamesAction'");
     expect(RETICULUM_HANDLERS_SOURCE).toContain("ipcMain.handle('reticulum:proxyPut'");
     expect(RETICULUM_HANDLERS_SOURCE).toContain("ipcMain.handle('reticulum:proxyDelete'");
     expect(RETICULUM_HANDLERS_SOURCE).toContain("ipcMain.handle('reticulum:readDefaultConfigFile'");
@@ -291,6 +348,12 @@ describe('Reticulum sidecar IPC handlers (source contract)', () => {
     expect(RETICULUM_HANDLERS_SOURCE).toContain(
       "ipcMain.handle('reticulum:showIdentityImportDialog'",
     );
+    expect(RETICULUM_HANDLERS_SOURCE).toContain(
+      "ipcMain.handle('reticulum:showIdentityBackupImportDialog'",
+    );
+    expect(RETICULUM_HANDLERS_SOURCE).toContain("'reticulum:saveIdentityExportDialog'");
+    expect(RETICULUM_HANDLERS_SOURCE).toContain("'reticulum:saveBlocklistDialog'");
+    expect(RETICULUM_HANDLERS_SOURCE).toContain("'reticulum:openBlocklistDialog'");
     expect(RETICULUM_HANDLERS_SOURCE).toContain(
       "ipcMain.handle('reticulum:showNomadContentSourceDialog'",
     );
@@ -307,7 +370,12 @@ describe('Reticulum sidecar IPC handlers (source contract)', () => {
       "ipcMain.handle('db:clearReticulumContactDestinations'",
     );
     expect(RETICULUM_DB_HANDLERS_SOURCE).toContain("'db:getBlockedContacts'");
+    expect(RETICULUM_DB_HANDLERS_SOURCE).toContain("'db:blockContact'");
+    expect(RETICULUM_DB_HANDLERS_SOURCE).toContain("'db:unblockContact'");
+    expect(RETICULUM_DB_HANDLERS_SOURCE).toContain("'db:exportBlockedContacts'");
+    expect(RETICULUM_DB_HANDLERS_SOURCE).toContain("'db:importBlockedContacts'");
     expect(RETICULUM_DB_HANDLERS_SOURCE).toContain("'db:getReticulumIdentityActivity'");
+    expect(RETICULUM_DB_HANDLERS_SOURCE).toContain("'db:getReticulumIdentityActivityByIdentity'");
     expect(RETICULUM_DB_HANDLERS_SOURCE).toContain(
       "ipcMain.handle('db:upsertReticulumIdentityActivityBatch'",
     );
@@ -340,6 +408,50 @@ describe('HTTP bridge IPC handlers (source contract)', () => {
   });
 });
 
+describe('Host link quality IPC (source contract)', () => {
+  it('forwards Noble link RSSI and registers HTTP/TCP RTT probes', () => {
+    expect(INDEX_SOURCE).toContain("webContents.send('noble-ble-link-rssi'");
+    expect(INDEX_SOURCE).toContain("ipcMain.handle('hostLink:probeHttpRtt'");
+    expect(INDEX_SOURCE).toContain("ipcMain.handle('hostLink:probeTcpRtt'");
+    expect(INDEX_SOURCE).toContain("ipcMain.handle('hostLink:getSessionMeter'");
+  });
+
+  it('wires live-session meters on both Meshtastic and MeshCore TCP bridges', () => {
+    expect(INDEX_SOURCE).toContain("resetLiveSessionMeter('meshtastic')");
+    expect(INDEX_SOURCE).toContain("resetLiveSessionMeter('meshcore')");
+    expect(INDEX_SOURCE).toContain("noteLiveSessionWrite('meshtastic')");
+    expect(INDEX_SOURCE).toContain("noteLiveSessionWrite('meshcore')");
+    expect(INDEX_SOURCE).toContain("noteLiveSessionData('meshtastic')");
+    expect(INDEX_SOURCE).toContain("noteLiveSessionData('meshcore')");
+    expect(INDEX_SOURCE).toContain("clearLiveSessionMeter('meshtastic')");
+    expect(INDEX_SOURCE).toContain("clearLiveSessionMeter('meshcore')");
+    // Accounting must ignore superseded sockets (same active-ref guard as #792 disconnect IPC).
+    expect(INDEX_SOURCE).toMatch(
+      /if \(meshcoreTcpSocket === socket\) \{\s*noteLiveSessionData\('meshcore'\)/,
+    );
+    expect(INDEX_SOURCE).toMatch(
+      /if \(meshtasticTcpSocket === socket\) \{\s*noteLiveSessionData\('meshtastic'\)/,
+    );
+    expect(INDEX_SOURCE).toMatch(
+      /if \(meshcoreTcpSocket === sock\) \{\s*noteLiveSessionWrite\('meshcore'\)/,
+    );
+    expect(INDEX_SOURCE).toMatch(
+      /if \(meshtasticTcpSocket === sock\) \{\s*noteLiveSessionWrite\('meshtastic'\)/,
+    );
+  });
+});
+
+describe('Host link quality preload surface (source contract)', () => {
+  it('exposes onNobleBleLinkRssi and hostLink probe APIs', () => {
+    expect(PRELOAD_SOURCE).toContain('onNobleBleLinkRssi:');
+    expect(PRELOAD_SOURCE).toContain("ipcRenderer.on('noble-ble-link-rssi'");
+    expect(PRELOAD_SOURCE).toContain('hostLink:');
+    expect(PRELOAD_SOURCE).toContain("ipcRenderer.invoke('hostLink:probeHttpRtt'");
+    expect(PRELOAD_SOURCE).toContain("ipcRenderer.invoke('hostLink:probeTcpRtt'");
+    expect(PRELOAD_SOURCE).toContain("ipcRenderer.invoke('hostLink:getSessionMeter'");
+  });
+});
+
 describe('Native crash observability (source contract)', () => {
   it('starts crashReporter without upload and logs child-process-gone', () => {
     expect(INDEX_SOURCE).toContain(
@@ -366,6 +478,24 @@ describe('Native crash observability (source contract)', () => {
 describe('Long-session maintenance (source contract)', () => {
   it('exposes process uptime IPC for restart nudge', () => {
     expect(INDEX_SOURCE).toContain("'app:getProcessUptimeSec'");
+  });
+
+  it('registers app:relaunch via shared quitMainProcess', () => {
+    expect(INDEX_SOURCE).toContain("ipcMain.handle('app:relaunch'");
+    expect(INDEX_SOURCE).toContain("assertIpcSender(event, 'app:relaunch')");
+    expect(INDEX_SOURCE).toContain('async function quitMainProcess');
+    expect(INDEX_SOURCE).toContain('quitMainProcess({ relaunch: true })');
+    expect(INDEX_SOURCE).toContain('quitMainProcess({ relaunch: false })');
+    expect(INDEX_SOURCE).toMatch(/if \(opts\.relaunch\) \{\s*app\.relaunch\(\);/);
+    expect(INDEX_SOURCE).toContain('app.exit(0)');
+  });
+
+  it('registers long-session OS notify IPC with sender checks', () => {
+    expect(INDEX_SOURCE).toContain("ipcMain.handle('notify:longSessionRestart'");
+    expect(INDEX_SOURCE).toContain("assertIpcSender(event, 'notify:longSessionRestart')");
+    expect(INDEX_SOURCE).toContain("ipcMain.handle('notify:clearLongSessionNudge'");
+    expect(INDEX_SOURCE).toContain("assertIpcSender(event, 'notify:clearLongSessionNudge')");
+    expect(INDEX_SOURCE).toContain('createLongSessionNudgeController');
   });
 });
 
@@ -397,6 +527,16 @@ describe('Native Electron call guards (source contract)', () => {
     expect(INDEX_SOURCE).toContain('isDatabaseSchemaTooNewError(error)');
     expect(INDEX_SOURCE).toContain('formatDatabaseSchemaTooNewMessage');
     expect(INDEX_SOURCE).not.toMatch(/showMessageBox\([^)]*mainWindow[^)]*Startup Error/s);
+  });
+
+  it('quits quietly when schema upgrade is declined without a fatal error dialog', () => {
+    expect(INDEX_SOURCE).toContain('isDatabaseSchemaUpgradeDeclinedError(error)');
+    expect(INDEX_SOURCE).toMatch(
+      /isDatabaseSchemaUpgradeDeclinedError\(error\)[\s\S]*?app\.quit\(\)[\s\S]*?return;/,
+    );
+    expect(INDEX_SOURCE).toMatch(
+      /isDatabaseSchemaUpgradeDeclinedError\(error\)[\s\S]*?Schema upgrade declined[\s\S]*?app\.quit\(\)/,
+    );
   });
 
   it('shows import blocked dialog when merge source schema is too new', () => {
@@ -446,7 +586,7 @@ describe('Native Electron call guards (source contract)', () => {
     expect(INDEX_SOURCE).toMatch(
       /ipcMain\.handle\('clipboard:writeText'[\s\S]*?validateIpcSender\(event\)/,
     );
-    expect(INDEX_SOURCE).toContain('clipboard.writeText(text)');
+    expect(INDEX_SOURCE).toContain('await clipboard.writeText(text)');
   });
 
   it('bounds bluetooth-start-scan with a 15 s timeout', () => {
@@ -458,6 +598,21 @@ describe('Native Electron call guards (source contract)', () => {
   it('reads meshcore import JSON via fs.promises.readFile', () => {
     expect(INDEX_SOURCE).toMatch(
       /ipcMain\.handle\('meshcore:openJsonFile'[\s\S]*?fs\.promises\.readFile/,
+    );
+  });
+
+  it('validates IPC sender for meshcore:openJsonFile and device-connected listeners', () => {
+    expect(INDEX_SOURCE).toMatch(
+      /ipcMain\.handle\('meshcore:openJsonFile'[\s\S]*?assertIpcSender\(event, 'meshcore:openJsonFile'\)/,
+    );
+    expect(INDEX_SOURCE).toMatch(
+      /ipcMain\.on\('device-connected'[\s\S]*?validateIpcSender\(event\)/,
+    );
+    expect(INDEX_SOURCE).toMatch(
+      /ipcMain\.on\('device-disconnected'[\s\S]*?validateIpcSender\(event\)/,
+    );
+    expect(INDEX_SOURCE).toMatch(
+      /ipcMain\.handle\('app:getProcessUptimeSec'[\s\S]*?assertIpcSender\(event, 'app:getProcessUptimeSec'\)/,
     );
   });
 });

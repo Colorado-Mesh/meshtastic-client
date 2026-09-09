@@ -5,7 +5,23 @@
 import { useEffect, useRef } from 'react';
 
 import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
-import { isReticulumSidecarRunning } from '@/renderer/lib/reticulum/reticulumSidecarReads';
+import { RETICULUM_CONFIGURED_EVENT } from '@/renderer/lib/reticulum/reticulumConfiguredEvent';
+import {
+  clearReticulumRrcPathProbeCache,
+  probeReticulumRrcPathReady,
+} from '@/renderer/lib/reticulum/reticulumRrcPathReady';
+import { probeReticulumRrcTransportReady } from '@/renderer/lib/reticulum/reticulumRrcTransportReady';
+import {
+  isReticulumRnsLiveReady,
+  isReticulumSidecarRunning,
+} from '@/renderer/lib/reticulum/reticulumSidecarReads';
+import {
+  isRrcHubAutoJoinBlocked,
+  isRrcLinkProofNotReadyError,
+  isRrcLiveNotReadyError,
+  isRrcPathNotReadyError,
+  recordRrcHubAutoJoinFailure,
+} from '@/renderer/lib/rrcHubAutoJoinBackoff';
 import { isRrcHubDisconnectSuppressed } from '@/renderer/lib/rrcHubDisconnectSuppress';
 import { loadRrcHubAutoJoin } from '@/renderer/lib/rrcHubPrefs';
 import { isRrcHubLinked } from '@/renderer/lib/rrcHubSession';
@@ -16,12 +32,34 @@ import {
   RRC_NICKNAME_STORAGE_KEY,
   useRrcSessionStore,
 } from '@/renderer/stores/rrcSessionStore';
+import { MS_PER_SECOND } from '@/shared/timeConstants';
 
+/** While hubs still need linking, poll quickly so we do not miss the HTTP-ready window by 4s. */
+export const RRC_AUTO_CONNECT_FAST_MS = MS_PER_SECOND / 2;
+/** Steady poll once hubs are linked (or none configured). */
+export const RRC_AUTO_CONNECT_STEADY_MS = 4 * MS_PER_SECOND;
+
+export { RETICULUM_CONFIGURED_EVENT };
 let hubAutoConnectBusy = false;
 
 function isRrcHubLinkedNow(hub: string): boolean {
   const s = useRrcSessionStore.getState().sessionsByHub.get(hub);
   return !!s && isRrcHubLinked(s.status);
+}
+
+function pendingRrcAutoJoinHubs(): string[] {
+  return loadRrcHubAutoJoin().filter(
+    (hub) =>
+      !isRrcHubLinkedNow(hub) &&
+      !isRrcHubDisconnectSuppressed(hub) &&
+      !isRrcHubAutoJoinBlocked(hub),
+  );
+}
+
+function isRrcTransientAutoJoinError(err: string): boolean {
+  return (
+    isRrcLiveNotReadyError(err) || isRrcLinkProofNotReadyError(err) || isRrcPathNotReadyError(err)
+  );
 }
 
 /** Roll a hub session back to idle when a connect attempt fails mid-handshake. */
@@ -45,6 +83,12 @@ async function connectRrcHubForAutoJoin(hub: string, nickname: string): Promise<
   if (!session.focusedHubHash) {
     useRrcSessionStore.getState().setFocusedHub(hub);
   }
+
+  const path = await probeReticulumRrcPathReady(hub);
+  if (!path.ready) {
+    return true;
+  }
+
   useRrcSessionStore.getState().applyStatus('connecting', hub, null);
   useRrcSessionStore.getState().setDisconnectIntent(false, hub);
   useRrcSessionStore.getState().setError(null, hub);
@@ -53,12 +97,26 @@ async function connectRrcHubForAutoJoin(hub: string, nickname: string): Promise<
     const res = await window.electronAPI.reticulum.rrc.connect({ dest_hash: hub, nickname });
     if (!res.ok) {
       const err = res.error ?? 'connect failed';
-      if (!/cancelled/i.test(err)) clearRrcHubIfStillConnecting(hub, err);
+      if (!/cancelled/i.test(err) && !isRrcTransientAutoJoinError(err)) {
+        recordRrcHubAutoJoinFailure(hub);
+        clearRrcHubIfStillConnecting(hub, err);
+      } else if (isRrcTransientAutoJoinError(err)) {
+        if (isRrcLinkProofNotReadyError(err) || isRrcPathNotReadyError(err)) {
+          clearReticulumRrcPathProbeCache(hub);
+        }
+        clearRrcHubIfStillConnecting(hub, err);
+      }
     }
   } catch (e: unknown) {
     const msg = errLikeToLogString(e);
-    if (!/cancelled/i.test(msg)) {
+    if (!/cancelled/i.test(msg) && !isRrcTransientAutoJoinError(msg)) {
       console.debug(`[useRrcStartupAutoConnect] hub connect failed: ${msg}`);
+      recordRrcHubAutoJoinFailure(hub);
+      clearRrcHubIfStillConnecting(hub, msg);
+    } else if (isRrcTransientAutoJoinError(msg)) {
+      if (isRrcLinkProofNotReadyError(msg) || isRrcPathNotReadyError(msg)) {
+        clearReticulumRrcPathProbeCache(hub);
+      }
       clearRrcHubIfStillConnecting(hub, msg);
     }
   }
@@ -68,12 +126,15 @@ async function connectRrcHubForAutoJoin(hub: string, nickname: string): Promise<
 /** Connect hubs marked for auto-join (no focus steal). Safe to call from panel + App. */
 export async function runRrcHubAutoConnectBatch(nickname: string): Promise<void> {
   if (hubAutoConnectBusy) return;
-  const wanted = loadRrcHubAutoJoin();
-  if (wanted.length === 0) return;
-
-  const pending = wanted.filter(
-    (hub) => !isRrcHubLinkedNow(hub) && !isRrcHubDisconnectSuppressed(hub),
-  );
+  const rnsReady = await isReticulumRnsLiveReady();
+  if (!rnsReady) {
+    return;
+  }
+  const transport = await probeReticulumRrcTransportReady();
+  if (!transport.ready) {
+    return;
+  }
+  const pending = pendingRrcAutoJoinHubs();
   if (pending.length === 0) return;
 
   hubAutoConnectBusy = true;
@@ -107,21 +168,50 @@ export function useRrcStartupAutoConnect(): void {
 
   useEffect(() => {
     let cancelled = false;
-    const tick = (): void => {
-      void isReticulumSidecarRunning()
-        .then((running) => {
-          if (cancelled || !running) return;
-          return runRrcHubAutoConnectBatch(readRrcNickname());
-        })
-        .catch((e: unknown) => {
-          console.debug('[useRrcStartupAutoConnect] ' + errLikeToLogString(e));
-        });
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const clearTimer = (): void => {
+      if (timer != null) {
+        clearTimeout(timer);
+        timer = null;
+      }
     };
-    tick();
-    const id = setInterval(tick, 4000);
+
+    const schedule = (ms: number): void => {
+      clearTimer();
+      timer = setTimeout(() => {
+        void tick();
+      }, ms);
+    };
+
+    const tick = async (): Promise<void> => {
+      if (cancelled) return;
+      try {
+        const running = await isReticulumSidecarRunning();
+        if (cancelled) return;
+        if (running) {
+          await runRrcHubAutoConnectBatch(readRrcNickname());
+        }
+      } catch (e: unknown) {
+        console.debug('[useRrcStartupAutoConnect] ' + errLikeToLogString(e));
+      }
+      if (cancelled) return;
+      const pending = pendingRrcAutoJoinHubs();
+      // Fast retry while waiting for live attach / first successful hub link.
+      schedule(pending.length > 0 ? RRC_AUTO_CONNECT_FAST_MS : RRC_AUTO_CONNECT_STEADY_MS);
+    };
+
+    const onConfigured = (): void => {
+      // Stack just became usable — do not wait for the next poll slot.
+      void tick();
+    };
+
+    void tick();
+    window.addEventListener(RETICULUM_CONFIGURED_EVENT, onConfigured);
     return () => {
       cancelled = true;
-      clearInterval(id);
+      clearTimer();
+      window.removeEventListener(RETICULUM_CONFIGURED_EVENT, onConfigured);
     };
   }, []);
 
@@ -170,9 +260,14 @@ export function useRrcStartupAutoConnect(): void {
               console.debug('[useRrcStartupAutoConnect] auto-join ' + errLikeToLogString(e));
             });
         });
-        void Promise.all(joinTasks).then(() => {
-          if (anyJoinFailed) roomAutoJoinDoneRef.current.delete(hub);
-        });
+        void Promise.all(joinTasks)
+          .then(() => {
+            if (anyJoinFailed) roomAutoJoinDoneRef.current.delete(hub);
+          })
+          .catch((e: unknown) => {
+            roomAutoJoinDoneRef.current.delete(hub);
+            console.debug('[useRrcStartupAutoConnect] auto-join batch ' + errLikeToLogString(e));
+          });
       }
     }
     for (const hub of listSentForHubRef.current) {

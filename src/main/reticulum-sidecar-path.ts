@@ -3,7 +3,11 @@ import { app } from 'electron';
 import fs from 'fs';
 import path from 'path';
 
+import { MS_PER_MINUTE } from '../shared/timeConstants';
 import { sanitizeLogMessage } from './log-service';
+
+/** Cap hung `cargo build` so unpackaged connect cannot stall forever. */
+export const RETICULUM_SIDECAR_CARGO_BUILD_TIMEOUT_MS = 15 * MS_PER_MINUTE;
 
 export function sidecarBinaryName(): string {
   return process.platform === 'win32' ? 'mesh-client-reticulum.exe' : 'mesh-client-reticulum';
@@ -57,19 +61,23 @@ export function resolveSidecarBinaryPath(extraRoots: string[] = []): string {
   return path.join(app.getAppPath(), 'reticulum-sidecar', 'target', 'debug', name);
 }
 
-export function hasRnsStackSiblings(projectDir: string): boolean {
+/** True when repo-local `.rsstack` has the minimal rns-stack path deps (rsReticulum + rsLXMF). */
+export function hasRsstackWorkspace(projectDir: string): boolean {
   const rnsRuntime = path.normalize(
-    path.join(projectDir, '../../rsReticulum/crates/rns-runtime/Cargo.toml'),
+    path.join(projectDir, '../.rsstack/rsReticulum/crates/rns-runtime/Cargo.toml'),
   );
   const lxmfCore = path.normalize(
-    path.join(projectDir, '../../rsLXMF/crates/lxmf-core/Cargo.toml'),
+    path.join(projectDir, '../.rsstack/rsLXMF/crates/lxmf-core/Cargo.toml'),
   );
   return fs.existsSync(rnsRuntime) && fs.existsSync(lxmfCore);
 }
 
-/** Cargo build args: full RNS stack (+ BLE) when Ratspeak siblings are present. */
+/** @deprecated Use {@link hasRsstackWorkspace}. */
+export const hasRnsStackSiblings = hasRsstackWorkspace;
+
+/** Cargo build args: full RNS stack (+ BLE) when the repo-local .rsstack is present. */
 export function sidecarCargoBuildArgs(projectDir: string): string[] {
-  if (hasRnsStackSiblings(projectDir)) {
+  if (hasRsstackWorkspace(projectDir)) {
     return ['build', '--features', 'rns-stack,rns-ble,rns-rnode-tcp'];
   }
   return ['build'];
@@ -133,9 +141,9 @@ export function ensureRsReticulumPatchesScriptPath(projectDir: string): string {
   );
 }
 
-/** Apply rsReticulum overlays when Ratspeak siblings exist (no-op for stub builds). */
+/** Apply rsReticulum overlays when the repo-local .rsstack workspace exists (no-op for stub builds). */
 export function ensureRsReticulumPatches(projectDir: string): void {
-  if (!hasRnsStackSiblings(projectDir)) return;
+  if (!hasRsstackWorkspace(projectDir)) return;
 
   const repoRoot = reticulumSidecarRepoRoot(projectDir);
   const scriptPath = ensureRsReticulumPatchesScriptPath(projectDir);
@@ -169,7 +177,32 @@ function runCargoBuild(projectDir: string): Promise<void> {
       env: process.env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    let settled = false;
     let stderr = '';
+    const settle = (finish: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      finish();
+    };
+    const timeout = setTimeout(() => {
+      try {
+        if (process.platform === 'win32') {
+          proc.kill();
+        } else {
+          proc.kill('SIGTERM');
+        }
+      } catch {
+        // catch-no-log-ok best-effort kill after cargo timeout
+      }
+      settle(() => {
+        reject(
+          new Error(
+            `RETICULUM_CARGO_BUILD_TIMEOUT: cargo build exceeded ${RETICULUM_SIDECAR_CARGO_BUILD_TIMEOUT_MS}ms`,
+          ),
+        );
+      });
+    }, RETICULUM_SIDECAR_CARGO_BUILD_TIMEOUT_MS);
     proc.stdout?.on('data', (chunk: Buffer) => {
       console.debug('[ReticulumSidecar] cargo:', sanitizeLogMessage(chunk.toString('utf8').trim()));
     });
@@ -179,25 +212,32 @@ function runCargoBuild(projectDir: string): Promise<void> {
       console.debug('[ReticulumSidecar] cargo:', sanitizeLogMessage(line.trim()));
     });
     proc.on('error', (err: NodeJS.ErrnoException) => {
-      if (err.code === 'ENOENT') {
-        reject(
-          new Error(
-            'RETICULUM_CARGO_MISSING: Rust toolchain (cargo) not found. Install from https://rustup.rs then run `pnpm run reticulum:sidecar:build`.',
-          ),
-        );
-        return;
-      }
-      reject(err);
+      settle(() => {
+        if (err.code === 'ENOENT') {
+          reject(
+            new Error(
+              'RETICULUM_CARGO_MISSING: Rust toolchain (cargo) not found. Install from https://rustup.rs then run `pnpm run reticulum:sidecar:build`.',
+            ),
+          );
+          return;
+        }
+        reject(err);
+      });
     });
     proc.on('exit', (code) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-      reject(new Error(formatReticulumCargoBuildError(code, stderr)));
+      settle(() => {
+        if (code === 0) {
+          resolve();
+          return;
+        }
+        reject(new Error(formatReticulumCargoBuildError(code, stderr)));
+      });
     });
   });
 }
+
+/** @internal Exported for unit tests (timeout / hang termination). */
+export const runCargoBuildForTests = runCargoBuild;
 
 /** Newest mtime among Cargo.toml and reticulum-sidecar/src Rust sources. */
 export function newestReticulumSidecarSourceMtimeMs(projectDir: string): number {
@@ -230,6 +270,23 @@ export function sidecarBinaryIsStale(binaryPath: string, projectDir: string): bo
   return newestReticulumSidecarSourceMtimeMs(projectDir) > binaryMtime;
 }
 
+export type DevSidecarEnsureAction = 'await-build' | 'noop';
+
+/**
+ * Decide whether connect must wait on cargo or can skip.
+ * Dev connect always runs the current tree: missing, featureless, or mtime-stale
+ * binaries block until `cargo build` finishes (no stale-binary background start).
+ */
+export function resolveDevSidecarEnsureAction(opts: {
+  missing: boolean;
+  stale: boolean;
+  lacksRnsStack: boolean;
+  lacksRnsBle: boolean;
+}): DevSidecarEnsureAction {
+  if (opts.missing || opts.stale || opts.lacksRnsStack || opts.lacksRnsBle) return 'await-build';
+  return 'noop';
+}
+
 async function runDevSidecarCargoBuild(projectDir: string, reason: string): Promise<void> {
   if (!devBuildInFlight) {
     console.debug(`[ReticulumSidecar] ${reason}; running cargo build…`);
@@ -245,11 +302,21 @@ async function runDevSidecarCargoBuild(projectDir: string, reason: string): Prom
   await devBuildInFlight;
 }
 
-/** Dev-only: compile the sidecar when the debug binary is missing or stale. */
-export async function ensureDevSidecarBinary(binaryPath: string): Promise<void> {
+export interface EnsureDevSidecarBinaryOpts {
+  /** Override project discovery (tests). */
+  projectDir?: string;
+  /** Replace cargo build runner (tests). */
+  runBuild?: (projectDir: string, reason: string) => Promise<void>;
+}
+
+/** Dev-only: compile the sidecar when the debug binary is missing or unusable. */
+export async function ensureDevSidecarBinary(
+  binaryPath: string,
+  opts?: EnsureDevSidecarBinaryOpts,
+): Promise<void> {
   if (app.isPackaged) return;
 
-  const projectDir = findReticulumSidecarProjectDir();
+  const projectDir = opts?.projectDir ?? findReticulumSidecarProjectDir();
   if (!projectDir) {
     throw new Error(
       'RETICULUM_SIDECAR_PROJECT_MISSING: reticulum-sidecar/ not found. Run `pnpm run reticulum:sidecar:build` from the mesh-client repo root.',
@@ -259,26 +326,24 @@ export async function ensureDevSidecarBinary(binaryPath: string): Promise<void> 
   const missing = !fs.existsSync(binaryPath);
   const stale = !missing && sidecarBinaryIsStale(binaryPath, projectDir);
   const lacksRnsStack =
-    !missing && hasRnsStackSiblings(projectDir) && sidecarBinaryLacksRnsStack(binaryPath);
+    !missing && hasRsstackWorkspace(projectDir) && sidecarBinaryLacksRnsStack(binaryPath);
   const lacksRnsBle =
-    !missing && hasRnsStackSiblings(projectDir) && sidecarBinaryLacksRnsBle(binaryPath);
-  if (missing) {
-    await runDevSidecarCargoBuild(projectDir, 'debug binary missing');
-  } else if (stale) {
-    await runDevSidecarCargoBuild(projectDir, 'sidecar sources newer than binary');
-  } else if (lacksRnsStack) {
-    await runDevSidecarCargoBuild(
-      projectDir,
-      'debug binary is stub-only; rebuilding with rns-stack for live peers',
-    );
-  } else if (lacksRnsBle) {
-    await runDevSidecarCargoBuild(
-      projectDir,
-      'debug binary lacks rns-ble; rebuilding with BLE interface support',
-    );
-  } else {
+    !missing && hasRsstackWorkspace(projectDir) && sidecarBinaryLacksRnsBle(binaryPath);
+  const action = resolveDevSidecarEnsureAction({ missing, stale, lacksRnsStack, lacksRnsBle });
+
+  if (action === 'noop') {
     return;
   }
+
+  const reason = missing
+    ? 'debug binary missing'
+    : lacksRnsStack
+      ? 'debug binary is stub-only; rebuilding with rns-stack for live peers'
+      : lacksRnsBle
+        ? 'debug binary lacks rns-ble; rebuilding with BLE interface support'
+        : 'sidecar sources newer than binary';
+  const runBuild = opts?.runBuild ?? runDevSidecarCargoBuild;
+  await runBuild(projectDir, reason);
 
   if (!fs.existsSync(binaryPath)) {
     throw new Error(

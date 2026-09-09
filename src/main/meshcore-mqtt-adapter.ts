@@ -11,6 +11,7 @@ import {
   MQTT_MAX_RECONNECT_ATTEMPTS,
 } from '../shared/meshtasticMqttReconnect';
 import { computeMqttReconnectDelayMs } from '../shared/mqttReconnectSchedule';
+import { mqttUsesTls } from '../shared/mqttTls';
 import { sanitizeLogMessage } from './log-service';
 import { forceEndMqttClient } from './mqtt-client-teardown';
 
@@ -24,16 +25,13 @@ function normalizePrefix(prefix: string): string {
 /** For debug logs only — actual connect uses the same option-object shape as MQTTManager. */
 function buildMeshcoreUrlForLog(settings: MQTTSettings): string {
   const host = settings.server.trim();
+  const usesTls = mqttUsesTls(settings);
   if (settings.useWebSocket === true) {
-    const wsTlsEnabled =
-      settings.tlsEnabled === true || (settings.tlsEnabled !== false && settings.port === 443);
     const wsPath = settings.wsPath ?? '/mqtt';
-    const scheme = wsTlsEnabled ? 'wss' : 'ws';
+    const scheme = usesTls ? 'wss' : 'ws';
     return `${scheme}://${host}:${settings.port}${wsPath}`;
   }
-  const useTls =
-    settings.tlsEnabled === true || (settings.tlsEnabled !== false && settings.port === 8883);
-  return useTls ? `mqtts://${host}:${settings.port}` : `mqtt://${host}:${settings.port}`;
+  return usesTls ? `mqtts://${host}:${settings.port}` : `mqtt://${host}:${settings.port}`;
 }
 
 /** Time allowed for TCP/TLS/WebSocket + MQTT CONNACK (slow networks, captive portals). */
@@ -254,9 +252,8 @@ export class MeshcoreMqttAdapter extends EventEmitter {
     const clientId = isV1Username
       ? settings.username
       : settings.clientId?.trim() || `meshcore-mqtt-${randomBytes(4).toString('hex')}`;
-    const useTls =
-      settings.tlsEnabled === true || (settings.tlsEnabled !== false && settings.port === 8883);
-    const rejectUnauthorizedTls = useTls ? !settings.tlsInsecure : false;
+    const usesTls = mqttUsesTls(settings);
+    const rejectUnauthorizedTls = usesTls ? !settings.tlsInsecure : false;
     const logUrl = buildMeshcoreUrlForLog(settings);
 
     // Match MQTTManager: WebSocket uses mqtt.connect({ protocol, host, port, path, … }) — not
@@ -266,10 +263,8 @@ export class MeshcoreMqttAdapter extends EventEmitter {
     // WebSocket-level pings (MESHCORE_MQTT_WSS_PING_MS) additionally keep LB/proxy paths alive.
     const keepaliveSec = settings.keepalive ?? 30;
     const wsEnabled = settings.useWebSocket === true;
-    const wsTlsEnabled =
-      settings.tlsEnabled === true || (settings.tlsEnabled !== false && settings.port === 443);
     const wsPath = settings.wsPath ?? '/mqtt';
-    const wsScheme = wsTlsEnabled ? 'wss' : 'ws';
+    const wsScheme = usesTls ? 'wss' : 'ws';
     let connectOpts: mqtt.IClientOptions = {
       clientId,
       username: settings.username || undefined,
@@ -296,7 +291,7 @@ export class MeshcoreMqttAdapter extends EventEmitter {
         ...connectOpts,
         host: settings.server.trim(),
         port: settings.port,
-        protocol: useTls ? 'mqtts' : 'mqtt',
+        protocol: usesTls ? 'mqtts' : 'mqtt',
         rejectUnauthorized: rejectUnauthorizedTls,
       };
     }
@@ -306,8 +301,8 @@ export class MeshcoreMqttAdapter extends EventEmitter {
       sanitizeLogMessage(logUrl),
       'ws:',
       settings.useWebSocket,
-      'wsTlsEnabled:',
-      wsTlsEnabled,
+      'usesTls:',
+      usesTls,
       'wsPath:',
       wsPath,
       'keepaliveSec:',
@@ -316,10 +311,17 @@ export class MeshcoreMqttAdapter extends EventEmitter {
       settings.tlsInsecure === true,
     );
     this.firstMessageLogged = false;
+    this.pingReqLogged = false;
+    this.pingRespLogged = false;
     this.setStatus('connecting');
     this.connectAbortByWatchdog = false;
     this.client = mqtt.connect(connectOpts);
-    this.client.on('error', (err) => {
+    // Capture this session's client so listeners from an already-replaced (stale) client
+    // — mqtt.js can still emit after end() — cannot touch lastPacketReceivedAt or consume
+    // the new session's first-ping logs.
+    const sessionClient = this.client;
+    sessionClient.on('error', (err) => {
+      if (this.client !== sessionClient) return;
       this.clearConnectTimers();
       console.error(
         '[MeshCore MQTT] client error',
@@ -333,6 +335,7 @@ export class MeshcoreMqttAdapter extends EventEmitter {
     });
     this.connectAckTimer = setTimeout(() => {
       this.connectAckTimer = null;
+      if (this.client !== sessionClient) return;
       if (this.status !== 'connecting' || !this.client) return;
       this.connectAbortByWatchdog = true;
       const msg = `MeshCore MQTT: timed out before MQTT session (no CONNACK within ${MESHCORE_MQTT_CONNECT_ACK_MS / 1000}s). Check host, port, WebSocket path /mqtt, TLS, and network (firewall, VPN, DNS).`;
@@ -343,7 +346,8 @@ export class MeshcoreMqttAdapter extends EventEmitter {
       forceEndMqttClient(stale);
       this.setStatus('disconnected');
     }, MESHCORE_MQTT_CONNECT_ACK_MS);
-    this.client.on('connect', () => {
+    sessionClient.on('connect', () => {
+      if (this.client !== sessionClient) return;
       if (this.connectAckTimer) {
         clearTimeout(this.connectAckTimer);
         this.connectAckTimer = null;
@@ -409,20 +413,29 @@ export class MeshcoreMqttAdapter extends EventEmitter {
       // Schedule proactive token refresh
       this.scheduleTokenRefresh();
     });
-    this.client.on('packetsend', (packet) => {
-      if (packet.cmd === 'pingreq') {
-        this.pingReqLogged = false;
-        console.debug('[MeshCore MQTT] PINGREQ sent', new Date().toISOString());
+    sessionClient.on('packetsend', (packet) => {
+      if (this.client !== sessionClient) return;
+      if (packet.cmd === 'pingreq' && !this.pingReqLogged) {
+        this.pingReqLogged = true;
+        console.debug(
+          '[MeshCore MQTT] PINGREQ sent (first this session)',
+          new Date().toISOString(),
+        );
       }
     });
-    this.client.on('packetreceive', (packet) => {
+    sessionClient.on('packetreceive', (packet) => {
+      if (this.client !== sessionClient) return;
       this.lastPacketReceivedAt = Date.now();
-      if (packet.cmd === 'pingresp') {
-        this.pingRespLogged = false;
-        console.debug('[MeshCore MQTT] PINGRESP received', new Date().toISOString());
+      if (packet.cmd === 'pingresp' && !this.pingRespLogged) {
+        this.pingRespLogged = true;
+        console.debug(
+          '[MeshCore MQTT] PINGRESP received (first this session)',
+          new Date().toISOString(),
+        );
       }
     });
-    this.client.on('message', (topic, payload) => {
+    sessionClient.on('message', (topic, payload) => {
+      if (this.client !== sessionClient) return;
       if (!this.firstMessageLogged) {
         this.firstMessageLogged = true;
         console.debug('[MeshCore MQTT] first message received on topic', sanitizeLogMessage(topic));
@@ -442,7 +455,11 @@ export class MeshcoreMqttAdapter extends EventEmitter {
       }
       this.emit('chatMessage', { topic, ...env });
     });
-    this.client.on('close', () => {
+    sessionClient.on('close', () => {
+      // A stale client's close must not clear the successor's timers or schedule a
+      // reconnect over it: connect() reassigns lastSettings right after disconnect(),
+      // so the skipReconnect guard below would not catch it.
+      if (this.client !== sessionClient) return;
       this.clearWssPing();
       this.clearConnectionWatchdog();
       this.clearConnectTimers();
@@ -538,7 +555,8 @@ export class MeshcoreMqttAdapter extends EventEmitter {
         }
       }, delay);
     });
-    this.client.on('offline', () => {
+    sessionClient.on('offline', () => {
+      if (this.client !== sessionClient) return;
       console.warn('[MeshCore MQTT] client offline');
       if (this.status === 'connected' || this.status === 'connecting') {
         this.setStatus('disconnected');

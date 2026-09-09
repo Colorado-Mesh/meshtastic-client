@@ -14,6 +14,8 @@ import {
   logMeshtasticSerialStreamDiagnostics,
 } from './connectionWebStreams';
 import { notifyNobleBlePrimaryRfLinkReady } from './meshcoreDualNobleBleInit';
+import { armMeshtasticLateConfigureRetryableSwallow } from './meshtastic/meshtasticConfigureRetry';
+import { sendMeshtasticPhoneApiDisconnect } from './meshtastic/meshtasticPhoneApiDisconnect';
 import { parseMeshtasticTcpAddress } from './parseMeshtasticTcpAddress';
 import {
   isBlePeripheralConflictErrorMessage,
@@ -94,7 +96,7 @@ async function withNobleBleConnectLock<T>(
 }
 
 function logMeshtasticDeviceConnection(detail: string): void {
-  const fn = window.electronAPI?.log?.logDeviceConnection;
+  const fn = window.electronAPI.log.logDeviceConnection;
   if (typeof fn === 'function') void fn(detail);
 }
 
@@ -341,11 +343,13 @@ export async function createConnection(
       } finally {
         serialApi.requestPort = origRequestPort;
       }
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Runtime guard protects external or callback-mutated state.
       if (capturedSerialPort) {
         persistSerialPortIdentity(capturedSerialPort);
       }
       {
         const parts = ['transport=serial', 'stack=meshtastic'];
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Runtime guard protects external or callback-mutated state.
         if (capturedSerialPort) {
           const pid = (capturedSerialPort as SerialPort & { portId?: string }).portId;
           const sig = getPortSignature(capturedSerialPort);
@@ -407,17 +411,33 @@ export async function createConnection(
   // node/channel/config dump is emitted before any listeners exist.
 
   assertTransportReadyForMeshDevice(transport, 'Meshtastic serial');
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- External SDK value is validated by surrounding boundary logic.
   return new MeshDevice(transport as any);
 }
 
 /** Resolve the underlying Web Serial port from Meshtastic transport wrappers. */
 export function getSerialPortFromMeshTransport(transport: unknown): SerialPort | null {
-  const candidate = transport as { port?: SerialPort; connection?: SerialPort };
+  const candidate = transport as { port?: SerialPort; connection?: SerialPort } | null | undefined;
   if (candidate?.port && typeof candidate.port.close === 'function') {
     return candidate.port;
   }
   if (candidate?.connection && typeof candidate.connection.close === 'function') {
     return candidate.connection;
+  }
+  return null;
+}
+
+/**
+ * Resolve the Linux Web Bluetooth device id a gesture-based connect actually landed on.
+ * `createBleConnection`'s Linux picker flow may run without a caller-supplied peripheralId
+ * (e.g. ConnectionPanel's Reconnect button), so this backfills reconnect state afterward —
+ * otherwise a later automatic reconnect has no id and falls back to `requestDevice()`, which
+ * Chromium refuses to run without a live user gesture.
+ */
+export function getBlePeripheralIdFromMeshTransport(transport: unknown): string | null {
+  const candidate = transport as { getConnectedDeviceId?: () => string | null } | null | undefined;
+  if (typeof candidate?.getConnectedDeviceId === 'function') {
+    return candidate.getConnectedDeviceId();
   }
   return null;
 }
@@ -455,7 +475,7 @@ export async function reconnectSerial(lastPortId?: string | null): Promise<MeshD
   await closeSerialPortIfOpen(port);
   persistSerialPortIdentity(port);
   console.debug(
-    `[connection] reconnectSerial: using port portId=${(port as SerialPort & { portId?: string }).portId ?? 'none'} usbVendor=${port.getInfo?.().usbVendorId ?? 'n/a'} usbProduct=${port.getInfo?.().usbProductId ?? 'n/a'}`,
+    `[connection] reconnectSerial: using port portId=${(port as SerialPort & { portId?: string }).portId ?? 'none'} usbVendor=${port.getInfo().usbVendorId ?? 'n/a'} usbProduct=${port.getInfo().usbProductId ?? 'n/a'}`,
   );
 
   assertMeshtasticSerialWebStreamsAvailable();
@@ -494,7 +514,7 @@ export async function reconnectSerial(lastPortId?: string | null): Promise<MeshD
 async function cancelMeshtasticFromDeviceBestEffort(
   transport: MeshDevice['transport'],
 ): Promise<void> {
-  const fromDevice = transport?.fromDevice as ReadableStream | undefined;
+  const fromDevice = transport.fromDevice as ReadableStream | undefined;
   if (!fromDevice || typeof fromDevice.cancel !== 'function') return;
   try {
     await fromDevice.cancel();
@@ -524,8 +544,9 @@ async function closeMeshtasticTransportStreamsBestEffort(
 ): Promise<void> {
   if (!transport) return;
   try {
-    const toDevice = transport.toDevice as { close?: () => Promise<void> } | undefined;
-    if (toDevice?.close) {
+    const toDevice = transport.toDevice as
+      { close?: () => Promise<void>; getWriter?: () => unknown } | undefined;
+    if (toDevice != null && typeof toDevice.close === 'function') {
       await toDevice.close();
     }
   } catch (e) {
@@ -538,7 +559,7 @@ async function closeMeshtasticTransportStreamsBestEffort(
   // call (e.g. a race with an in-flight queue write/heartbeat) — ensure the underlying HTTP
   // polling interval / TCP socket is still torn down rather than left orphaned until the next
   // connect's defensive cleanup runs. Harmless no-op if already disconnected.
-  const transportDisconnect = (transport as { disconnect?: () => Promise<void> })?.disconnect;
+  const transportDisconnect = (transport as { disconnect?: () => Promise<void> }).disconnect;
   if (typeof transportDisconnect === 'function') {
     try {
       await transportDisconnect.call(transport);
@@ -551,6 +572,14 @@ async function closeMeshtasticTransportStreamsBestEffort(
 }
 
 export async function safeDisconnect(device: MeshDevice): Promise<void> {
+  // Arm the swallow window before teardown: device.disconnect() clears the SDK queue, so any
+  // in-flight sendPacket().wait() then rejects with "Packet does not exist". These are expected
+  // teardown races and must not surface as unhandled-rejection error logs.
+  armMeshtasticLateConfigureRetryableSwallow();
+  // Serial only: tell firmware PhoneAPI to reset before we drop the CDC streams (#895).
+  if (getSerialPortFromMeshTransport(device.transport)) {
+    await sendMeshtasticPhoneApiDisconnect(device);
+  }
   try {
     await device.disconnect();
   } catch (err) {

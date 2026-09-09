@@ -4,8 +4,13 @@ import { axe } from 'vitest-axe';
 
 import { formatMeshtasticNodeId } from '@/shared/nodeNameUtils';
 
+import { hydrateAxeThemeColors } from '../lib/a11yTestHelpers';
 import { setMeshtasticConnectedMyNodeNum } from '../lib/meshtasticConnectedNodeRef';
-import { MESHTASTIC_CAPABILITIES, RETICULUM_CAPABILITIES } from '../lib/radio/BaseRadioProvider';
+import {
+  MESHCORE_CAPABILITIES,
+  MESHTASTIC_CAPABILITIES,
+  RETICULUM_CAPABILITIES,
+} from '../lib/radio/BaseRadioProvider';
 import type { DiagnosticRow, MeshNode, RoutingDiagnosticRow } from '../lib/types';
 import type { ForeignLoraDetection } from '../stores/diagnosticsStore';
 import DiagnosticsPanel from './DiagnosticsPanel';
@@ -92,6 +97,7 @@ describe('DiagnosticsPanel accessibility', () => {
         protocol="meshtastic"
       />,
     );
+    hydrateAxeThemeColors(container);
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });
@@ -418,7 +424,7 @@ describe('DiagnosticsPanel cross-protocol RF', () => {
 
     expect(
       screen.getByRole('heading', {
-        name: /other foreign lora on your meshtastic frequency \(2\)/i,
+        name: /other foreign lora overheard \(2\)/i,
       }),
     ).toBeInTheDocument();
     expect(screen.getByText('Meshtastic Traffic')).toBeInTheDocument();
@@ -446,11 +452,11 @@ describe('DiagnosticsPanel cross-protocol RF', () => {
       screen.queryByRole('heading', { name: /meshcore nodes heard by your meshtastic radio/i }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole('heading', { name: /other foreign lora on your meshtastic frequency/i }),
+      screen.queryByRole('heading', { name: /other foreign lora overheard/i }),
     ).not.toBeInTheDocument();
   });
 
-  it('hides MeshCore heard-by-Meshtastic section on MeshCore diagnostics protocol', () => {
+  it('does not show Meshtastic-keyed MeshCore-heard rows on the MeshCore tab', () => {
     const myId = 0xface;
     const foreignId = 0xabc12345;
     diagnosticsStoreState.foreignLoraDetections = new Map([
@@ -489,6 +495,95 @@ describe('DiagnosticsPanel cross-protocol RF', () => {
     expect(
       screen.queryByRole('heading', { name: /meshcore nodes heard by your meshtastic radio/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it('shows other foreign LoRa on the MeshCore tab keyed by MeshCore self id', () => {
+    const myMcId = 0xbeef;
+    diagnosticsStoreState.foreignLoraDetections = new Map([
+      [
+        myMcId,
+        new Map([
+          [
+            'meshtastic:0x111',
+            {
+              detectedAt: Date.now(),
+              packetClass: 'meshtastic',
+              proximity: 'nearby',
+              count: 3,
+              lastSenderId: 0x111,
+              source: 'meshcore-radio-rf',
+            },
+          ],
+        ]),
+      ],
+    ]);
+
+    render(
+      <DiagnosticsPanel
+        nodes={new Map()}
+        myNodeNum={myMcId}
+        meshtasticListenerNodeId={0xface}
+        onTraceRoute={vi.fn().mockResolvedValue(undefined)}
+        isConnected={true}
+        traceRouteResults={new Map()}
+        getFullNodeLabel={vi.fn().mockReturnValue('Home')}
+        protocol="meshcore"
+      />,
+    );
+
+    expect(
+      screen.getByRole('heading', { name: /other foreign lora overheard \(1\)/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Meshtastic Traffic')).toBeInTheDocument();
+  });
+
+  it('matches MeshCore repeater conflicts to the active foreign-LoRa listener', () => {
+    const myMcId = 0xbeef;
+    diagnosticsStoreState.foreignLoraDetections = new Map([
+      [
+        myMcId,
+        new Map([
+          [
+            'meshcore:nearby',
+            {
+              detectedAt: Date.now(),
+              packetClass: 'meshcore',
+              proximity: 'nearby',
+              count: 1,
+              lastSenderId: 0x111,
+              source: 'meshcore-radio-rf',
+            },
+          ],
+        ]),
+      ],
+    ]);
+    diagnosticsStoreState.diagnosticRows = [
+      {
+        kind: 'rf',
+        id: 'rf:meshcore-conflict',
+        nodeId: myMcId,
+        condition: 'Potential MeshCore Repeater Conflict',
+        cause: 'Nearby repeater conflict',
+        severity: 'warning',
+        detectedAt: Date.now(),
+      },
+    ];
+
+    render(
+      <DiagnosticsPanel
+        nodes={new Map()}
+        myNodeNum={myMcId}
+        meshtasticListenerNodeId={0xface}
+        onTraceRoute={vi.fn().mockResolvedValue(undefined)}
+        isConnected
+        traceRouteResults={new Map()}
+        getFullNodeLabel={vi.fn().mockReturnValue('Home')}
+        protocol="meshcore"
+        capabilities={MESHCORE_CAPABILITIES}
+      />,
+    );
+
+    expect(screen.getByText(/nearby repeater may be causing collisions/i)).toBeInTheDocument();
   });
 });
 
@@ -552,8 +647,91 @@ describe('DiagnosticsPanel reticulum scope', () => {
     );
 
     expect(screen.queryByText('Ghost hop from Meshtastic')).not.toBeInTheDocument();
-    expect(screen.getByText(/no diagnostics detected/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no diagnostics detected/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Diagnostics \(/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/network health/i)).not.toBeInTheDocument();
+  });
+
+  it('hides LoRa mesh diagnostics when hasHopCount is false', () => {
+    diagnosticsStoreState.diagnosticRows = [
+      {
+        kind: 'routing',
+        id: 'routing:1',
+        nodeId: 2,
+        type: 'hop_goblin',
+        severity: 'error',
+        description: 'Should stay hidden without hop count',
+        detectedAt: Date.now(),
+      } satisfies RoutingDiagnosticRow,
+    ];
+
+    render(
+      <DiagnosticsPanel
+        nodes={new Map([[1, minimalNode(1)]])}
+        myNodeNum={1}
+        onTraceRoute={vi.fn().mockResolvedValue(undefined)}
+        isConnected
+        traceRouteResults={new Map()}
+        getFullNodeLabel={vi.fn().mockReturnValue('Home')}
+        protocol="meshtastic"
+        capabilities={{ ...MESHTASTIC_CAPABILITIES, hasHopCount: false }}
+      />,
+    );
+
+    expect(screen.queryByText(/network health/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Diagnostics \(/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Should stay hidden without hop count')).not.toBeInTheDocument();
+  });
+
+  it('derives LoRa mesh visibility from capabilities.protocol, not the tab prop alone', () => {
+    diagnosticsStoreState.diagnosticRows = [
+      {
+        kind: 'routing',
+        id: 'routing:2',
+        nodeId: 2,
+        type: 'hop_goblin',
+        severity: 'error',
+        description: 'Mismatched prop must not show LoRa tables',
+        detectedAt: Date.now(),
+      } satisfies RoutingDiagnosticRow,
+    ];
+
+    render(
+      <DiagnosticsPanel
+        nodes={new Map([[1, minimalNode(1)]])}
+        myNodeNum={1}
+        onTraceRoute={vi.fn().mockResolvedValue(undefined)}
+        isConnected
+        traceRouteResults={new Map()}
+        getFullNodeLabel={vi.fn().mockReturnValue('Home')}
+        protocol="meshtastic"
+        capabilities={RETICULUM_CAPABILITIES}
+      />,
+    );
+
+    expect(screen.queryByText(/network health/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Diagnostics \(/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Mismatched prop must not show LoRa tables')).not.toBeInTheDocument();
+  });
+
+  it('shows LoRa mesh diagnostics for non-Reticulum capabilities with hop count', () => {
+    diagnosticsStoreState.diagnosticRows = [];
+
+    render(
+      <DiagnosticsPanel
+        nodes={new Map([[1, minimalNode(1)]])}
+        myNodeNum={1}
+        onTraceRoute={vi.fn().mockResolvedValue(undefined)}
+        isConnected
+        traceRouteResults={new Map()}
+        getFullNodeLabel={vi.fn().mockReturnValue('Home')}
+        protocol="meshtastic"
+        capabilities={MESHTASTIC_CAPABILITIES}
+      />,
+    );
+
+    expect(screen.getByText(/network health/i)).toBeInTheDocument();
+    expect(screen.getByText(/no diagnostics detected/i)).toBeInTheDocument();
   });
 
   it('shows Reticulum config diagnostics rows on the Reticulum tab', () => {
@@ -590,5 +768,45 @@ describe('DiagnosticsPanel reticulum scope', () => {
 
     expect(screen.getByText('Reticulum interface config')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Repair config' })).toBeInTheDocument();
+  });
+
+  it('does not list Reticulum TX-queue rows in the LoRa mesh Node/Offense table', () => {
+    diagnosticsStoreState.diagnosticRows = [
+      {
+        kind: 'rf',
+        id: 'rf:0:reticulum/tx-queue-drops/RNode 41F4',
+        nodeId: 0,
+        condition: 'reticulum/tx-queue-drops',
+        cause: 'Interface "RNode 41F4" dropped 128 outbound packets (TX queue full)',
+        severity: 'error',
+        detectedAt: Date.now(),
+        causeI18n: {
+          key: 'diagnosticsPanel.reticulum.runtime.txQueueDropsBle',
+          params: { name: 'RNode 41F4', count: '128' },
+        },
+        reticulumInterfaceId: 'rnode-41f4',
+        reticulumRepairKind: 'edit',
+      },
+    ];
+
+    render(
+      <DiagnosticsPanel
+        nodes={new Map()}
+        myNodeNum={0xabcd}
+        onTraceRoute={vi.fn().mockResolvedValue(undefined)}
+        isConnected
+        traceRouteResults={new Map()}
+        getFullNodeLabel={vi.fn().mockReturnValue('Me')}
+        protocol="reticulum"
+        capabilities={RETICULUM_CAPABILITIES}
+      />,
+    );
+
+    expect(screen.queryByText('Mesh diagnostics (1)')).not.toBeInTheDocument();
+    expect(screen.queryByText('!00000000')).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Diagnostics \(/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/no diagnostics detected/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/RNode 41F4/).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /edit interface/i })).toBeInTheDocument();
   });
 });

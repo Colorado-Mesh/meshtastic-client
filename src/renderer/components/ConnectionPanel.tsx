@@ -1,26 +1,22 @@
 /* eslint-disable react-hooks/set-state-in-effect, react-hooks/refs */
 import { PARENT_HOVER_ATTR } from 'lucide-react-motion';
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Trans, useTranslation } from 'react-i18next';
 
 import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
+import { formatDisplayTime } from '@/renderer/lib/formatDisplayTime';
 import { ConnectionIcon, MqttGlobeIcon } from '@/renderer/lib/icons/connectionIcons';
 import { useParentIconTrigger } from '@/renderer/lib/icons/iconMotionContext';
 import { SpinnerIcon, SpinnerIconLg } from '@/renderer/lib/icons/spinnerIcon';
 import {
-  awaitNobleBlePrimaryAutoConnectSettled,
-  dualNobleBleBothRadiosConfigured,
-  getNobleBleDualRadioPrimaryProtocol,
-  initNobleBleDualRadioStartup,
-  isNobleBleDualRadioSecondary,
   isRendererNobleBlePlatform,
   meshcoreTargetsSharedMeshtasticBlePeripheral,
-  notifyNobleBlePrimaryAutoConnectSettled,
 } from '@/renderer/lib/meshcoreDualNobleBleInit';
 import { markMqttUserDisconnect } from '@/renderer/lib/mqttDisconnectIntent';
 import { mqttUsesTls } from '@/renderer/lib/mqttTls';
 import { parseTcpAddress } from '@/renderer/lib/parseTcpAddress';
+import { cancelProtocolRfAutoConnect } from '@/renderer/lib/protocolRfAutoConnectGate';
 import { useRadioProvider } from '@/renderer/lib/radio/providerFactory';
 import type { RfConnectAutomaticFn, RfConnectFn } from '@/renderer/lib/rfConnectionTypes';
 import { isPairingRelatedError } from '@/shared/blePairingError';
@@ -30,9 +26,11 @@ import {
   MQTT_MAX_RECONNECT_ATTEMPTS,
 } from '@/shared/meshtasticMqttReconnect';
 import { formatMeshtasticNodeId } from '@/shared/nodeNameUtils';
+import { type BlePickerIdentity, resolveBlePickerIdentity } from '@/shared/normalizeBleMac';
 import { clampTcpPort, parseTcpPortFromString } from '@/shared/tcpPort';
 
 import { useActiveMeshIdentity } from '../hooks/useActiveMeshIdentity';
+import { useHostLinkMeter } from '../hooks/useHostLinkMeter';
 import { useNobleBleConnectMutexWait } from '../hooks/useNobleBleConnectMutexWait';
 import {
   flushPendingMqttSave,
@@ -40,6 +38,12 @@ import {
   loadProtocolMqttSettings,
   persistMqttSettingsIfChanged,
 } from '../hooks/useProtocolMqttSettings';
+import { shouldClearMeshcoreBleSelectionForError } from '../lib/bleConnectErrors';
+import {
+  cacheBleDeviceMac,
+  getBleDeviceMac,
+  loadBleDeviceMacCache,
+} from '../lib/bleDeviceMacCache';
 import { reconnectBleWithScan, startNobleBleScanningWithRetry } from '../lib/bleReconnectHelper';
 import {
   humanizeBleError,
@@ -54,6 +58,10 @@ import {
 } from '../lib/connectionPanelStorageMigrations';
 import type { FirmwareCheckResult } from '../lib/firmwareCheck';
 import {
+  BLE_SELECTION_CLEARED_EVENT,
+  clearStoredBleSelection as clearStoredBleSelectionForProtocol,
+} from '../lib/lastConnectionStorage';
+import {
   letsMeshPresetConfigurationDeviation,
   validateLetsMeshManualCredentials,
   validateLetsMeshPresetConnect,
@@ -63,6 +71,8 @@ import {
   LETSMESH_HOST_EU,
   LETSMESH_HOST_US,
   letsMeshMqttUsernameFromIdentity,
+  MESHCORE_CA_HOST_BACKUP,
+  MESHCORE_CA_HOST_PRIMARY,
   meshcoreIdentityHasFullKeyPair,
   meshcoreIdentityHasPrivateKey,
   readMeshcoreIdentity,
@@ -71,8 +81,10 @@ import {
 import { translateMeshcoreUserMessage } from '../lib/meshcore/meshcoreMessageI18n';
 import {
   applyMeshcoreMqttPreset,
+  isDeviceSigningMeshcorePreset,
   type MeshcoreMqttPreset,
   readStoredMeshcoreMqttPreset,
+  usesMeshcoreDeviceSigningMqtt,
 } from '../lib/meshcoreMqttPresets';
 import {
   isIataScopedMeshcoreMqtt,
@@ -101,10 +113,16 @@ import {
 } from '../lib/meshtasticMqttTlsMigration';
 import { tryAutoLaunchMqtt } from '../lib/mqttAutoLaunch';
 import { parseStoredJson } from '../lib/parseStoredJson';
+import {
+  blePickerDisplayName,
+  defaultPickerSort,
+  nextPickerSort,
+  sortPickerItems,
+  useDebouncedPickerSort,
+} from '../lib/pickerListSort';
 import { getSerialPortNodeName } from '../lib/serialPortNodeNames';
 import { LAST_SERIAL_PORT_KEY } from '../lib/serialPortSignature';
-import { getStoredMeshProtocol } from '../lib/storedMeshProtocol';
-import { POWER_RESUME_MESHCORE_MESHTASTIC_SETTLE_MS } from '../lib/timeConstants';
+import { isWeakBleRssi } from '../lib/signal';
 import type {
   ConnectionType,
   DeviceState,
@@ -115,17 +133,26 @@ import type {
   SerialPortInfo,
 } from '../lib/types';
 import { useDeviceStore } from '../stores/deviceStore';
+import { useTimeFormatStore } from '../stores/timeFormatStore';
+import { BleWeakSignalBanner } from './BleWeakSignalBanner';
 import { ConfirmModal } from './ConfirmModal';
 import ConnectionBatteryGauge from './ConnectionBatteryGauge';
+import ConnectionLinkMeter from './ConnectionLinkMeter';
 import FirmwareStatusIndicator from './FirmwareStatusIndicator';
 import { HelpTooltip } from './HelpTooltip';
+import { MqttNetworkPresetSelect } from './MqttNetworkPresetSelect';
+import { PickerSortControls } from './PickerSortControls';
+import type { ReticulumSetupDestination } from './reticulum/ReticulumSetupGuide';
 import { ReticulumStackPanel } from './ReticulumStackPanel';
+import SignalBars from './SignalBars';
 // ─── Last Connection (localStorage) ───────────────────────────────
 interface LastConnection {
   type: ConnectionType;
   httpAddress?: string;
   bleDeviceId?: string;
   bleDeviceName?: string;
+  /** Formatted BLE MAC when known (macOS UUID deviceId + CoreBluetoothCache address). */
+  bleMac?: string;
   serialPortId?: string;
 }
 
@@ -178,14 +205,6 @@ const STAGE_LINUX_UNPAIRED = 'connectionPanel.stageLinuxUnpaired';
 const STAGE_WAITING_NOBLE_BLE_MESHTASTIC = 'connectionPanel.stageWaitingNobleBleMeshtastic';
 const STAGE_WAITING_NOBLE_BLE_MESHCORE = 'connectionPanel.stageWaitingNobleBleMeshcore';
 
-function resolveBleAutoConnectLabel(
-  bleId: string,
-  lc?: LastConnection | null,
-  fallbackName?: string | null,
-): string {
-  return lc?.bleDeviceName ?? getBleDeviceName(bleId) ?? fallbackName ?? bleId;
-}
-
 function resolveConnectionStageText(
   stage: string,
   autoConnectTarget: string | null,
@@ -207,6 +226,29 @@ function resolveConnectionStageText(
     }
   }
   return t(stage);
+}
+
+/** Static-key lookup for the MeshCore device-signing preset deviation banner (keeps i18n scanner happy). */
+function meshcorePresetDeviationText(
+  t: (key: string) => string,
+  preset: MeshcoreMqttPreset,
+): string {
+  switch (preset) {
+    case 'coloradomesh':
+      return t('connectionPanel.meshcorePresetDeviation.coloradomesh');
+    case 'meshmapper':
+      return t('connectionPanel.meshcorePresetDeviation.meshmapper');
+    case 'waev':
+      return t('connectionPanel.meshcorePresetDeviation.waev');
+    case 'meshatse':
+      return t('connectionPanel.meshcorePresetDeviation.meshatse');
+    case 'meshcoreca':
+      return t('connectionPanel.meshcorePresetDeviation.meshcoreca');
+    case 'eastmesh':
+      return t('connectionPanel.meshcorePresetDeviation.eastmesh');
+    default:
+      return t('connectionPanel.meshcorePresetDeviation.letsmesh');
+  }
 }
 
 function shouldForgetGrantedWebBluetoothDevice(
@@ -298,6 +340,20 @@ function getBleDeviceName(deviceId: string): string | null {
   return cache[deviceId] ?? null;
 }
 
+function resolveLastBleIdentity(
+  last: LastConnection | null,
+  protocol: MeshProtocol,
+): BlePickerIdentity | null {
+  const deviceId = last?.bleDeviceId ?? loadLastBleDevice(protocol) ?? '';
+  if (!deviceId && !last?.bleMac) return null;
+  const identity = resolveBlePickerIdentity({
+    deviceId,
+    address: last?.bleMac,
+    cachedMac: deviceId ? getBleDeviceMac(deviceId) : null,
+  });
+  return identity.display ? identity : null;
+}
+
 function MqttGlobeStatusIcon({ status }: { status: MQTTStatus }) {
   const color =
     status === 'connected'
@@ -340,8 +396,9 @@ interface Props {
   onOpenReticulumRmapSettings?: () => void;
   /** Reticulum: open App tab GPS settings for RMAP coordinates. */
   onOpenAppGpsSettings?: () => void;
-  /** Auto-connect is owned by ProtocolAutoConnectCoordinator when panels are tab-mounted. */
-  suppressMountAutoConnect?: boolean;
+  /** Reticulum: open Admin Bluetooth for USB Clear paired / Start pairing. */
+  onOpenAdminBluetooth?: () => void;
+  onOpenReticulumSetupDestination?: (destination: ReticulumSetupDestination) => boolean;
 }
 
 export default function ConnectionPanel({
@@ -360,11 +417,13 @@ export default function ConnectionPanel({
   onStartReticulumStack,
   onOpenReticulumRmapSettings,
   onOpenAppGpsSettings,
-  suppressMountAutoConnect = false,
+  onOpenAdminBluetooth,
+  onOpenReticulumSetupDestination,
 }: Props) {
   const { t } = useTranslation();
   const capabilities = useRadioProvider(protocol);
   const parentIconTrigger = useParentIconTrigger();
+  const use24HourTime = useTimeFormatStore((s) => s.use24HourTime);
   const letsMeshUsernameSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [reticulumStackError, setReticulumStackError] = useState<string | null>(null);
 
@@ -411,9 +470,23 @@ export default function ConnectionPanel({
   const activeHostAddress =
     protocol === 'meshcore'
       ? `${tcpHost}:${tcpPort}`
-      : connectionType === 'tcp'
+      : connectionType === 'tcp' || state.connectionType === 'tcp'
         ? tcpAddress
         : httpAddress;
+  const hostLinkMeter = useHostLinkMeter({
+    protocol,
+    connectionType: state.connectionType,
+    status: state.status,
+    hostAddress:
+      state.connectionType === 'tcp'
+        ? tcpAddress
+        : state.connectionType === 'http'
+          ? protocol === 'meshcore'
+            ? `${tcpHost}:${tcpPort}`
+            : httpAddress
+          : activeHostAddress,
+    platform: window.electronAPI.getPlatform() as NodeJS.Platform,
+  });
 
   // ─── MQTT settings state ───────────────────────────────────────
   const [mqttSettings, setMqttSettings] = useState<MQTTSettings>(loadMqttSettings);
@@ -437,6 +510,9 @@ export default function ConnectionPanel({
   const [meshcorePreset, setMeshcorePreset] = useState<MeshcoreMqttPreset>(() =>
     readStoredMeshcoreMqttPreset(),
   );
+  // Bumped when a preset selection is cancelled (Ripple / Colorado confirm) so the controlled
+  // <select> remounts and re-applies `meshcorePreset`, discarding the user's cancelled choice.
+  const [meshcorePresetSelectNonce, setMeshcorePresetSelectNonce] = useState(0);
   const [coloradoRegionGateOpen, setColoradoRegionGateOpen] = useState(false);
   const [meshtasticPreset, setMeshtasticPreset] = useState<'official-plain' | 'liam' | 'custom'>(
     () => {
@@ -558,13 +634,7 @@ export default function ConnectionPanel({
   // Keep LetsMesh MQTT username in sync with imported MeshCore identity (v1_<64-hex public key>).
   useEffect(() => {
     const syncLetsMeshUsername = () => {
-      if (
-        protocol !== 'meshcore' ||
-        (meshcorePreset !== 'letsmesh' &&
-          meshcorePreset !== 'meshmapper' &&
-          meshcorePreset !== 'coloradomesh')
-      )
-        return;
+      if (protocol !== 'meshcore' || !isDeviceSigningMeshcorePreset(meshcorePreset)) return;
       const u = letsMeshMqttUsernameFromIdentity(readMeshcoreIdentity());
       if (!u) return;
       setMeshcoreMqttSettings((prev) => (prev.username === u ? prev : { ...prev, username: u }));
@@ -666,6 +736,46 @@ export default function ConnectionPanel({
   // ─── BLE device picker state ──────────────────────────────────
   const [bleDevices, setBleDevices] = useState<NobleBleDevice[]>([]);
   const [showBlePicker, setShowBlePicker] = useState(false);
+  const [blePickerSort, setBlePickerSort] = useState(() => defaultPickerSort('ble'));
+  const bleDeviceNamesCache = useMemo(() => {
+    const parsed =
+      parseStoredJson<Record<string, string>>(
+        localStorage.getItem('mesh-client:bleDeviceNames'),
+        'ConnectionPanel bleDeviceNames list',
+      ) ?? {};
+    const cache: Record<string, string> = {};
+    for (const device of bleDevices) {
+      const cached = parsed[device.deviceId];
+      if (cached) cache[device.deviceId] = cached;
+    }
+    return cache;
+  }, [bleDevices]);
+  const bleDeviceMacsCache = useMemo(() => {
+    const parsed = loadBleDeviceMacCache();
+    const cache: Record<string, string> = {};
+    for (const device of bleDevices) {
+      const cached = parsed[device.deviceId];
+      if (cached) cache[device.deviceId] = cached;
+    }
+    return cache;
+  }, [bleDevices]);
+  const getBlePickerName = useCallback(
+    (device: NobleBleDevice) =>
+      blePickerDisplayName(
+        device.deviceId,
+        device.deviceName,
+        bleDeviceNamesCache[device.deviceId],
+      ),
+    [bleDeviceNamesCache],
+  );
+  const getBlePickerId = useCallback((device: NobleBleDevice) => device.deviceId, []);
+  const getBlePickerRssi = useCallback((device: NobleBleDevice) => device.rssi, []);
+  const sortedBleDevices = useDebouncedPickerSort(
+    bleDevices,
+    blePickerSort.key,
+    blePickerSort.dir,
+    { getName: getBlePickerName, getId: getBlePickerId, getRssi: getBlePickerRssi },
+  );
   const isLinux = window.electronAPI.getPlatform() === 'linux';
   const [webBluetoothDevice, setWebBluetoothDevice] = useState<{
     deviceId: string;
@@ -675,19 +785,39 @@ export default function ConnectionPanel({
   // ─── Serial port picker state ─────────────────────────────────
   const [serialPorts, setSerialPorts] = useState<SerialPortInfo[]>([]);
   const [showSerialPicker, setShowSerialPicker] = useState(false);
+  const [serialPickerSort, setSerialPickerSort] = useState(() => defaultPickerSort('serial'));
+  const getSerialPickerName = useCallback(
+    (port: SerialPortInfo) => getSerialPortNodeName(port.portId) ?? port.displayName,
+    [],
+  );
+  const getSerialPickerId = useCallback((port: SerialPortInfo) => port.portId, []);
+  const sortedSerialPorts = useMemo(
+    () =>
+      sortPickerItems(serialPorts, serialPickerSort.key, serialPickerSort.dir, {
+        getName: getSerialPickerName,
+        getId: getSerialPickerId,
+      }),
+    [
+      getSerialPickerId,
+      getSerialPickerName,
+      serialPickerSort.dir,
+      serialPickerSort.key,
+      serialPorts,
+    ],
+  );
 
-  // ─── Last connection + auto-connect state ─────────────────────
+  // ─── Last connection + reconnect UI state ─────────────────────
   const [lastConnection, setLastConnection] = useState<LastConnection | null>(() =>
     loadLastConnection(protocol),
   );
-  const autoConnectFiredRef = useRef(false);
   const autoConnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isAutoConnectingRef = useRef(false);
   const [isAutoConnecting, setIsAutoConnecting] = useState(false);
   const [autoConnectBleTarget, setAutoConnectBleTarget] = useState<string | null>(null);
-  const [sharedBleNotice, setSharedBleNotice] = useState(false);
   // Tracks BLE device name at selection time, used when saving LastConnection
   const lastSelectedBleNameRef = useRef<string | null>(null);
+  // Noble `peripheral.address` (sticker MAC) at selection time — distinct from Linux pairing MAC id
+  const lastSelectedBleAddressRef = useRef<string | null>(null);
   // Tracks BLE device MAC for potential re-pairing on Linux
   const lastSelectedBleMacRef = useRef<string | null>(null);
   /**
@@ -697,10 +827,14 @@ export default function ConnectionPanel({
   const pendingMeshcoreLinuxWbMacRef = useRef<string | null>(null);
   /** Linux Web Bluetooth: after the user picks a device, discovery must not reopen the embedded picker. */
   const bleLinuxPickerSelectionResolvedRef = useRef(false);
+  /** Linux Web Bluetooth chooser generation from main — scopes cancelBluetoothSelection. */
+  const linuxBleChooserGenerationRef = useRef<number | null>(null);
   /** MeshCore Linux reconnect: dedupe concurrent bluetoothGetInfo checks from repeated discovery events. */
   const meshcoreLinuxReconnectPairingCheckRef = useRef(false);
   const lastConnectionBleDeviceNameFallbackRef = useRef(lastConnection?.bleDeviceName);
   lastConnectionBleDeviceNameFallbackRef.current = lastConnection?.bleDeviceName;
+  const lastConnectionBleMacFallbackRef = useRef(lastConnection?.bleMac);
+  lastConnectionBleMacFallbackRef.current = lastConnection?.bleMac;
   /** Prior store status for distinguishing pre-connect BLE scan from failed RF attempts. */
   const prevStoreStatusRef = useRef(state.status);
   /** Mount-only auto-connect reads latest props/state via refs so the effect can stay `[]`. */
@@ -708,6 +842,15 @@ export default function ConnectionPanel({
   deviceStateRef.current = state;
   const lastConnectionRef = useRef(lastConnection);
   lastConnectionRef.current = lastConnection;
+
+  const clearMeshcoreBleSelectionOnMissingServices = useCallback(
+    (err: unknown) => {
+      if (protocol !== 'meshcore' || !shouldClearMeshcoreBleSelectionForError(err)) return;
+      clearStoredBleSelectionForProtocol('meshcore');
+      setLastConnection(null);
+    },
+    [protocol, setLastConnection],
+  );
   const connectionTypeRef = useRef(connectionType);
   connectionTypeRef.current = connectionType;
   const onAutoConnectRef = useRef(onAutoConnect);
@@ -716,6 +859,18 @@ export default function ConnectionPanel({
   // Reload last connection when protocol switches (each protocol has its own key)
   useEffect(() => {
     setLastConnection(loadLastConnection(protocol));
+  }, [protocol]);
+
+  useEffect(() => {
+    const handleBleSelectionCleared = (event: Event) => {
+      const detail = (event as CustomEvent<{ protocol: MeshProtocol }>).detail;
+      if (detail?.protocol !== protocol) return;
+      setLastConnection(null);
+    };
+    window.addEventListener(BLE_SELECTION_CLEARED_EVENT, handleBleSelectionCleared);
+    return () => {
+      window.removeEventListener(BLE_SELECTION_CLEARED_EVENT, handleBleSelectionCleared);
+    };
   }, [protocol]);
 
   useEffect(() => {
@@ -768,14 +923,21 @@ export default function ConnectionPanel({
         if (state.connectionType === 'http' || state.connectionType === 'tcp') {
           conn.httpAddress = activeHostAddress;
         } else if (state.connectionType === 'ble') {
-          const bleId = loadLastBleDevice(protocol);
+          const prev = lastConnectionRef.current;
+          const bleId = loadLastBleDevice(protocol) ?? prev?.bleDeviceId;
           if (bleId) {
             conn.bleDeviceId = bleId;
             conn.bleDeviceName =
               getBleDeviceName(bleId) ??
               lastSelectedBleNameRef.current ??
               lastConnectionBleDeviceNameFallbackRef.current ??
-              undefined;
+              prev?.bleDeviceName;
+            const bleIdentity = resolveBlePickerIdentity({
+              deviceId: bleId,
+              address: lastSelectedBleAddressRef.current,
+              cachedMac: getBleDeviceMac(bleId) ?? lastConnectionBleMacFallbackRef.current,
+            });
+            if (bleIdentity.isMac) conn.bleMac = bleIdentity.display;
           }
         } else if (state.connectionType === 'serial') {
           const serialId = loadLastSerialPort();
@@ -823,8 +985,30 @@ export default function ConnectionPanel({
   // Listen for BLE devices discovered by noble in main process
   useEffect(() => {
     return window.electronAPI.onNobleBleDeviceDiscovered((device) => {
+      if (device.address) cacheBleDeviceMac(device.deviceId, device.address);
       setBleDevices((prev) => {
-        if (prev.find((d) => d.deviceId === device.deviceId)) return prev;
+        const idx = prev.findIndex((d) => d.deviceId === device.deviceId);
+        if (idx >= 0) {
+          const existing = prev[idx];
+          if (!existing) return prev;
+          const nextRssi = device.rssi !== undefined ? device.rssi : existing.rssi;
+          const nextAddress = device.address ?? existing.address;
+          if (
+            existing.deviceName === device.deviceName &&
+            existing.rssi === nextRssi &&
+            existing.address === nextAddress
+          ) {
+            return prev;
+          }
+          const next = [...prev];
+          next[idx] = {
+            ...existing,
+            deviceName: device.deviceName,
+            rssi: nextRssi,
+            address: nextAddress,
+          };
+          return next;
+        }
         return [...prev, device];
       });
       if (isAutoConnectingRef.current) {
@@ -851,7 +1035,13 @@ export default function ConnectionPanel({
 
   // Listen for Bluetooth devices discovered by main process (Linux Web Bluetooth)
   useEffect(() => {
-    return window.electronAPI.onBluetoothDevicesDiscovered((devices) => {
+    return window.electronAPI.onBluetoothDevicesDiscovered((devices, generation) => {
+      if (typeof generation === 'number' && Number.isFinite(generation)) {
+        linuxBleChooserGenerationRef.current = generation;
+      }
+      for (const device of devices) {
+        if (device.address) cacheBleDeviceMac(device.deviceId, device.address);
+      }
       setBleDevices(devices);
       const lastId = lastConnectionRef.current?.bleDeviceId ?? loadLastBleDevice(protocol);
       if (
@@ -1079,7 +1269,11 @@ export default function ConnectionPanel({
     if (pendingMeshcoreLinuxWbMacRef.current) {
       pendingMeshcoreLinuxWbMacRef.current = null;
       bleLinuxPickerSelectionResolvedRef.current = false;
-      window.electronAPI.cancelBluetoothSelection();
+      const generation = linuxBleChooserGenerationRef.current;
+      linuxBleChooserGenerationRef.current = null;
+      void window.electronAPI.cancelBluetoothSelection(generation).catch((e: unknown) => {
+        console.debug('[ConnectionPanel] cancelBluetoothSelection failed ' + errLikeToLogString(e));
+      });
       setShowPinPrompt(false);
       setPinInputValue('');
       setConnecting(false);
@@ -1122,6 +1316,16 @@ export default function ConnectionPanel({
   }, [isAutoConnecting, lastConnection]);
 
   const handleConnect = useCallback(async () => {
+    // Cancel deferred dual-Noble BLE auto-connect so it cannot race prepareRfConnect against
+    // a manual TCP/serial/HTTP connect (orphan TCP socket + connectType flip).
+    // Mount auto-connect lives in ProtocolAutoConnectCoordinator — cancel that gate too.
+    cancelProtocolRfAutoConnect(protocol);
+    if (isAutoConnectingRef.current) {
+      console.debug('[ConnectionPanel] cancelling in-flight BLE auto-connect for manual connect');
+    }
+    isAutoConnectingRef.current = false;
+    setIsAutoConnecting(false);
+    setAutoConnectBleTarget(null);
     if (autoConnectTimeoutRef.current) {
       clearTimeout(autoConnectTimeoutRef.current);
       autoConnectTimeoutRef.current = null;
@@ -1142,6 +1346,26 @@ export default function ConnectionPanel({
         // Same-tick IPC: select-bluetooth-device can fire before React commits connectionType;
         // discovery uses connectionTypeRef for shouldShowEmbeddedPicker.
         connectionTypeRef.current = 'ble';
+        // Clear any stale Chromium chooser session before a new requestDevice().
+        // Must await: fire-and-forget cancel raced behind select-bluetooth-device and
+        // cancelled the new chooser (immediate "User cancelled the requestDevice() chooser").
+        // Pass the prior generation when known so a delayed cancel cannot hit the next chooser;
+        // omit generation only when we have no tracked session (force-clear orphans).
+        const priorGeneration = linuxBleChooserGenerationRef.current;
+        linuxBleChooserGenerationRef.current = null;
+        try {
+          await window.electronAPI.cancelBluetoothSelection(priorGeneration);
+        } catch (e: unknown) {
+          console.debug(
+            '[ConnectionPanel] cancelBluetoothSelection failed ' + errLikeToLogString(e),
+          );
+          setConnecting(false);
+          setConnectionStage('');
+          return;
+        }
+        pendingMeshcoreLinuxWbMacRef.current = null;
+        bleLinuxPickerSelectionResolvedRef.current = false;
+        setShowBlePicker(false);
         try {
           console.debug('[ConnectionPanel] handleConnect calling onConnect');
           await onConnect('ble', undefined);
@@ -1151,6 +1375,7 @@ export default function ConnectionPanel({
           return;
         } catch (err) {
           // catch-no-log-ok -- error is humanized and surfaced via setError
+          clearMeshcoreBleSelectionOnMissingServices(err);
           const bleErrMsg = humanizeBleError(err, t);
           const mac = lastSelectedBleMacRef.current;
           if (mac) {
@@ -1213,13 +1438,23 @@ export default function ConnectionPanel({
       } else {
         errorMsg = err instanceof Error ? err.message : t('connectionPanel.error.connectionFailed');
       }
-      setError(errorMsg);
+      // Empty humanize = MeshCore setup AbortError (supersede/cancel); do not setError('').
+      if (errorMsg) setError(errorMsg);
       setConnecting(false);
       setConnectionStage('');
     }
-  }, [connectionType, activeHostAddress, onConnect, protocol, isLinux, t]);
+  }, [
+    connectionType,
+    activeHostAddress,
+    onConnect,
+    protocol,
+    isLinux,
+    t,
+    clearMeshcoreBleSelectionOnMissingServices,
+  ]);
 
-  const handleCancelConnection = useCallback(async () => {
+  const handleCancelConnection = useCallback(() => {
+    cancelProtocolRfAutoConnect(protocol);
     isAutoConnectingRef.current = false;
     setIsAutoConnecting(false);
     if (autoConnectTimeoutRef.current) {
@@ -1230,7 +1465,13 @@ export default function ConnectionPanel({
       if (isLinux) {
         if (showBlePicker || pendingMeshcoreLinuxWbMacRef.current) {
           // Cancel in-flight requestDevice() (picker or MeshCore pre-connect PIN gate)
-          window.electronAPI.cancelBluetoothSelection();
+          const generation = linuxBleChooserGenerationRef.current;
+          linuxBleChooserGenerationRef.current = null;
+          void window.electronAPI.cancelBluetoothSelection(generation).catch((e: unknown) => {
+            console.debug(
+              '[ConnectionPanel] cancelBluetoothSelection failed ' + errLikeToLogString(e),
+            );
+          });
         }
         pendingMeshcoreLinuxWbMacRef.current = null;
         setShowPinPrompt(false);
@@ -1238,8 +1479,10 @@ export default function ConnectionPanel({
         if (webBluetoothDevice) {
           setWebBluetoothDevice(null);
         }
-      } else {
-        void window.electronAPI.stopNobleBleScanning(protocol);
+      } else if (capabilities.hasNobleBleScanning) {
+        void window.electronAPI.stopNobleBleScanning(protocol).catch((e: unknown) => {
+          console.debug('[ConnectionPanel] stopNobleBleScanning failed ' + errLikeToLogString(e));
+        });
       }
     }
     if (showSerialPicker) {
@@ -1250,13 +1493,11 @@ export default function ConnectionPanel({
     bleLinuxPickerSelectionResolvedRef.current = false;
     setConnecting(false);
     setConnectionStage('');
-    // Ensure the underlying connection attempt is properly torn down
-    try {
-      console.debug('[ConnectionPanel] handleCancelConnection onDisconnect');
-      await onDisconnect();
-    } catch (e) {
+    // Tear down connection without blocking Cancel UI on sidecar cargo/BLE start.
+    console.debug('[ConnectionPanel] handleCancelConnection onDisconnect');
+    void onDisconnect().catch((e: unknown) => {
       console.debug('[ConnectionPanel] onDisconnect best-effort cleanup ' + errLikeToLogString(e));
-    }
+    });
   }, [
     showBlePicker,
     showSerialPicker,
@@ -1265,6 +1506,7 @@ export default function ConnectionPanel({
     protocol,
     isLinux,
     webBluetoothDevice,
+    capabilities.hasNobleBleScanning,
   ]);
 
   const handleSelectBleDevice = useCallback(
@@ -1276,6 +1518,12 @@ export default function ConnectionPanel({
       // Save BLE advertisement name for use in LastConnection display
       const found = bleDevices.find((d) => d.deviceId === deviceId);
       lastSelectedBleNameRef.current = found?.deviceName ?? null;
+      if (found?.address) {
+        cacheBleDeviceMac(deviceId, found.address);
+        lastSelectedBleAddressRef.current = found.address;
+      } else {
+        lastSelectedBleAddressRef.current = getBleDeviceMac(deviceId);
+      }
       // Store MAC address for potential re-pairing on Linux
       lastSelectedBleMacRef.current = deviceId;
       setShowBlePicker(false);
@@ -1316,11 +1564,16 @@ export default function ConnectionPanel({
         // Don't call onConnect again - the original onConnect will continue from requestDevice()
         // and proceed to connect(), which triggers the pairing handler.
       } else {
-        void window.electronAPI.stopNobleBleScanning(protocol);
+        if (capabilities.hasNobleBleScanning) {
+          void window.electronAPI.stopNobleBleScanning(protocol).catch((e: unknown) => {
+            console.debug('[ConnectionPanel] stopNobleBleScanning failed ' + errLikeToLogString(e));
+          });
+        }
         // Trigger the actual connection with the peripheral ID
         onConnect('ble', undefined, deviceId).catch((err: unknown) => {
           const errMsg = err instanceof Error ? err.message : String(err);
           console.warn(`[ConnectionPanel] BLE connect after selection failed ${errMsg}`);
+          clearMeshcoreBleSelectionOnMissingServices(err);
           const bleErrMsg = humanizeBleError(err, t);
           if (bleErrMsg) setError(bleErrMsg);
           setConnecting(false);
@@ -1328,7 +1581,15 @@ export default function ConnectionPanel({
         });
       }
     },
-    [bleDevices, isLinux, onConnect, protocol, t],
+    [
+      bleDevices,
+      isLinux,
+      onConnect,
+      protocol,
+      t,
+      capabilities.hasNobleBleScanning,
+      clearMeshcoreBleSelectionOnMissingServices,
+    ],
   );
 
   const handleSelectSerialPort = useCallback((portId: string) => {
@@ -1338,241 +1599,8 @@ export default function ConnectionPanel({
     setConnectionStage('connectionPanel.stageConnecting');
   }, []);
 
-  // Auto-connect on mount: fires once per session using saved last connection.
-  // Serial and BLE use gesture-free reconnect when the platform remembers the device.
-  // HTTP still uses the one-click reconnect card (no autoconnect on mount).
-  useEffect(() => {
-    if (suppressMountAutoConnect) return;
-    initNobleBleDualRadioStartup();
-
-    const notifyPrimaryAutoConnectSettledIfNeeded = () => {
-      if (
-        dualNobleBleBothRadiosConfigured() &&
-        getNobleBleDualRadioPrimaryProtocol() === protocol
-      ) {
-        notifyNobleBlePrimaryAutoConnectSettled();
-      }
-    };
-
-    if (capabilities.hasReticulumInterfaceConfig) {
-      notifyPrimaryAutoConnectSettledIfNeeded();
-      return;
-    }
-
-    if (autoConnectFiredRef.current) return;
-    if (deviceStateRef.current.status !== 'disconnected') {
-      notifyPrimaryAutoConnectSettledIfNeeded();
-      return;
-    }
-    const lc = lastConnectionRef.current;
-    if (!lc) {
-      notifyPrimaryAutoConnectSettledIfNeeded();
-      return;
-    }
-
-    autoConnectFiredRef.current = true;
-
-    const lastBleId = lc.bleDeviceId ?? loadLastBleDevice(protocol);
-
-    const startAutoConnectTimeout = () => {
-      if (autoConnectTimeoutRef.current) clearTimeout(autoConnectTimeoutRef.current);
-      autoConnectTimeoutRef.current = setTimeout(() => {
-        console.warn('[ConnectionPanel] auto-connect timed out after 30s');
-        isAutoConnectingRef.current = false;
-        setIsAutoConnecting(false);
-        setAutoConnectBleTarget(null);
-        setError(t('connectionPanel.error.autoConnectTimeout'));
-        setConnecting(false);
-        setConnectionStage('');
-      }, 30_000);
-    };
-
-    const onAutoConnectFailed = (err: unknown, transport: 'serial' | 'ble' = 'ble') => {
-      if (autoConnectTimeoutRef.current) {
-        clearTimeout(autoConnectTimeoutRef.current);
-        autoConnectTimeoutRef.current = null;
-      }
-      isAutoConnectingRef.current = false;
-      setIsAutoConnecting(false);
-      setAutoConnectBleTarget(null);
-      setConnecting(false);
-      setConnectionStage('');
-      // Setup AbortError is intentional (disconnect / superseded connect) — not a user-facing failure.
-      if (transport === 'ble' && humanizeBleError(err, t) === '') {
-        console.debug('[ConnectionPanel] auto-connect cancelled ' + errLikeToLogString(err));
-        return;
-      }
-      const errMsg =
-        err instanceof Error
-          ? transport === 'serial'
-            ? humanizeSerialError(err, t)
-            : humanizeBleError(err, t)
-          : t('connectionPanel.error.autoConnectFailed');
-      setError(errMsg || t('connectionPanel.error.autoConnectFailed'));
-    };
-
-    const maybeNotifyPrimaryBleAutoConnectSettled = notifyPrimaryAutoConnectSettledIfNeeded;
-
-    const startBleNobleAutoConnect = (): boolean => {
-      if (!lastBleId || isLinux) {
-        maybeNotifyPrimaryBleAutoConnectSettled();
-        return false;
-      }
-      void (async () => {
-        const bleTargetLabel = resolveBleAutoConnectLabel(
-          lastBleId,
-          lc,
-          lastConnectionBleDeviceNameFallbackRef.current,
-        );
-        setAutoConnectBleTarget(bleTargetLabel);
-        setConnectionType('ble');
-        isAutoConnectingRef.current = true;
-        setIsAutoConnecting(true);
-        setConnecting(true);
-        setShowBlePicker(false);
-        setConnectionStage('connectionPanel.stageConnecting');
-        // Primary: notify secondary after the first connect attempt (not after scan fallback).
-        await reconnectBleWithScan(protocol, lastBleId, () => {
-          const attempt = onAutoConnectRef.current('ble', undefined, undefined, lastBleId);
-          if (
-            dualNobleBleBothRadiosConfigured() &&
-            getNobleBleDualRadioPrimaryProtocol() === protocol
-          ) {
-            // `finally` returns a new promise; voiding it without catch surfaces the same
-            // rejection again as unhandledrejection even when `attempt` is awaited below.
-            void attempt.finally(maybeNotifyPrimaryBleAutoConnectSettled).catch(() => {
-              // catch-no-log-ok — rejection is handled by reconnectBleWithScan's await of `attempt`
-            });
-          }
-          return attempt;
-        });
-        isAutoConnectingRef.current = false;
-        setIsAutoConnecting(false);
-        setConnecting(false);
-        setConnectionStage('');
-      })().catch(onAutoConnectFailed);
-      return true;
-    };
-
-    const skipMeshcoreSharedMeshtasticBleAutoConnect = (): boolean => {
-      if (protocol !== 'meshcore' || !meshcoreTargetsSharedMeshtasticBlePeripheral(lastBleId)) {
-        return false;
-      }
-      console.debug(
-        `[ConnectionPanel] meshcore BLE auto-connect skipped — same peripheral as Meshtastic (${lastBleId})`,
-      );
-      if (autoConnectTimeoutRef.current) {
-        clearTimeout(autoConnectTimeoutRef.current);
-        autoConnectTimeoutRef.current = null;
-      }
-      isAutoConnectingRef.current = false;
-      setIsAutoConnecting(false);
-      setConnecting(false);
-      setConnectionStage('');
-      maybeNotifyPrimaryBleAutoConnectSettled();
-      if (getStoredMeshProtocol() === 'meshcore') {
-        setSharedBleNotice(true);
-      }
-      return true;
-    };
-
-    const runSecondaryBleAutoConnect = async (bleId: string) => {
-      const primary = getNobleBleDualRadioPrimaryProtocol();
-      const bleTargetLabel = resolveBleAutoConnectLabel(
-        bleId,
-        lc,
-        lastConnectionBleDeviceNameFallbackRef.current,
-      );
-      setAutoConnectBleTarget(bleTargetLabel);
-      setConnectionType('ble');
-      isAutoConnectingRef.current = true;
-      setIsAutoConnecting(true);
-      setConnecting(true);
-      setShowBlePicker(false);
-      setConnectionStage(
-        primary === 'meshtastic'
-          ? STAGE_WAITING_NOBLE_BLE_MESHTASTIC
-          : STAGE_WAITING_NOBLE_BLE_MESHCORE,
-      );
-      await awaitNobleBlePrimaryAutoConnectSettled(POWER_RESUME_MESHCORE_MESHTASTIC_SETTLE_MS);
-      setConnectionStage('connectionPanel.stageConnecting');
-      void reconnectBleWithScan(protocol, bleId, () =>
-        onAutoConnectRef.current('ble', undefined, undefined, bleId),
-      )
-        .then(() => {
-          isAutoConnectingRef.current = false;
-          setIsAutoConnecting(false);
-          setConnecting(false);
-          setConnectionStage('');
-        })
-        .catch(onAutoConnectFailed);
-    };
-
-    const runBleAutoConnectWithDefer = async () => {
-      if (skipMeshcoreSharedMeshtasticBleAutoConnect()) return;
-      const bleId = lastBleId;
-      const secondary = isNobleBleDualRadioSecondary(protocol);
-      if (secondary) {
-        if (!bleId) {
-          console.warn(`[ConnectionPanel] ${protocol} dual-radio auto-connect skipped — no BLE id`);
-          return;
-        }
-        await runSecondaryBleAutoConnect(bleId);
-        return;
-      }
-      const started = startBleNobleAutoConnect();
-      if (!started) {
-        console.warn(
-          `[ConnectionPanel] BLE auto-connect skipped for ${protocol} — no remembered device`,
-        );
-        isAutoConnectingRef.current = false;
-        setIsAutoConnecting(false);
-        setConnecting(false);
-        setConnectionStage('');
-      }
-    };
-
-    const migrateLastConnectionToBle = (bleDeviceId: string) => {
-      const bleLast: LastConnection = {
-        type: 'ble',
-        bleDeviceId,
-        bleDeviceName:
-          lc.bleDeviceName ?? lastConnectionBleDeviceNameFallbackRef.current ?? undefined,
-      };
-      saveLastConnection(protocol, bleLast);
-      setLastConnection(bleLast);
-    };
-
-    if (lc.type === 'serial') {
-      setConnectionType('serial');
-      isAutoConnectingRef.current = true;
-      setIsAutoConnecting(true);
-      setConnecting(true);
-      setConnectionStage('connectionPanel.stagePleaseWait');
-      startAutoConnectTimeout();
-      void onAutoConnectRef.current('serial', undefined, lc.serialPortId).catch((err: unknown) => {
-        if (lastBleId && !isLinux) {
-          console.warn(
-            `[ConnectionPanel] serial auto-connect failed for ${protocol}; falling back to BLE noble scan: ${errLikeToLogString(err)}`,
-          );
-          migrateLastConnectionToBle(lastBleId);
-          void runBleAutoConnectWithDefer();
-          return;
-        }
-        onAutoConnectFailed(err, 'serial');
-        maybeNotifyPrimaryBleAutoConnectSettled();
-      });
-    } else if (lc.type === 'ble') {
-      if (lastBleId && !isLinux) {
-        void runBleAutoConnectWithDefer();
-      } else {
-        maybeNotifyPrimaryBleAutoConnectSettled();
-      }
-    } else {
-      maybeNotifyPrimaryBleAutoConnectSettled();
-    }
-    // HTTP: do not auto-trigger — show one-click reconnect card instead
-  }, [protocol, isLinux, t, capabilities.hasReticulumInterfaceConfig, suppressMountAutoConnect]);
+  // Cold-start RF auto-connect (serial/BLE/TCP/HTTP) is owned by
+  // ProtocolAutoConnectCoordinator / useProtocolRfAutoConnect — not this panel.
 
   // Cleanup timeout on unmount
   useEffect(
@@ -1584,6 +1612,19 @@ export default function ConnectionPanel({
 
   const handleReconnect = useCallback(() => {
     if (!lastConnection) return;
+    // Same cancel as handleConnect — Reconnect must not race deferred ProtocolAutoConnectCoordinator
+    // BLE/serial auto-connect (orphan socket / connectType flip).
+    cancelProtocolRfAutoConnect(protocol);
+    if (isAutoConnectingRef.current) {
+      console.debug('[ConnectionPanel] cancelling in-flight BLE auto-connect for reconnect');
+    }
+    isAutoConnectingRef.current = false;
+    setIsAutoConnecting(false);
+    setAutoConnectBleTarget(null);
+    if (autoConnectTimeoutRef.current) {
+      clearTimeout(autoConnectTimeoutRef.current);
+      autoConnectTimeoutRef.current = null;
+    }
     setError(null);
 
     if (lastConnection.type === 'ble') {
@@ -1603,6 +1644,23 @@ export default function ConnectionPanel({
           setConnectionStage('connectionPanel.stageReconnecting');
           // Same-tick IPC: discovery may run before setConnectionType('ble') commits; picker gating uses connectionTypeRef.
           connectionTypeRef.current = 'ble';
+          // Mirror handleConnect: await cancel so a stale chooser cannot merge into the new requestDevice().
+          const priorGeneration = linuxBleChooserGenerationRef.current;
+          linuxBleChooserGenerationRef.current = null;
+          try {
+            await window.electronAPI.cancelBluetoothSelection(priorGeneration);
+          } catch (e: unknown) {
+            console.debug(
+              '[ConnectionPanel] cancelBluetoothSelection failed ' + errLikeToLogString(e),
+            );
+            isAutoConnectingRef.current = false;
+            setIsAutoConnecting(false);
+            setConnecting(false);
+            setConnectionStage('');
+            return;
+          }
+          pendingMeshcoreLinuxWbMacRef.current = null;
+          bleLinuxPickerSelectionResolvedRef.current = false;
           try {
             await onConnect('ble', undefined);
             isAutoConnectingRef.current = false;
@@ -1613,6 +1671,7 @@ export default function ConnectionPanel({
             // catch-no-log-ok reconnect errors surfaced via setError/humanizeBleError
             isAutoConnectingRef.current = false;
             setIsAutoConnecting(false);
+            clearMeshcoreBleSelectionOnMissingServices(err);
             const bleErrMsg = humanizeBleError(err, t);
             if (bleErrMsg) setError(bleErrMsg);
             const isPairingRelatedError = shouldShowLinuxRePairFromBleError(err, bleErrMsg);
@@ -1646,6 +1705,7 @@ export default function ConnectionPanel({
             // catch-no-log-ok reconnect errors surfaced via setError/humanizeBleError
             isAutoConnectingRef.current = false;
             setIsAutoConnecting(false);
+            clearMeshcoreBleSelectionOnMissingServices(err);
             const bleErrMsg = humanizeBleError(err, t);
             if (bleErrMsg) setError(bleErrMsg);
             setConnecting(false);
@@ -1671,7 +1731,10 @@ export default function ConnectionPanel({
       setShowSerialPicker(false);
       setConnectionStage('connectionPanel.stagePleaseWait');
       onConnect('http', addr).catch((err: unknown) => {
-        setError(humanizeHttpError(addr, err, t));
+        // catch-no-log-ok reconnect errors surfaced via setError/humanizeHttpError
+        // Empty humanize = MeshCore setup AbortError (supersede/cancel); do not setError('').
+        const httpErr = humanizeHttpError(addr, err, t);
+        if (httpErr) setError(httpErr);
         setConnecting(false);
         setConnectionStage('');
       });
@@ -1686,7 +1749,10 @@ export default function ConnectionPanel({
       setShowSerialPicker(false);
       setConnectionStage('connectionPanel.stagePleaseWait');
       onConnect('tcp', addr).catch((err: unknown) => {
-        setError(humanizeHttpError(addr, err, t));
+        // catch-no-log-ok reconnect errors surfaced via setError/humanizeHttpError
+        // Empty humanize = MeshCore setup AbortError (supersede/cancel); do not setError('').
+        const tcpErr = humanizeHttpError(addr, err, t);
+        if (tcpErr) setError(tcpErr);
         setConnecting(false);
         setConnectionStage('');
       });
@@ -1713,6 +1779,7 @@ export default function ConnectionPanel({
     protocol,
     tcpHost,
     isLinux,
+    clearMeshcoreBleSelectionOnMissingServices,
     t,
   ]);
 
@@ -1721,6 +1788,7 @@ export default function ConnectionPanel({
     state.status === 'configured' ||
     state.status === 'stale' ||
     state.status === 'reconnecting';
+  const lastBleIdentity = resolveLastBleIdentity(lastConnection, protocol);
 
   useEffect(() => {
     const rfBusy =
@@ -1731,10 +1799,16 @@ export default function ConnectionPanel({
     if (!rfBusy || !isRendererNobleBlePlatform()) return;
 
     if (nobleBleMutexWait.waitingOnNobleBlePeer) {
-      const primary = nobleBleMutexWait.primaryProtocol;
-      if (primary === 'meshtastic') {
+      // Mutex peer wait: show who holds the mutex (`active`), not dual-radio primary.
+      // Using primaryProtocol alone made MeshCore show "Waiting for MeshCore… Meshtastic will
+      // connect" while MeshCore itself was queued behind Meshtastic GATT.
+      const waitingFor =
+        nobleBleMutexWait.waitingForPeer && nobleBleMutexWait.active
+          ? nobleBleMutexWait.active
+          : nobleBleMutexWait.primaryProtocol;
+      if (waitingFor === 'meshtastic') {
         setConnectionStage(STAGE_WAITING_NOBLE_BLE_MESHTASTIC);
-      } else if (primary === 'meshcore') {
+      } else if (waitingFor === 'meshcore') {
         setConnectionStage(STAGE_WAITING_NOBLE_BLE_MESHCORE);
       }
       return;
@@ -1753,6 +1827,7 @@ export default function ConnectionPanel({
     state.status,
     protocol,
     nobleBleMutexWait.waitingOnNobleBlePeer,
+    nobleBleMutexWait.waitingForPeer,
     nobleBleMutexWait.active,
     nobleBleMutexWait.primaryProtocol,
     connectionStage,
@@ -1762,13 +1837,10 @@ export default function ConnectionPanel({
     async (variant: 'connected' | 'idle' | 'connecting') => {
       try {
         if (variant === 'connecting') {
-          await handleCancelConnection();
-        } else if (isConnected) {
-          await Promise.race([
-            onDisconnect(),
-            new Promise<void>((resolve) => setTimeout(resolve, 10_000)),
-          ]);
+          handleCancelConnection();
         }
+        // Connected quit skips onDisconnect: main owns teardown (BLE disconnectAll, TCP
+        // destroy, quit-fast sidecar stop), so a graceful stack stop here only delays exit.
         if (isConnected || variant === 'connecting' || mqttStatus === 'connected') {
           markMqttUserDisconnect();
           void window.electronAPI.mqtt.disconnect().catch((err: unknown) => {
@@ -1794,7 +1866,7 @@ export default function ConnectionPanel({
         );
       }
     },
-    [handleCancelConnection, isConnected, mqttStatus, onDisconnect],
+    [handleCancelConnection, isConnected, mqttStatus],
   );
 
   const renderExitActions = (variant: 'connected' | 'idle' | 'connecting') => {
@@ -1826,11 +1898,12 @@ export default function ConnectionPanel({
   const showNobleBleWaitNotice =
     nobleBleMutexWait.waitingOnNobleBlePeer && rfSessionPending && isRendererNobleBlePlatform();
 
+  const radioUp =
+    state.status === 'configured' || state.status === 'connected' || state.status === 'stale';
   const showAutoReconnectBanner =
-    isAutoConnecting ||
     state.status === 'reconnecting' ||
-    connecting ||
-    nobleBleMutexWait.waitingForPrimaryAutoConnect;
+    (!radioUp &&
+      (isAutoConnecting || connecting || nobleBleMutexWait.waitingForPrimaryAutoConnect));
 
   const renderAutoReconnectBanner = (): ReactNode =>
     showAutoReconnectBanner ? (
@@ -1876,6 +1949,20 @@ export default function ConnectionPanel({
               {resolveConnectionStageText(connectionStage, autoConnectBleTarget, t)}
             </p>
             <p className="text-muted/80 mt-1 text-xs">{t('connectionPanel.stayOnTab')}</p>
+            {(() => {
+              const targetId =
+                lastConnection?.bleDeviceId ?? loadLastBleDevice(protocol) ?? undefined;
+              const targetRssi =
+                (targetId ? bleDevices.find((d) => d.deviceId === targetId)?.rssi : undefined) ??
+                bleDevices.find((d) => d.deviceName === autoConnectBleTarget)?.rssi ??
+                null;
+              return isWeakBleRssi(targetRssi) ? (
+                <BleWeakSignalBanner
+                  rssi={targetRssi}
+                  className="mt-2 rounded-lg border border-amber-800/60 bg-amber-900/40 px-3 py-2 text-xs text-amber-200"
+                />
+              ) : null;
+            })()}
           </div>
         </div>
 
@@ -1886,13 +1973,25 @@ export default function ConnectionPanel({
             aria-labelledby="ble-device-picker-heading"
             className="bg-deep-black w-full overflow-hidden rounded-lg border border-gray-600"
           >
-            <div className="bg-secondary-dark flex items-center justify-between border-b border-gray-600 px-4 py-2.5">
+            <div className="bg-secondary-dark flex items-center justify-between gap-2 border-b border-gray-600 px-4 py-2.5">
               <span id="ble-device-picker-heading" className="text-sm font-medium text-gray-200">
                 {t('connectionPanel.selectBluetoothDevice')}
               </span>
-              <span className="text-xs text-gray-300" aria-live="polite">
-                {t('connectionPanel.devicesFound', { count: bleDevices.length })}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-300" aria-live="polite">
+                  {t('connectionPanel.devicesFound', { count: bleDevices.length })}
+                </span>
+                {bleDevices.length > 0 ? (
+                  <PickerSortControls
+                    mode="ble"
+                    sortKey={blePickerSort.key}
+                    sortDir={blePickerSort.dir}
+                    onSortClick={(key) => {
+                      setBlePickerSort((prev) => nextPickerSort(prev, key));
+                    }}
+                  />
+                ) : null}
+              </div>
             </div>
             <div className="max-h-60 overflow-y-auto">
               {bleDevices.length === 0 ? (
@@ -1903,43 +2002,62 @@ export default function ConnectionPanel({
                   })}
                 </div>
               ) : (
-                (() => {
-                  const bleDeviceNamesCache =
-                    parseStoredJson<Record<string, string>>(
-                      localStorage.getItem('mesh-client:bleDeviceNames'),
-                      'ConnectionPanel bleDeviceNames list',
-                    ) ?? {};
-                  return bleDevices.map((device) => {
-                    const cached = bleDeviceNamesCache[device.deviceId];
-                    const advertisedName = device.deviceName || null;
-                    const displayName = cached
-                      ? advertisedName && advertisedName !== cached
-                        ? `${cached} (${advertisedName})`
-                        : cached
-                      : (advertisedName ?? device.deviceId);
-                    const bleAriaLabel = `${displayName} ${device.deviceId}`;
-                    return (
-                      <button
-                        key={device.deviceId}
-                        type="button"
-                        aria-label={bleAriaLabel}
-                        {...{ [PARENT_HOVER_ATTR]: '' }}
-                        onClick={() => {
-                          handleSelectBleDevice(device.deviceId);
-                        }}
-                        className="hover:bg-secondary-dark w-full border-b border-gray-700 px-4 py-3 text-left transition-colors last:border-b-0"
-                      >
-                        <div className="flex items-center gap-2 text-sm text-gray-200">
-                          <ConnectionIcon type="ble" trigger={parentIconTrigger} />
-                          {displayName}
-                        </div>
-                        <div className="text-muted ml-7 font-mono text-xs">{device.deviceId}</div>
-                      </button>
-                    );
+                sortedBleDevices.map((device) => {
+                  const displayName = getBlePickerName(device);
+                  const identity = resolveBlePickerIdentity({
+                    deviceId: device.deviceId,
+                    address: device.address,
+                    cachedMac: bleDeviceMacsCache[device.deviceId],
                   });
-                })()
+                  const hasRssi = device.rssi != null && Number.isFinite(device.rssi);
+                  const bleAriaLabel = hasRssi
+                    ? t('connectionPanel.pickerDeviceAriaWithRssi', {
+                        name: displayName,
+                        address: identity.display,
+                        rssi: Math.round(device.rssi!),
+                      })
+                    : t('connectionPanel.pickerDeviceAria', {
+                        name: displayName,
+                        address: identity.display,
+                      });
+                  return (
+                    <button
+                      key={device.deviceId}
+                      type="button"
+                      aria-label={bleAriaLabel}
+                      {...{ [PARENT_HOVER_ATTR]: '' }}
+                      onClick={() => {
+                        handleSelectBleDevice(device.deviceId);
+                      }}
+                      className="hover:bg-secondary-dark w-full border-b border-gray-700 px-4 py-3 text-left transition-colors last:border-b-0"
+                    >
+                      <div className="flex items-center gap-2 text-sm text-gray-200">
+                        <ConnectionIcon type="ble" trigger={parentIconTrigger} />
+                        <span className="min-w-0 flex-1 truncate">{displayName}</span>
+                        {hasRssi ? (
+                          <span className="text-muted flex shrink-0 items-center gap-1 text-xs">
+                            <SignalBars rssi={device.rssi} className="h-3 w-4" />
+                            {t('connectionPanel.bleRssiDbm', {
+                              rssi: Math.round(device.rssi!),
+                            })}
+                          </span>
+                        ) : null}
+                      </div>
+                      {identity.display !== displayName ? (
+                        <div className="text-muted ml-7 font-mono text-xs">{identity.display}</div>
+                      ) : null}
+                    </button>
+                  );
+                })
               )}
             </div>
+            {(() => {
+              const weakListed = bleDevices
+                .map((d) => d.rssi)
+                .filter((r): r is number => r != null && Number.isFinite(r) && isWeakBleRssi(r));
+              const weakest = weakListed.length > 0 ? Math.min(...weakListed) : null;
+              return <BleWeakSignalBanner rssi={weakest} />;
+            })()}
             {bleDevices.some((d) => d.deviceName === 'AdaDFU') && (
               <p className="text-muted border-t border-gray-700 px-4 py-2 text-xs">
                 {t('connectionPanel.hintAdaDfuBle')}
@@ -1963,13 +2081,25 @@ export default function ConnectionPanel({
             aria-labelledby="serial-port-picker-heading"
             className="bg-deep-black w-full overflow-hidden rounded-lg border border-gray-600"
           >
-            <div className="bg-secondary-dark flex items-center justify-between border-b border-gray-600 px-4 py-2.5">
+            <div className="bg-secondary-dark flex items-center justify-between gap-2 border-b border-gray-600 px-4 py-2.5">
               <span id="serial-port-picker-heading" className="text-sm font-medium text-gray-200">
                 {t('connectionPanel.selectSerialPort')}
               </span>
-              <span className="text-xs text-gray-300" aria-live="polite">
-                {t('connectionPanel.devicesFound', { count: serialPorts.length })}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-300" aria-live="polite">
+                  {t('connectionPanel.devicesFound', { count: serialPorts.length })}
+                </span>
+                {serialPorts.length > 0 ? (
+                  <PickerSortControls
+                    mode="serial"
+                    sortKey={serialPickerSort.key}
+                    sortDir={serialPickerSort.dir}
+                    onSortClick={(key) => {
+                      setSerialPickerSort((prev) => nextPickerSort(prev, key));
+                    }}
+                  />
+                ) : null}
+              </div>
             </div>
             <div className="max-h-60 overflow-y-auto">
               {serialPorts.length === 0 ? (
@@ -1977,7 +2107,7 @@ export default function ConnectionPanel({
                   {t('connectionPanel.noSerialPorts')}
                 </div>
               ) : (
-                serialPorts.map((port) => {
+                sortedSerialPorts.map((port) => {
                   const cachedNodeName = getSerialPortNodeName(port.portId);
                   const serialDetails = `${port.portName}${port.vendorId ? ` (VID: ${port.vendorId})` : ''}${port.productId ? ` PID: ${port.productId}` : ''}`;
                   const serialAriaLabel = `${cachedNodeName ? `${cachedNodeName} ` : ''}${port.displayName} ${serialDetails}`;
@@ -2223,50 +2353,36 @@ export default function ConnectionPanel({
               <p id="conn-meshtastic-network-preset" className="text-muted text-xs">
                 {t('connectionPanel.networkPreset')}
               </p>
-              <div
-                className="flex gap-2"
-                role="group"
-                aria-labelledby="conn-meshtastic-network-preset"
-              >
-                {(
-                  [
-                    {
-                      id: 'official-plain' as const,
-                      labelKey: 'connectionPanel.meshtasticPreset.officialPlain',
-                    },
-                    { id: 'liam' as const, labelKey: 'connectionPanel.meshtasticPreset.liam' },
-                    { id: 'custom' as const, labelKey: 'connectionPanel.meshtasticPreset.custom' },
-                  ] as const
-                ).map(({ id, labelKey }) => (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => {
-                      setMeshtasticPreset(id);
-                      if (id === 'official-plain') {
-                        setMqttSettings({
-                          ...MESHTASTIC_OFFICIAL_1883,
-                          topicPrefix: mqttSettings.topicPrefix,
-                          autoLaunch: mqttSettings.autoLaunch,
-                        });
-                      } else if (id === 'liam') {
-                        setMqttSettings({
-                          ...MESHTASTIC_LIAM_1883,
-                          topicPrefix: mqttSettings.topicPrefix,
-                          autoLaunch: mqttSettings.autoLaunch,
-                        });
-                      }
-                    }}
-                    className={`flex-1 rounded border px-2 py-1.5 text-xs font-medium transition-colors ${
-                      meshtasticPreset === id
-                        ? 'bg-brand-green/20 border-brand-green text-brand-green'
-                        : 'bg-secondary-dark border-gray-600 text-gray-300 hover:border-gray-400 hover:text-gray-100'
-                    }`}
-                  >
-                    {t(labelKey)}
-                  </button>
-                ))}
-              </div>
+              <MqttNetworkPresetSelect
+                id="conn-meshtastic-network-preset-select"
+                labelledById="conn-meshtastic-network-preset"
+                value={meshtasticPreset}
+                options={[
+                  {
+                    value: 'official-plain',
+                    label: t('connectionPanel.meshtasticPreset.officialPlain'),
+                  },
+                  { value: 'liam', label: t('connectionPanel.meshtasticPreset.liam') },
+                  { value: 'custom', label: t('connectionPanel.meshtasticPreset.custom') },
+                ]}
+                onSelect={(value) => {
+                  const id = value as 'official-plain' | 'liam' | 'custom';
+                  setMeshtasticPreset(id);
+                  if (id === 'official-plain') {
+                    setMqttSettings({
+                      ...MESHTASTIC_OFFICIAL_1883,
+                      topicPrefix: mqttSettings.topicPrefix,
+                      autoLaunch: mqttSettings.autoLaunch,
+                    });
+                  } else if (id === 'liam') {
+                    setMqttSettings({
+                      ...MESHTASTIC_LIAM_1883,
+                      topicPrefix: mqttSettings.topicPrefix,
+                      autoLaunch: mqttSettings.autoLaunch,
+                    });
+                  }
+                }}
+              />
               {meshtasticPreset === 'liam' && (
                 <p className="text-xs text-amber-400">{t('connectionPanel.liamServerNote')}</p>
               )}
@@ -2277,54 +2393,112 @@ export default function ConnectionPanel({
               <p id="conn-meshcore-network-preset" className="text-muted text-xs">
                 {t('connectionPanel.networkPreset')}
               </p>
-              <div
-                className="flex gap-2"
-                role="group"
-                aria-labelledby="conn-meshcore-network-preset"
-              >
-                {(
-                  [
-                    { id: 'letsmesh', labelKey: 'connectionPanel.meshcorePreset.letsmesh' },
-                    { id: 'meshmapper', labelKey: 'connectionPanel.meshcorePreset.meshmapper' },
-                    { id: 'coloradomesh', labelKey: 'connectionPanel.meshcorePreset.coloradomesh' },
-                    { id: 'ripple', labelKey: 'connectionPanel.meshcorePreset.ripple' },
-                    { id: 'custom', labelKey: 'connectionPanel.meshcorePreset.custom' },
-                  ] as const
-                ).map(({ id, labelKey }) => (
+              <MqttNetworkPresetSelect
+                key={`meshcore-preset-${meshcorePresetSelectNonce}`}
+                id="conn-meshcore-network-preset-select"
+                labelledById="conn-meshcore-network-preset"
+                value={meshcorePreset}
+                options={[
+                  { value: 'letsmesh', label: t('connectionPanel.meshcorePreset.letsmesh') },
+                  { value: 'meshmapper', label: t('connectionPanel.meshcorePreset.meshmapper') },
+                  {
+                    value: 'coloradomesh',
+                    label: t('connectionPanel.meshcorePreset.coloradomesh'),
+                  },
+                  { value: 'waev', label: t('connectionPanel.meshcorePreset.waev') },
+                  { value: 'meshatse', label: t('connectionPanel.meshcorePreset.meshatse') },
+                  { value: 'meshcoreca', label: t('connectionPanel.meshcorePreset.meshcoreca') },
+                  { value: 'eastmesh', label: t('connectionPanel.meshcorePreset.eastmesh') },
+                  { value: 'ripple', label: t('connectionPanel.meshcorePreset.ripple') },
+                  { value: 'custom', label: t('connectionPanel.meshcorePreset.custom') },
+                ]}
+                onSelect={(value) => {
+                  const id = value as MeshcoreMqttPreset;
+                  if (id === 'custom') {
+                    setMeshcorePreset(id);
+                    return;
+                  }
+                  if (id === 'ripple') {
+                    if (!window.confirm(t('connectionPanel.ripplePresetConfirm'))) {
+                      // Cancelled: force the controlled select to snap back to the current preset.
+                      setMeshcorePresetSelectNonce((n) => n + 1);
+                      return;
+                    }
+                  }
+                  if (id === 'coloradomesh') {
+                    if (!window.confirm(t('connectionPanel.coloradoPresetConfirm'))) {
+                      setMeshcorePresetSelectNonce((n) => n + 1);
+                      return;
+                    }
+                    localStorage.setItem(COLORADO_MQTT_REGION_ACK_KEY, '1');
+                  }
+                  setMeshcorePreset(id);
+                  const fromIdentity = letsMeshMqttUsernameFromIdentity(readMeshcoreIdentity());
+                  setMeshcoreMqttSettings((prev) => ({
+                    ...applyMeshcoreMqttPreset(id, prev),
+                    username: fromIdentity || prev.username,
+                  }));
+                }}
+              />
+              {meshcorePreset === 'coloradomesh' && (
+                <p className="text-xs text-amber-400">{t('connectionPanel.coloradoServerNote')}</p>
+              )}
+              {meshcorePreset === 'meshcoreca' && (
+                <div
+                  className="flex flex-wrap items-center gap-2 pt-1"
+                  role="group"
+                  aria-label={t('connectionPanel.meshcoreCaBroker')}
+                >
+                  <span className="text-muted text-xs">{t('connectionPanel.broker')}</span>
                   <button
-                    key={id}
                     type="button"
+                    aria-pressed={meshcoreMqttSettings.server === MESHCORE_CA_HOST_PRIMARY}
                     onClick={() => {
-                      if (id === 'custom') {
-                        setMeshcorePreset(id);
-                        return;
-                      }
-                      if (id === 'ripple') {
-                        if (!window.confirm(t('connectionPanel.ripplePresetConfirm'))) return;
-                      }
-                      if (id === 'coloradomesh') {
-                        if (!window.confirm(t('connectionPanel.coloradoPresetConfirm'))) return;
-                        localStorage.setItem(COLORADO_MQTT_REGION_ACK_KEY, '1');
-                      }
-                      setMeshcorePreset(id);
                       const fromIdentity = letsMeshMqttUsernameFromIdentity(readMeshcoreIdentity());
                       setMeshcoreMqttSettings((prev) => ({
-                        ...applyMeshcoreMqttPreset(id, prev),
+                        ...prev,
+                        server: MESHCORE_CA_HOST_PRIMARY,
+                        port: 443,
+                        useWebSocket: true,
+                        tlsEnabled: true,
+                        wsPath: '/mqtt',
+                        keepalive: 30,
                         username: fromIdentity || prev.username,
                       }));
                     }}
-                    className={`flex-1 rounded border px-2 py-1.5 text-xs font-medium transition-colors ${
-                      meshcorePreset === id
+                    className={`rounded border px-2 py-1 text-xs font-medium transition-colors ${
+                      meshcoreMqttSettings.server === MESHCORE_CA_HOST_PRIMARY
                         ? 'bg-brand-green/20 border-brand-green text-brand-green'
                         : 'bg-secondary-dark border-gray-600 text-gray-300 hover:border-gray-400 hover:text-gray-100'
                     }`}
                   >
-                    {t(labelKey)}
+                    {t('connectionPanel.meshcoreCaPrimary')}
                   </button>
-                ))}
-              </div>
-              {meshcorePreset === 'coloradomesh' && (
-                <p className="text-xs text-amber-400">{t('connectionPanel.coloradoServerNote')}</p>
+                  <button
+                    type="button"
+                    aria-pressed={meshcoreMqttSettings.server === MESHCORE_CA_HOST_BACKUP}
+                    onClick={() => {
+                      const fromIdentity = letsMeshMqttUsernameFromIdentity(readMeshcoreIdentity());
+                      setMeshcoreMqttSettings((prev) => ({
+                        ...prev,
+                        server: MESHCORE_CA_HOST_BACKUP,
+                        port: 443,
+                        useWebSocket: true,
+                        tlsEnabled: true,
+                        wsPath: '/mqtt',
+                        keepalive: 30,
+                        username: fromIdentity || prev.username,
+                      }));
+                    }}
+                    className={`rounded border px-2 py-1 text-xs font-medium transition-colors ${
+                      meshcoreMqttSettings.server === MESHCORE_CA_HOST_BACKUP
+                        ? 'bg-brand-green/20 border-brand-green text-brand-green'
+                        : 'bg-secondary-dark border-gray-600 text-gray-300 hover:border-gray-400 hover:text-gray-100'
+                    }`}
+                  >
+                    {t('connectionPanel.meshcoreCaBackup')}
+                  </button>
+                </div>
               )}
               {meshcorePreset === 'letsmesh' && (
                 <div
@@ -2335,6 +2509,7 @@ export default function ConnectionPanel({
                   <span className="text-muted text-xs">{t('connectionPanel.region')}</span>
                   <button
                     type="button"
+                    aria-pressed={meshcoreMqttSettings.server === LETSMESH_HOST_US}
                     onClick={() => {
                       const fromIdentity = letsMeshMqttUsernameFromIdentity(readMeshcoreIdentity());
                       setMeshcoreMqttSettings((prev) => ({
@@ -2342,6 +2517,8 @@ export default function ConnectionPanel({
                         server: LETSMESH_HOST_US,
                         port: 443,
                         useWebSocket: true,
+                        tlsEnabled: true,
+                        wsPath: '/ws',
                         keepalive: 60,
                         username: fromIdentity || prev.username,
                       }));
@@ -2352,10 +2529,11 @@ export default function ConnectionPanel({
                         : 'bg-secondary-dark border-gray-600 text-gray-300 hover:border-gray-400 hover:text-gray-100'
                     }`}
                   >
-                    US
+                    {t('connectionPanel.letsMeshRegionUs')}
                   </button>
                   <button
                     type="button"
+                    aria-pressed={meshcoreMqttSettings.server === LETSMESH_HOST_EU}
                     onClick={() => {
                       const fromIdentity = letsMeshMqttUsernameFromIdentity(readMeshcoreIdentity());
                       setMeshcoreMqttSettings((prev) => ({
@@ -2363,6 +2541,8 @@ export default function ConnectionPanel({
                         server: LETSMESH_HOST_EU,
                         port: 443,
                         useWebSocket: true,
+                        tlsEnabled: true,
+                        wsPath: '/ws',
                         keepalive: 60,
                         username: fromIdentity || prev.username,
                       }));
@@ -2373,7 +2553,7 @@ export default function ConnectionPanel({
                         : 'bg-secondary-dark border-gray-600 text-gray-300 hover:border-gray-400 hover:text-gray-100'
                     }`}
                   >
-                    EU
+                    {t('connectionPanel.letsMeshRegionEu')}
                   </button>
                 </div>
               )}
@@ -2461,22 +2641,14 @@ export default function ConnectionPanel({
             </label>
           </div>
           {protocol === 'meshcore' &&
-            (meshcorePreset === 'letsmesh' ||
-              meshcorePreset === 'coloradomesh' ||
-              meshcorePreset === 'meshmapper') &&
+            usesMeshcoreDeviceSigningMqtt(meshcorePreset, meshcoreMqttSettings) &&
             letsMeshPresetConfigurationDeviation(meshcoreMqttSettings) && (
               <div className="rounded border border-amber-700/50 bg-amber-900/20 px-2 py-2 text-xs text-amber-200/90">
-                {meshcorePreset === 'letsmesh'
-                  ? t('connectionPanel.meshcorePresetDeviation.letsmesh')
-                  : meshcorePreset === 'coloradomesh'
-                    ? t('connectionPanel.meshcorePresetDeviation.coloradomesh')
-                    : t('connectionPanel.meshcorePresetDeviation.meshmapper')}
+                {meshcorePresetDeviationText(t, meshcorePreset)}
               </div>
             )}
           {protocol === 'meshcore' &&
-            (meshcorePreset === 'letsmesh' ||
-              meshcorePreset === 'coloradomesh' ||
-              meshcorePreset === 'meshmapper') && (
+            usesMeshcoreDeviceSigningMqtt(meshcorePreset, meshcoreMqttSettings) && (
               <div
                 className={`flex items-start gap-2 rounded border px-2 py-2 text-xs ${
                   hasPrivateKey
@@ -2564,9 +2736,7 @@ export default function ConnectionPanel({
                 text={
                   protocol === 'meshtastic'
                     ? t('connectionPanel.topicPrefixHelp.meshtastic')
-                    : meshcorePreset === 'letsmesh' ||
-                        meshcorePreset === 'meshmapper' ||
-                        meshcorePreset === 'coloradomesh' ||
+                    : isDeviceSigningMeshcorePreset(meshcorePreset) ||
                         isIataScopedMeshcoreMqtt(meshcorePreset, activeMqttSettings)
                       ? t('connectionPanel.topicPrefixHelp.meshcoreLetsmesh')
                       : t('connectionPanel.topicPrefixHelp.meshcoreDefault')
@@ -2735,9 +2905,7 @@ export default function ConnectionPanel({
                 }
                 if (
                   protocol === 'meshcore' &&
-                  (meshcorePreset === 'letsmesh' ||
-                    meshcorePreset === 'coloradomesh' ||
-                    meshcorePreset === 'meshmapper')
+                  usesMeshcoreDeviceSigningMqtt(meshcorePreset, settings)
                 ) {
                   const presetErr = validateLetsMeshPresetConnect(settings);
                   if (presetErr) {
@@ -2894,6 +3062,8 @@ export default function ConnectionPanel({
           stackError={reticulumStackError}
           onOpenReticulumRmapSettings={onOpenReticulumRmapSettings}
           onOpenAppGpsSettings={onOpenAppGpsSettings}
+          onOpenAdminBluetooth={onOpenAdminBluetooth}
+          onOpenSetupDestination={onOpenReticulumSetupDestination}
           onStartStack={async () => {
             setReticulumStackError(null);
             try {
@@ -2957,6 +3127,26 @@ export default function ConnectionPanel({
               <span className="text-muted">{t('connectionPanel.connectionType')}</span>
               <span className="text-gray-200 uppercase">{state.connectionType}</span>
             </div>
+            {state.connectionType === 'ble' && lastBleIdentity ? (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted">
+                  {t(
+                    lastBleIdentity.isMac
+                      ? 'connectionPanel.bluetoothMac'
+                      : 'connectionPanel.bluetoothId',
+                  )}
+                </span>
+                <span className="font-mono text-gray-200">{lastBleIdentity.display}</span>
+              </div>
+            ) : null}
+            {hostLinkMeter.kind != null && (
+              <ConnectionLinkMeter
+                kind={hostLinkMeter.kind}
+                rssi={hostLinkMeter.rssi}
+                rttMs={hostLinkMeter.rttMs}
+                level={hostLinkMeter.level}
+              />
+            )}
             {state.myNodeNum > 0 && (
               <div className="flex justify-between text-sm">
                 <span className="text-muted">{t('connectionPanel.myNode')}</span>
@@ -2993,7 +3183,7 @@ export default function ConnectionPanel({
               <div className="flex justify-between text-sm">
                 <span className="text-muted">{t('connectionPanel.lastData')}</span>
                 <span className="text-xs text-gray-300">
-                  {new Date(state.lastDataReceived).toLocaleTimeString()}
+                  {formatDisplayTime(state.lastDataReceived, { use24Hour: use24HourTime })}
                 </span>
               </div>
             )}
@@ -3063,7 +3253,11 @@ export default function ConnectionPanel({
                       ? t('connectionPanel.serialDevice')
                       : (lastConnection.httpAddress ?? t('connectionPanel.wifiDevice'))}
                 </p>
-                <p className="text-muted text-xs uppercase">{lastConnection.type}</p>
+                {lastConnection.type === 'ble' && lastBleIdentity ? (
+                  <p className="text-muted font-mono text-xs">{lastBleIdentity.display}</p>
+                ) : (
+                  <p className="text-muted text-xs uppercase">{lastConnection.type}</p>
+                )}
               </div>
             </div>
             <button
@@ -3113,15 +3307,6 @@ export default function ConnectionPanel({
         </div>
 
         {/* Inline error */}
-        {sharedBleNotice && (
-          <div
-            className="border-b border-amber-700 bg-amber-900/30 px-4 py-2 text-xs text-amber-200"
-            role="status"
-          >
-            <p>{t('connectionPanel.sharedBleWithMeshtastic')}</p>
-            <p className="text-muted/80 mt-1">{t('connectionPanel.sharedBleWithMeshtasticHint')}</p>
-          </div>
-        )}
         {error && (
           <div className="border-b border-red-800 bg-red-900/50 px-4 py-2 text-xs text-red-300">
             {error}

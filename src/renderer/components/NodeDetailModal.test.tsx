@@ -7,6 +7,7 @@ import { axe } from 'vitest-axe';
 import { formatIsoDateTime } from '@/shared/formatIsoDate';
 import { markDeleteActiveMqttIdentityError } from '@/shared/meshtasticDeleteNodeError';
 
+import { hydrateAxeThemeColors } from '../lib/a11yTestHelpers';
 import { mergeAppSetting } from '../lib/appSettingsStorage';
 import { meshcoreRepeaterCredentialSettingForNode } from '../lib/meshcoreRepeaterCredentialStorage';
 import { clearAllMeshcoreRepeaterEphemeralPasswords } from '../lib/meshcoreRepeaterSession';
@@ -22,6 +23,10 @@ import NodeDetailModal from './NodeDetailModal';
 
 vi.mock('../lib/downloadBlob', () => ({
   downloadBlob: vi.fn(),
+}));
+
+vi.mock('@/renderer/lib/writeClipboardText', () => ({
+  writeClipboardText: vi.fn().mockResolvedValue(undefined),
 }));
 
 const mockNode: MeshNode = {
@@ -117,6 +122,7 @@ describe('NodeDetailModal accessibility', () => {
         homeNode={null}
       />,
     );
+    hydrateAxeThemeColors(container);
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });
@@ -287,8 +293,8 @@ describe('NodeDetailModal MeshCore actions', () => {
 
     await user.click(screen.getByRole('button', { name: '📊 Request Status' }));
 
-    expect(screen.getByText('Repeater admin password')).toBeInTheDocument();
-    const authOverlay = screen.getByText('Repeater admin password').closest('.fixed');
+    expect(screen.getByText('Admin password')).toBeInTheDocument();
+    const authOverlay = screen.getByText('Admin password').closest('.fixed');
     expect(authOverlay).toHaveStyle({ zIndex: String(Z_NESTED_AUTH_OVERLAY) });
 
     const nodeModalOverlay = container.querySelector('.fixed');
@@ -302,20 +308,84 @@ describe('NodeDetailModal MeshCore actions', () => {
     expect(screen.getByRole('button', { name: '📊 Request Status' })).toBeDisabled();
   });
 
+  it('renders the full public key with a copy button and copies it on click', async () => {
+    const { writeClipboardText } = await import('@/renderer/lib/writeClipboardText');
+    const pubkeyHex = 'ab'.repeat(32);
+    vi.mocked(window.electronAPI.db.getMeshcoreContactById).mockResolvedValue({
+      public_key: pubkeyHex,
+      on_radio: 1,
+    } as unknown as Awaited<ReturnType<typeof window.electronAPI.db.getMeshcoreContactById>>);
+    const user = userEvent.setup();
+    const { container } = renderMeshcoreModal();
+
+    const pubkeyEl = await screen.findByText(pubkeyHex);
+    expect(pubkeyEl).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Test Node' })).toBeInTheDocument();
+    expect(screen.queryByText('!abababab')).not.toBeInTheDocument();
+
+    hydrateAxeThemeColors(container);
+    expect(await axe(container)).toHaveNoViolations();
+
+    const copyButton = screen.getByRole('button', { name: 'Copy public key' });
+    await user.click(copyButton);
+    expect(writeClipboardText).toHaveBeenCalledWith(pubkeyHex);
+    expect(await screen.findByText('Public key copied to clipboard.')).toBeInTheDocument();
+  });
+
+  it.each(['Chat', 'Sensor'])(
+    'shows a DM-capable key badge for a MeshCore %s contact with a public key',
+    async (hwModel) => {
+      vi.mocked(window.electronAPI.db.getMeshcoreContactById).mockResolvedValue({
+        public_key: 'ab'.repeat(32),
+        on_radio: 1,
+      } as unknown as Awaited<ReturnType<typeof window.electronAPI.db.getMeshcoreContactById>>);
+      const { container } = renderMeshcoreModal({
+        node: { ...meshcoreRepeaterNode, hw_model: hwModel },
+      });
+
+      const badge = await screen.findByTitle('Has public key - can send DMs');
+      expect(badge).toHaveTextContent('🔑 DM');
+      expect(screen.queryByTitle('Has public key (no direct messages)')).not.toBeInTheDocument();
+      hydrateAxeThemeColors(container);
+      expect(await axe(container)).toHaveNoViolations();
+    },
+  );
+
+  it.each(['Repeater', 'Room'])(
+    'shows a key-only badge (no DM) for a MeshCore %s contact with a public key',
+    async (hwModel) => {
+      vi.mocked(window.electronAPI.db.getMeshcoreContactById).mockResolvedValue({
+        public_key: 'ab'.repeat(32),
+        on_radio: 1,
+      } as unknown as Awaited<ReturnType<typeof window.electronAPI.db.getMeshcoreContactById>>);
+      const { container } = renderMeshcoreModal({
+        node: { ...meshcoreRepeaterNode, hw_model: hwModel },
+      });
+
+      const badge = await screen.findByTitle('Has public key (no direct messages)');
+      expect(badge).toHaveTextContent('🔑');
+      expect(badge).not.toHaveTextContent('DM');
+      expect(screen.queryByTitle('Has public key - can send DMs')).not.toBeInTheDocument();
+      hydrateAxeThemeColors(container);
+      expect(await axe(container)).toHaveNoViolations();
+    },
+  );
+
   it('enables Message when live store has pubkey but DB contact row does not', async () => {
+    const chatNode: MeshNode = { ...meshcoreRepeaterNode, hw_model: 'Chat' };
     const pubKey = new Uint8Array(32).fill(0xab);
     useNodeStore.setState({
       nodes: {
         [OFFLINE_MESHCORE_IDENTITY_ID]: {
-          [meshcoreRepeaterNode.node_id]: {
-            nodeId: meshcoreRepeaterNode.node_id,
+          [chatNode.node_id]: {
+            nodeId: chatNode.node_id,
             publicKey: pubKey,
           },
         },
       },
     });
 
-    renderMeshcoreModal();
+    renderMeshcoreModal({ node: chatNode });
 
     expect(await screen.findByRole('button', { name: '💬 Message' })).not.toBeDisabled();
   });
@@ -362,17 +432,13 @@ describe('NodeDetailModal MeshCore actions', () => {
     expect(onTraceRoute).toHaveBeenCalledWith(meshcoreRepeaterNode.node_id);
   });
 
-  it('invokes message handler and closes modal when Message is clicked', async () => {
+  it('hides Message button for MeshCore Repeater nodes', () => {
     seedMeshcoreContactPubkey();
-    const user = userEvent.setup();
     const onMessageNode = vi.fn();
-    const onClose = vi.fn();
-    renderMeshcoreModal({ onMessageNode, onClose });
+    renderMeshcoreModal({ onMessageNode });
 
-    await user.click(await screen.findByRole('button', { name: '💬 Message' }));
-
-    expect(onMessageNode).toHaveBeenCalledWith(meshcoreRepeaterNode.node_id);
-    expect(onClose).toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: '💬 Message' })).not.toBeInTheDocument();
+    expect(onMessageNode).not.toHaveBeenCalled();
   });
 
   it('invokes requestRepeaterStatus after repeater auth is skipped', async () => {
@@ -392,7 +458,7 @@ describe('NodeDetailModal MeshCore actions', () => {
     renderMeshcoreModal({ onRequestRepeaterStatus });
 
     await user.click(screen.getByRole('button', { name: '📊 Request Status' }));
-    await user.type(screen.getByLabelText('Repeater admin password (optional)'), 'repeater-secret');
+    await user.type(screen.getByLabelText('Admin password (optional)'), 'repeater-secret');
     await user.click(screen.getByRole('button', { name: 'Continue' }));
 
     expect(onRequestRepeaterStatus).toHaveBeenCalledWith(meshcoreRepeaterNode.node_id);
@@ -405,7 +471,7 @@ describe('NodeDetailModal MeshCore actions', () => {
 
     await user.click(screen.getByRole('button', { name: '📊 Request Status' }));
     await user.click(screen.getByRole('checkbox'));
-    await user.type(screen.getByLabelText('Repeater admin password (optional)'), 'session-only');
+    await user.type(screen.getByLabelText('Admin password (optional)'), 'session-only');
     await user.click(screen.getByRole('button', { name: 'Continue' }));
 
     expect(onRequestRepeaterStatus).toHaveBeenCalledWith(meshcoreRepeaterNode.node_id);
@@ -418,7 +484,7 @@ describe('NodeDetailModal MeshCore actions', () => {
     renderMeshcoreModal({ onRequestRepeaterStatus });
 
     await user.click(screen.getByRole('button', { name: '📊 Request Status' }));
-    await user.type(screen.getByLabelText('Repeater admin password (optional)'), 'repeater-secret');
+    await user.type(screen.getByLabelText('Admin password (optional)'), 'repeater-secret');
     await user.click(screen.getByRole('button', { name: 'Continue' }));
 
     expect(onRequestRepeaterStatus).toHaveBeenCalledWith(meshcoreRepeaterNode.node_id);
@@ -662,5 +728,70 @@ describe('NodeDetailModal MeshCore path names', () => {
     expect(screen.getByText('Current route')).toBeInTheDocument();
     expect(screen.getByTitle('EE → Via Relay')).toHaveTextContent('Via Relay');
     expect(screen.getByText(/▣\s*Dest Node/)).toBeInTheDocument();
+  });
+});
+
+describe('NodeDetailModal verification badges', () => {
+  function renderWith(
+    overrides: Partial<MeshNode>,
+    protocol: 'meshtastic' | 'meshcore' = 'meshtastic',
+  ) {
+    return render(
+      <NodeDetailModal
+        node={{ ...mockNode, ...overrides }}
+        protocol={protocol}
+        onClose={vi.fn()}
+        onRequestPosition={vi.fn().mockResolvedValue(undefined)}
+        onTraceRoute={vi.fn().mockResolvedValue(undefined)}
+        onDeleteNode={vi.fn().mockResolvedValue(undefined)}
+        onToggleFavorite={vi.fn()}
+        isConnected={true}
+        homeNode={null}
+      />,
+    );
+  }
+
+  it('shows only the XEdDSA badge when just that flag is set', () => {
+    renderWith({ has_xeddsa_signed: true });
+
+    expect(screen.getByText('XEdDSA signed')).toBeTruthy();
+    expect(screen.queryByText('Key verified')).toBeNull();
+  });
+
+  it('shows only the key badge when just that flag is set', () => {
+    renderWith({ key_manually_verified: true });
+
+    expect(screen.getByText('Key verified')).toBeTruthy();
+    expect(screen.queryByText('XEdDSA signed')).toBeNull();
+  });
+
+  it('shows both badges together', () => {
+    renderWith({ has_xeddsa_signed: true, key_manually_verified: true });
+
+    expect(screen.getByText('XEdDSA signed')).toBeTruthy();
+    expect(screen.getByText('Key verified')).toBeTruthy();
+  });
+
+  it('hides both badges when neither flag is set', () => {
+    renderWith({});
+
+    expect(screen.queryByText('XEdDSA signed')).toBeNull();
+    expect(screen.queryByText('Key verified')).toBeNull();
+  });
+
+  it('hides the badges for non-Meshtastic nodes', () => {
+    renderWith({ has_xeddsa_signed: true, key_manually_verified: true }, 'meshcore');
+
+    expect(screen.queryByText('XEdDSA signed')).toBeNull();
+    expect(screen.queryByText('Key verified')).toBeNull();
+  });
+
+  it('has no axe violations with both badges rendered', async () => {
+    const { container } = renderWith({ has_xeddsa_signed: true, key_manually_verified: true });
+    hydrateAxeThemeColors(container);
+
+    const results = await axe(container);
+
+    expect(results).toHaveNoViolations();
   });
 });

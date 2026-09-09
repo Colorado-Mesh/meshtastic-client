@@ -7,6 +7,7 @@ import { formatHostForUrl, parseConnectHostPort } from '../shared/connectHost';
 import { isValidHttpHostname } from './httpHostValidation';
 
 const INDEX_SOURCE = readFileSync(join(__dirname, 'index.ts'), 'utf-8');
+const UPDATER_SOURCE = readFileSync(join(__dirname, 'updater.ts'), 'utf-8');
 const SUPPORT_BUNDLE_SOURCE = readFileSync(join(__dirname, 'support-bundle.ts'), 'utf-8');
 const TAK_IPC_SOURCE = readFileSync(join(__dirname, 'ipc/tak-handlers.ts'), 'utf-8');
 const GPS_IPC_SOURCE = readFileSync(join(__dirname, 'ipc/gps-handlers.ts'), 'utf-8');
@@ -116,8 +117,55 @@ describe('meshtastic:tcp-write byte validation (source contract)', () => {
   it('destroys prior socket before opening a new meshtastic tcp connection', () => {
     const handlerIdx = INDEX_SOURCE.indexOf("ipcMain.handle('meshtastic:tcp-connect'");
     expect(handlerIdx).toBeGreaterThan(-1);
-    const handlerBody = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 1200);
-    expect(handlerBody).toContain('meshtasticTcpSocket.destroy()');
+    const handlerBody = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 1400);
+    // Null the active ref before destroy so the superseded close does not emit
+    // meshtastic:tcp-disconnected against a healthy replacement (#792).
+    expect(handlerBody).toMatch(
+      /const prev = meshtasticTcpSocket;\s*meshtasticTcpSocket = null;\s*clearLiveSessionMeter\('meshtastic'\);\s*prev\.destroy\(\)/,
+    );
+  });
+
+  it('emits meshtastic:tcp-disconnected only for the active socket (PR #792)', () => {
+    // connect/disconnect null the ref before destroy(); a superseded close must not broadcast
+    // or the renderer TCP loss-watch will tear down a healthy replacement session.
+    const handlerIdx = INDEX_SOURCE.indexOf("ipcMain.handle('meshtastic:tcp-connect'");
+    expect(handlerIdx).toBeGreaterThan(-1);
+    const closeIdx = INDEX_SOURCE.indexOf("socket.on('close'", handlerIdx);
+    expect(closeIdx).toBeGreaterThan(handlerIdx);
+    const closeBody = INDEX_SOURCE.slice(closeIdx, closeIdx + 900);
+    expect(closeBody).toContain('if (meshtasticTcpSocket === socket)');
+    expect(closeBody).toContain("mainWindow?.webContents.send('meshtastic:tcp-disconnected')");
+    // Emit must be inside the active-socket guard (not before it).
+    const guardIdx = closeBody.indexOf('if (meshtasticTcpSocket === socket)');
+    const emitIdx = closeBody.indexOf(
+      "mainWindow?.webContents.send('meshtastic:tcp-disconnected')",
+    );
+    expect(guardIdx).toBeGreaterThan(-1);
+    expect(emitIdx).toBeGreaterThan(guardIdx);
+  });
+
+  it('nulls meshtasticTcpSocket before destroy on disconnect (PR #792)', () => {
+    const handlerIdx = INDEX_SOURCE.indexOf("ipcMain.handle('meshtastic:tcp-disconnect'");
+    expect(handlerIdx).toBeGreaterThan(-1);
+    const handlerBody = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 500);
+    expect(handlerBody).toMatch(
+      /const prev = meshtasticTcpSocket;\s*meshtasticTcpSocket = null;\s*clearLiveSessionMeter\('meshtastic'\);\s*prev\.destroy\(\)/,
+    );
+  });
+
+  it('does not null meshtasticTcpSocket in the error handler (error-before-close race)', () => {
+    // Node emits 'error' then 'close' on ECONNRESET. If error nulls the ref first, close's
+    // active-socket guard fails and meshtastic:tcp-disconnected is swallowed.
+    const handlerIdx = INDEX_SOURCE.indexOf("ipcMain.handle('meshtastic:tcp-connect'");
+    expect(handlerIdx).toBeGreaterThan(-1);
+    const errorIdx = INDEX_SOURCE.indexOf("socket.on('error'", handlerIdx);
+    expect(errorIdx).toBeGreaterThan(handlerIdx);
+    const closeIdx = INDEX_SOURCE.indexOf("socket.on('close'", handlerIdx);
+    expect(closeIdx).toBeGreaterThan(handlerIdx);
+    expect(errorIdx).toBeGreaterThan(closeIdx);
+    const errorBody = INDEX_SOURCE.slice(errorIdx, errorIdx + 500);
+    expect(errorBody).not.toMatch(/meshtasticTcpSocket\s*=\s*null/);
+    expect(errorBody).toContain('Do not null meshtasticTcpSocket');
   });
 });
 
@@ -320,8 +368,82 @@ describe('meshcore:tcp-connect hostname validation (source contract)', () => {
   it('normalizes bracketed IPv6 before net.Socket.connect', () => {
     const handlerIdx = INDEX_SOURCE.indexOf("ipcMain.handle('meshcore:tcp-connect'");
     expect(handlerIdx).toBeGreaterThan(-1);
-    const handlerBody = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 800);
+    const handlerBody = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 1400);
     expect(handlerBody).toContain('formatHostForSocket(');
+  });
+
+  it('emits meshcore:tcp-disconnected only for the active socket (PR #792)', () => {
+    // Same contract as meshtastic:tcp-connect — superseded closes from connect-replace /
+    // disconnect must not look like a live link drop to the renderer reconnect path.
+    const handlerIdx = INDEX_SOURCE.indexOf("ipcMain.handle('meshcore:tcp-connect'");
+    expect(handlerIdx).toBeGreaterThan(-1);
+    const closeIdx = INDEX_SOURCE.indexOf("socket.on('close'", handlerIdx);
+    expect(closeIdx).toBeGreaterThan(handlerIdx);
+    const closeBody = INDEX_SOURCE.slice(closeIdx, closeIdx + 1600);
+    expect(closeBody).toContain('if (meshcoreTcpSocket === socket)');
+    expect(closeBody).toContain("mainWindow?.webContents.send('meshcore:tcp-disconnected')");
+    expect(closeBody).toContain('readableEnded');
+    expect(closeBody).toContain('writableEnded');
+    expect(closeBody).toContain('remoteAddress');
+    const guardIdx = closeBody.indexOf('if (meshcoreTcpSocket === socket)');
+    const emitIdx = closeBody.indexOf("mainWindow?.webContents.send('meshcore:tcp-disconnected')");
+    expect(guardIdx).toBeGreaterThan(-1);
+    expect(emitIdx).toBeGreaterThan(guardIdx);
+  });
+
+  it('nulls meshcoreTcpSocket before destroy on connect-replace and disconnect (PR #792)', () => {
+    const connectIdx = INDEX_SOURCE.indexOf("ipcMain.handle('meshcore:tcp-connect'");
+    expect(connectIdx).toBeGreaterThan(-1);
+    const connectBody = INDEX_SOURCE.slice(connectIdx, connectIdx + 1400);
+    expect(connectBody).toMatch(
+      /const prev = meshcoreTcpSocket;\s*meshcoreTcpSocket = null;\s*clearLiveSessionMeter\('meshcore'\);\s*prev\.destroy\(\)/,
+    );
+
+    const disconnectIdx = INDEX_SOURCE.indexOf("ipcMain.handle('meshcore:tcp-disconnect'");
+    expect(disconnectIdx).toBeGreaterThan(-1);
+    const disconnectBody = INDEX_SOURCE.slice(disconnectIdx, disconnectIdx + 500);
+    expect(disconnectBody).toMatch(
+      /const prev = meshcoreTcpSocket;\s*meshcoreTcpSocket = null;\s*clearLiveSessionMeter\('meshcore'\);\s*prev\.destroy\(\)/,
+    );
+  });
+
+  it('enables TCP_NODELAY and keepalive on meshcore:tcp-connect sockets', () => {
+    expect(INDEX_SOURCE).toContain('MESHCORE_TCP_KEEPALIVE_INITIAL_DELAY_MS');
+    const connectIdx = INDEX_SOURCE.indexOf("ipcMain.handle('meshcore:tcp-connect'");
+    expect(connectIdx).toBeGreaterThan(-1);
+    const connectBody = INDEX_SOURCE.slice(connectIdx, connectIdx + 1600);
+    expect(connectBody).toContain('socket.setNoDelay(true)');
+    expect(connectBody).toContain(
+      'socket.setKeepAlive(true, MESHCORE_TCP_KEEPALIVE_INITIAL_DELAY_MS)',
+    );
+  });
+
+  it('does not null meshcoreTcpSocket in the error handler (error-before-close race)', () => {
+    // Node emits 'error' then 'close' on ECONNRESET. If error nulls the ref first, close's
+    // active-socket guard fails and meshcore:tcp-disconnected is swallowed (n7eal).
+    const handlerIdx = INDEX_SOURCE.indexOf("ipcMain.handle('meshcore:tcp-connect'");
+    expect(handlerIdx).toBeGreaterThan(-1);
+    const errorIdx = INDEX_SOURCE.indexOf("socket.on('error'", handlerIdx);
+    expect(errorIdx).toBeGreaterThan(handlerIdx);
+    const closeIdx = INDEX_SOURCE.indexOf("socket.on('close'", handlerIdx);
+    expect(closeIdx).toBeGreaterThan(handlerIdx);
+    expect(errorIdx).toBeGreaterThan(closeIdx);
+    const errorBody = INDEX_SOURCE.slice(errorIdx, errorIdx + 500);
+    expect(errorBody).not.toMatch(/meshcoreTcpSocket\s*=\s*null/);
+    expect(errorBody).toContain('Do not null meshcoreTcpSocket');
+  });
+});
+
+describe('hostLink:getSessionMeter validation (source contract)', () => {
+  it('rejects protocols other than meshtastic/meshcore', () => {
+    const handlerIdx = INDEX_SOURCE.indexOf("ipcMain.handle('hostLink:getSessionMeter'");
+    expect(handlerIdx).toBeGreaterThan(-1);
+    const handlerBody = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 400);
+    expect(handlerBody).toContain("assertIpcSender(event, 'hostLink:getSessionMeter')");
+    expect(handlerBody).toContain("protocol !== 'meshtastic'");
+    expect(handlerBody).toContain("protocol !== 'meshcore'");
+    expect(handlerBody).toContain("throw new Error('Invalid protocol')");
+    expect(handlerBody).toContain('snapshotLiveSessionMeter(');
   });
 });
 
@@ -338,12 +460,32 @@ describe('meshtastic:tcp-connect hostname validation (source contract)', () => {
   it('normalizes bracketed IPv6 before net.Socket.connect', () => {
     const handlerIdx = INDEX_SOURCE.indexOf("ipcMain.handle('meshtastic:tcp-connect'");
     expect(handlerIdx).toBeGreaterThan(-1);
-    const handlerBody = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 800);
+    const handlerBody = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 1400);
     expect(handlerBody).toContain('formatHostForSocket(');
   });
 
   it('uses an independent socket ref from meshcore:tcp-connect', () => {
     expect(INDEX_SOURCE).toContain('let meshtasticTcpSocket: net.Socket | null = null;');
+  });
+
+  it('destroys the socket on oversized meshtastic:tcp-data chunks without emitting', () => {
+    const handlerIdx = INDEX_SOURCE.indexOf("ipcMain.handle('meshtastic:tcp-connect'");
+    expect(handlerIdx).toBeGreaterThan(-1);
+    const dataIdx = INDEX_SOURCE.indexOf("socket.on('data'", handlerIdx);
+    expect(dataIdx).toBeGreaterThan(handlerIdx);
+    const dataBody = INDEX_SOURCE.slice(dataIdx, dataIdx + 900);
+    expect(dataBody).toContain('MESHTASTIC_TCP_DATA_MAX_BYTES');
+    expect(dataBody).toContain('meshtastic:tcp-data oversized chunk');
+    expect(dataBody).toContain('socket.destroy()');
+    const oversizeIdx = dataBody.indexOf('chunk.length > MESHTASTIC_TCP_DATA_MAX_BYTES');
+    const destroyIdx = dataBody.indexOf('socket.destroy()');
+    const emitIdx = dataBody.indexOf("mainWindow?.webContents.send('meshtastic:tcp-data'");
+    expect(oversizeIdx).toBeGreaterThan(-1);
+    expect(destroyIdx).toBeGreaterThan(oversizeIdx);
+    expect(emitIdx).toBeGreaterThan(destroyIdx);
+    // Oversized branch returns before the emit (emit is only on the success path after return).
+    const returnAfterDestroy = dataBody.slice(destroyIdx, emitIdx);
+    expect(returnAfterDestroy).toContain('return;');
   });
 });
 
@@ -440,9 +582,12 @@ describe('privileged IPC sender validation (source contract)', () => {
     'meshtastic:tcp-connect',
     'meshtastic:tcp-write',
     'meshtastic:tcp-disconnect',
+    'hostLink:getSessionMeter',
     'noble-ble-connect',
     'noble-ble-disconnect',
     'notify:message',
+    'notify:longSessionRestart',
+    'notify:clearLongSessionNudge',
     'chat:outbox:add',
     'chat:outbox:remove',
     'chat:fetchLinkPreview',
@@ -450,13 +595,36 @@ describe('privileged IPC sender validation (source contract)', () => {
     'appSettings:get',
     'appSettings:set',
     'app:rendererHeartbeat',
+    'app:getRendererLiveness',
+    'app:getProcessUptimeSec',
+    'app:relaunch',
+    'meshcore:openJsonFile',
     'db:saveNode',
     'db:saveNodePath',
     'db:getNodes',
     'db:getMessageChannels',
+    'db:getNodeNote',
+    'db:getMeshcoreMessages',
+    'db:listMeshtasticDmPeers',
+    'db:listMeshcoreDmPeers',
+    'db:searchMessages',
+    'db:searchMeshcoreMessages',
+    'db:getMeshcoreContacts',
+    'db:getMeshcoreMessageChannels',
+    'db:getMeshcoreContactCount',
+    'db:getMeshcoreContactById',
+    'db:getContactGroups',
+    'db:getContactGroupMembers',
+    'db:getPositionHistory',
+    'db:getMeshcoreHopHistory',
+    'db:getAllMeshcoreHopHistory',
+    'db:getMeshcoreTraceHistory',
+    'db:getAllMeshcorePathHistory',
+    'db:getMeshcorePathHistory',
     'log:getPath',
     'log:getRecentLines',
     'mqtt:getCachedNodes',
+    'mqtt:getChannelNameToIndex',
     'mqtt:getClientId',
     'storage:isAvailable',
     'support:exportBundle',
@@ -472,6 +640,47 @@ describe('privileged IPC sender validation (source contract)', () => {
     ).toBe(true);
   });
 
+  it.each(['device-connected', 'device-disconnected'] as const)(
+    '%s validates the IPC sender',
+    (channel) => {
+      const handlerIdx = INDEX_SOURCE.indexOf(`ipcMain.on('${channel}'`);
+      expect(handlerIdx).toBeGreaterThan(-1);
+      const body = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 300);
+      expect(body).toContain('validateIpcSender(event)');
+    },
+  );
+
+  it('every ipcMain.on channel in index.ts validates the IPC sender', () => {
+    const channels = [...INDEX_SOURCE.matchAll(/ipcMain\.on\('([^']+)'/g)].map((m) => m[1]);
+    expect(channels.length).toBeGreaterThan(0);
+    const unguarded = channels.filter((channel) => {
+      const idx = INDEX_SOURCE.indexOf(`ipcMain.on('${channel}'`);
+      const body = INDEX_SOURCE.slice(idx, idx + 300);
+      return !body.includes('validateIpcSender(event)') && !body.includes('assertIpcSender(event');
+    });
+    // `ipcMain.on` is fire-and-forget, so an unguarded handler lets any frame drive main
+    // state (cancel pairing, resolve a device-selection callback) with no reply to inspect.
+    expect(unguarded).toEqual([]);
+  });
+
+  it.each(['update:check', 'update:download', 'update:install', 'update:open-releases'] as const)(
+    '%s calls assertIpcSender',
+    (channel) => {
+      const needle = `ipcMain.handle('${channel}'`;
+      let from = 0;
+      let found = 0;
+      while (from < UPDATER_SOURCE.length) {
+        const idx = UPDATER_SOURCE.indexOf(needle, from);
+        if (idx < 0) break;
+        found += 1;
+        const body = UPDATER_SOURCE.slice(idx, idx + 250);
+        expect(body).toContain(`assertIpcSender(event, '${channel}')`);
+        from = idx + needle.length;
+      }
+      expect(found).toBeGreaterThan(0);
+    },
+  );
+
   it('http fromradio poll uses AbortSignal.timeout', () => {
     expect(INDEX_SOURCE).toContain('HTTP_FETCH_TIMEOUT_MS');
     expect(INDEX_SOURCE).toMatch(
@@ -482,14 +691,14 @@ describe('privileged IPC sender validation (source contract)', () => {
   it('meshcore tcp-connect uses connect timeout', () => {
     expect(INDEX_SOURCE).toContain('MESHCORE_TCP_CONNECT_TIMEOUT_MS');
     expect(INDEX_SOURCE).toMatch(
-      /meshcore:tcp-connect[\s\S]{0,1200}meshcore:tcp-connect: connection timeout/,
+      /meshcore:tcp-connect[\s\S]{0,1800}meshcore:tcp-connect: connection timeout/,
     );
   });
 
   it('meshtastic tcp-connect uses connect timeout', () => {
     expect(INDEX_SOURCE).toContain('MESHTASTIC_TCP_CONNECT_TIMEOUT_MS');
     expect(INDEX_SOURCE).toMatch(
-      /meshtastic:tcp-connect[\s\S]{0,1200}meshtastic:tcp-connect: connection timeout/,
+      /meshtastic:tcp-connect[\s\S]{0,1800}meshtastic:tcp-connect: connection timeout/,
     );
   });
 
@@ -504,6 +713,34 @@ describe('privileged IPC sender validation (source contract)', () => {
     expect(INDEX_SOURCE).toContain('CHAT_EXPORT_MAX_MESSAGES');
   });
 
+  it('chat:export validates per-message field sizes and total bytes', () => {
+    const handlerIdx = INDEX_SOURCE.indexOf("ipcMain.handle('chat:export'");
+    expect(handlerIdx).toBeGreaterThan(-1);
+    const body = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 900);
+    expect(body).toContain('assertChatExportMessageSizes(messages)');
+    expect(body).toContain('formatChatExportLinesWithTotalCap(messages)');
+    expect(body).toContain('exportIpcRateLimit.checkOrThrow()');
+  });
+
+  it('expensive export/crypto IPC channels use createIpcRateLimiter', () => {
+    expect(INDEX_SOURCE).toContain('createIpcRateLimiter');
+    expect(INDEX_SOURCE).toContain('exportIpcRateLimit');
+    expect(INDEX_SOURCE).toContain('storageCryptoIpcRateLimit');
+    for (const channel of [
+      'db:export',
+      'db:import',
+      'log:export',
+      'support:exportBundle',
+      'storage:encrypt',
+      'storage:decrypt',
+    ] as const) {
+      const handlerIdx = INDEX_SOURCE.indexOf(`ipcMain.handle('${channel}'`);
+      expect(handlerIdx).toBeGreaterThan(-1);
+      const body = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 500);
+      expect(body).toMatch(/RateLimit\.checkOrThrow\(\)/);
+    }
+  });
+
   it('support:exportBundle validates mode and snapshot size', () => {
     const handlerIdx = INDEX_SOURCE.indexOf("ipcMain.handle('support:exportBundle'");
     expect(handlerIdx).toBeGreaterThan(-1);
@@ -515,7 +752,8 @@ describe('privileged IPC sender validation (source contract)', () => {
   });
 
   it('appSettings allows meshcore repeater credential prefix', () => {
-    expect(INDEX_SOURCE).toContain('meshcoreRepeaterCredential:');
+    expect(INDEX_SOURCE).toContain('MESHCORE_REPEATER_CREDENTIAL_SETTING_PREFIX');
+    expect(INDEX_SOURCE).toContain("from '../shared/appSettingsKeyPrefixes'");
     expect(INDEX_SOURCE).toContain('appSettingsMaxValueLengthForKey');
   });
 
@@ -530,6 +768,13 @@ describe('privileged IPC sender validation (source contract)', () => {
     const handlerIdx = INDEX_SOURCE.indexOf("ipcMain.handle('app:rendererHeartbeat'");
     expect(handlerIdx).toBeGreaterThan(-1);
     const body = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 300);
+    expect(body).toContain('validateIpcSender(event)');
+  });
+
+  it('app:getRendererLiveness validates IPC sender', () => {
+    const handlerIdx = INDEX_SOURCE.indexOf("ipcMain.handle('app:getRendererLiveness'");
+    expect(handlerIdx).toBeGreaterThan(-1);
+    const body = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 400);
     expect(body).toContain('validateIpcSender(event)');
   });
 });
@@ -577,6 +822,7 @@ describe('db mutator IPC sender validation (source contract, H3)', () => {
     'db:markAllMeshcoreContactsOffRadio',
     'db:deleteMeshcoreContactsWithoutPubkey',
     'db:offloadAllMeshcoreContacts',
+    'db:markMeshcoreContactOffRadio',
     'db:createContactGroup',
     'db:updateContactGroup',
     'db:deleteContactGroup',
@@ -602,6 +848,36 @@ describe('db mutator IPC sender validation (source contract, H3)', () => {
     expect(handlerBody).toContain('validateIpcSender(event)');
   });
 
+  const dbReadChannels = [
+    'db:getNodeNote',
+    'db:getMeshcoreMessages',
+    'db:listMeshtasticDmPeers',
+    'db:listMeshcoreDmPeers',
+    'db:searchMessages',
+    'db:searchMeshcoreMessages',
+    'db:getMeshcoreContacts',
+    'db:getMeshcoreMessageChannels',
+    'db:getMeshcoreContactCount',
+    'db:getMeshcoreContactById',
+    'db:getContactGroups',
+    'db:getContactGroupMembers',
+    'db:getPositionHistory',
+    'db:getMeshcoreHopHistory',
+    'db:getAllMeshcoreHopHistory',
+    'db:getMeshcoreTraceHistory',
+    'db:getAllMeshcorePathHistory',
+    'db:getMeshcorePathHistory',
+    'db:getNodes',
+    'db:getMessageChannels',
+  ] as const;
+
+  it.each(dbReadChannels)('%s calls assertIpcSender', (channel) => {
+    const handlerIdx = INDEX_SOURCE.indexOf(`ipcMain.handle('${channel}'`);
+    expect(handlerIdx).toBeGreaterThan(-1);
+    const handlerBody = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 400);
+    expect(handlerBody).toContain(`assertIpcSender(event, '${channel}')`);
+  });
+
   it.each([
     ['app:setLoginItem', "assertIpcSender(event, 'app:setLoginItem')"],
     ['app:getLoginItem', "assertIpcSender(event, 'app:getLoginItem')"],
@@ -613,16 +889,14 @@ describe('db mutator IPC sender validation (source contract, H3)', () => {
     expect(body).toContain(expectedCheck);
   });
 
-  it('regression: no db:* mutator (non-get/search) is missing a sender check', () => {
-    // Any db:* handler whose name is not a read-only getter/search must call
-    // assertIpcSender or validateIpcSender within the first 400 chars of its body.
+  it('regression: no db:* handler is missing a sender check', () => {
+    // Any db:* handler must call assertIpcSender or validateIpcSender within the
+    // first 400 chars of its body (reads and mutators alike).
     const re = /ipcMain\.handle\(\s*\n?\s*'(db:[a-zA-Z]+)'/g;
-    const readOnlyPrefixes = ['db:get', 'db:search'];
     const missing: string[] = [];
     let m: RegExpExecArray | null;
     while ((m = re.exec(INDEX_SOURCE))) {
       const channel = m[1];
-      if (readOnlyPrefixes.some((p) => channel.startsWith(p))) continue;
       const body = INDEX_SOURCE.slice(m.index, m.index + 400);
       const hasCheck =
         body.includes('assertIpcSender(event') || body.includes('validateIpcSender(event)');

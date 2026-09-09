@@ -2,6 +2,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
 
+import { hydrateAxeThemeColors } from '../lib/a11yTestHelpers';
+import { FONT_SCALE_STORAGE_KEY } from '../lib/fontScale';
 import { MESSAGE_RETENTION_KEYS } from '../lib/messageRetention';
 import AppPanel from './AppPanel';
 import { ToastProvider } from './Toast';
@@ -23,6 +25,7 @@ describe('AppPanel accessibility', () => {
       </ToastProvider>,
     );
     await act(async () => {});
+    hydrateAxeThemeColors(container);
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });
@@ -198,7 +201,7 @@ describe('AppPanel: sound notification toggle', () => {
   });
 });
 
-describe('AppPanel: MeshCore Open wire toggle', () => {
+describe('AppPanel: RRC unread all room messages toggle', () => {
   const defaultProps = {
     nodeCount: 0,
     messageCount: 0,
@@ -211,44 +214,112 @@ describe('AppPanel: MeshCore Open wire toggle', () => {
     localStorage.removeItem('mesh-client:appSettings');
   });
 
-  it('shows Open wire toggle only on MeshCore protocol tab', async () => {
+  it('shows the toggle only on the Reticulum protocol tab, checked by default', async () => {
     const { unmount } = render(
       <ToastProvider>
         <AppPanel {...defaultProps} protocol="meshtastic" />
       </ToastProvider>,
     );
     expect(
-      screen.queryByRole('checkbox', { name: /Enable MeshCore Open compatibility/i }),
+      screen.queryByRole('checkbox', { name: /RRC unread for all room messages/i }),
     ).toBeNull();
     unmount();
 
-    render(
+    const { unmount: unmountMeshcore } = render(
       <ToastProvider>
         <AppPanel {...defaultProps} protocol="meshcore" />
       </ToastProvider>,
     );
+    expect(
+      screen.queryByRole('checkbox', { name: /RRC unread for all room messages/i }),
+    ).toBeNull();
+    unmountMeshcore();
+
+    render(
+      <ToastProvider>
+        <AppPanel {...defaultProps} protocol="reticulum" />
+      </ToastProvider>,
+    );
     const checkbox = await screen.findByRole('checkbox', {
-      name: /Enable MeshCore Open compatibility/i,
+      name: /RRC unread for all room messages/i,
     });
-    expect(checkbox).not.toBeChecked();
+    expect(checkbox).toBeChecked();
   });
 
-  it('persists meshcoreOpenWireCompatEnabled to app settings', async () => {
-    render(
+  it('persists rrcUnreadAllRoomMessages false and remounts unchecked', async () => {
+    const { unmount } = render(
       <ToastProvider>
-        <AppPanel {...defaultProps} protocol="meshcore" />
+        <AppPanel {...defaultProps} protocol="reticulum" />
       </ToastProvider>,
     );
     const checkbox = await screen.findByRole('checkbox', {
-      name: /Enable MeshCore Open compatibility/i,
+      name: /RRC unread for all room messages/i,
     });
     act(() => {
       fireEvent.click(checkbox);
     });
     await waitFor(() => {
       const raw = localStorage.getItem('mesh-client:appSettings');
-      expect(raw).toContain('"meshcoreOpenWireCompatEnabled":true');
+      expect(raw).toContain('"rrcUnreadAllRoomMessages":false');
     });
+    unmount();
+
+    render(
+      <ToastProvider>
+        <AppPanel {...defaultProps} protocol="reticulum" />
+      </ToastProvider>,
+    );
+    expect(
+      await screen.findByRole('checkbox', { name: /RRC unread for all room messages/i }),
+    ).not.toBeChecked();
+  });
+});
+
+describe('AppPanel: MeshCore Radio-owned settings are not on App', () => {
+  const defaultProps = {
+    nodeCount: 0,
+    messageCount: 0,
+    channels: [] as { index: number; name: string }[],
+    myNodeNum: null as number | null,
+    onLocationFilterChange: vi.fn(),
+  };
+
+  beforeEach(() => {
+    localStorage.removeItem('mesh-client:appSettings');
+  });
+
+  it('does not stamp meshcorePathHashMode or Open-wire into app settings on mount', async () => {
+    render(
+      <ToastProvider>
+        <AppPanel {...defaultProps} protocol="meshcore" />
+      </ToastProvider>,
+    );
+    await screen.findByText('App Settings');
+    await waitFor(
+      () => {
+        const raw = localStorage.getItem('mesh-client:appSettings');
+        expect(raw).toBeTruthy();
+      },
+      { timeout: 1500 },
+    );
+    const raw = localStorage.getItem('mesh-client:appSettings');
+    expect(raw).not.toContain('meshcorePathHashMode');
+    expect(raw).not.toContain('meshcoreOpenWireCompatEnabled');
+  });
+
+  it('does not show Open-wire or path-hash controls on App', async () => {
+    const { container } = render(
+      <ToastProvider>
+        <AppPanel {...defaultProps} protocol="meshcore" />
+      </ToastProvider>,
+    );
+    await screen.findByText('App Settings');
+    expect(
+      screen.queryByRole('checkbox', { name: /Enable MeshCore Open compatibility/i }),
+    ).toBeNull();
+    expect(screen.queryByLabelText(/Default path hash size/i)).toBeNull();
+    hydrateAxeThemeColors(container);
+    expect(await axe(container)).toHaveNoViolations();
   });
 });
 
@@ -345,5 +416,134 @@ describe('AppPanel: Reticulum clear contacts danger zone', () => {
 
     fireEvent.click(screen.getByText('Destructive actions'));
     expect(await screen.findByRole('button', { name: /Clear All Contacts \(0\)/i })).toBeDisabled();
+  });
+});
+
+describe('AppPanel: font size control', () => {
+  const defaultProps = {
+    protocol: 'meshtastic' as const,
+    nodeCount: 0,
+    messageCount: 0,
+    channels: [] as { index: number; name: string }[],
+    myNodeNum: null as number | null,
+    onLocationFilterChange: vi.fn(),
+  };
+
+  beforeEach(() => {
+    localStorage.removeItem(FONT_SCALE_STORAGE_KEY);
+    document.documentElement.style.fontSize = '';
+  });
+
+  it('hydrates the slider and percentage label from the stored scale', async () => {
+    localStorage.setItem(FONT_SCALE_STORAGE_KEY, '1.2');
+    render(
+      <ToastProvider>
+        <AppPanel {...defaultProps} />
+      </ToastProvider>,
+    );
+
+    const slider = await screen.findByRole('slider', { name: /font size/i });
+    expect(slider).toHaveValue('1.2');
+    expect(screen.getByText('120%')).toBeInTheDocument();
+  });
+
+  it('dragging the slider applies and persists the scale', async () => {
+    render(
+      <ToastProvider>
+        <AppPanel {...defaultProps} />
+      </ToastProvider>,
+    );
+
+    const slider = await screen.findByRole('slider', { name: /font size/i });
+    act(() => {
+      fireEvent.change(slider, { target: { value: '1.25' } });
+    });
+
+    expect(document.documentElement.style.fontSize).toBe('125%');
+    expect(localStorage.getItem(FONT_SCALE_STORAGE_KEY)).toBe('1.25');
+    expect(screen.getByText('125%')).toBeInTheDocument();
+  });
+
+  it('increase and decrease buttons step by FONT_SCALE_STEP', () => {
+    render(
+      <ToastProvider>
+        <AppPanel {...defaultProps} />
+      </ToastProvider>,
+    );
+
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: /increase font size/i }));
+    });
+    expect(localStorage.getItem(FONT_SCALE_STORAGE_KEY)).toBe('1.05');
+
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: /decrease font size/i }));
+    });
+    expect(localStorage.getItem(FONT_SCALE_STORAGE_KEY)).toBe('1');
+  });
+
+  it('reset clears storage and returns the label to 100%', async () => {
+    localStorage.setItem(FONT_SCALE_STORAGE_KEY, '1.5');
+    render(
+      <ToastProvider>
+        <AppPanel {...defaultProps} />
+      </ToastProvider>,
+    );
+
+    expect(await screen.findByText('150%')).toBeInTheDocument();
+
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: /reset font size/i }));
+    });
+
+    expect(localStorage.getItem(FONT_SCALE_STORAGE_KEY)).toBeNull();
+    expect(document.documentElement.style.fontSize).toBe('100%');
+    expect(screen.getByText('100%')).toBeInTheDocument();
+  });
+
+  it('has no axe violations at the maximum scale', async () => {
+    localStorage.setItem(FONT_SCALE_STORAGE_KEY, '1.5');
+    const { container } = render(
+      <ToastProvider>
+        <AppPanel {...defaultProps} />
+      </ToastProvider>,
+    );
+    await act(async () => {});
+    hydrateAxeThemeColors(container);
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+});
+
+describe('AppPanel: Clear All Nodes success toast', () => {
+  const defaultProps = {
+    protocol: 'meshtastic' as const,
+    nodeCount: 3,
+    messageCount: 0,
+    channels: [] as { index: number; name: string }[],
+    myNodeNum: null as number | null,
+    onLocationFilterChange: vi.fn(),
+  };
+
+  beforeEach(() => {
+    vi.mocked(window.electronAPI.appSettings.getAll).mockResolvedValue({});
+    vi.mocked(window.electronAPI.db.clearNodes).mockResolvedValue(undefined);
+  });
+
+  it('shows the resolved node count in the success toast', async () => {
+    render(
+      <ToastProvider>
+        <AppPanel {...defaultProps} />
+      </ToastProvider>,
+    );
+
+    fireEvent.click(screen.getByText('Destructive actions'));
+    fireEvent.click(screen.getByRole('button', { name: /Clear All Nodes \(3\)/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Clear 3 Nodes/i }));
+
+    expect(
+      await screen.findByText('Clear All Nodes (3) completed successfully.'),
+    ).toBeInTheDocument();
+    expect(window.electronAPI.db.clearNodes).toHaveBeenCalled();
   });
 });

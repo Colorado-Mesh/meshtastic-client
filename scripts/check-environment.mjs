@@ -7,11 +7,11 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { userInfo } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, win32 as pathWin32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { resolveDockerSocket } from './run-act.mjs';
-import { formatPnpmPrepareHint } from './check-package-manager.mjs';
+import { formatPnpmPrepareHint, parseEngineFloor } from './check-package-manager.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..');
@@ -94,7 +94,7 @@ function readEngines() {
   const pkg = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8'));
   return {
     node: pkg.engines?.node ?? '>=22.13.0',
-    pnpm: pkg.engines?.pnpm ?? '>=11.0.0',
+    pnpm: pkg.engines?.pnpm ?? '>=12.0.0',
     packageManager: typeof pkg.packageManager === 'string' ? pkg.packageManager : undefined,
   };
 }
@@ -137,13 +137,56 @@ function checkNode(nodeEngine) {
   };
 }
 
+/**
+ * pnpm/action-setup on Windows may put shims under PNPM_HOME or PNPM_HOME/bin
+ * rather than on PATH for spawnSync('pnpm').
+ *
+ * @param {string | undefined} pnpmHome
+ * @param {string} [platform]
+ * @returns {string[]}
+ */
+export function resolvePnpmBinCandidates(pnpmHome, platform = process.platform) {
+  if (!pnpmHome || platform !== 'win32') return [];
+  // Always use win32 separators so unit tests on darwin/linux match CI paths.
+  return [
+    pathWin32.join(pnpmHome, 'pnpm.CMD'),
+    pathWin32.join(pnpmHome, 'pnpm.cmd'),
+    pathWin32.join(pnpmHome, 'pnpm.exe'),
+    pathWin32.join(pnpmHome, 'bin', 'pnpm.CMD'),
+    pathWin32.join(pnpmHome, 'bin', 'pnpm.cmd'),
+    pathWin32.join(pnpmHome, 'bin', 'pnpm.exe'),
+  ];
+}
+
+function resolvePnpmVersionOutput() {
+  const fromPath = commandOutput('pnpm', ['--version']);
+  if (fromPath) return fromPath;
+  for (const candidate of resolvePnpmBinCandidates(process.env.PNPM_HOME)) {
+    if (!existsSync(candidate)) continue;
+    // Windows .CMD/.cmd shims need shell:true for spawnSync.
+    const needsShell = /\.cmd$/i.test(candidate);
+    const res = spawnSync(candidate, ['--version'], {
+      encoding: 'utf8',
+      stdio: 'pipe',
+      shell: needsShell,
+    });
+    if (res.status !== 0) continue;
+    const out = (res.stdout || res.stderr || '').trim();
+    if (out) return out;
+  }
+  return null;
+}
+
 function checkPnpm(pnpmEngine, packageManager) {
   const pinMatch =
     typeof packageManager === 'string' ? packageManager.match(/^pnpm@([^+]+)/) : null;
   const pinVersion = pinMatch?.[1] ?? null;
-  const prepareHint = formatPnpmPrepareHint(pinVersion ?? '11');
+  const engineFloor = parseEngineFloor(pnpmEngine);
+  const fallbackHint =
+    engineFloor != null ? `${engineFloor.major}.${engineFloor.minor}.${engineFloor.patch}` : '12';
+  const prepareHint = formatPnpmPrepareHint(pinVersion ?? fallbackHint);
 
-  const out = commandOutput('pnpm', ['--version']);
+  const out = resolvePnpmVersionOutput();
   if (!out) {
     return {
       status: 'fail',
@@ -247,20 +290,10 @@ function checkPlatformBuildDeps() {
   }
 
   if (platform === 'win32') {
-    if (commandOk('where', ['cl'])) {
-      return {
-        status: 'pass',
-        severity: 'required',
-        label: 'Windows build dependencies',
-        detail: 'MSVC compiler (cl) found',
-      };
-    }
-    return {
-      status: 'fail',
-      severity: 'required',
-      label: 'Windows build dependencies missing',
-      hint: "Install Visual Studio Build Tools with 'Desktop development with C++' workload",
-    };
+    return evaluateWindowsBuildDepsCheck({
+      clOnPath: commandOk('where', ['cl']),
+      vswhereInstallPath: resolveWindowsVsInstallPath(),
+    });
   }
 
   return {
@@ -269,6 +302,55 @@ function checkPlatformBuildDeps() {
     label: 'Platform build dependencies',
     detail: `unsupported platform: ${platform}`,
     hint: 'See docs/development-environment.md',
+  };
+}
+
+const WINDOWS_VSWHERE = 'C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\vswhere.exe';
+
+function resolveWindowsVsInstallPath() {
+  if (!existsSync(WINDOWS_VSWHERE)) return null;
+  return commandOutput(WINDOWS_VSWHERE, [
+    '-latest',
+    '-products',
+    '*',
+    '-requires',
+    'Microsoft.VisualStudio.Component.VC.Tools.x86.x64',
+    '-property',
+    'installationPath',
+  ]);
+}
+
+/**
+ * Pure evaluator for Windows MSVC detection (unit-tested).
+ * GHA windows-latest often has VS installed but `cl` is not on PATH outside
+ * the Developer Command Prompt — prefer vswhere when present.
+ *
+ * @param {{ clOnPath: boolean, vswhereInstallPath: string | null }} input
+ * @returns {CheckResult}
+ */
+export function evaluateWindowsBuildDepsCheck(input) {
+  const { clOnPath, vswhereInstallPath } = input;
+  if (clOnPath) {
+    return {
+      status: 'pass',
+      severity: 'required',
+      label: 'Windows build dependencies',
+      detail: 'MSVC compiler (cl) found',
+    };
+  }
+  if (vswhereInstallPath && vswhereInstallPath.trim()) {
+    return {
+      status: 'pass',
+      severity: 'required',
+      label: 'Windows build dependencies',
+      detail: `MSVC via vswhere (${vswhereInstallPath.trim()})`,
+    };
+  }
+  return {
+    status: 'fail',
+    severity: 'required',
+    label: 'Windows build dependencies missing',
+    hint: "Install Visual Studio Build Tools with 'Desktop development with C++' workload",
   };
 }
 
@@ -548,6 +630,82 @@ function checkAct() {
 }
 
 /**
+ * Pure evaluator for Playwright optional check (unit-tested).
+ *
+ * @param {{
+ *   packageResolves: boolean,
+ *   versionOutput: string | null,
+ *   platform?: string,
+ *   hasDisplay?: boolean,
+ *   hasXvfbRun?: boolean,
+ * }} input
+ * @returns {CheckResult[]}
+ */
+export function evaluatePlaywrightCheck(input) {
+  const {
+    packageResolves,
+    versionOutput,
+    platform = process.platform,
+    hasDisplay = Boolean(process.env.DISPLAY),
+    hasXvfbRun = false,
+  } = input;
+
+  /** @type {CheckResult[]} */
+  const results = [];
+
+  if (!packageResolves) {
+    results.push({
+      status: 'warn',
+      severity: 'optional',
+      label: 'Playwright not found (optional)',
+      hint: 'Install deps (pnpm install), then run Electron E2E with pnpm run test:e2e:build',
+    });
+  } else if (!versionOutput) {
+    results.push({
+      status: 'warn',
+      severity: 'optional',
+      label: 'Playwright CLI failed (optional)',
+      hint: 'pnpm exec playwright --version failed; check PATH / node_modules/.bin, then pnpm run test:e2e:build',
+    });
+  } else {
+    results.push({
+      status: 'pass',
+      severity: 'optional',
+      label: 'Playwright',
+      detail: versionOutput.split('\n')[0],
+    });
+  }
+
+  // xvfb-run being installed is not an active display for direct `pnpm run test:e2e`.
+  if (platform === 'linux' && !hasDisplay) {
+    results.push({
+      status: 'warn',
+      severity: 'optional',
+      label: 'Linux display for E2E (optional)',
+      hint: hasXvfbRun
+        ? 'No DISPLAY set — run Electron E2E via xvfb-run (e.g. xvfb-run -a pnpm run test:e2e), or export DISPLAY'
+        : 'Local Electron E2E needs DISPLAY, or install xvfb and run via xvfb-run -a pnpm run test:e2e',
+    });
+  }
+
+  return results;
+}
+
+function checkPlaywright() {
+  const playwrightPkg = join(repoRoot, 'node_modules', '@playwright', 'test', 'package.json');
+  const packageResolves = existsSync(playwrightPkg);
+  const versionOutput = commandOutput('pnpm', ['exec', 'playwright', '--version']);
+  const hasXvfbRun = Boolean(commandOutput('which', ['xvfb-run']));
+  return evaluatePlaywrightCheck({
+    packageResolves,
+    versionOutput,
+    platform: process.platform,
+    hasDisplay: Boolean(process.env.DISPLAY),
+    hasXvfbRun,
+  });
+}
+
+/**
  * @param {CheckResult[]} checks
  * @returns {string | null}
  */
@@ -616,6 +774,16 @@ function checkLinuxDialout() {
 }
 
 /**
+ * @param {string[]} argv
+ * @returns {{ skipNodeModules: boolean }}
+ */
+export function parseCheckEnvironmentArgs(argv = process.argv.slice(2)) {
+  return {
+    skipNodeModules: argv.includes('--skip-node-modules'),
+  };
+}
+
+/**
  * @returns {CheckResult[]}
  */
 export function runChecks(options = {}) {
@@ -637,6 +805,7 @@ export function runChecks(options = {}) {
     checkYamllint(),
     checkDocker(),
     checkAct(),
+    ...checkPlaywright(),
     checkLinuxDialout(),
   ].filter(Boolean);
 
@@ -668,9 +837,13 @@ function printSummary(checks) {
 
 function main() {
   const platformLabel = PLATFORM_LABELS[process.platform] ?? process.platform;
+  const args = parseCheckEnvironmentArgs();
   console.log(`Mesh Client environment check (platform: ${platformLabel})\n`);
+  if (args.skipNodeModules) {
+    console.log('(skipping node_modules check — pre-install mode)\n');
+  }
 
-  const checks = runChecks();
+  const checks = runChecks({ skipNodeModules: args.skipNodeModules });
 
   for (const check of checks) {
     for (const line of formatCheckResult(check)) {

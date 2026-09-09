@@ -1,4 +1,6 @@
 import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
+import { getIdentityIdForProtocol } from '@/renderer/lib/identityByProtocol';
+import { getOfflineIdentityIdForProtocol } from '@/renderer/lib/offlineProtocolIdentities';
 import { truncateReplyPreviewText } from '@/renderer/lib/replyPreview';
 import { messageTransportFromWire } from '@/renderer/lib/reticulum/classifyReticulumVia';
 import {
@@ -25,7 +27,12 @@ import type { IdentityId } from '@/renderer/lib/types';
 import { useBlockStore } from '@/renderer/stores/blockStore';
 import type { MessageRecord, MessageStatus } from '@/renderer/stores/messageStore';
 import { addMessage, upsertMessage, useMessageStore } from '@/renderer/stores/messageStore';
-import { useReticulumPeerStore } from '@/renderer/stores/reticulumPeerStore';
+import { upsertNodeRecordsForIdentity, useNodeStore } from '@/renderer/stores/nodeStore';
+import {
+  reticulumContactToNodeRecordPreservingLabel,
+  useReticulumPeerStore,
+} from '@/renderer/stores/reticulumPeerStore';
+import { hasReticulumHistory } from '@/shared/reticulum-types';
 import { parseReticulumDeliveryMethod } from '@/shared/reticulumDeliveryMethod';
 import {
   isReticulumHashPrefixAlias,
@@ -38,6 +45,8 @@ export interface ReticulumLxmfPayload {
   sender_name?: string;
   text?: string;
   timestamp?: number;
+  /** Opaque monotonic ring sequence from sidecar inbound buffer (catch-up cursor). */
+  ring_seq?: number;
   to_hash?: string;
   reply_to_hash?: string;
   reply_preview_text?: string;
@@ -50,6 +59,8 @@ export interface ReticulumLxmfPayload {
   delivery_status?: string;
   delivery_method?: string;
   attachment?: { file_name?: string; mime_type?: string; data_base64?: string };
+  /** LXMF FIELD_AUDIO voice memo (mode AM_OPUS_OGG = 16). */
+  audio?: { mode: number; data_base64: string; size_bytes?: number };
   icon_appearance?: ReticulumIconAppearanceWire | null;
 }
 
@@ -96,8 +107,10 @@ export function findReticulumParentRecordByHash(
   const target = normalizeReticulumMessageHash(replyToHash);
   if (!target) return undefined;
   const byId = useMessageStore.getState().messages[identityId];
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Runtime guard protects external or callback-mutated state.
   if (!byId) return undefined;
   const direct = byId[replyToHash] ?? byId[target];
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Runtime guard protects external or callback-mutated state.
   if (direct) return direct;
   for (const row of Object.values(byId)) {
     if (
@@ -182,6 +195,7 @@ export function ingestReticulumLxmfPayload(
   }
   const record = payloadToMessageRecord(p, identityId);
   if (!record) return false;
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Identity bucket may be absent at runtime.
   const existing = useMessageStore.getState().messages[identityId]?.[record.id];
   const merged = mergeReticulumIngestRecord(existing, record, p, ctx);
   upsertMessage(identityId, merged);
@@ -192,6 +206,7 @@ export async function persistReticulumMessageToDb(
   identityId: IdentityId,
   p: ReticulumLxmfPayload,
   attachmentPath?: string | null,
+  replacesMessageHash?: string | null,
 ): Promise<void> {
   if (!p.text || !p.sender_hash) return;
   const timestamp = p.timestamp ?? Date.now();
@@ -205,42 +220,97 @@ export async function persistReticulumMessageToDb(
       to_hash: p.to_hash ?? null,
       reply_to_hash: p.reply_to_hash ?? p.reaction_target ?? null,
       message_hash: p.message_hash ?? computeReticulumMessageHash(p.sender_hash, timestamp, p.text),
+      ...(replacesMessageHash ? { replaces_message_hash: replacesMessageHash } : {}),
       received_via: resolvePayloadTransport(p) ?? null,
       delivery_status: resolvePersistedDeliveryStatus(p),
+      delivery_method: parseReticulumDeliveryMethod(p.delivery_method) ?? null,
       attachment_path: attachmentPath ?? null,
+      ...(p.audio?.mode != null ? { audio_mode: p.audio.mode } : {}),
     });
   } catch (e) {
     console.warn('[reticulumIngest] save message ' + errLikeToLogString(e));
   }
 }
 
+function reticulumHistoryPeerHash(p: ReticulumLxmfPayload): string | undefined {
+  return p.direction === 'outbound' ? p.to_hash : p.sender_hash;
+}
+
+function reticulumHistoryDisplayName(
+  p: ReticulumLxmfPayload,
+  peerHash: string,
+): string | undefined {
+  if (p.direction === 'outbound') {
+    const peer = useReticulumPeerStore.getState().getPeer(peerHash);
+    const candidate = peer?.custom_display_name?.trim() || peer?.display_name?.trim() || undefined;
+    if (candidate && !isReticulumHashPrefixAlias(peerHash, candidate)) {
+      return sanitizeReticulumDisplayName(candidate) ?? undefined;
+    }
+    return undefined;
+  }
+  return reticulumContactDisplayNameFromPayload(p);
+}
+
 /**
- * Persist a messaged peer as a contact destination.
- * Inbound → sender; outbound → recipient (`to_hash`), never the local sender.
+ * Stamp History (`last_heard`) for inbound sender / outbound recipient.
+ * Does NOT set `is_contact` — Contacts are Save-as-contact only.
+ */
+export async function persistReticulumHistoryFromPayload(
+  p: ReticulumLxmfPayload,
+  identityId?: IdentityId,
+): Promise<void> {
+  const peerHash = reticulumHistoryPeerHash(p);
+  if (!peerHash) return;
+  const displayName = reticulumHistoryDisplayName(p, peerHash);
+  const lastHeard = Math.floor((p.timestamp ?? Date.now()) / 1000);
+  try {
+    await window.electronAPI.db.upsertReticulumDestination({
+      destination_hash: peerHash,
+      ...(displayName ? { display_name: displayName } : {}),
+      last_heard: lastHeard,
+    });
+  } catch (e) {
+    console.warn('[reticulumIngest] upsert history ' + errLikeToLogString(e));
+    return;
+  }
+
+  useReticulumPeerStore.getState().stampHistoryPeer(peerHash, {
+    last_heard: lastHeard,
+    display_name: displayName ?? null,
+  });
+
+  const id =
+    identityId ??
+    getIdentityIdForProtocol('reticulum') ??
+    getOfflineIdentityIdForProtocol('reticulum');
+  const historyRow = useReticulumPeerStore.getState().getPeer(peerHash);
+  if (!hasReticulumHistory(historyRow)) return;
+  const nodeId = reticulumHashToNodeId(peerHash);
+  registerReticulumDestinationHash(nodeId, peerHash);
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Identity bucket may be absent at runtime.
+  const prior = useNodeStore.getState().nodes[id]?.[nodeId] ?? null;
+  upsertNodeRecordsForIdentity(id, [
+    reticulumContactToNodeRecordPreservingLabel(historyRow, prior),
+  ]);
+}
+
+/**
+ * Persist an explicit saved contact (`is_contact` + `last_heard`).
+ * Messaging must NOT call this — use {@link persistReticulumHistoryFromPayload}.
  */
 export async function persistReticulumContactFromPayload(p: ReticulumLxmfPayload): Promise<void> {
-  const isOutbound = p.direction === 'outbound';
-  const contactHash = isOutbound ? p.to_hash : p.sender_hash;
-  if (!contactHash) return;
+  const peerHash = reticulumHistoryPeerHash(p);
+  if (!peerHash) return;
 
-  useReticulumPeerStore.getState().restoreDismissedContact(contactHash);
-
-  let displayName: string | undefined;
-  if (isOutbound) {
-    const peer = useReticulumPeerStore.getState().getPeer(contactHash);
-    const candidate = peer?.custom_display_name?.trim() || peer?.display_name?.trim() || undefined;
-    if (candidate && !isReticulumHashPrefixAlias(contactHash, candidate)) {
-      displayName = sanitizeReticulumDisplayName(candidate) ?? undefined;
-    }
-  } else {
-    displayName = reticulumContactDisplayNameFromPayload(p);
-  }
+  useReticulumPeerStore.getState().restoreDismissedContact(peerHash);
+  const displayName = reticulumHistoryDisplayName(p, peerHash);
 
   try {
     await window.electronAPI.db.upsertReticulumDestination({
-      destination_hash: contactHash,
+      destination_hash: peerHash,
       ...(displayName ? { display_name: displayName } : {}),
       last_heard: Math.floor((p.timestamp ?? Date.now()) / 1000),
+      is_contact: true,
     });
   } catch (e) {
     console.warn('[reticulumIngest] upsert contact ' + errLikeToLogString(e));
@@ -274,8 +344,9 @@ export function ingestReticulumLxmfPayloadWithSideEffects(
   void persistReticulumIconFromPayload(p);
   const ingested = ingestReticulumLxmfPayload(identityId, p, ctx);
   if (!ingested) return false;
-  void persistReticulumMessageToDb(identityId, p, ctx.attachmentPath);
-  void persistReticulumContactFromPayload(p);
+  void persistReticulumMessageToDb(identityId, p, ctx.attachmentPath, ctx.replacesMessageHash);
+  // History stamp only — Contacts require explicit Save as contact.
+  void persistReticulumHistoryFromPayload(p, identityId);
   return true;
 }
 
@@ -311,6 +382,7 @@ export function persistReticulumOutboundRecord(
   senderName: string,
   toHash: string | null,
   status: MessageStatus,
+  replacesMessageHash?: string | null,
 ): void {
   const deliveryStatus = mapMessageStatusToDeliveryStatus(status);
   void window.electronAPI.db
@@ -323,10 +395,20 @@ export function persistReticulumOutboundRecord(
       to_hash: toHash,
       reply_to_hash: record.reticulumReplyToHash ?? null,
       message_hash: record.reticulumMessageHash ?? record.id,
+      ...(replacesMessageHash ? { replaces_message_hash: replacesMessageHash } : {}),
       received_via: record.receivedVia ?? null,
       delivery_status: deliveryStatus,
       ...(record.reticulumDeliveryMethod
         ? { delivery_method: record.reticulumDeliveryMethod }
+        : {}),
+      ...(typeof record.reticulumDeliveryAttempts === 'number' &&
+      Number.isFinite(record.reticulumDeliveryAttempts)
+        ? { delivery_attempts: Math.trunc(record.reticulumDeliveryAttempts) }
+        : {}),
+      attachment_path: record.reticulumAttachmentPath ?? null,
+      ...(record.reticulumAudioMode != null ? { audio_mode: record.reticulumAudioMode } : {}),
+      ...(record.reticulumAudioDurationSec != null
+        ? { audio_duration_sec: record.reticulumAudioDurationSec }
         : {}),
     })
     .catch((e: unknown) => {

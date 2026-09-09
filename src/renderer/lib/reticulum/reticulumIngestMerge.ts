@@ -5,6 +5,12 @@ import { normalizeReticulumNodeId, reticulumHashToNodeId } from './destHash';
 export interface ReticulumIngestMergeContext {
   selfLxmfHash?: string | null;
   attachmentPath?: string | null;
+  /** When the attachment is an audio file, stamp kind/mode on the record. */
+  attachmentKind?: 'image' | 'audio';
+  /** LXMF FIELD_AUDIO mode from the wire (16 = AM_OPUS_OGG). */
+  audioMode?: number | null;
+  /** Exact SQLite message_hash to replace when persisting this ingest (pending or prior hash). */
+  replacesMessageHash?: string | null;
 }
 
 interface LxmfDirectionPayload {
@@ -32,7 +38,14 @@ export function mergeReticulumIngestRecord(
     record.from = selfNodeId;
   }
 
-  if (!existing) return record;
+  if (!existing) {
+    if (ctx.attachmentPath) {
+      record.reticulumAttachmentPath = ctx.attachmentPath;
+      if (ctx.attachmentKind) record.reticulumAttachmentKind = ctx.attachmentKind;
+      if (ctx.audioMode != null) record.reticulumAudioMode = ctx.audioMode;
+    }
+    return record;
+  }
 
   const existingFromSelf = isSelfReticulumNode(existing.from, selfNodeId);
   const incomingFromSelf = isSelfReticulumNode(record.from, selfNodeId);
@@ -46,8 +59,9 @@ export function mergeReticulumIngestRecord(
 
   const merged: MessageRecord = { ...existing, ...record };
 
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Runtime guard protects external or callback-mutated state.
   if (existing.to != null && existing.to !== 0) {
-    const mergedTo = merged.to ?? 0;
+    const mergedTo = merged.to;
     if (
       mergedTo === 0 ||
       (selfNodeId != null && normalizeReticulumNodeId(mergedTo) === selfNodeId)
@@ -64,10 +78,22 @@ export function mergeReticulumIngestRecord(
     merged.receivedVia = record.receivedVia ?? existing.receivedVia;
   }
 
+  // HTTP/WS send echoes carry delivery_status=sending. Never demote a Completes row
+  // (e.g. retry of another message must not flip a just-delivered bubble back to ⏳).
+  if (existing.status === 'acked' && record.status === 'sending') {
+    merged.status = 'acked';
+    merged.error = undefined;
+  }
+
   if (ctx.attachmentPath) {
     merged.reticulumAttachmentPath = ctx.attachmentPath;
-  } else if (existing?.reticulumAttachmentPath) {
+    if (ctx.attachmentKind) merged.reticulumAttachmentKind = ctx.attachmentKind;
+    if (ctx.audioMode != null) merged.reticulumAudioMode = ctx.audioMode;
+  } else if (existing.reticulumAttachmentPath) {
     merged.reticulumAttachmentPath = existing.reticulumAttachmentPath;
+    merged.reticulumAttachmentKind = existing.reticulumAttachmentKind;
+    merged.reticulumAudioMode = existing.reticulumAudioMode;
+    merged.reticulumAudioDurationSec = existing.reticulumAudioDurationSec;
   }
 
   // Keep quote metadata when a later wire tick omits preview fields.

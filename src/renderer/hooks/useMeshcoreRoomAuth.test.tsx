@@ -36,7 +36,11 @@ function RoomAuthProbe({
       <button
         type="button"
         onClick={() => {
-          void ensureRoomAuth(nodeId, mode, roomName).then(setResult);
+          void ensureRoomAuth(nodeId, mode, roomName)
+            .then(setResult)
+            .catch(() => {
+              // catch-no-log-ok: test probe — rejection asserted via UI state absence
+            });
         }}
       >
         request-auth
@@ -95,5 +99,19 @@ describe('useMeshcoreRoomAuth', () => {
 
     expect(await screen.findByText('roomsPanel.loginTitle')).toBeInTheDocument();
     expect(screen.getByText('roomsPanel.continueReadOnly')).toBeInTheDocument();
+  });
+
+  it('saves empty guest password without substituting hello', async () => {
+    render(<RoomAuthProbe nodeId={0xabc} mode="guest" roomName="Blank Guest Room" />);
+    fireEvent.click(screen.getByText('request-auth'));
+    expect(await screen.findByText('roomsPanel.loginTitle')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('roomsPanel.loginButton'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth-result')).toHaveTextContent(
+        JSON.stringify({ ok: true, guestPassword: '' }),
+      );
+    });
   });
 });

@@ -4,6 +4,8 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { touch } from '@/shared/touch';
+
 import { isMeshcoreOffloadAbortError } from '../lib/meshcoreOffload';
 import { pubkeyToNodeId } from '../lib/meshcoreUtils';
 
@@ -37,7 +39,7 @@ const removeContactMock = vi.fn();
 vi.mock('@liamcottle/meshcore.js', () => {
   class MockWebSerialConnection {
     constructor(port: unknown) {
-      void port;
+      touch(port);
     }
     on() {
       return undefined;
@@ -69,11 +71,11 @@ vi.mock('@liamcottle/meshcore.js', () => {
   class MockSerialConnection {
     async write(bytes: Uint8Array) {
       await Promise.resolve();
-      void bytes;
+      touch(bytes);
     }
     async onDataReceived(value: Uint8Array) {
       await Promise.resolve();
-      void value;
+      touch(value);
     }
     async onConnected() {
       await Promise.resolve();
@@ -102,11 +104,11 @@ vi.mock('@liamcottle/meshcore.js', () => {
   class MockConnection {
     async write(bytes: Uint8Array) {
       await Promise.resolve();
-      void bytes;
+      touch(bytes);
     }
     async sendToRadioFrame(data: Uint8Array) {
       await Promise.resolve();
-      void data;
+      touch(data);
     }
     async onConnected() {
       await Promise.resolve();
@@ -252,7 +254,84 @@ describe('useMeshcoreRuntime offloadContactsFromRadio', () => {
     );
     expect(removeContactMock).toHaveBeenCalledWith(PEER_PUBKEY);
     expect(removeContactMock).not.toHaveBeenCalledWith(SELF_PUBKEY);
-    void MY_NODE_ID;
+    touch(MY_NODE_ID);
+  });
+
+  it('offload keeps a newer live advert name when radio contact name is stale', async () => {
+    const staleName = 'OldRoom';
+    const freshName = 'NewRoom';
+    getContactsMock.mockResolvedValue([
+      {
+        publicKey: PEER_PUBKEY,
+        type: 1,
+        advName: staleName,
+        lastAdvert: 1_700_000_000,
+        advLat: 0,
+        advLon: 0,
+        flags: 0,
+        outPathLen: 0,
+        outPath: new Uint8Array(0),
+      },
+      {
+        publicKey: SELF_PUBKEY,
+        type: 1,
+        advName: 'SelfRadio',
+        lastAdvert: 1_700_000_000,
+        advLat: 0,
+        advLon: 0,
+        flags: 0,
+        outPathLen: 0,
+        outPath: new Uint8Array(0),
+      },
+    ]);
+    vi.mocked(window.electronAPI.db.getMeshcoreContacts).mockResolvedValue([
+      {
+        node_id: PEER_NODE_ID,
+        public_key: PEER_PUBKEY_HEX,
+        adv_name: freshName,
+        contact_type: 1,
+        last_advert: 1_700_000_100,
+        adv_lat: null,
+        adv_lon: null,
+        last_snr: 0,
+        last_rssi: 0,
+        favorited: 0,
+        nickname: null,
+        contact_flags: 0,
+        hops_away: 1,
+        on_radio: 0,
+        last_synced_from_radio: null,
+      },
+    ]);
+
+    const port = makeMockSerialPort();
+    Object.defineProperty(navigator, 'serial', {
+      configurable: true,
+      value: { requestPort: vi.fn().mockResolvedValue(port) },
+    });
+    const { result } = renderHook(() => useMeshcoreRuntime());
+
+    await act(async () => {
+      await result.current.connect('serial');
+    });
+    await waitFor(() => {
+      expect(result.current.state.status).toBe('configured');
+      expect(result.current.nodes.get(PEER_NODE_ID)?.long_name).toBe(freshName);
+    });
+
+    vi.mocked(window.electronAPI.db.saveMeshcoreContactsBatch).mockClear();
+    await act(async () => {
+      await result.current.offloadContactsFromRadio();
+    });
+
+    expect(vi.mocked(window.electronAPI.db.saveMeshcoreContactsBatch)).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          node_id: PEER_NODE_ID,
+          adv_name: freshName,
+        }),
+      ]),
+    );
   });
 
   it('stops removeContact loop when aborted mid-offload', async () => {

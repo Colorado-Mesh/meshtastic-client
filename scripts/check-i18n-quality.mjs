@@ -64,6 +64,11 @@ export const MESHCORE_ROOM_UI_KEYS = new Set([
   'meshcoreContactSettings.typeRoomServers',
   'nodesPanel.meshcoreTypeRoom',
   'appPanel.roomMessages',
+  'repeatersPanel.title',
+  'repeatersPanel.openRoom',
+  'repeatersPanel.filterRooms',
+  'repeatersPanel.savedPasswordOrphanRoomLabel',
+  'repeatersPanel.roomCliNeedsAdminPassword',
 ]);
 
 /** modulePanel MQTT proxy toggle + error (must not use legal/delegation false friends). */
@@ -107,7 +112,13 @@ export const ROOMS_PANEL_FALSE_FRIENDS = {
       hint: 'use "룸" for MeshCore Room, not hotel/meeting "객실/회의실"',
     },
   ],
-  it: [{ re: /\b[Cc]amera/i, hint: 'use "sala" for MeshCore Room, not hotel bedroom "camera"' }],
+  it: [
+    { re: /\b[Cc]amera/i, hint: 'use "sala" for MeshCore Room, not hotel bedroom "camera"' },
+    {
+      re: /\b[Cc]amere\b/i,
+      hint: 'use "sale" for MeshCore Rooms tab, not hotel bedrooms "camere"',
+    },
+  ],
   ru: [
     {
       re: /номер/i,
@@ -421,6 +432,27 @@ export const FLASHER_ESP32_FLASH_BLINK_FALSE_FRIENDS = new Map([
   ['ko', /\b깜박/i],
   ['nl', /\bflits/i],
 ]);
+
+/** flasher.errors.provision* — MT booking/reservation false friends for "Provision". */
+export const FLASHER_PROVISION_RESERVATION_FALSE_FRIENDS =
+  /\b(rezerv[auy]|rezerwacj|reservierung|резерв|reservation)\b/i;
+/** Physical wipe false friends vs EEPROM erase/clear (aligned with wipeEeprom siblings). */
+export const FLASHER_PROVISION_PHYSICAL_WIPE_FALSE_FRIENDS =
+  /\b(wischen|veeg|протри|протер|拭|닦|擦拭)\b/i;
+
+/** flasher.clearPairedDevices* — Bluetooth bond table, not financial bonds/securities. */
+export const FLASHER_CLEAR_PAIRED_DEVICES_KEYS = new Set([
+  'flasher.clearPairedDevicesConfirm',
+  'flasher.clearPairedDevicesConfirmMessage',
+  'flasher.clearPairedDevicesSuccess',
+]);
+
+/** MT often maps Bluetooth "bond" → financial bond/obligation/securities. */
+export const FLASHER_BT_BOND_FINANCIAL_FALSE_FRIENDS =
+  /(?:\b(?:Bonos|obligaciones|obligaties|Obligationen|tahvil|obligacje|cautionnement|títulos de rádio|radiobonos)\b)|(?:облигаци|債券|债券)/i;
+
+/** Must preserve the USB unpair command token verbatim. */
+export const FLASHER_CMD_BT_UNPAIR_TOKEN = 'CMD_BT_UNPAIR';
 
 /** flasher.errors.rnodeCommandTimeout — MT garbles "close apps using the serial port". */
 export const RNODE_TIMEOUT_BAD_UNPLUG_RE = new Map([
@@ -901,6 +933,44 @@ export const RETICULUM_OTHER_PEERS_COLLEAGUE_RES = [
   { re: /\bcolleagues\b/i, hint: 'use networking "peers", not office "colleagues"' },
 ];
 
+/**
+ * Broader office-colleague false friends for History/Contacts empty copy only
+ * (too noisy for stack transport strings that legitimately reuse some lemmas).
+ */
+export const HISTORY_EMPTY_PEER_COLLEAGUE_RES = [
+  ...RETICULUM_OTHER_PEERS_COLLEAGUE_RES,
+  { re: /\bkoleg/i, hint: 'use networking "peers", not Czech/Slovak office colleague "kolega"' },
+  { re: /\bcompañer/i, hint: 'use networking "peers", not Spanish office "compañero"' },
+  { re: /\bcollegh/i, hint: 'use networking "peers", not Italian office "colleghi"' },
+  { re: /\bcollega'?s?\b/i, hint: 'use networking "peers", not Dutch office "collega"' },
+  // Unicode-aware left boundary: ASCII \b is false between non-ASCII letters.
+  {
+    re: /(?:^|\P{L})równieśnik/iu,
+    hint: 'use networking "peer", not Polish schoolmate "rówieśnik"',
+  },
+  {
+    re: /(?:^|\P{L})коллег/iu,
+    hint: 'use networking "peers/пиры", not Russian office "коллега"',
+  },
+  {
+    re: /(?:^|\P{L})колег/iu,
+    hint: 'use networking "peers/вузли", not Ukrainian office "колега"',
+  },
+  { re: /同僚/, hint: 'use networking ピア, not office colleague 同僚' },
+  { re: /동료/, hint: 'use networking 피어, not office colleague 동료' },
+  { re: /\brekan\b/i, hint: 'use networking "peer", not Indonesian coworker "rekan"' },
+  { re: /同行/, hint: 'use networking 对等节点, not office 同行' },
+];
+
+/** UI History tab must mean message history, not school historiography / calendar date. */
+export const HISTORY_TAB_FALSE_FRIEND_RES = [
+  { re: /^Dějepis$/i, hint: 'use UI "Historie", not school subject "Dějepis"' },
+  { re: /^Geschichte$/i, hint: 'use message history "Verlauf", not general "Geschichte"' },
+  { re: /^歴史$/, hint: 'use message history 履歴, not general history 歴史' },
+  { re: /^Tarih$/i, hint: 'use message history "Geçmiş", not calendar date "Tarih"' },
+  { re: /^Storia$/i, hint: 'use message history "Cronologia", not general "Storia"' },
+];
+
 /** Leaf keys allowed to stay identical to English in Reticulum UI copy. */
 export const RETICULUM_IDENTICAL_OK_LEAF_KEYS = new Set([
   'reticulumNetworkUnknown',
@@ -1152,6 +1222,37 @@ function checkReticulumConnectionPanelIssues(ctx) {
     }
   }
 
+  // LXST voice Answer must be a phone-UI verb, not the noun "answer/response".
+  if (flatKey === 'reticulumVoice.answer' && enVal === 'Answer' && locale !== 'en') {
+    if (/^(Antwort|Antwoord)$/i.test(val)) {
+      issues.push(
+        'reticulumVoice.answer must be a phone accept verb (e.g. Annehmen/Beantwoorden), not noun Antwort/Antwoord',
+      );
+    }
+  }
+  if (flatKey === 'reticulumVoice.capabilityUnknownShort' && enVal === '?' && locale !== 'en') {
+    if (val.trim().length > 2 || /\s/.test(val) || /^\.\?/.test(val)) {
+      issues.push(
+        'reticulumVoice.capabilityUnknownShort must stay a short "?" badge, not a sentence',
+      );
+    }
+  }
+  if (flatKey === 'reticulumVoice.errors.noIdentity' && locale !== 'en') {
+    if (/\bKollegen\b/i.test(val) || /\bcollega\b/i.test(val)) {
+      issues.push(
+        'reticulumVoice.errors.noIdentity must use peer wording, not office-colleague false friends',
+      );
+    }
+  }
+  if (flatKey.startsWith('reticulumVoice.') && locale !== 'en') {
+    for (const token of ['LXST', 'Sideband', 'rsLXST', 'mesh-client', 'Ratspeak']) {
+      if (enVal.includes(token) && !val.includes(token)) {
+        issues.push(`reticulumVoice key must preserve wire/product token "${token}"`);
+        break;
+      }
+    }
+  }
+
   if (leafKey === 'reticulumStopStack' && locale !== 'en') {
     for (const { re, hint } of RETICULUM_STOP_STACK_FALSE_FRIENDS[locale] ?? []) {
       if (re.test(val)) {
@@ -1189,6 +1290,36 @@ function checkReticulumConnectionPanelIssues(ctx) {
     }
   }
 
+  if (
+    flatKey === 'peerListPanel.emptyHistory' ||
+    flatKey === 'peerListPanel.emptyContacts' ||
+    flatKey === 'nodeListPanel.emptyHistory'
+  ) {
+    for (const { re, hint } of HISTORY_EMPTY_PEER_COLLEAGUE_RES) {
+      if (re.test(val)) {
+        issues.push(`History/Contacts peers false friend: ${hint}`);
+      }
+    }
+  }
+
+  if (flatKey === 'peerListPanel.tabHistory' || flatKey === 'nodeListPanel.tabHistory') {
+    for (const { re, hint } of HISTORY_TAB_FALSE_FRIEND_RES) {
+      if (re.test(val.trim())) {
+        issues.push(`History tab false friend: ${hint}`);
+      }
+    }
+  }
+
+  if (
+    (flatKey === 'peerDetailModal.removeContact' ||
+      flatKey === 'peerDetailModal.removeContactConfirmTitle') &&
+    /Kontaktlinsen|lentilles de contact/i.test(val)
+  ) {
+    issues.push(
+      'peerDetailModal remove-contact false friend: contact lens wording instead of saved contact',
+    );
+  }
+
   for (const issue of reticulumConnectionPanelLiteralIssues(enVal, val)) {
     issues.push(issue);
   }
@@ -1222,6 +1353,135 @@ function checkReticulumConnectionPanelIssues(ctx) {
  * @param {LocaleQualityCtx} ctx
  * @returns {string[]}
  */
+/**
+ * Top-level `reticulumPropagation.*` keys (Network section) — not under connectionPanel.
+ * Catches English rewrite drift that key-parity / --audit cannot see.
+ */
+function checkReticulumPropagationModeHelpIssues(ctx) {
+  const { locale, flatKey, val, enVal } = ctx;
+  const issues = [];
+  if (!flatKey.startsWith('reticulumPropagation.') || locale === 'en') return issues;
+
+  // Wire paths must stay English literals in hosting/sync copy.
+  if (
+    (flatKey === 'reticulumPropagation.localHostHint' ||
+      flatKey === 'reticulumPropagation.enableLocalHostConfirmBody') &&
+    /\/offer/.test(enVal) &&
+    /\/get/.test(enVal)
+  ) {
+    if (!/\/offer/.test(val) || !/\/get/.test(val)) {
+      issues.push(
+        `${flatKey} must keep wire paths /offer and /get (do not translate protocol routes)`,
+      );
+    }
+  }
+
+  // EN moved from "local inbox" → "local propagation node"; catch leftover mailbox copy.
+  if (
+    (flatKey === 'reticulumPropagation.syncLocalSettled' ||
+      flatKey === 'reticulumPropagation.modeHelpAuto' ||
+      flatKey === 'reticulumPropagation.modeHelpManual') &&
+    /local propagation node/i.test(enVal)
+  ) {
+    const inboxMarkers = [
+      /Posteingang/i,
+      /boîte de réception/i,
+      /bandeja de entrada/i,
+      /casella di posta/i,
+      /收件箱/,
+      /受信トレイ/,
+      /받은편지함/,
+      /doručenou poštou/i,
+      /lokalen Posteingang/i,
+    ];
+    for (const re of inboxMarkers) {
+      if (re.test(val)) {
+        issues.push(
+          `${flatKey} is stale: still says inbox/mailbox (must say local propagation node)`,
+        );
+        break;
+      }
+    }
+  }
+
+  if (
+    flatKey === 'reticulumPropagation.modeHelpAuto' &&
+    /one-time syncs the best Discovered/i.test(enVal)
+  ) {
+    const legacyAutoMarkers = [
+      /Preferred (is )?managed/i,
+      /managed for you/i,
+      /manual Preferred controls are disabled/i,
+      /Set preferred and Add/i,
+      /wird für Sie verwaltet/i,
+      /se gestiona por usted/i,
+      /est géré pour vous/i,
+      /gestito per te/i,
+      /voor u beheerd/i,
+      /zarządzany za Ciebie/i,
+      /gerenciado para você/i,
+      /управляется за вас/i,
+      /керується за вас/i,
+      /sizin için yönetilir/i,
+      /dikelola untuk Anda/i,
+      /が管理されます/i,
+      /관리됩니다/i,
+      /为您管理/i,
+      /Manuelle Bevorzugte? Steuerelemente sind deaktiviert/i,
+      /controles preferidos manuales están desactivados/i,
+      /commandes préférées manuelles sont désactivées/i,
+      /手動優先コントロールは無効/i,
+      /手动首选控件已禁用/i,
+    ];
+    for (const re of legacyAutoMarkers) {
+      if (re.test(val)) {
+        issues.push(
+          'reticulumPropagation.modeHelpAuto is stale: still describes Preferred-managed Auto (must match one-time Discovered sync, no Preferred write)',
+        );
+        break;
+      }
+    }
+  }
+
+  if (flatKey === 'reticulumPropagation.syncLocalLoading' && /still loading/i.test(enVal)) {
+    // Split on sentence punctuation only so Japanese/Chinese clauses without whitespace still separate.
+    const clauses = val
+      .split(/(?<=[.!?。！？])/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    const second = clauses.length >= 2 ? clauses[1] : '';
+    if (second.length > 0) {
+      const mentionsLoading =
+        /load|charg|carga|caric|lad|načít|ładow|carreg|загруз|завантаж|yükl|muat|読み込|로드|加载|載入/i.test(
+          second,
+        );
+      // Unicode-safe: CJK sync terms have no ASCII word boundaries.
+      const mentionsSyncOnly =
+        /(?:^|[^\p{L}\p{N}_])(?:sync|synchron|sincron|синхрон|동기|同期|同步)\p{L}*/iu.test(
+          second,
+        ) && !mentionsLoading;
+      if (mentionsSyncOnly) {
+        issues.push(
+          'reticulumPropagation.syncLocalLoading pronoun: second clause must refer to loading finishing, not sync finishing',
+        );
+      }
+    }
+  }
+
+  if (
+    flatKey === 'reticulumPropagation.modeHelpManual' &&
+    /^Manual:/i.test(enVal) &&
+    locale === 'cs' &&
+    /^Příručka:/i.test(val)
+  ) {
+    issues.push(
+      'reticulumPropagation.modeHelpManual cs false friend: use Ručně:/Manuálně: (mode), not Příručka: (handbook)',
+    );
+  }
+
+  return issues;
+}
+
 function checkReticulumRemoteIssues(ctx) {
   const { locale, flatKey, val, enVal } = ctx;
   const issues = [];
@@ -1613,6 +1873,25 @@ export const CHAT_PANEL_MUST_TRANSLATE_LEAF_KEYS = new Set([
   'reticulumSendDelivered',
   'reticulumSendSending',
   'reticulumSendFailed',
+  'reticulumSendPaper',
+  'reticulumSendPaperTooltip',
+  'shareAsPaper',
+  'shareAsPaperAria',
+  'shareAsPaperTitle',
+  'shareAsPaperMessageLabel',
+  'shareAsPaperGenerate',
+  'shareAsPaperHint',
+  'shareAsPaperCopyUri',
+  'shareAsPaperCopied',
+  'shareAsPaperCopyFailed',
+  'shareAsPaperClose',
+  'shareAsPaperEmpty',
+  'shareAsPaperFailed',
+  'shareAsPaperIdentityUnknown',
+  'shareAsPaperTooLarge',
+  'scanPaper',
+  'scanPaperAria',
+  'scanPaperHint',
 ]);
 
 /** Reticulum DM-only chat copy — contact must not become customer inquiry (문의). */
@@ -2097,6 +2376,17 @@ export const ROUTING_PORT_TOKENS = [
 const MOJIBAKE_RE = /Ð[\u0080-\u00FF]{2,}|Ã[\u0080-\u00BF]{2,}|Â[\u0080-\u00BF]{2,}/;
 
 const BROKEN_MESHTASTIC_SCHEME_RE = /meshtastic[\s\u00a0]+:\/\//i;
+/** Auto-translate often inserts spaces / NBSP before `://` in `lxm://` / `lxma://`. */
+const BROKEN_LXM_SCHEME_RE = /\blxma?[\s\u00a0]+:\/\//i;
+/**
+ * Prose glued onto a scheme after stripping complete URI tokens
+ * (e.g. leftover `lxm://` + word). Paper payloads are URL-safe base64 and may
+ * start with letters — do not flag those; strip `lxm(a)://…` tokens first.
+ */
+const LXM_SCHEME_GLUED_TO_WORD_RE =
+  /\blxma?:\/\/(?=[A-Za-z\u00C0-\u024F\u0400-\u04FF\u4E00-\u9FFF\u3040-\u30FF\uAC00-\uD7AF])/u;
+/** Complete `lxm://` / `lxma://` URI token (scheme + non-whitespace payload). */
+const LXM_URI_TOKEN_RE = /\blxma?:\/\/[^\s<>"']+/gi;
 
 const MESHTASTIC_MISSPELLING_RE = /meshtastisch/i;
 
@@ -2271,12 +2561,36 @@ function checkCatEncodingAndMeshtasticIssues(ctx) {
     issues.push('meshtastic:// scheme must not contain whitespace before "://"');
   }
 
+  if (BROKEN_LXM_SCHEME_RE.test(val)) {
+    issues.push('lxm:// / lxma:// scheme must not contain whitespace before "://"');
+  }
+
+  // Strip complete URI tokens first so alphabetic paper payloads (e.g. lxm://AbC…)
+  // are not treated as scheme-glued-to-prose false positives.
+  const valWithoutLxmUris = val.replace(LXM_URI_TOKEN_RE, '');
+  if (LXM_SCHEME_GLUED_TO_WORD_RE.test(valWithoutLxmUris)) {
+    issues.push('lxm:// / lxma:// must be followed by a space or punctuation, not glued to a word');
+  }
+
   if (
     enVal.includes('meshtastic://') &&
     /meshtastic/i.test(val) &&
     !val.includes('meshtastic://')
   ) {
     issues.push('meshtastic:// URL scheme is broken or missing');
+  }
+
+  if (enVal.includes('lxma://') && /lxma/i.test(val) && !val.includes('lxma://')) {
+    issues.push('lxma:// URL scheme is broken or missing');
+  }
+
+  if (
+    enVal.includes('lxm://') &&
+    !enVal.includes('lxma://') &&
+    /\blxm\b/i.test(val) &&
+    !val.includes('lxm://')
+  ) {
+    issues.push('lxm:// URL scheme is broken or missing');
   }
 
   if (MESHTASTIC_MISSPELLING_RE.test(val)) {
@@ -2334,6 +2648,26 @@ function checkCatEncodingAndMeshtasticIssues(ctx) {
  * @param {LocaleQualityCtx} ctx
  * @returns {string[]}
  */
+/** Statistical "average" / font-weight false friends for transport path medium. */
+export const PEER_LIST_PATHS_MEDIUM_FALSE_FRIEND_RES = [
+  { re: /^Moyenne$/i, hint: 'fr: use transport "Support"/"médium", not statistical "Moyenne"' },
+  { re: /^Gemiddeld$/i, hint: 'nl: use transport "Medium", not statistical "Gemiddeld"' },
+  { re: /^Średnia$/i, hint: 'pl: use transport "Medium", not statistical "Średnia"' },
+  { re: /^Střední$/i, hint: 'cs: use transport "Médium", not statistical "Střední"' },
+  { re: /^Средний$/i, hint: 'ru: use transport "Среда", not statistical "Средний"' },
+  { re: /^Середній$/i, hint: 'uk: use transport "Носій", not statistical "Середній"' },
+  { re: /^Orta$/i, hint: 'tr: use transport "Ortam", not statistical "Orta"' },
+  { re: /^중간$/, hint: 'ko: use transport "매체", not middle "중간"' },
+  { re: /^中程度$/, hint: 'ja: use transport "媒体", not degree "中程度"' },
+  { re: /^中粗线$/, hint: 'zh: use transport "介质", not font-weight "中粗线"' },
+];
+
+/**
+ * Reticulum peer detail, ping, and related UI outside connectionPanel.* nesting.
+ *
+ * @param {LocaleQualityCtx} ctx
+ * @returns {string[]}
+ */
 function checkReticulumPeerAndPingIssues(ctx) {
   const { locale, flatKey, val, enVal, leafKey } = ctx;
   const issues = [];
@@ -2355,6 +2689,36 @@ function checkReticulumPeerAndPingIssues(ctx) {
       issues.push(
         'reticulumPing.failed must mention ping/probe, not generic connection "зв\'язку/связи"',
       );
+    }
+  }
+
+  if (locale !== 'en' && flatKey.startsWith('peerListPanel.paths')) {
+    if (flatKey === 'peerListPanel.pathsMedium') {
+      for (const { re, hint } of PEER_LIST_PATHS_MEDIUM_FALSE_FRIEND_RES) {
+        if (re.test(val)) {
+          issues.push(`peerListPanel.pathsMedium false friend: ${hint}`);
+        }
+      }
+    }
+    if (
+      (flatKey === 'peerListPanel.paths' ||
+        flatKey === 'peerListPanel.pathsActiveBadge' ||
+        flatKey === 'peerListPanel.pathsBackupBadge') &&
+      val === enVal
+    ) {
+      issues.push(`"${flatKey}" is still identical to English — translate the UI text`);
+    }
+    if (flatKey === 'peerListPanel.pathsPreferRf' && enVal === 'RF' && locale !== 'en') {
+      // RF is a protocol token; MT must not expand the acronym alone into unrelated words
+      // (e.g. cs "regionální facilitátor"). Localized glosses that still keep "RF" are OK
+      // (e.g. pt-BR "Frequência de rádio (RF)").
+      const keepsRfToken = /\bRF\b/.test(val) || /射频|無線|무선/.test(val);
+      if (!keepsRfToken) {
+        issues.push('peerListPanel.pathsPreferRf must keep the RF protocol token');
+      }
+    }
+    if (flatKey === 'peerListPanel.pathsBackupBadge' && /Заднім ходом/i.test(val)) {
+      issues.push('peerListPanel.pathsBackupBadge must mean spare path, not reverse gear');
     }
   }
 
@@ -2654,9 +3018,62 @@ function checkFlasherIssues(ctx) {
     }
   }
 
+  if (
+    locale !== 'en' &&
+    (flatKey === 'flasher.errors.provisionWipeRequired' ||
+      flatKey === 'flasher.errors.provisionVerifyFailed')
+  ) {
+    if (FLASHER_PROVISION_RESERVATION_FALSE_FRIENDS.test(val)) {
+      issues.push(
+        'flasher provision errors must not use booking/reservation false friends for Provision',
+      );
+    }
+    if (FLASHER_PROVISION_PHYSICAL_WIPE_FALSE_FRIENDS.test(val)) {
+      issues.push(
+        'flasher provision errors must use EEPROM erase/clear wording (not physical wipe verbs)',
+      );
+    }
+  }
+
+  if (locale !== 'en' && FLASHER_CLEAR_PAIRED_DEVICES_KEYS.has(flatKey)) {
+    if (FLASHER_BT_BOND_FINANCIAL_FALSE_FRIENDS.test(val)) {
+      issues.push(
+        'flasher clearPairedDevices must use Bluetooth bond/pairing wording, not financial bonds',
+      );
+    }
+    if (
+      flatKey === 'flasher.clearPairedDevicesConfirmMessage' &&
+      enVal.includes(FLASHER_CMD_BT_UNPAIR_TOKEN) &&
+      !val.includes(FLASHER_CMD_BT_UNPAIR_TOKEN)
+    ) {
+      issues.push(
+        `flasher.clearPairedDevicesConfirmMessage must preserve wire token ${FLASHER_CMD_BT_UNPAIR_TOKEN}`,
+      );
+    }
+  }
+
+  if (
+    locale !== 'en' &&
+    flatKey === 'meshcore.errors.removeContactFailed' &&
+    /\bremoveContact\b/.test(enVal) &&
+    !/\bremoveContact\b/.test(val)
+  ) {
+    issues.push('meshcore.errors.removeContactFailed must preserve wire token removeContact');
+  }
+
   if (locale !== 'en' && flatKey === LONG_SESSION_RESTART_NUDGE_KEY && /\bBLE\b/.test(enVal)) {
     if (!/\bBLE\b/.test(val)) {
       issues.push('longSessionRestartNudge must preserve protocol token "BLE"');
+    }
+    issues.push(...protectedBrandIssues(enVal, val, ['mesh-client']));
+  }
+
+  if (locale !== 'en' && flatKey === 'longSession.body' && /\bBLE\b/.test(enVal)) {
+    if (!/\bBLE\b/.test(val)) {
+      issues.push('longSession.body must preserve protocol token "BLE"');
+    }
+    if (/\bNoble\b/.test(enVal) && !/\bNoble\b/.test(val)) {
+      issues.push('longSession.body must preserve protocol token "Noble"');
     }
     issues.push(...protectedBrandIssues(enVal, val, ['mesh-client']));
   }
@@ -3631,6 +4048,87 @@ function checkReticulumMapIssues(ctx) {
   return issues;
 }
 
+/**
+ * Post-v5.25.0 false friends: backbone anatomy, Nomad “left”, hub→backbone picker,
+ * zh recipes tabAll, ja spaced I2P.
+ * @param {LocaleQualityCtx} ctx
+ * @returns {string[]}
+ */
+function checkPreReleaseLocaleAccuracyIssues(ctx) {
+  const { locale, flatKey, val, enVal } = ctx;
+  const issues = [];
+  if (locale === 'en') return issues;
+
+  const BACKBONE_ANATOMY = [
+    { re: /colonne vertébrale/i, hint: 'use network backbone, not spine/anatomy' },
+    { re: /spina dorsale/i, hint: 'use network backbone (dorsale), not spine anatomy' },
+    { re: /tulang punggung/i, hint: 'use backbone (network), not spine anatomy' },
+    { re: /\bkręgosłup/i, hint: 'use magistrala/sieć szkieletowa, not kręgosłup' },
+  ];
+
+  if (
+    flatKey === 'connectionPanel.reticulumInterfaces.defaultHubRegion.primary_global' ||
+    flatKey === 'connectionPanel.reticulumInterfaces.addDefaultHubs' ||
+    flatKey === 'connectionPanel.reticulumInterfaces.defaultHubsPickerTitle'
+  ) {
+    for (const { re, hint } of BACKBONE_ANATOMY) {
+      if (re.test(val)) {
+        issues.push(`${flatKey} false friend: ${hint}`);
+      }
+    }
+  }
+
+  if (
+    flatKey === 'connectionPanel.reticulumInterfaces.defaultHubsPickerTitle' &&
+    /network hub|netzwerk-hub|concentrator|集线器|ネットワークハブ|hub jaringan|ağ hub/i.test(val)
+  ) {
+    issues.push(
+      'defaultHubsPickerTitle must use backbone wording aligned with addDefaultHubs, not network hubs',
+    );
+  }
+
+  if (
+    (flatKey === 'nomadNetwork.pageLoadingCountdown' ||
+      flatKey === 'nomadNetwork.pageLoadingRetryCountdown' ||
+      flatKey === 'nomadNetwork.pageLoadingTimeLeft') &&
+    enVal.includes('left')
+  ) {
+    if (
+      /\bgauche\b|\bizquierda\b|\bsinistra\b|\besquerda\b|(?:^|[^\p{L}])左(?:$|[^\p{L}])|\bліворуч\b/iu.test(
+        val,
+      )
+    ) {
+      issues.push(
+        `${flatKey}: translate "left" as time remaining, not direction (gauche/izquierda/左/…)`,
+      );
+    }
+  }
+
+  if (flatKey === 'nodeListPanel.tabAll' && locale === 'zh' && /食谱/.test(val)) {
+    issues.push('nodeListPanel.tabAll must mean all nodes, not recipes (食谱)');
+  }
+
+  if (
+    (flatKey === 'connectionPanel.reticulumInterfaces.purpose.i2p' ||
+      flatKey === 'connectionPanel.reticulumInterfaces.backboneEnableGuidanceBody' ||
+      flatKey === 'networkPanel.reticulumStackSettings.pathMediumPreferenceHint') &&
+    locale === 'ja' &&
+    /I\s+2\s+P/.test(val)
+  ) {
+    issues.push(`${flatKey}: keep I2P as contiguous token (not "I 2 P")`);
+  }
+
+  if (
+    flatKey === 'networkPanel.reticulumStackSettings.pathMediumPreference' &&
+    locale === 'es' &&
+    /\bPath\b/.test(val)
+  ) {
+    issues.push('pathMediumPreference must not leave English "Path" in Spanish');
+  }
+
+  return issues;
+}
+
 /** RRC chat rooms — not hotel rooms; slash commands must stay wire tokens. */
 export const RRC_PREFIX = 'rrc.';
 
@@ -3780,6 +4278,37 @@ function checkFloodRoutingUiIssues(ctx) {
   return issues;
 }
 
+/** MeshCore Nodes: Health column + copy-public-key must not use healthcare/license MT. */
+function checkMeshcoreNodeHealthAndPubkeyIssues(ctx) {
+  const { locale, flatKey, val, enVal } = ctx;
+  const issues = [];
+  if (locale === 'en') return issues;
+
+  if (
+    (flatKey === 'nodeDetailModal.copyPublicKey' ||
+      flatKey === 'nodeListPanel.hasPublicKeyTitle') &&
+    /public key/i.test(enVal)
+  ) {
+    if (/Licenční klíč/i.test(val) || /license key/i.test(val)) {
+      issues.push(`${flatKey} false friend: license key instead of public key`);
+    }
+  }
+
+  if (flatKey === 'nodeListPanel.columnHealth' && /Node health|Health/i.test(enVal)) {
+    const healthcare = [/Zdravotnictví/i, /Ochrona zdrowia/i, /Здравоохранение/i, /체력/, /\bHP\b/];
+    for (const re of healthcare) {
+      if (re.test(val)) {
+        issues.push(
+          'nodeListPanel.columnHealth false friend: healthcare/stamina wording (use node health/status)',
+        );
+        break;
+      }
+    }
+  }
+
+  return issues;
+}
+
 const LOCALE_STRING_QUALITY_CHECKS = [
   checkCatEncodingAndMeshtasticIssues,
   checkMustTranslateAndFormFieldIssues,
@@ -3795,6 +4324,8 @@ const LOCALE_STRING_QUALITY_CHECKS = [
   checkAppPanelReduceMotionAndBrandIssues,
   checkMeshcoreOpenWireIssues,
   checkReticulumConnectionPanelIssues,
+  checkReticulumPropagationModeHelpIssues,
+  checkMeshcoreNodeHealthAndPubkeyIssues,
   checkReticulumRemoteIssues,
   checkReticulumPeerAndPingIssues,
   checkUkrainianApostropheIssues,
@@ -3805,6 +4336,7 @@ const LOCALE_STRING_QUALITY_CHECKS = [
   checkReticulumDefaultHubKeyIssues,
   checkRepeatersCliIssues,
   checkReticulumMapIssues,
+  checkPreReleaseLocaleAccuracyIssues,
   checkHopAwayVerbFalseFriendIssues,
   checkAirTimeFalseFriendIssues,
   checkWireTokenLiteralPreservedIssues,

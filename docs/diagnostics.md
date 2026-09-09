@@ -9,7 +9,7 @@ This document is the authoritative reference for every diagnostic output in Mesh
 - **NodeListPanel**: inline anomaly badges, redundancy `+N` echo count, MQTT-only node dimming, Node Health Score badge, JSON export
 - **MapPanel**: channel utilization halos, routing anomaly aura circles
 - **RF Histograms panel**: SNR, RSSI, and hop-count bar charts across all nodes
-- **Peer Graph panel**: SVG force-directed graph of directly connected nodes (hops 0–1)
+- **Peer Graph panel**: SVG force-directed graph of mesh peers with hop filters — **Meshtastic and MeshCore only**; Reticulum uses the **Topology** tab instead (same 48/400 visible-node cap)
 
 All three protocols share one **Diagnostics** sidebar tab; sections differ by `ProtocolCapabilities` (see **Multi-protocol tab scoping** below).
 
@@ -27,7 +27,7 @@ All three protocols share one **Diagnostics** sidebar tab; sections differ by `P
 
 **LoRa routing/RF per protocol:** Switching tabs calls `clearDiagnostics({ preserveForeignLora: true })` and `runReanalysis` with that tab's `nodesForUi` and capabilities — Meshtastic anomalies are computed from Meshtastic nodes only; MeshCore from MeshCore contacts only.
 
-**Foreign LoRa overhear UI:** The MeshCore-heard and other-foreign-LoRa tables render on the **Meshtastic** tab only (`protocol === 'meshtastic'`). MeshCore may record foreign traffic internally when raw RX bytes are available, but the Diagnostics panel does not show those tables on the MeshCore tab. Reticulum RNode foreign overhear is not wired yet (sidecar packet tap exposes RNS-parsed frames only).
+**Foreign LoRa overhear UI:** The MeshCore-heard and other-foreign-LoRa tables render on the **Meshtastic** and **MeshCore** LoRa tabs when connected with a known self node id (Meshtastic detections keyed by Meshtastic self id; MeshCore foreign overhear keyed by MeshCore self id). Reticulum RNode foreign overhear is not wired yet (sidecar packet tap exposes RNS-parsed frames only).
 
 **Other surfaces:** `NodeListPanel`, `MapPanel`, and `NodeInfoBody` also call `filterDiagnosticRowsForProtocol` so inline badges and halos match the active tab.
 
@@ -49,16 +49,16 @@ The panel also shows a breakdown of error and warning counts, and a "This node" 
 
 ## 2. Routing Anomalies
 
-Routing anomaly detection runs on Meshtastic nodes. MeshCore also has `hasHopCount: true` (hops via `outPathLen`), so the same hop-based anomalies run for MeshCore contacts; only protocols where `hasHopCount` is `false` (currently Reticulum) skip them.
+Routing anomaly detection runs on Meshtastic nodes. MeshCore also has `hasHopCount: true` (hops via `outPathLen`), so hop-count-based findings that remain meaningful on MeshCore still run (`impossible_hop`, `route_flapping` / `path_instability`, `weak_link`). Distance-based GPS+hop heuristics (`hop_goblin`, close-in `bad_route` warning) are gated by `hasDistanceBasedHopAnomalies` — **true** for Meshtastic, **false** for MeshCore (nearby multi-hop contacts are poorly connected / repeater-mediated, not Meshtastic-style critical over-hopping). Protocols where `hasHopCount` is `false` (currently Reticulum) skip hop-based LoRa routing anomalies entirely.
 
 Detection is run in priority order; first match wins:
 
 1. `impossible_hop`
-2. `bad_route` (error variant)
+2. `bad_route` (error variant — e.g. high duplication)
 3. `route_flapping` / `path_instability` (MeshCore: prefers PathUpdated event timestamps when available)
-4. `hop_goblin`
+4. `hop_goblin` (Meshtastic only — requires `hasDistanceBasedHopAnomalies`)
 5. `weak_link` (MeshCore only, requires `hasPerHopSnr` capability and a completed trace)
-6. `bad_route` (warning variant)
+6. `bad_route` (warning variant — close-in over-hopping; Meshtastic only — requires `hasDistanceBasedHopAnomalies`)
 
 Routing rows persist for up to **24 hours** by default (configurable 1–168 h in DiagnosticsPanel → Display Settings).
 
@@ -177,9 +177,9 @@ These findings use packet-stats data from a MeshCore device's Repeater Status re
 
 ## 4. Foreign LoRa Detection
 
-Foreign LoRa detection identifies **non-Meshtastic** LoRa traffic observed by your connected device's radio (or, in dual-radio setups, by a MeshCore companion overheard on the Meshtastic frequency). The detection window is the **last 90 minutes**.
+Foreign LoRa detection identifies **cross-protocol / unrecognized** LoRa traffic observed by your connected device's radio (Meshtastic hearing MeshCore or unknown LoRa; MeshCore hearing Meshtastic / unknown LoRa; dual-radio setups can also bridge MeshCore RX into the Meshtastic listener map). The detection window is the **last 90 minutes**.
 
-**Diagnostics UI:** Foreign-LoRa tables appear on the **Meshtastic** protocol tab only (see **Multi-protocol tab scoping**).
+**Diagnostics UI:** Foreign-LoRa tables appear on the **Meshtastic** and **MeshCore** protocol tabs (see **Multi-protocol tab scoping**).
 
 **Signal classes:**
 
@@ -416,9 +416,10 @@ Data is read directly from the node store; no additional telemetry required.
 
 Accessible via the graph icon in the sidebar.
 
-SVG force-directed graph of nodes within direct reach (hops 0–1 from the connected device).
+SVG force-directed graph of Meshtastic and MeshCore peers (Reticulum uses the **Topology** tab with the same hop controls and visible-node cap).
 
-- Only nodes with `hops_away` 0 or 1 are included; avoids O(n²) edge explosion on large meshes
+- **Show distant peers** (Peer Graph default **off**; Topology default **on**) and **Max hops** (Peer Graph default **2**; Topology default **All hops**) filter the node set first. Numeric **Max hops** is applied even when Show distant is off. Unknown hops are omitted unless Max hops is **All hops** and Show distant is on. The nearby hop ceiling (Mesh hops > 1, Reticulum hops > 2) applies only when Max hops is **All hops**. 1-hop Mesh nodes are not distant.
+- Layout budget (known limitation): at most **400** nodes after hop filters (`FORCE_REPULSION_FULL_PAIR_CAP`). The toolbar states this limit; when the cap hides nodes the status reads “limit 400”
 - Both Meshtastic and MeshCore use the `hops_away` field for edge inference
 - Nodes are clickable; clicking opens NodeDetailModal for that node
 - Layout uses D3-style force simulation; positions stabilize after initial render
@@ -429,15 +430,22 @@ SVG force-directed graph of nodes within direct reach (hops 0–1 from the conne
 
 On the **Reticulum** protocol tab, the **Diagnostics** panel includes a **Reticulum interface config** section (below continuous ping). It audits the sidecar rnsd config against the live RNS interface list and surfaces actionable repairs.
 
-Runtime interface-issue rows from the sidecar latch (`interfaceIssueAlert`) are also folded into Diagnostics via `ReticulumDiagnosticEngine` — including TCP connect failures, TX queue drops, link-delivery timeouts, transport saturation, **`bleBondRemoved`** (stale OS Bluetooth bond for an RNode; Forget/re-pair), and **`blePairingTimedOut`** (OS passkey not entered within the TX-read window).
+Runtime interface-issue rows from the sidecar latch (`interfaceIssueAlert`) are also folded into Diagnostics via `ReticulumDiagnosticEngine` — including TCP connect failures, TX queue drops (generic / **`txQueueDropsBle`** / **`txQueueDropsBleBondStale`** / **`txQueueDropsBleFlowControl`** when the drop interface is a BLE RNode — bond-stale wins over flow-control congestion; FC BLE drops are **warning** with no repair action), link-delivery timeouts, transport saturation, **`bleBondRemoved`** (stale OS Bluetooth bond for an RNode; Forget/Clear paired/re-pair — sticky until stack stop), and **`blePairingTimedOut`** (OS passkey not entered within the TX-read window). Live host TX fill (before drops) is shown in the main-header **Q** badge / amber buffering spinner (worst local-RF fill), separate from these post-drop Diagnostics rows.
 
 Additional runtime rows (refreshed from sidecar status + `reticulumPropagationStore`, not only the config audit poll):
 
-| Condition                            | Trigger                                                                                             | Severity | Action                                      |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------- |
-| `reticulum/sidecar-unhealthy`        | Sidecar `running && healthy === false` for ≥ 60 s (`sidecarUnhealthySince`)                         | error    | **Restart stack**                           |
-| `reticulum/propagation-sync-stuck`   | Sync active ≥ ~45 s (`RETICULUM_PROPAGATION_SYNC_STALL_MS`) with progress still Establishing (< 15) | warning  | Retry sync; check PN path / announce        |
-| `reticulum/propagation-sync-failing` | Sync idle with `lastSyncError` (excludes user cancel) and attempt within 1 h                        | warning  | See Network → Propagation / troubleshooting |
+| Condition                              | Trigger                                                                                                                                                                        | Severity | Action                                                                                                                                                                                               |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `reticulum/sidecar-unhealthy`          | Sidecar `running && healthy === false` for ≥ 60 s (`sidecarUnhealthySince`) — HTTP `/status` not `ok` (process hung), **not** the brief listen-first window before live attach | error    | **Restart stack**                                                                                                                                                                                    |
+| `reticulum/rns-not-ready`              | Sidecar snapshot `rns_ready === false` (common for a few seconds after listen-first start)                                                                                     | warning  | Wait for live attach, or **Restart stack** if stuck                                                                                                                                                  |
+| `reticulum/lxmf-not-ready`             | Sidecar snapshot `lxmf_ready === false` (same listen-first window as RNS)                                                                                                      | warning  | Wait for live attach, or **Restart stack** if stuck                                                                                                                                                  |
+| `reticulum/too-many-default-backbones` | More than 3 enabled interfaces matching default backbone presets (`countEnabledDefaultHubPresets`)                                                                             | warning  | **Open Interfaces** — disable extras (about 2 is the sweet spot)                                                                                                                                     |
+| `reticulum/decommissioned-hub-enabled` | Enabled TCP client pointed at a denylisted official-testnet endpoint (Amsterdam)                                                                                               | warning  | **Disable**                                                                                                                                                                                          |
+| `reticulum/announce-bus-pressure`      | Recent WS `events_lagged` (skipped ≥ 8) **or** sidecar `announce_ws` storm/overflow within 5 min                                                                               | warning  | Tips under issue (hot interface / boundary hubs / TX drops when known) + **Open Interfaces**; while active, unknown-aspect `reticulum_identity_activity` SQLite writes are skipped to reduce DB load |
+| `reticulum/propagation-sync-stuck`     | Sync active ≥ ~45 s (`RETICULUM_PROPAGATION_SYNC_STALL_MS`) with progress still Establishing (< 15)                                                                            | warning  | Retry sync; check PN path / announce                                                                                                                                                                 |
+| `reticulum/propagation-sync-failing`   | Sync idle with `lastSyncError` (excludes user cancel) and attempt within 1 h                                                                                                   | warning  | See Network → Propagation / troubleshooting                                                                                                                                                          |
+
+Announce-bus pressure attribution: when a single interface owns ≥50% of recent `peers_updated` path samples (min 20 in 5 min), Diagnostics names that **hot interface**. Enabled `boundary`-mode hubs (or default-preset hubs) and any `txQueueDrops` interface names are listed in tips. Path/peer tables stay in memory; announce storms mainly threatened batched identity-activity SQLite writes, which are gated under pressure.
 
 | Issue kind                                  | Typical cause                                                                                               | In-app action                                                       |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
@@ -463,19 +471,19 @@ Sidecar APIs: `GET /api/v1/config/audit`, `POST /api/v1/config/repair` (see [`re
 
 For contributors who want to modify or extend the diagnostics system:
 
-| File                                                                                                                     | Purpose                                                                                |
-| ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| [`src/renderer/stores/diagnosticsStore.ts`](src/renderer/stores/diagnosticsStore.ts)                                     | Zustand store: anomaly state, persistence, MQTT ignore sets, foreign LoRa records      |
-| [`src/renderer/lib/diagnostics/RoutingDiagnosticEngine.ts`](src/renderer/lib/diagnostics/RoutingDiagnosticEngine.ts)     | Hop anomaly detection (hop_goblin, bad_route, impossible_hop, route_flapping)          |
-| [`src/renderer/lib/diagnostics/RFDiagnosticEngine.ts`](src/renderer/lib/diagnostics/RFDiagnosticEngine.ts)               | RF signal analysis (connected node + remote node findings)                             |
-| [`src/renderer/lib/diagnostics/diagnosticRows.ts`](src/renderer/lib/diagnostics/diagnosticRows.ts)                       | Row merge/prune utilities, `filterDiagnosticRowsForProtocol`, default max-age values   |
-| [`src/renderer/lib/foreignLoraDetection.ts`](src/renderer/lib/foreignLoraDetection.ts)                                   | Foreign LoRa packet classification, Reticulum overhear heuristic, proximity scoring    |
-| [`src/renderer/components/DiagnosticsPanel.tsx`](src/renderer/components/DiagnosticsPanel.tsx)                           | Diagnostics tab UI: health band + counts, anomaly table, foreign LoRa tables, settings |
-| [`src/renderer/components/ReticulumDiagnosticsSection.tsx`](src/renderer/components/ReticulumDiagnosticsSection.tsx)     | Reticulum config audit table + repair actions                                          |
-| [`src/renderer/lib/diagnostics/ReticulumDiagnosticEngine.ts`](src/renderer/lib/diagnostics/ReticulumDiagnosticEngine.ts) | Reticulum-native diagnostic rows (interfaces, audit merge)                             |
-| [`src/renderer/lib/reticulum/reticulumConfigAudit.ts`](src/renderer/lib/reticulum/reticulumConfigAudit.ts)               | Config audit/repair IPC client                                                         |
-| [`src/renderer/components/NodeDetailModal.tsx`](src/renderer/components/NodeDetailModal.tsx)                             | Per-node detail overlay: routing health, MQTT ignore toggle                            |
-| [`src/renderer/components/NodeInfoBody.tsx`](src/renderer/components/NodeInfoBody.tsx)                                   | RF findings section, redundancy path history, congestion block                         |
+| File                                                                                                                        | Purpose                                                                                |
+| --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| [`src/renderer/stores/diagnosticsStore.ts`](../src/renderer/stores/diagnosticsStore.ts)                                     | Zustand store: anomaly state, persistence, MQTT ignore sets, foreign LoRa records      |
+| [`src/renderer/lib/diagnostics/RoutingDiagnosticEngine.ts`](../src/renderer/lib/diagnostics/RoutingDiagnosticEngine.ts)     | Hop anomaly detection (hop_goblin, bad_route, impossible_hop, route_flapping)          |
+| [`src/renderer/lib/diagnostics/RFDiagnosticEngine.ts`](../src/renderer/lib/diagnostics/RFDiagnosticEngine.ts)               | RF signal analysis (connected node + remote node findings)                             |
+| [`src/renderer/lib/diagnostics/diagnosticRows.ts`](../src/renderer/lib/diagnostics/diagnosticRows.ts)                       | Row merge/prune utilities, `filterDiagnosticRowsForProtocol`, default max-age values   |
+| [`src/renderer/lib/foreignLoraDetection.ts`](../src/renderer/lib/foreignLoraDetection.ts)                                   | Foreign LoRa packet classification, Reticulum overhear heuristic, proximity scoring    |
+| [`src/renderer/components/DiagnosticsPanel.tsx`](../src/renderer/components/DiagnosticsPanel.tsx)                           | Diagnostics tab UI: health band + counts, anomaly table, foreign LoRa tables, settings |
+| [`src/renderer/components/ReticulumDiagnosticsSection.tsx`](../src/renderer/components/ReticulumDiagnosticsSection.tsx)     | Reticulum config audit table + repair actions                                          |
+| [`src/renderer/lib/diagnostics/ReticulumDiagnosticEngine.ts`](../src/renderer/lib/diagnostics/ReticulumDiagnosticEngine.ts) | Reticulum-native diagnostic rows (interfaces, audit merge)                             |
+| [`src/renderer/lib/reticulum/reticulumConfigAudit.ts`](../src/renderer/lib/reticulum/reticulumConfigAudit.ts)               | Config audit/repair IPC client                                                         |
+| [`src/renderer/components/NodeDetailModal.tsx`](../src/renderer/components/NodeDetailModal.tsx)                             | Per-node detail overlay: routing health, MQTT ignore toggle                            |
+| [`src/renderer/components/NodeInfoBody.tsx`](../src/renderer/components/NodeInfoBody.tsx)                                   | RF findings section, redundancy path history, congestion block                         |
 
 ---
 

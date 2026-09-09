@@ -18,6 +18,22 @@ describe('meshtasticTransportLossDetection', () => {
     expect(isMeshtasticTransportLostError(new Error('Packet does not exist'))).toBe(false);
   });
 
+  it('detects Linux Web Bluetooth "Not connected" write failure', () => {
+    expect(isMeshtasticTransportLostError(new Error('Not connected'))).toBe(true);
+  });
+
+  it('does not treat an already-open port as transport loss', () => {
+    expect(isMeshtasticTransportLostError(new Error('Port is open'))).toBe(false);
+  });
+
+  it('detects native Chromium GATT server disconnected NetworkError', () => {
+    const err = new DOMException(
+      "GATT Server is disconnected. Cannot perform GATT operations. (Re)connect first with 'device.gatt.connect'.",
+      'NetworkError',
+    );
+    expect(isMeshtasticTransportLostError(err)).toBe(true);
+  });
+
   it('notifies on serial disconnect event', () => {
     const onLost = vi.fn();
     const handlers = new Map<string, EventListener>();
@@ -45,6 +61,59 @@ describe('meshtasticTransportLossDetection', () => {
     handlers.get('disconnect')?.(new Event('disconnect'));
 
     expect(onLost).toHaveBeenCalledTimes(1);
+  });
+
+  it('notifies immediately on main-process TCP socket disconnect', () => {
+    // Regression: preload rejects writes with "no active socket", which does not match
+    // TRANSPORT_LOST_MESSAGE, so this IPC event is TCP's only fast path — without it,
+    // TCP relied solely on the passive watchdog (up to 3 minutes).
+    let capturedCb: (() => void) | undefined;
+    const spy = vi
+      .spyOn(window.electronAPI.meshtastic.tcp, 'onDisconnected')
+      .mockImplementation((cb) => {
+        capturedCb = cb;
+        return () => {};
+      });
+
+    const onLost = vi.fn();
+    const inner = new WritableStream<Uint8Array>({ write: vi.fn() });
+    const device = {
+      transport: { toDevice: inner },
+    } as unknown as MeshDevice;
+
+    try {
+      attachMeshtasticTransportLossWatch(device, 'tcp', onLost);
+      expect(spy).toHaveBeenCalledTimes(1);
+
+      capturedCb?.();
+
+      expect(onLost).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('unsubscribes the TCP disconnect listener on cleanup', () => {
+    const unsub = vi.fn();
+    const spy = vi
+      .spyOn(window.electronAPI.meshtastic.tcp, 'onDisconnected')
+      .mockReturnValue(unsub);
+
+    const inner = new WritableStream<Uint8Array>({ write: vi.fn() });
+    const device = {
+      transport: { toDevice: inner },
+    } as unknown as MeshDevice;
+
+    try {
+      const detach = attachMeshtasticTransportLossWatch(device, 'tcp', vi.fn());
+      expect(unsub).not.toHaveBeenCalled();
+
+      detach();
+
+      expect(unsub).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('serializes concurrent getWriter calls without WritableStream locked errors', async () => {
@@ -84,6 +153,97 @@ describe('meshtasticTransportLossDetection', () => {
     const writer = device.transport.toDevice.getWriter();
     await expect(writer.write(new Uint8Array([1]))).rejects.toBeInstanceOf(DOMException);
     expect(onLost).toHaveBeenCalledTimes(1);
+  });
+
+  it('notifies on fromDevice pipe transport-lost errors via onFromDevicePipeError', () => {
+    const onLost = vi.fn();
+    const inner = new WritableStream<Uint8Array>({ write: vi.fn() });
+    const device = {
+      transport: { toDevice: inner },
+    } as unknown as MeshDevice & { onFromDevicePipeError?: (err: unknown) => void };
+
+    attachMeshtasticTransportLossWatch(device, 'serial', onLost);
+    expect(typeof device.onFromDevicePipeError).toBe('function');
+
+    device.onFromDevicePipeError?.(new DOMException('The device has been lost.', 'NetworkError'));
+    expect(onLost).toHaveBeenCalledTimes(1);
+
+    // Second call is coalesced (same as write-failure notify).
+    device.onFromDevicePipeError?.(new DOMException('The device has been lost.', 'NetworkError'));
+    expect(onLost).toHaveBeenCalledTimes(1);
+  });
+
+  it('chains previous onFromDevicePipeError then notifies on transport loss', () => {
+    const previous = vi.fn();
+    const onLost = vi.fn();
+    const err = new DOMException('The device has been lost.', 'NetworkError');
+    const inner = new WritableStream<Uint8Array>({ write: vi.fn() });
+    const device = {
+      transport: { toDevice: inner },
+      onFromDevicePipeError: previous,
+    } as unknown as MeshDevice & { onFromDevicePipeError?: (err: unknown) => void };
+
+    attachMeshtasticTransportLossWatch(device, 'serial', onLost);
+    device.onFromDevicePipeError?.(err);
+
+    expect(previous).toHaveBeenCalledTimes(1);
+    expect(previous).toHaveBeenCalledWith(err);
+    expect(onLost).toHaveBeenCalledTimes(1);
+  });
+
+  it('invokes previous onFromDevicePipeError for non-transport-lost errors without notifying', () => {
+    const previous = vi.fn();
+    const onLost = vi.fn();
+    const err = new Error('Packet does not exist');
+    const inner = new WritableStream<Uint8Array>({ write: vi.fn() });
+    const device = {
+      transport: { toDevice: inner },
+      onFromDevicePipeError: previous,
+    } as unknown as MeshDevice & { onFromDevicePipeError?: (err: unknown) => void };
+
+    attachMeshtasticTransportLossWatch(device, 'serial', onLost);
+    device.onFromDevicePipeError?.(err);
+
+    expect(previous).toHaveBeenCalledWith(err);
+    expect(onLost).not.toHaveBeenCalled();
+  });
+
+  it('ignores non-transport-lost fromDevice pipe errors', () => {
+    const onLost = vi.fn();
+    const inner = new WritableStream<Uint8Array>({ write: vi.fn() });
+    const device = {
+      transport: { toDevice: inner },
+    } as unknown as MeshDevice & { onFromDevicePipeError?: (err: unknown) => void };
+
+    attachMeshtasticTransportLossWatch(device, 'serial', onLost);
+    device.onFromDevicePipeError?.(new Error('Packet does not exist'));
+    expect(onLost).not.toHaveBeenCalled();
+  });
+
+  it('clears onFromDevicePipeError hook on cleanup', () => {
+    const inner = new WritableStream<Uint8Array>({ write: vi.fn() });
+    const device = {
+      transport: { toDevice: inner },
+    } as unknown as MeshDevice & { onFromDevicePipeError?: (err: unknown) => void };
+
+    const detach = attachMeshtasticTransportLossWatch(device, 'ble', vi.fn());
+    expect(typeof device.onFromDevicePipeError).toBe('function');
+    detach();
+    expect(device.onFromDevicePipeError).toBeUndefined();
+  });
+
+  it('restores previous onFromDevicePipeError hook on cleanup', () => {
+    const previous = vi.fn();
+    const inner = new WritableStream<Uint8Array>({ write: vi.fn() });
+    const device = {
+      transport: { toDevice: inner },
+      onFromDevicePipeError: previous,
+    } as unknown as MeshDevice & { onFromDevicePipeError?: (err: unknown) => void };
+
+    const detach = attachMeshtasticTransportLossWatch(device, 'ble', vi.fn());
+    expect(device.onFromDevicePipeError).not.toBe(previous);
+    detach();
+    expect(device.onFromDevicePipeError).toBe(previous);
   });
 
   it('createSerializedWritableStream rejects writes when inner stream is missing', async () => {
@@ -155,5 +315,60 @@ describe('meshtasticTransportLossDetection', () => {
     attachMeshtasticTransportLossWatch(device, 'reticulum' as unknown as ConnectionType, vi.fn());
 
     expect(device.transport.toDevice).toBe(inner);
+  });
+
+  it('restores toDevice on cleanup instead of deleting (getWriter race regression)', async () => {
+    const inner = new WritableStream<Uint8Array>({
+      write: vi.fn(),
+    });
+    const device = {
+      transport: { toDevice: inner },
+    } as unknown as MeshDevice;
+
+    const detach = attachMeshtasticTransportLossWatch(device, 'ble', vi.fn());
+    expect(device.transport.toDevice).not.toBe(inner);
+
+    detach();
+
+    // Must remain defined so in-flight SDK processQueue/getWriter does not throw.
+    expect(device.transport.toDevice).toBeDefined();
+    expect(typeof device.transport.toDevice.getWriter).toBe('function');
+    const writer = device.transport.toDevice.getWriter();
+    // Original stream may still accept writes after restore; close must not throw.
+    await expect(writer.close()).resolves.toBeUndefined();
+  });
+
+  it('createSerializedWritableStream close soft-fails when inner is already closed', async () => {
+    const inner = new WritableStream<Uint8Array>({ write: vi.fn() });
+    await inner.close();
+    const serialized = createSerializedWritableStream(inner);
+    const writer = serialized.getWriter();
+    await expect(writer.close()).resolves.toBeUndefined();
+  });
+
+  it('createSerializedWritableStream abort soft-fails when inner.abort rejects asynchronously', async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandled);
+
+    try {
+      const inner = new WritableStream<Uint8Array>({
+        write: vi.fn(),
+        abort() {
+          return Promise.reject(new DOMException('already closed', 'InvalidStateError'));
+        },
+      });
+      const serialized = createSerializedWritableStream(inner);
+      const writer = serialized.getWriter();
+      await expect(writer.abort('teardown')).resolves.toBeUndefined();
+      // Allow any stray rejection to surface before asserting.
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
   });
 });

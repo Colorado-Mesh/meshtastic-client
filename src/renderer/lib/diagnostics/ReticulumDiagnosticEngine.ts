@@ -1,17 +1,26 @@
 import {
+  listEnabledBoundaryInterfaceNames,
+  listEnabledDefaultHubInterfaceNames,
+} from '@/renderer/lib/reticulum/reticulumAnnounceIfaceAttribution';
+import {
   auditIssuesToDiagnosticRows,
   type ReticulumConfigAuditIssue,
 } from '@/renderer/lib/reticulum/reticulumConfigAudit';
+import { countEnabledDefaultHubPresets } from '@/renderer/lib/reticulum/reticulumDefaultHubPresets';
+import type { ReticulumInboundLxmfDiagnosticsSnapshot } from '@/renderer/lib/reticulum/reticulumInboundLxmfDiagnostics';
 import {
   collectReticulumLocalInterfaceAlerts,
   collectReticulumRemoteInterfaceAlerts,
   isReticulumInterfaceOnlineStatus,
   isReticulumLocalSerialInterface,
   isReticulumRemoteInterfaceType,
+  resolveReticulumTxDropHintKind,
   type ReticulumLocalInterfaceInput,
+  reticulumTxDropDiagnosticsCauseKey,
 } from '@/renderer/lib/reticulum/reticulumLocalInterfaceHealth';
 import {
   isPropagationSyncEstablishingStuck,
+  PROPAGATION_SYNC_SUPERSEDED,
   RETICULUM_PROPAGATION_SYNC_FAILING_DIAGNOSTIC_TTL_MS,
 } from '@/renderer/lib/reticulum/reticulumPropagationSync';
 import { type DiagnosticRow, rfRowId } from '@/renderer/lib/types';
@@ -20,6 +29,11 @@ import type {
   ReticulumAutoBeaconAlert,
   ReticulumInterfaceIssueAlert,
 } from '@/shared/reticulum-types';
+import { isDecommissionedReticulumTcpInterfaceRow } from '@/shared/reticulumDecommissionedHubs';
+import { MS_PER_MINUTE } from '@/shared/timeConstants';
+
+/** Enabled default backbone presets above this count emit a Diagnostics warning. */
+export const RETICULUM_TOO_MANY_DEFAULT_BACKBONES_THRESHOLD = 3;
 
 export interface ReticulumDiagnosticsSnapshot {
   rns_ready?: boolean;
@@ -29,7 +43,23 @@ export interface ReticulumDiagnosticsSnapshot {
   peer_count?: number;
   message_count?: number;
   interfaces?: ReticulumLocalInterfaceInput[];
+  /** Sidecar announce coalesce pressure (from GET /api/v1/diagnostics). */
+  announce_ws?: ReticulumAnnounceWsDiagnostics;
 }
+
+/** Sidecar `announce_ws` block — last coalesce-window pressure metrics. */
+export interface ReticulumAnnounceWsDiagnostics {
+  last_window_ingress?: number;
+  last_window_unique?: number;
+  last_window_overflow?: number;
+  last_storm_at_ms?: number;
+  last_flush_at_ms?: number;
+}
+
+/** How long announce-bus pressure signals stay actionable in Diagnostics. */
+export const RETICULUM_ANNOUNCE_BUS_PRESSURE_TTL_MS = 5 * MS_PER_MINUTE;
+/** Minimum WS frames skipped before lag alone opens the announce-bus pressure row. */
+export const RETICULUM_ANNOUNCE_BUS_PRESSURE_MIN_SKIPPED = 8;
 
 /** Propagation sync snapshot for diagnostics (derived from reticulumPropagationStore). */
 export interface ReticulumPropagationDiagnosticsInput {
@@ -47,6 +77,8 @@ export interface ReticulumDiagnosticsBuildOptions {
   auditIssues?: ReticulumConfigAuditIssue[];
   autoBeaconAlert?: ReticulumAutoBeaconAlert | null;
   interfaceIssueAlert?: ReticulumInterfaceIssueAlert | null;
+  /** Rapid stack restarts already in the hub fast-flap window. */
+  stackFastFlapSuspected?: boolean;
   /** When true, append shared-instance conflict hint on transport saturation rows. */
   shareInstanceEnabled?: boolean;
   /** Sidecar hung watchdog — only emit when running && healthy === false. */
@@ -54,6 +86,13 @@ export interface ReticulumDiagnosticsBuildOptions {
   sidecarHealthy?: boolean;
   sidecarUnhealthySince?: number;
   propagation?: ReticulumPropagationDiagnosticsInput;
+  /** Renderer-local WS lag / inbound catch-up counters. */
+  inboundLxmf?: ReticulumInboundLxmfDiagnosticsSnapshot;
+  /**
+   * peers_updated path-churn majority interface (from reticulumAnnounceIfaceAttribution).
+   * When set and announce-bus pressure fires, named in the pressure row.
+   */
+  hotPeerInterface?: string | null;
 }
 
 function runtimeCauseI18n(
@@ -70,9 +109,14 @@ export const RETICULUM_RUNTIME_CAUSE_I18N_KEYS = [
   'diagnosticsPanel.reticulum.runtime.localStalePort',
   'diagnosticsPanel.reticulum.runtime.localOffline',
   'diagnosticsPanel.reticulum.runtime.tcpUnreachable',
+  'diagnosticsPanel.reticulum.runtime.tcpFastFlap',
   'diagnosticsPanel.reticulum.runtime.interfaceDown',
   'diagnosticsPanel.reticulum.runtime.tcpConnectFailed',
   'diagnosticsPanel.reticulum.runtime.txQueueDrops',
+  'diagnosticsPanel.reticulum.runtime.txQueueDropsBle',
+  'diagnosticsPanel.reticulum.runtime.txQueueDropsBleBondStale',
+  'diagnosticsPanel.reticulum.runtime.txQueueDropsBleFlowControl',
+  'diagnosticsPanel.reticulum.runtime.txQueueDropsNeutral',
   'diagnosticsPanel.reticulum.runtime.bleBondRemoved',
   'diagnosticsPanel.reticulum.runtime.blePairingTimedOut',
   'diagnosticsPanel.reticulum.runtime.noPeers',
@@ -85,6 +129,25 @@ export const RETICULUM_RUNTIME_CAUSE_I18N_KEYS = [
   'diagnosticsPanel.reticulum.runtime.sidecarUnhealthy',
   'diagnosticsPanel.reticulum.runtime.propagationSyncStuck',
   'diagnosticsPanel.reticulum.runtime.propagationSyncFailing',
+  'diagnosticsPanel.reticulum.runtime.announceBusPressure',
+  'diagnosticsPanel.reticulum.runtime.announceBusPressureHot',
+  'diagnosticsPanel.reticulum.runtime.announceBusPressureTipHotInterface',
+  'diagnosticsPanel.reticulum.runtime.announceBusPressureTipBoundaryHubs',
+  'diagnosticsPanel.reticulum.runtime.announceBusPressureTipTxSaturated',
+  'diagnosticsPanel.reticulum.runtime.announceBusPressureTipDisableHubs',
+  'diagnosticsPanel.reticulum.runtime.announceBusPressureTipShareInstance',
+  'diagnosticsPanel.reticulum.runtime.announceBusPressureTipAnnounceInterval',
+  'diagnosticsPanel.reticulum.runtime.announceBusPressureTipWait',
+  'diagnosticsPanel.reticulum.runtime.tooManyDefaultBackbones',
+  'diagnosticsPanel.reticulum.runtime.decommissionedHubEnabled',
+] as const;
+
+/** Tip keys shown under reticulum/announce-bus-pressure in Diagnostics (static tips). */
+export const RETICULUM_ANNOUNCE_BUS_PRESSURE_TIP_I18N_KEYS = [
+  'diagnosticsPanel.reticulum.runtime.announceBusPressureTipDisableHubs',
+  'diagnosticsPanel.reticulum.runtime.announceBusPressureTipShareInstance',
+  'diagnosticsPanel.reticulum.runtime.announceBusPressureTipAnnounceInterval',
+  'diagnosticsPanel.reticulum.runtime.announceBusPressureTipWait',
 ] as const;
 
 /** Sidecar must stay unhealthy this long before emitting an error diagnostic. */
@@ -131,7 +194,9 @@ export function buildReticulumDiagnosticRows(
   const osSerialPorts = options?.osSerialPorts ?? [];
   const localAlerts = collectReticulumLocalInterfaceAlerts(healthInterfaces, osSerialPorts);
   const localAlertIds = new Set(localAlerts.map((a) => a.iface.id));
-  const remoteAlerts = collectReticulumRemoteInterfaceAlerts(healthInterfaces);
+  const remoteAlerts = collectReticulumRemoteInterfaceAlerts(healthInterfaces, {
+    stackFastFlapSuspected: options?.stackFastFlapSuspected === true,
+  });
   const remoteAlertIds = new Set(remoteAlerts.map((a) => a.iface.id));
 
   for (const alert of localAlerts) {
@@ -171,13 +236,16 @@ export function buildReticulumDiagnosticRows(
   for (const alert of remoteAlerts) {
     const host = alert.iface.host ?? '';
     const port = alert.iface.port != null && alert.iface.port > 0 ? String(alert.iface.port) : '';
+    const fastFlap = alert.reason === 'tcp_fast_flap';
     rows.push({
       kind: 'rf',
       id: rfRowId(homeNodeId, `reticulum/tcp-unreachable/${alert.iface.id}`),
       nodeId: homeNodeId,
-      condition: 'reticulum/tcp-unreachable',
-      cause: `TCP interface "${alert.iface.name}" is unreachable`,
-      causeI18n: runtimeCauseI18n('tcpUnreachable', {
+      condition: fastFlap ? 'reticulum/tcp-fast-flap' : 'reticulum/tcp-unreachable',
+      cause: fastFlap
+        ? `TCP interface "${alert.iface.name}" likely blocked this IP after frequent stack restarts`
+        : `TCP interface "${alert.iface.name}" is unreachable`,
+      causeI18n: runtimeCauseI18n(fastFlap ? 'tcpFastFlap' : 'tcpUnreachable', {
         name: alert.iface.name,
         host,
         port,
@@ -216,6 +284,40 @@ export function buildReticulumDiagnosticRows(
     }
   }
 
+  const enabledDefaultBackboneCount = countEnabledDefaultHubPresets(healthInterfaces);
+  if (enabledDefaultBackboneCount > RETICULUM_TOO_MANY_DEFAULT_BACKBONES_THRESHOLD) {
+    rows.push({
+      kind: 'rf',
+      id: rfRowId(homeNodeId, 'reticulum/too-many-default-backbones'),
+      nodeId: homeNodeId,
+      condition: 'reticulum/too-many-default-backbones',
+      cause: `Too many default backbone hubs enabled (${enabledDefaultBackboneCount})`,
+      causeI18n: runtimeCauseI18n('tooManyDefaultBackbones', {
+        count: String(enabledDefaultBackboneCount),
+      }),
+      severity: 'warning',
+      detectedAt: now,
+      reticulumRepairKind: 'open_interfaces',
+    });
+  }
+
+  for (const iface of healthInterfaces) {
+    if (!iface.enabled) continue;
+    if (!isDecommissionedReticulumTcpInterfaceRow(iface)) continue;
+    rows.push({
+      kind: 'rf',
+      id: rfRowId(homeNodeId, `reticulum/decommissioned-hub-enabled/${iface.id}`),
+      nodeId: homeNodeId,
+      condition: 'reticulum/decommissioned-hub-enabled',
+      cause: `Decommissioned hub "${iface.name}" is still enabled`,
+      causeI18n: runtimeCauseI18n('decommissionedHubEnabled', { name: iface.name }),
+      severity: 'warning',
+      detectedAt: now,
+      reticulumInterfaceId: iface.id,
+      reticulumRepairKind: 'disable',
+    });
+  }
+
   const interfaceIssueAlert = options?.interfaceIssueAlert;
   if (interfaceIssueAlert) {
     const ifaceByName = new Map(healthInterfaces.map((iface) => [iface.name, iface]));
@@ -239,23 +341,35 @@ export function buildReticulumDiagnosticRows(
     }
     for (const drop of interfaceIssueAlert.txQueueDrops) {
       const iface = ifaceByName.get(drop.name);
+      const hintKind = resolveReticulumTxDropHintKind(
+        drop.name,
+        healthInterfaces,
+        interfaceIssueAlert.bleBondRemoved,
+      );
+      const causeKey = reticulumTxDropDiagnosticsCauseKey(hintKind);
+      const isFlowControlCongestion = hintKind === 'bleFlowControl';
       rows.push({
         kind: 'rf',
         id: rfRowId(homeNodeId, `reticulum/tx-queue-drops/${drop.name}`),
         nodeId: homeNodeId,
         condition: 'reticulum/tx-queue-drops',
         cause: `Interface "${drop.name}" dropped ${drop.dropCount} outbound packets (TX queue full)`,
-        causeI18n: runtimeCauseI18n('txQueueDrops', {
+        causeI18n: runtimeCauseI18n(causeKey, {
           name: drop.name,
           count: String(drop.dropCount),
         }),
-        severity: 'error',
+        // Flow-controlled BLE drops are host TX backpressure under RF load, not a fault.
+        severity: isFlowControlCongestion ? 'warning' : 'error',
         detectedAt: now,
         reticulumInterfaceId: iface?.id,
-        reticulumRepairKind: 'disable',
+        reticulumRepairKind: isFlowControlCongestion
+          ? undefined
+          : hintKind === 'ble' || hintKind === 'bleBondStale'
+            ? 'edit'
+            : 'disable',
       });
     }
-    for (const name of interfaceIssueAlert.bleBondRemoved ?? []) {
+    for (const name of interfaceIssueAlert.bleBondRemoved) {
       const iface = ifaceByName.get(name);
       rows.push({
         kind: 'rf',
@@ -270,7 +384,7 @@ export function buildReticulumDiagnosticRows(
         reticulumRepairKind: 'edit',
       });
     }
-    for (const name of interfaceIssueAlert.blePairingTimedOut ?? []) {
+    for (const name of interfaceIssueAlert.blePairingTimedOut) {
       const iface = ifaceByName.get(name);
       rows.push({
         kind: 'rf',
@@ -310,7 +424,7 @@ export function buildReticulumDiagnosticRows(
         condition: 'reticulum/transport-saturated',
         cause: `RNS transport saturated (${interfaceIssueAlert.transportSaturatedCount} path-request drops)`,
         causeI18n: runtimeCauseI18n(
-          options?.shareInstanceEnabled ? 'transportSaturatedShareInstance' : 'transportSaturated',
+          options.shareInstanceEnabled ? 'transportSaturatedShareInstance' : 'transportSaturated',
           {
             count: String(interfaceIssueAlert.transportSaturatedCount),
           },
@@ -404,6 +518,42 @@ export function buildReticulumDiagnosticRows(
     }
   }
 
+  if (shouldEmitAnnounceBusPressure(snapshot.announce_ws, options?.inboundLxmf, now)) {
+    const hotInterface =
+      typeof options?.hotPeerInterface === 'string' && options.hotPeerInterface.trim()
+        ? options.hotPeerInterface.trim()
+        : null;
+    const boundaryNames = listEnabledBoundaryInterfaceNames(healthInterfaces);
+    const defaultHubNames = listEnabledDefaultHubInterfaceNames(healthInterfaces);
+    // Prefer boundary-mode names; fall back to enabled default-preset hub names.
+    const hubContextNames = boundaryNames.length > 0 ? boundaryNames : defaultHubNames;
+    const txSaturatedNames =
+      options?.interfaceIssueAlert?.txQueueDrops
+        .map((d) => d.name.trim())
+        .filter((n) => n.length > 0) ?? [];
+    const params: Record<string, string> = {};
+    if (hotInterface) params.hotInterface = hotInterface;
+    if (hubContextNames.length > 0) params.boundaryHubs = hubContextNames.join(', ');
+    if (txSaturatedNames.length > 0) params.txSaturatedIfaces = txSaturatedNames.join(', ');
+
+    rows.push({
+      kind: 'rf',
+      id: rfRowId(homeNodeId, 'reticulum/announce-bus-pressure'),
+      nodeId: homeNodeId,
+      condition: 'reticulum/announce-bus-pressure',
+      cause: hotInterface
+        ? `High announce/path-response rate may delay inbound LXMF Chat delivery (hot interface: ${hotInterface})`
+        : 'High announce/path-response rate may delay inbound LXMF Chat delivery (WS catch-up active)',
+      causeI18n: runtimeCauseI18n(
+        hotInterface ? 'announceBusPressureHot' : 'announceBusPressure',
+        Object.keys(params).length > 0 ? params : undefined,
+      ),
+      severity: 'warning',
+      detectedAt: now,
+      reticulumRepairKind: 'open_interfaces',
+    });
+  }
+
   const propagation = options?.propagation;
   if (propagation) {
     const attemptAt = propagation.lastAttemptAt;
@@ -430,6 +580,7 @@ export function buildReticulumDiagnosticRows(
       !propagation.syncActive &&
       propagation.lastSyncError != null &&
       propagation.lastSyncError !== PROPAGATION_SYNC_USER_CANCEL_KEY &&
+      propagation.lastSyncError !== PROPAGATION_SYNC_SUPERSEDED &&
       attemptAt != null &&
       now - attemptAt <= RETICULUM_PROPAGATION_SYNC_FAILING_DIAGNOSTIC_TTL_MS
     ) {
@@ -447,6 +598,47 @@ export function buildReticulumDiagnosticRows(
   }
 
   return rows;
+}
+
+/** True when recent WS lag or sidecar announce coalesce pressure may affect Chat. */
+export function shouldEmitAnnounceBusPressure(
+  announceWs: ReticulumAnnounceWsDiagnostics | undefined,
+  inboundLxmf: ReticulumInboundLxmfDiagnosticsSnapshot | undefined,
+  nowMs: number = Date.now(),
+): boolean {
+  const ttl = RETICULUM_ANNOUNCE_BUS_PRESSURE_TTL_MS;
+  if (inboundLxmf?.lastEventsLaggedAt != null) {
+    const age = nowMs - inboundLxmf.lastEventsLaggedAt;
+    const skipped = inboundLxmf.lastEventsLaggedSkipped ?? 0;
+    if (age >= 0 && age < ttl && skipped >= RETICULUM_ANNOUNCE_BUS_PRESSURE_MIN_SKIPPED) {
+      return true;
+    }
+  }
+  if (announceWs) {
+    const stormAt = announceWs.last_storm_at_ms;
+    if (
+      typeof stormAt === 'number' &&
+      Number.isFinite(stormAt) &&
+      stormAt > 0 &&
+      nowMs - stormAt >= 0 &&
+      nowMs - stormAt < ttl
+    ) {
+      return true;
+    }
+    const overflow = announceWs.last_window_overflow ?? 0;
+    const flushAt = announceWs.last_flush_at_ms;
+    if (
+      overflow > 0 &&
+      typeof flushAt === 'number' &&
+      Number.isFinite(flushAt) &&
+      flushAt > 0 &&
+      nowMs - flushAt >= 0 &&
+      nowMs - flushAt < ttl
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** Merge Reticulum rows into an existing diagnostic row list (replace prior Reticulum rows). */

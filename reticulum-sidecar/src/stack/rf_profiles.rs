@@ -201,6 +201,7 @@ mod tests {
             callsign: None,
             id_interval: None,
             mode: None,
+            runtime_mode: None,
             seed_addresses: Vec::new(),
             discoverable: None,
             latitude: None,
@@ -212,6 +213,10 @@ mod tests {
             reachable_on: None,
             network_name: None,
             passphrase: None,
+            flow_control: None,
+            ignore_config_warnings: None,
+            tx_queue_used: None,
+            tx_queue_max: None,
             extra_config: std::collections::HashMap::new(),
         };
         assert!(!row_params_match_preset(&row));

@@ -143,8 +143,26 @@ describe('meshcore_messages dedup index and fresh DB version', () => {
   it('fresh DB init stamps user_version = CURRENT_SCHEMA_VERSION then runs runSchemaUpgrade', () => {
     expect(DB_SOURCE).toMatch(/CURRENT_SCHEMA_VERSION/);
     expect(DB_SOURCE).toMatch(
-      /if \(userVersion === 0\) \{[\s\S]*?createBaseTables\(\)[\s\S]*?pragma\(`user_version = \$\{CURRENT_SCHEMA_VERSION\}`\)[\s\S]*?\}\s*runSchemaUpgrade\(db!\)/,
+      /if \(cur === 0\) \{[\s\S]*?createBaseTables\(\)[\s\S]*?pragma\(`user_version = \$\{CURRENT_SCHEMA_VERSION\}`\)[\s\S]*?\}\s*runSchemaUpgrade\(db!\)/,
     );
+  });
+
+  it('confirms irreversible schema upgrade before runSchemaUpgrade when behind', () => {
+    expect(DB_SOURCE).toContain('confirmDatabaseSchemaUpgrade');
+    expect(DB_SOURCE).toContain('DatabaseSchemaUpgradeDeclinedError');
+    expect(DB_SOURCE).toMatch(
+      /userVersion > 0 && userVersion < CURRENT_SCHEMA_VERSION[\s\S]*?confirmDatabaseSchemaUpgrade/,
+    );
+    expect(DB_SOURCE).toMatch(
+      /!confirmDatabaseSchemaUpgrade[\s\S]*?throw new DatabaseSchemaUpgradeDeclinedError/,
+    );
+    // Confirm before writable setup so decline leaves journal_mode untouched.
+    const confirmIdx = DB_SOURCE.indexOf('confirmDatabaseSchemaUpgrade(userVersion');
+    const walIdx = DB_SOURCE.indexOf("db.pragma('journal_mode = WAL')");
+    const chmodIdx = DB_SOURCE.indexOf('fs.chmodSync(dbPath');
+    expect(confirmIdx).toBeGreaterThan(-1);
+    expect(walIdx).toBeGreaterThan(confirmIdx);
+    expect(chmodIdx).toBeGreaterThan(confirmIdx);
   });
 
   it('canonical DDL defines protocol-neutral contact_groups tables', () => {
@@ -312,6 +330,19 @@ describe('saveMeshcoreContact UPSERT COALESCE preservation', () => {
     );
     expect(DATABASE_SOURCE).not.toMatch(/\.run\(total - maxCount\)/);
   });
+
+  it('cascades room BBS messages when MeshCore contacts are pruned', () => {
+    expect(DATABASE_SOURCE).toContain('deleteMeshcoreMessagesForRoomServerIds');
+    expect(DATABASE_SOURCE).toContain('deleteOrphanMeshcoreRoomMessagesOn');
+    expect(DATABASE_SOURCE).toContain('deleteMeshcoreContactsWithRoomMessageCascade');
+    expect(DATABASE_SOURCE).toContain('deleteMeshcoreContactOn');
+    expect(DATABASE_SOURCE).toMatch(
+      /deleteMeshcoreContactsByAge[\s\S]*deleteMeshcoreContactsWithRoomMessageCascade/,
+    );
+    expect(DATABASE_SOURCE).toMatch(
+      /pruneMeshcoreContactsByCount[\s\S]*deleteMeshcoreContactsWithRoomMessageCascade/,
+    );
+  });
 });
 
 describe('mergeDatabase source validation', () => {
@@ -410,10 +441,37 @@ describe('app_settings table + message retention defaults (schema sync)', () => 
     expect(INDEX_SOURCE).toContain('meshcoreMessageRetentionEnabled');
     expect(INDEX_SOURCE).toContain('meshcoreMessageRetentionCount');
     expect(INDEX_SOURCE).toContain('reduceMotion');
-    expect(INDEX_SOURCE).toContain('meshcoreRoomSync:');
-    expect(INDEX_SOURCE).toContain('meshcoreRoomLastPost:');
-    expect(INDEX_SOURCE).toContain('meshcoreRoomCredential:');
+    expect(INDEX_SOURCE).toContain('use24HourTime');
+    expect(INDEX_SOURCE).toContain('MESHCORE_ROOM_SYNC_SETTING_PREFIX');
+    expect(INDEX_SOURCE).toContain('MESHCORE_ROOM_LAST_POST_SETTING_PREFIX');
+    expect(INDEX_SOURCE).toContain('MESHCORE_ROOM_CREDENTIAL_SETTING_PREFIX');
+    expect(INDEX_SOURCE).toContain('reticulumLastSelfLxmfHash');
+    expect(INDEX_SOURCE).toContain('reticulumRmapAnnounceIntervalMin');
+    expect(INDEX_SOURCE).toContain('reticulumRmapReachableOn');
+    expect(INDEX_SOURCE).toContain('reticulumRmapHeightMeters');
+    expect(INDEX_SOURCE).not.toContain('reticulumRmapNotAllowed');
+    expect(INDEX_SOURCE).toMatch(/key not allowed/);
     expect(INDEX_SOURCE).toMatch(/INSERT OR REPLACE INTO app_settings\(key, value\) VALUES/);
+  });
+
+  it('appSettings:set allowlists RMAP prefs for SQLite persistence', () => {
+    // Source-level: Electron-bound IPC cannot be exercised here; assert write path + allowlist.
+    const allowListBlock = INDEX_SOURCE.slice(
+      INDEX_SOURCE.indexOf('APP_SETTINGS_ALLOWED_KEYS'),
+      INDEX_SOURCE.indexOf('APP_SETTINGS_MAX_VALUE_LENGTH'),
+    );
+    expect(allowListBlock).toContain("'reticulumLastSelfLxmfHash'");
+    expect(allowListBlock).toContain("'reticulumRmapAnnounceIntervalMin'");
+    expect(allowListBlock).toContain("'reticulumRmapReachableOn'");
+    expect(allowListBlock).toContain("'reticulumRmapHeightMeters'");
+    expect(allowListBlock).not.toContain("'reticulumRmapNotAllowed'");
+    expect(INDEX_SOURCE).toMatch(
+      /isAppSettingsKeyAllowed\(key\)[\s\S]*?throw new Error\('appSettings:set: key not allowed'\)/,
+    );
+    expect(INDEX_SOURCE).toMatch(
+      /\.prepareOnce\('INSERT OR REPLACE INTO app_settings\(key, value\) VALUES \(\?, \?\)'\)/,
+    );
+    expect(INDEX_SOURCE).toMatch(/SELECT key, value FROM app_settings/);
   });
 
   it('appSettings:set rejects oversized values to bound DB writes', () => {

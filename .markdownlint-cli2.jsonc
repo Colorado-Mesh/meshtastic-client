@@ -1,10 +1,12 @@
 {
   "ignores": [
     "node_modules/**",
+    ".rsstack/**",
     ".cursor/**",
+    ".hermes/**",
     "site/**",
     "release/**",
     "dist/**",
-    "out/**"
+    "out/**",
   ],
 }

@@ -18,6 +18,22 @@ describe('log-service source contracts', () => {
     expect(LOG_SERVICE_SOURCE).toContain("const LOG_BACKUP_FILENAME = 'mesh-client.log.1'");
   });
 
+  it('initLogFile preserves a non-empty prior session log as .1 before truncating', () => {
+    const initIdx = LOG_SERVICE_SOURCE.indexOf('export function initLogFile(');
+    expect(initIdx).toBeGreaterThan(-1);
+    const body = LOG_SERVICE_SOURCE.slice(initIdx, initIdx + 2800);
+    expect(body).toContain('fs.renameSync(p, staging)');
+    expect(body).toContain('fs.renameSync(staging, backup)');
+    expect(body).toContain('LOG_BACKUP_FILENAME');
+    expect(body).toContain('statSync');
+    expect(body).toContain('skipFreshTruncate');
+    const renameIdx = body.indexOf('fs.renameSync(p, staging)');
+    const truncateIdx = body.indexOf("fs.writeFileSync(p, '', { encoding: 'utf8' })");
+    expect(renameIdx).toBeGreaterThan(-1);
+    expect(truncateIdx).toBeGreaterThan(-1);
+    expect(renameIdx).toBeLessThan(truncateIdx);
+  });
+
   it('calls rotateLogIfNeeded before appendFile in appendLine', () => {
     const appendLineIdx = LOG_SERVICE_SOURCE.indexOf('export function appendLine(');
     expect(appendLineIdx).toBeGreaterThan(-1);
@@ -124,6 +140,8 @@ vi.mock('fs', async (importOriginal) => {
       writeFileSync: vi.fn(),
       existsSync: vi.fn().mockReturnValue(false),
       unlinkSync: vi.fn(),
+      statSync: vi.fn().mockReturnValue({ size: 0 }),
+      renameSync: vi.fn(),
       promises: {
         appendFile: vi.fn().mockResolvedValue(undefined),
         stat: vi.fn().mockResolvedValue({ size: 0 }),
@@ -184,6 +202,8 @@ describe('appendLine disk write behavior', () => {
     vi.mocked(fs.writeFileSync).mockClear();
     vi.mocked(fs.existsSync).mockClear();
     vi.mocked(fs.unlinkSync).mockClear();
+    vi.mocked(fs.statSync).mockClear();
+    vi.mocked(fs.renameSync).mockClear();
     vi.mocked(fs.promises.appendFile).mockClear();
     vi.mocked(fs.promises.stat).mockClear();
     vi.mocked(fs.promises.rename).mockClear();
@@ -197,6 +217,124 @@ describe('appendLine disk write behavior', () => {
     const before = getRecentLines().length;
     appendLine('warn', 'test', 'should buffer');
     expect(getRecentLines().length).toBeGreaterThan(before);
+  });
+});
+
+describe('initLogFile previous-session preserve', () => {
+  beforeEach(() => {
+    vi.mocked(fs.writeFileSync).mockClear();
+    vi.mocked(fs.existsSync).mockReset();
+    vi.mocked(fs.unlinkSync).mockClear();
+    vi.mocked(fs.statSync).mockReset();
+    vi.mocked(fs.renameSync).mockClear();
+  });
+
+  it('renames a non-empty prior log to .1 then creates an empty current log', async () => {
+    vi.mocked(fs.existsSync).mockImplementation((target) => {
+      const s = String(target);
+      if (s.endsWith('mesh-client.log.1')) return true;
+      if (s.endsWith('mesh-client.log')) return true;
+      return false;
+    });
+    vi.mocked(fs.statSync).mockReturnValue({ size: 128 } as fs.Stats);
+
+    const { initLogFile } = await import('./log-service');
+    initLogFile();
+
+    expect(fs.unlinkSync).toHaveBeenCalled();
+    // Staging rename: current → .1.staging-* → .1 (avoids losing backup if promote fails).
+    expect(fs.renameSync).toHaveBeenCalledWith(
+      expect.stringMatching(/mesh-client\.log$/),
+      expect.stringMatching(/mesh-client\.log\.1\.staging-/),
+    );
+    expect(fs.renameSync).toHaveBeenCalledWith(
+      expect.stringMatching(/mesh-client\.log\.1\.staging-/),
+      expect.stringMatching(/mesh-client\.log\.1$/),
+    );
+    expect(fs.writeFileSync).toHaveBeenCalledWith(
+      expect.stringMatching(/mesh-client\.log$/),
+      '',
+      expect.objectContaining({ encoding: 'utf8' }),
+    );
+  });
+
+  it('does not rotate when the prior log is empty or missing', async () => {
+    vi.mocked(fs.existsSync).mockReturnValue(false);
+
+    const { initLogFile } = await import('./log-service');
+    initLogFile();
+
+    expect(fs.renameSync).not.toHaveBeenCalled();
+    expect(fs.writeFileSync).toHaveBeenCalledWith(
+      expect.stringMatching(/mesh-client\.log$/),
+      '',
+      expect.objectContaining({ encoding: 'utf8' }),
+    );
+  });
+
+  it('does not rotate when the prior log exists but is empty (size 0)', async () => {
+    vi.mocked(fs.existsSync).mockImplementation((target) =>
+      String(target).endsWith('mesh-client.log'),
+    );
+    vi.mocked(fs.statSync).mockReturnValue({ size: 0 } as fs.Stats);
+
+    const { initLogFile } = await import('./log-service');
+    initLogFile();
+
+    expect(fs.renameSync).not.toHaveBeenCalled();
+    expect(fs.writeFileSync).toHaveBeenCalledWith(
+      expect.stringMatching(/mesh-client\.log$/),
+      '',
+      expect.objectContaining({ encoding: 'utf8' }),
+    );
+  });
+
+  it('does not truncate prior log when staging→backup promote fails and restore succeeds', async () => {
+    const prior = 'PRIOR-SESSION-LOG-BYTES';
+    let currentExists = true;
+    let stagingPath: string | null = null;
+    const stagingContents = new Map<string, string>();
+
+    vi.mocked(fs.existsSync).mockImplementation((target) => {
+      const s = String(target);
+      if (s.endsWith('mesh-client.log.1')) return false;
+      if (s.includes('.staging-')) return stagingContents.has(s);
+      if (s.endsWith('mesh-client.log')) return currentExists;
+      return false;
+    });
+    vi.mocked(fs.statSync).mockReturnValue({ size: prior.length } as fs.Stats);
+    vi.mocked(fs.renameSync).mockImplementation((from, to) => {
+      const f = String(from);
+      const t = String(to);
+      if (f.endsWith('mesh-client.log') && t.includes('.staging-')) {
+        stagingPath = t;
+        stagingContents.set(t, prior);
+        currentExists = false;
+        return;
+      }
+      if (f.includes('.staging-') && t.endsWith('mesh-client.log.1')) {
+        throw new Error('promote failed');
+      }
+      if (f.includes('.staging-') && t.endsWith('mesh-client.log')) {
+        stagingContents.delete(f);
+        currentExists = true;
+        return;
+      }
+    });
+
+    const { initLogFile } = await import('./log-service');
+    initLogFile();
+
+    expect(stagingPath).toBeTruthy();
+    // Must restore staging → current and skip destructive truncate of prior content.
+    expect(fs.renameSync).toHaveBeenCalledWith(
+      expect.stringMatching(/mesh-client\.log\.1\.staging-/),
+      expect.stringMatching(/mesh-client\.log$/),
+    );
+    const truncatedCurrent = vi
+      .mocked(fs.writeFileSync)
+      .mock.calls.some((args) => String(args[0]).endsWith('mesh-client.log') && args[1] === '');
+    expect(truncatedCurrent).toBe(false);
   });
 });
 
@@ -214,8 +352,112 @@ describe('stripConsoleStyles (via appendLine + getRecentLines)', () => {
   });
 });
 
+describe('isDroppableMeshtasticSdkLogLine', () => {
+  it('drops routine SDK TRACE [iMeshDevice] chatter', async () => {
+    const { isDroppableMeshtasticSdkLogLine } = await import('./log-service');
+    expect(
+      isDroppableMeshtasticSdkLogLine(
+        '03:39:57:239 TRACE [iMeshDevice] HandleMeshPacket Received STORE_FORWARD_APP packet',
+      ),
+    ).toBe(true);
+    expect(
+      isDroppableMeshtasticSdkLogLine(
+        '01:25:29:719 TRACE [iMeshDevice] HandleFromRadio Received Queue Status',
+      ),
+    ).toBe(true);
+  });
+
+  it('drops periodic DEBUG [iMeshDevice] Ping heartbeats', async () => {
+    const { isDroppableMeshtasticSdkLogLine } = await import('./log-service');
+    expect(
+      isDroppableMeshtasticSdkLogLine(
+        '01:25:29:561 DEBUG [iMeshDevice] Ping Send heartbeat ping to radio',
+      ),
+    ).toBe(true);
+  });
+
+  it('drops DEBUG [iMeshDevice] encrypted data packet ignores', async () => {
+    const { isDroppableMeshtasticSdkLogLine } = await import('./log-service');
+    expect(
+      isDroppableMeshtasticSdkLogLine(
+        '20:20:09:810 DEBUG [iMeshDevice] HandleMeshPacket 🔐 Device received encrypted data packet, ignoring.',
+      ),
+    ).toBe(true);
+    expect(
+      isDroppableMeshtasticSdkLogLine(
+        'DEBUG [iMeshDevice] HandleMeshPacket Device received encrypted data packet, ignoring',
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps INFO / WARN / ERROR SDK lines', async () => {
+    const { isDroppableMeshtasticSdkLogLine } = await import('./log-service');
+    expect(
+      isDroppableMeshtasticSdkLogLine(
+        '00:56:01:200 WARN [iMeshDevice] HandleFromRadio Unhandled payload variant: deviceuiConfig',
+      ),
+    ).toBe(false);
+    expect(
+      isDroppableMeshtasticSdkLogLine(
+        '00:56:01:185 INFO [iMeshDevice] HandleFromRadio Received Node info for this device',
+      ),
+    ).toBe(false);
+  });
+
+  it('keeps non-Ping DEBUG lines', async () => {
+    const { isDroppableMeshtasticSdkLogLine } = await import('./log-service');
+    expect(
+      isDroppableMeshtasticSdkLogLine(
+        '00:56:01:222 DEBUG [iMeshDevice] GetMetadata Received metadata packet',
+      ),
+    ).toBe(false);
+  });
+
+  it('keeps TRACE decode-failure lines needed by Foreign LoRa detection', async () => {
+    const { isDroppableMeshtasticSdkLogLine } = await import('./log-service');
+    expect(
+      isDroppableMeshtasticSdkLogLine(
+        'TRACE [iMeshDevice] HandleMeshPacket decode failed rssi -120 snr -8 3c 01 02',
+      ),
+    ).toBe(false);
+  });
+
+  it('keeps unrelated renderer/main lines', async () => {
+    const { isDroppableMeshtasticSdkLogLine } = await import('./log-service');
+    expect(isDroppableMeshtasticSdkLogLine('[main] [MeshCore MQTT] PINGREQ sent')).toBe(false);
+  });
+});
+
+describe('isDroppableRendererConsoleNoise', () => {
+  it('drops ResizeObserver loop completed warnings', async () => {
+    const { isDroppableRendererConsoleNoise } = await import('./log-service');
+    expect(
+      isDroppableRendererConsoleNoise(
+        'ResizeObserver loop completed with undelivered notifications.',
+      ),
+    ).toBe(true);
+    expect(isDroppableRendererConsoleNoise('ResizeObserver loop limit exceeded')).toBe(true);
+    expect(
+      isDroppableRendererConsoleNoise(
+        '  [Violation] ResizeObserver loop completed with undelivered notifications.  ',
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps other renderer errors', async () => {
+    const { isDroppableRendererConsoleNoise } = await import('./log-service');
+    expect(isDroppableRendererConsoleNoise('Error sending packet 123')).toBe(false);
+    expect(isDroppableRendererConsoleNoise('ResizeObserver is not defined')).toBe(false);
+    expect(
+      isDroppableRendererConsoleNoise(
+        'Send failed: ResizeObserver loop limit exceeded while laying out',
+      ),
+    ).toBe(false);
+  });
+});
+
 describe('formatRuntimeLogTag', () => {
-  it('includes platform, arch, electron, node, and packaged fields', async () => {
+  it('includes platform, arch, electron, node, packaged, and buildChannel fields', async () => {
     const { formatRuntimeLogTag } = await import('./log-service');
     const tag = formatRuntimeLogTag();
     expect(tag).toContain('platform=');
@@ -223,5 +465,6 @@ describe('formatRuntimeLogTag', () => {
     expect(tag).toContain('electron=');
     expect(tag).toContain('node=');
     expect(tag).toContain('packaged=');
+    expect(tag).toContain('buildChannel=local');
   });
 });

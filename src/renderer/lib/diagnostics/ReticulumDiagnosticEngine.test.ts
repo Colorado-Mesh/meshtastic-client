@@ -5,6 +5,8 @@ import type { RfDiagnosticRow } from '@/renderer/lib/types';
 import {
   buildReticulumDiagnosticRows,
   mergeReticulumDiagnosticRows,
+  RETICULUM_ANNOUNCE_BUS_PRESSURE_TTL_MS,
+  shouldEmitAnnounceBusPressure,
 } from './ReticulumDiagnosticEngine';
 
 describe('ReticulumDiagnosticEngine', () => {
@@ -64,6 +66,32 @@ describe('ReticulumDiagnosticEngine', () => {
     );
   });
 
+  it('flags unreachable TCP hubs as fast-flap when stack restarts exceeded the hub window', () => {
+    const rows = buildReticulumDiagnosticRows(
+      { rns_ready: true, lxmf_ready: true, interface_count: 1, peer_count: 1 },
+      {
+        stackFastFlapSuspected: true,
+        interfaces: [
+          {
+            id: 'ratspeak',
+            name: 'Ratspeak',
+            type: 'tcp',
+            enabled: true,
+            status: 'down',
+            host: 'rns.ratspeak.org',
+            port: 4242,
+          },
+        ],
+      },
+    );
+    const row = rows.find(
+      (r): r is RfDiagnosticRow => r.kind === 'rf' && r.condition === 'reticulum/tcp-fast-flap',
+    );
+    expect(row).toBeDefined();
+    expect(row?.causeI18n?.key).toBe('diagnosticsPanel.reticulum.runtime.tcpFastFlap');
+    expect(row?.reticulumRepairKind).toBe('disable');
+  });
+
   it('adds sidecar interface issue rows for tcp failures and tx drops', () => {
     const rows = buildReticulumDiagnosticRows(
       { rns_ready: true, lxmf_ready: true, interface_count: 1, peer_count: 1 },
@@ -102,6 +130,114 @@ describe('ReticulumDiagnosticEngine', () => {
       (r): r is RfDiagnosticRow => r.kind === 'rf' && r.condition === 'reticulum/tx-queue-drops',
     );
     expect(dropRow?.severity).toBe('error');
+    expect(dropRow?.causeI18n?.key).toBe('diagnosticsPanel.reticulum.runtime.txQueueDrops');
+  });
+
+  it('uses BLE TX-drop cause key for ble:// RNodes', () => {
+    const rows = buildReticulumDiagnosticRows(
+      { rns_ready: true, lxmf_ready: true, interface_count: 1, peer_count: 1 },
+      {
+        interfaces: [
+          {
+            id: 'rnode-41f4',
+            name: 'RNode 41F4',
+            type: 'rnode',
+            enabled: true,
+            status: 'down',
+            serial_port: 'ble://eccf2847-e1fd-3f5f-0811-064db1639a3d',
+          },
+        ],
+        interfaceIssueAlert: {
+          tcpConnectFailed: [],
+          txQueueDrops: [{ name: 'RNode 41F4', dropCount: 512 }],
+          linkDeliveryTimeouts: [],
+          bleBondRemoved: [],
+          blePairingTimedOut: [],
+          transportSaturatedCount: 0,
+          slowTransportQueryCount: 0,
+          suppressedCount: 0,
+          lastAtMs: Date.now(),
+        },
+      },
+    );
+    const dropRow = rows.find(
+      (r): r is RfDiagnosticRow => r.kind === 'rf' && r.condition === 'reticulum/tx-queue-drops',
+    );
+    expect(dropRow?.causeI18n?.key).toBe('diagnosticsPanel.reticulum.runtime.txQueueDropsBle');
+    expect(dropRow?.reticulumRepairKind).toBe('edit');
+  });
+
+  it('uses flow-control TX-drop cause as warning without repair for FC BLE RNodes', () => {
+    const rows = buildReticulumDiagnosticRows(
+      { rns_ready: true, lxmf_ready: true, interface_count: 1, peer_count: 1 },
+      {
+        interfaces: [
+          {
+            id: 'rnode-41f4',
+            name: 'RNode 41F4',
+            type: 'rnode',
+            enabled: true,
+            status: 'up',
+            serial_port: 'ble://eccf2847-e1fd-3f5f-0811-064db1639a3d',
+            flow_control: true,
+          },
+        ],
+        interfaceIssueAlert: {
+          tcpConnectFailed: [],
+          txQueueDrops: [{ name: 'RNode 41F4', dropCount: 128 }],
+          linkDeliveryTimeouts: [],
+          bleBondRemoved: [],
+          blePairingTimedOut: [],
+          transportSaturatedCount: 0,
+          slowTransportQueryCount: 0,
+          suppressedCount: 0,
+          lastAtMs: Date.now(),
+        },
+      },
+    );
+    const dropRow = rows.find(
+      (r): r is RfDiagnosticRow => r.kind === 'rf' && r.condition === 'reticulum/tx-queue-drops',
+    );
+    expect(dropRow?.causeI18n?.key).toBe(
+      'diagnosticsPanel.reticulum.runtime.txQueueDropsBleFlowControl',
+    );
+    expect(dropRow?.severity).toBe('warning');
+    expect(dropRow?.reticulumRepairKind).toBeUndefined();
+  });
+
+  it('uses bond-stale TX-drop cause when bleBondRemoved co-occurs', () => {
+    const rows = buildReticulumDiagnosticRows(
+      { rns_ready: true, lxmf_ready: true, interface_count: 1, peer_count: 1 },
+      {
+        interfaces: [
+          {
+            id: 'rnode-41f4',
+            name: 'RNode 41F4',
+            type: 'rnode',
+            enabled: true,
+            status: 'down',
+            serial_port: 'ble://eccf2847-e1fd-3f5f-0811-064db1639a3d',
+          },
+        ],
+        interfaceIssueAlert: {
+          tcpConnectFailed: [],
+          txQueueDrops: [{ name: 'RNode 41F4', dropCount: 512 }],
+          linkDeliveryTimeouts: [],
+          bleBondRemoved: ['RNode 41F4'],
+          blePairingTimedOut: [],
+          transportSaturatedCount: 0,
+          slowTransportQueryCount: 0,
+          suppressedCount: 0,
+          lastAtMs: Date.now(),
+        },
+      },
+    );
+    const dropRow = rows.find(
+      (r): r is RfDiagnosticRow => r.kind === 'rf' && r.condition === 'reticulum/tx-queue-drops',
+    );
+    expect(dropRow?.causeI18n?.key).toBe(
+      'diagnosticsPanel.reticulum.runtime.txQueueDropsBleBondStale',
+    );
   });
 
   it('adds bleBondRemoved runtime rows from sidecar alerts', () => {
@@ -331,6 +467,136 @@ describe('ReticulumDiagnosticEngine', () => {
     ).toBe(true);
   });
 
+  it('flags announce-bus-pressure from recent WS lag with enough skipped frames', () => {
+    const now = 1_700_000_000_000;
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(now);
+      const rows = buildReticulumDiagnosticRows(
+        { rns_ready: true, lxmf_ready: true, interface_count: 1, peer_count: 1 },
+        {
+          inboundLxmf: {
+            lastEventsLaggedAt: now - 60_000,
+            lastEventsLaggedSkipped: 8,
+            lastInboundCatchUpAt: null,
+            lastInboundCatchUpCount: null,
+            inboundCatchUpWatermarkTs: null,
+            inboundCatchUpWatermarkSeq: null,
+            lastInboundRingLen: null,
+          },
+        },
+      );
+      const row = rows.find(
+        (r): r is RfDiagnosticRow =>
+          r.kind === 'rf' && r.condition === 'reticulum/announce-bus-pressure',
+      );
+      expect(row).toBeDefined();
+      expect(row?.severity).toBe('warning');
+      expect(row?.causeI18n?.key).toBe('diagnosticsPanel.reticulum.runtime.announceBusPressure');
+      expect(row?.reticulumRepairKind).toBe('open_interfaces');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('flags announce-bus-pressure from recent sidecar storm stamp', () => {
+    const now = 1_700_000_000_000;
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(now);
+      const rows = buildReticulumDiagnosticRows(
+        {
+          rns_ready: true,
+          lxmf_ready: true,
+          interface_count: 1,
+          peer_count: 5000,
+          announce_ws: {
+            last_window_ingress: 900,
+            last_window_unique: 400,
+            last_window_overflow: 0,
+            last_storm_at_ms: now - 30_000,
+            last_flush_at_ms: now - 30_000,
+          },
+        },
+        {},
+      );
+      expect(
+        rows.some((r) => r.kind === 'rf' && r.condition === 'reticulum/announce-bus-pressure'),
+      ).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not flag announce-bus-pressure without lag, storm, or fresh overflow', () => {
+    const now = 1_700_000_000_000;
+    expect(
+      shouldEmitAnnounceBusPressure(
+        {
+          last_window_ingress: 10,
+          last_window_unique: 8,
+          last_window_overflow: 0,
+          last_storm_at_ms: 0,
+          last_flush_at_ms: now - 1_000,
+        },
+        {
+          lastEventsLaggedAt: now - 60_000,
+          lastEventsLaggedSkipped: 3,
+          lastInboundCatchUpAt: null,
+          lastInboundCatchUpCount: null,
+          inboundCatchUpWatermarkTs: null,
+          inboundCatchUpWatermarkSeq: null,
+          lastInboundRingLen: null,
+        },
+        now,
+      ),
+    ).toBe(false);
+    expect(
+      shouldEmitAnnounceBusPressure(
+        {
+          last_window_overflow: 50,
+          last_flush_at_ms: now - RETICULUM_ANNOUNCE_BUS_PRESSURE_TTL_MS - 1,
+          last_storm_at_ms: now - RETICULUM_ANNOUNCE_BUS_PRESSURE_TTL_MS - 1,
+        },
+        {
+          lastEventsLaggedAt: now - RETICULUM_ANNOUNCE_BUS_PRESSURE_TTL_MS - 1,
+          lastEventsLaggedSkipped: 20,
+          lastInboundCatchUpAt: null,
+          lastInboundCatchUpCount: null,
+          inboundCatchUpWatermarkTs: null,
+          inboundCatchUpWatermarkSeq: null,
+          lastInboundRingLen: null,
+        },
+        now,
+      ),
+    ).toBe(false);
+    expect(shouldEmitAnnounceBusPressure(undefined, undefined, now)).toBe(false);
+    // peer_count alone must not fire
+    expect(
+      buildReticulumDiagnosticRows({
+        rns_ready: true,
+        lxmf_ready: true,
+        interface_count: 1,
+        peer_count: 50_000,
+      }).some((r) => r.kind === 'rf' && r.condition === 'reticulum/announce-bus-pressure'),
+    ).toBe(false);
+  });
+
+  it('flags announce-bus-pressure from fresh coalesce overflow', () => {
+    const now = 1_700_000_000_000;
+    expect(
+      shouldEmitAnnounceBusPressure(
+        {
+          last_window_overflow: 12,
+          last_flush_at_ms: now - 10_000,
+          last_storm_at_ms: 0,
+        },
+        undefined,
+        now,
+      ),
+    ).toBe(true);
+  });
+
   it('flags sidecar-unhealthy when running and unhealthy past grace', () => {
     const rows = buildReticulumDiagnosticRows(
       { rns_ready: true, lxmf_ready: true, interface_count: 1, peer_count: 1 },
@@ -441,6 +707,23 @@ describe('ReticulumDiagnosticEngine', () => {
     expect(row?.causeI18n?.key).toBe('diagnosticsPanel.reticulum.runtime.propagationSyncFailing');
   });
 
+  it('flags propagation-sync-failing for establish NoLinkProof', () => {
+    const rows = buildReticulumDiagnosticRows(
+      { rns_ready: true, lxmf_ready: true, interface_count: 1, peer_count: 1 },
+      {
+        propagation: {
+          syncActive: false,
+          syncProgress: 0,
+          lastSyncError: 'reticulumPropagation.syncEstablishNoLinkProof',
+          lastAttemptAt: Date.now() - 60_000,
+        },
+      },
+    );
+    expect(
+      rows.some((r) => r.kind === 'rf' && r.condition === 'reticulum/propagation-sync-failing'),
+    ).toBe(true);
+  });
+
   it('ignores user-cancelled propagation sync as failing', () => {
     const rows = buildReticulumDiagnosticRows(
       { rns_ready: true, lxmf_ready: true, interface_count: 1, peer_count: 1 },
@@ -506,6 +789,215 @@ describe('ReticulumDiagnosticEngine', () => {
           },
         ).some((r) => r.kind === 'rf' && r.condition === 'reticulum/propagation-sync-stuck'),
       ).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('flags too-many-default-backbones when more than 3 default presets are enabled', () => {
+    const hubs = [
+      {
+        id: '1',
+        name: 'Dublin',
+        type: 'tcp',
+        enabled: true,
+        status: 'up',
+        host: 'dublin.connect.reticulum.network',
+        port: 4965,
+        mode: 'boundary',
+      },
+      {
+        id: '2',
+        name: 'BTB',
+        type: 'tcp',
+        enabled: true,
+        status: 'up',
+        host: 'reticulum.betweentheborders.com',
+        port: 4242,
+        mode: 'boundary',
+      },
+      {
+        id: '3',
+        name: 'RMAP',
+        type: 'tcp',
+        enabled: true,
+        status: 'up',
+        host: 'rmap.world',
+        port: 4242,
+        mode: 'boundary',
+      },
+      {
+        id: '4',
+        name: 'Simply',
+        type: 'tcp',
+        enabled: true,
+        status: 'up',
+        host: 'rns.simplyequipped.com',
+        port: 4242,
+        mode: 'boundary',
+      },
+    ];
+    const rows = buildReticulumDiagnosticRows(
+      { rns_ready: true, lxmf_ready: true, interface_count: 4, peer_count: 10 },
+      { interfaces: hubs },
+    );
+    const row = rows.find(
+      (r): r is RfDiagnosticRow =>
+        r.kind === 'rf' && r.condition === 'reticulum/too-many-default-backbones',
+    );
+    expect(row).toBeDefined();
+    expect(row?.severity).toBe('warning');
+    expect(row?.causeI18n?.params?.count).toBe('4');
+    expect(row?.reticulumRepairKind).toBe('open_interfaces');
+  });
+
+  it('does not flag too-many-default-backbones at 3 or fewer', () => {
+    const hubs = [
+      {
+        id: '1',
+        name: 'Dublin',
+        type: 'tcp',
+        enabled: true,
+        status: 'up',
+        host: 'dublin.connect.reticulum.network',
+        port: 4965,
+      },
+      {
+        id: '2',
+        name: 'BTB',
+        type: 'tcp',
+        enabled: true,
+        status: 'up',
+        host: 'reticulum.betweentheborders.com',
+        port: 4242,
+      },
+      {
+        id: '3',
+        name: 'RMAP',
+        type: 'tcp',
+        enabled: true,
+        status: 'up',
+        host: 'rmap.world',
+        port: 4242,
+      },
+    ];
+    const rows = buildReticulumDiagnosticRows(
+      { rns_ready: true, lxmf_ready: true, interface_count: 3, peer_count: 10 },
+      { interfaces: hubs },
+    );
+    expect(
+      rows.some((r) => r.kind === 'rf' && r.condition === 'reticulum/too-many-default-backbones'),
+    ).toBe(false);
+  });
+
+  it('flags enabled decommissioned hub', () => {
+    const rows = buildReticulumDiagnosticRows(
+      { rns_ready: true, lxmf_ready: true, interface_count: 1, peer_count: 1 },
+      {
+        interfaces: [
+          {
+            id: 'ams',
+            name: 'Amsterdam',
+            type: 'tcp',
+            enabled: true,
+            status: 'down',
+            host: 'amsterdam.connect.reticulum.network',
+            port: 4965,
+          },
+        ],
+      },
+    );
+    const row = rows.find(
+      (r): r is RfDiagnosticRow =>
+        r.kind === 'rf' && r.condition === 'reticulum/decommissioned-hub-enabled',
+    );
+    expect(row).toBeDefined();
+    expect(row?.reticulumInterfaceId).toBe('ams');
+    expect(row?.reticulumRepairKind).toBe('disable');
+    expect(row?.causeI18n?.params?.name).toBe('Amsterdam');
+  });
+
+  it('does not flag disabled decommissioned hub', () => {
+    const rows = buildReticulumDiagnosticRows(
+      { rns_ready: true, lxmf_ready: true, interface_count: 1, peer_count: 1 },
+      {
+        interfaces: [
+          {
+            id: 'ams',
+            name: 'Amsterdam',
+            type: 'tcp',
+            enabled: false,
+            status: 'down',
+            host: 'amsterdam.connect.reticulum.network',
+            port: 4965,
+          },
+        ],
+      },
+    );
+    expect(
+      rows.some((r) => r.kind === 'rf' && r.condition === 'reticulum/decommissioned-hub-enabled'),
+    ).toBe(false);
+  });
+
+  it('attributes announce-bus-pressure with hot interface and boundary hubs', () => {
+    const now = 1_700_000_000_000;
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(now);
+      const rows = buildReticulumDiagnosticRows(
+        { rns_ready: true, lxmf_ready: true, interface_count: 2, peer_count: 100 },
+        {
+          inboundLxmf: {
+            lastEventsLaggedAt: now - 10_000,
+            lastEventsLaggedSkipped: 12,
+            lastInboundCatchUpAt: null,
+            lastInboundCatchUpCount: null,
+            inboundCatchUpWatermarkTs: null,
+            inboundCatchUpWatermarkSeq: null,
+            lastInboundRingLen: null,
+          },
+          hotPeerInterface: 'RNS Dublin Mainnet',
+          interfaces: [
+            {
+              id: '1',
+              name: 'RNS Dublin Mainnet',
+              type: 'tcp',
+              enabled: true,
+              status: 'up',
+              host: 'dublin.connect.reticulum.network',
+              port: 4965,
+              mode: 'boundary',
+            },
+            {
+              id: '2',
+              name: 'Local RNode',
+              type: 'rnode',
+              enabled: true,
+              status: 'up',
+              mode: 'access_point',
+            },
+          ],
+          interfaceIssueAlert: {
+            lastAtMs: now,
+            tcpConnectFailed: [],
+            txQueueDrops: [{ name: 'RNS Dublin Mainnet', dropCount: 3 }],
+            bleBondRemoved: [],
+            blePairingTimedOut: [],
+            linkDeliveryTimeouts: [],
+            transportSaturatedCount: 0,
+            slowTransportQueryCount: 0,
+            suppressedCount: 0,
+          },
+        },
+      );
+      const row = rows.find(
+        (r): r is RfDiagnosticRow =>
+          r.kind === 'rf' && r.condition === 'reticulum/announce-bus-pressure',
+      );
+      expect(row?.causeI18n?.key).toBe('diagnosticsPanel.reticulum.runtime.announceBusPressureHot');
+      expect(row?.causeI18n?.params?.hotInterface).toBe('RNS Dublin Mainnet');
+      expect(row?.causeI18n?.params?.boundaryHubs).toBe('RNS Dublin Mainnet');
+      expect(row?.causeI18n?.params?.txSaturatedIfaces).toBe('RNS Dublin Mainnet');
     } finally {
       vi.useRealTimers();
     }

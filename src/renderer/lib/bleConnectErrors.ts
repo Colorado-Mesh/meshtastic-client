@@ -12,6 +12,33 @@ export function isMeshcoreSetupAbortError(err: unknown): boolean {
   );
 }
 
+/** Main-process MeshCore TCP bridge has no live socket (peer FIN / local teardown). */
+const MESHCORE_TCP_TRANSPORT_DEAD_RE =
+  /meshcore:tcp-write:\s*no active socket|Error invoking remote method 'meshcore:tcp-write'/i;
+
+/**
+ * True when a MeshCore companion RPC failed because the TCP IPC bridge is already down.
+ * Used to hard-abort `initConn` instead of soft-catching into a false `configured` session
+ * (n7eal: peer FIN after getContacts → write storm).
+ */
+export function isMeshcoreTcpTransportDeadError(err: unknown): boolean {
+  if (err instanceof Error) {
+    return MESHCORE_TCP_TRANSPORT_DEAD_RE.test(err.message);
+  }
+  if (typeof err === 'string') {
+    return MESHCORE_TCP_TRANSPORT_DEAD_RE.test(err);
+  }
+  return false;
+}
+
+/** Convert TCP-bridge death into the standard setup AbortError (or rethrow if already abort). */
+export function rethrowMeshcoreSetupAbortFromTcpDead(err: unknown): void {
+  if (isMeshcoreSetupAbortError(err)) throw err;
+  if (isMeshcoreTcpTransportDeadError(err)) {
+    throw new DOMException(MESHCORE_SETUP_ABORT_MESSAGE, 'AbortError');
+  }
+}
+
 const MAIN_PROCESS_BLE_TIMEOUT_RE =
   /BLE connectAsync timed out|BLE characteristic discovery timed out|BLE fromNum subscribe timed out|BLE fromRadio subscribe timed out/i;
 
@@ -24,6 +51,21 @@ export function classifyMeshcoreBleTimeoutStage(message: string): MeshcoreBleTim
   if (/MeshCore BLE protocol handshake timed out/i.test(message)) return 'protocol-handshake';
   if (isMainProcessBleTimeoutMessage(message)) return 'ipc-open';
   return 'unknown';
+}
+
+const MESHCORE_MISSING_SERVICES_RE =
+  /could not find all requested services|failed to find required ble characteristics/i;
+
+export function isMeshcoreMissingServicesErrorMessage(message: string): boolean {
+  return MESHCORE_MISSING_SERVICES_RE.test(message);
+}
+
+export function shouldClearMeshcoreBleSelectionForError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    isMeshcoreMissingServicesErrorMessage(message) ||
+    message === 'meshcore.errors.bleMissingServices'
+  );
 }
 
 /** WinRT / BlueZ sometimes drop the link during GATT service or characteristic discovery. */

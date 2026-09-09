@@ -135,12 +135,18 @@ export const MESHCORE_CHANNEL_RF_DEDUP_WINDOW_MS = 5 * MS_PER_MINUTE;
 /** Same DM body re-heard on RF (multi-path / repeater echo) within this window. */
 export const MESHCORE_DM_RF_DEDUP_WINDOW_MS = 2 * MS_PER_MINUTE;
 
+/**
+ * Canonical Meshtastic 10-minute dedup window (cross-transport merge, MQTT-only packet TTL,
+ * PacketRouter tapback optimistic match). Keep a single definition so these cannot drift.
+ */
+export const MESHTASTIC_DEDUP_WINDOW_MS = 10 * MS_PER_MINUTE;
+
 /** PacketRouter tapback optimistic row match before Meshtastic RF echo re-key (temp packet_id → real id).
  * Wider than room post dedup (1 min) because client Date.now vs radio rxTime can skew several minutes. */
-export const MESHTASTIC_TAPBACK_OPTIMISTIC_DEDUP_WINDOW_MS = 10 * MS_PER_MINUTE;
+export const MESHTASTIC_TAPBACK_OPTIMISTIC_DEDUP_WINDOW_MS = MESHTASTIC_DEDUP_WINDOW_MS;
 
 /** RF/MQTT packet-id dedup TTL (MQTT-only fallback map and ingest session). */
-export const MESHTASTIC_PACKET_DEDUP_TTL_MS = 10 * MS_PER_MINUTE;
+export const MESHTASTIC_PACKET_DEDUP_TTL_MS = MESHTASTIC_DEDUP_WINDOW_MS;
 
 /** Hard cap for the MQTT-only packet dedup fallback map after TTL sweep. */
 export const MESHTASTIC_PACKET_DEDUP_FALLBACK_MAX_ENTRIES = 5_000;
@@ -160,6 +166,9 @@ export const MESHCORE_ROOM_LOGIN_MAX_ATTEMPTS = 2;
 /** Delay between failed room login attempts. */
 export const MESHCORE_ROOM_LOGIN_RETRY_DELAY_MS = 2_000;
 
+/** Coalesce connect auto-login when Room contacts appear after configure. */
+export const MESHCORE_ROOM_AUTO_LOGIN_DEBOUNCE_MS = 500;
+
 /** Background room sync scheduler tick interval. */
 export const MESHCORE_ROOM_SYNC_TICK_MS = 60_000;
 
@@ -168,11 +177,17 @@ export const MESHCORE_STATS_POLL_MS = 30_000;
 
 /** Safety-net poll for queued waiting messages when event 131 may have been missed. */
 export const MESHCORE_WAITING_MESSAGES_POLL_MS = 5 * MS_PER_MINUTE;
+/** Debounce repeated companion CONTACTS_FULL (0x90) alarm toasts. */
+export const MESHCORE_CONTACTS_FULL_ALARM_DEBOUNCE_MS = 60 * MS_PER_SECOND;
+/** When silent-bulk circuit is open, stretch scheduled drain / poll intervals by this factor. */
+export const MESHCORE_WAITING_MESSAGES_CIRCUIT_OPEN_BACKOFF_FACTOR = 4;
 /** Max wait for manual Chat Sync now when a MsgWaiting backlog is confirmed. */
 export const MESHCORE_WAITING_MESSAGES_SYNC_TIMEOUT_MS = 60_000;
 /** Fail-fast timeout for silent auto-drains (event 131, connect, poll). */
 export const MESHCORE_WAITING_MESSAGES_SILENT_TIMEOUT_MS = 45 * MS_PER_SECOND;
-/** Shorter silent timeout on USB serial (single companion RPC lane). */
+/** Consecutive silent-bulk getWaitingMessages timeouts before skipping bulk until reconnect. */
+export const MESHCORE_WAITING_MESSAGES_SILENT_BULK_TIMEOUT_TRIP = 2;
+/** Shorter silent bulk timeout on USB serial, BLE, and TCP/pyMC (single companion RPC lane). */
 export const MESHCORE_WAITING_MESSAGES_SERIAL_SILENT_TIMEOUT_MS = 15 * MS_PER_SECOND;
 /** Per-item timeout for silent syncNextMessage incremental drain. */
 export const MESHCORE_SYNC_NEXT_MESSAGE_TIMEOUT_MS = 12 * MS_PER_SECOND;
@@ -198,17 +213,39 @@ export const RF_SERIAL_OPEN_RETRY_DELAY_MS = 2_000;
 /** Minimum spacing between mesh TX operations used by room sync (login counts as TX). */
 export const MESHCORE_ROOM_SYNC_MIN_MESH_TX_SPACING_MS = 60_000;
 
+/** Poll while waiting for mesh TX spacing so Cancel can skip the remainder. */
+export const MESHCORE_ROOM_LOGIN_QUEUE_SKIP_POLL_MS = 50;
+
 /** Minimum auto-sync interval per room (minutes). */
 export const MESHCORE_ROOM_SYNC_MIN_INTERVAL_MINUTES = 60;
 
 /** Max wait for scheduler background route resolve (contacts only, no trace). */
 export const MESHCORE_ROOM_SYNC_ROUTE_RESOLVE_FAST_MS = 15_000;
 
-/** Delay before one retry of getMetadata after configure (NodeDB flood can starve BLE). */
-export const MESHTASTIC_GET_METADATA_AFTER_CONFIGURE_RETRY_MS = 8_000;
+/** Optional post-connect self telemetry on TCP — altitude only; must not block MsgWaiting drain. */
+export const MESHCORE_POST_CONNECT_SELF_TELEMETRY_TIMEOUT_MS = 15 * MS_PER_SECOND;
 
-/** BLE configure stall watchdog — force disconnect if DeviceConfigured never arrives. */
-export const MESHTASTIC_BLE_CONFIGURE_TIMEOUT_MS = 30 * MS_PER_SECOND;
+/** Max wait for proactive MsgWaiting drain before post-connect self telemetry runs. */
+export const MESHCORE_POST_CONNECT_SELF_TELEMETRY_DRAIN_WAIT_MS = 30 * MS_PER_SECOND;
+
+/** Defer first getMetadata after configure (NodeDB flood can starve the admin packet). */
+export const MESHTASTIC_GET_METADATA_AFTER_CONFIGURE_DEFER_MS = 12 * MS_PER_SECOND;
+
+/** Delay before one retry of getMetadata after the deferred first attempt fails. */
+export const MESHTASTIC_GET_METADATA_AFTER_CONFIGURE_RETRY_MS = 30 * MS_PER_SECOND;
+
+/** BLE/serial configure stall watchdog — force disconnect if FromRadio progress stalls. */
+export const MESHTASTIC_BLE_CONFIGURE_TIMEOUT_MS = 60 * MS_PER_SECOND;
+
+/**
+ * Hard ceiling for one LoRa reconnect open+configure/attach attempt (Meshtastic + MeshCore),
+ * applied to every transport (name is historical — BLE was the only transport with a deadline
+ * at all until TCP/serial/HTTP reconnects were found hanging indefinitely with none). For BLE,
+ * covers darwin dual createBleConnection attempts (~45–50s) + configure/attach margin so
+ * deferred Noble disconnect flush always runs instead of stalling retries at edge of range.
+ */
+export const NOBLE_BLE_RECONNECT_ATTEMPT_BUDGET_MS =
+  60 * MS_PER_SECOND + MESHTASTIC_BLE_CONFIGURE_TIMEOUT_MS;
 
 /**
  * Raw packet log: startup (and similar) can deliver two distinct LOG_RX frames for the same node's
@@ -269,3 +306,52 @@ export function meshcoreRepeaterRpcTimeoutMs(hopsAway?: number | null): number {
 
 /** Brief settle before one-shot Nomad page re-fetch after a transient path/link error. */
 export const NOMAD_PAGE_FETCH_RETRY_SETTLE_MS = 750;
+
+/**
+ * Coalesce rapid Nomad node/page selection before starting a Link query.
+ * Link queries are serialized in the sidecar; rapid clicks should only keep
+ * the latest selection after this debounce.
+ */
+export const NOMAD_PAGE_FETCH_DEBOUNCE_MS = 300;
+
+/**
+ * Minimum gap between successive TEXT_MESSAGE_APP sends to the connected Meshtastic radio.
+ * Firmware's PhoneAPI rate-limits locally-originated text packets to one per 2s
+ * (`Throttle::isWithinTimespanMs(lastPortNumToRadio[TEXT_MESSAGE_APP], TWO_SECONDS_MS)` in
+ * `PhoneAPI.cpp`) and rejects a closer one with `Routing_Error.RATE_LIMIT_EXCEEDED` — a
+ * multi-chunk split message sent back-to-back trips this on chunk 2+. Padded above the
+ * firmware's exact 2000ms boundary for serial/BLE/TCP write and timer-granularity slack.
+ */
+export const MESHTASTIC_TEXT_CHUNK_SEND_INTERVAL_MS = 2.5 * MS_PER_SECOND;
+
+/**
+ * Cadence below which a second MeshCore chat send (channel / DM / room) triggers a
+ * non-blocking "sending too fast" advisory. MeshCore floods each message across every
+ * repeater on the path, and each hop adds airtime plus random rebroadcast backoff, so a
+ * message typically needs ~5s to settle across a 2-3 hop mesh. Sending again inside that
+ * window risks the new packet colliding with the prior message's still-propagating flood,
+ * which busy repeaters can drop (see meshcore-dev/MeshCore #2820, #1502). This is advisory
+ * only — it never blocks, disables, or delays the send.
+ */
+export const MESHCORE_FAST_SEND_WARN_INTERVAL_MS = 5 * MS_PER_SECOND;
+
+/**
+ * Renderer safety hangup for optimistic LXST dial when WS never reaches Established.
+ * Slightly above rsLXST `outgoing_call_timeout` (70s).
+ */
+export const RETICULUM_VOICE_OUTGOING_SAFETY_HANGUP_MS = 75 * MS_PER_SECOND;
+
+/**
+ * Bound LXMF / RRC proxy sends so a stuck sidecar IPC cannot hang Chat/RRC UI forever.
+ * Stack TCP features should already be up; this is a safety net during connect races.
+ */
+export const RETICULUM_IPC_SEND_TIMEOUT_MS = 15 * MS_PER_SECOND;
+
+/**
+ * How long to wait for an rrcd `/who` NOTICE before telling the user the member
+ * list never came back (single-packet reply, dropped when it exceeds Link MDU).
+ */
+export const RRC_WHO_REPLY_TIMEOUT_MS = 12 * MS_PER_SECOND;
+
+/** BLE picker: keep live dBm, but wait this long before re-ordering by RSSI so rows do not jump. */
+export const PICKER_RSSI_REORDER_DEBOUNCE_MS = MS_PER_SECOND;

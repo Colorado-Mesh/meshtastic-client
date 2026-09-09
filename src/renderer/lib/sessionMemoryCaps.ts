@@ -1,10 +1,10 @@
 /** Shared in-memory retention limits for long-running sessions. */
 
-import { MS_PER_HOUR } from '@/shared/timeConstants';
+import { MS_PER_HOUR, MS_PER_MINUTE } from '@/shared/timeConstants';
 
 /**
  * In-memory hard ceiling for Meshtastic nodes, MeshCore contacts, and Reticulum peers.
- * User-facing destination/node caps (default 10k, Reticulum max 50k) apply first.
+ * User-facing destination/node caps (default 50k, Reticulum max {@link MAX_MESH_ENTITY_CAP}) apply first.
  */
 export const MAX_MESH_ENTITY_CAP = 100_000;
 
@@ -16,10 +16,19 @@ export const MAX_DIAGNOSTICS_TRACKED_NODES = MAX_MESH_ENTITY_CAP;
 export const MAX_RETICULUM_IDENTITY_DESTINATIONS = MAX_MESH_ENTITY_CAP;
 /** In-memory cap for RMAP discovery rows mirrored from the sidecar DiscoveryStore. */
 export const MAX_RMAP_DISCOVERED_ROWS = 2_000;
-/** Soft caps for RRC session state (rooms / nicklists); messages use 500/room in the store. */
+/** Soft caps for RRC session state (rooms / nicklists); messages use RRC_ROOM_HISTORY_LOAD_COUNT. */
 export const MAX_RRC_ROOMS_PER_HUB = 64;
 export const MAX_RRC_MEMBERS_PER_ROOM = 256;
+/**
+ * In-memory / hydrate soft cap for one RRC room (listRrcMessages limit).
+ * Independent of SQLite retention (`rrcMessageRetentionCount`, default 10_000).
+ */
+export const RRC_ROOM_HISTORY_LOAD_COUNT = 500;
 export const LARGE_MESH_NODE_THRESHOLD = 2000;
+/** Above this, skip periodic full peer snapshots unless last full refresh is stale. */
+export const MEGA_MESH_NODE_THRESHOLD = 10_000;
+/** Max age of a warm full peer snapshot before mega-mesh timer refresh may run again. */
+export const MEGA_MESH_FULL_PEER_REFRESH_MAX_AGE_MS = 10 * MS_PER_MINUTE;
 export const LARGE_MESH_DIAGNOSTICS_REANALYSIS_DELAY_MS = 10_000;
 export const SESSION_DB_PRUNE_INTERVAL_MS = 6 * MS_PER_HOUR;
 

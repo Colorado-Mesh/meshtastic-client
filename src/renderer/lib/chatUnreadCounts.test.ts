@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { useReticulumIdentityActivityStore } from '@/renderer/stores/reticulumIdentityActivityStore';
+
 import {
+  buildProtocolSwitcherUnreadByProtocol,
   chatViewKeyForMessage,
   computeChannelUnreadCounts,
   computeDmUnreadCounts,
@@ -11,6 +14,13 @@ import {
   resolveChatNotificationType,
   totalUnreadCount,
 } from './chatUnreadCounts';
+import {
+  clearReticulumHashRegistry,
+  registerReticulumDestinationHash,
+  reticulumHashToNodeId,
+} from './reticulum/destHash';
+import { LXMF_DELIVERY_ASPECT } from './reticulum/resolveReticulumChatLxmfDest';
+import { LXST_TELEPHONY_ASPECT } from './reticulumVoiceCapability';
 import type { ChatMessage } from './types';
 
 const ownNodes = new Set([1]);
@@ -118,6 +128,65 @@ describe('chatUnreadCounts', () => {
       { excludeDmPeer: (peer) => peer === 2 },
     );
     expect(dmCounts.size).toBe(0);
+  });
+
+  it('excludes Reticulum tapbacks (hash parent, no numeric replyId) from DM unread', () => {
+    const dmCounts = computeDmUnreadCounts(
+      [
+        msg({
+          channel: 0,
+          to: 1,
+          timestamp: 2000,
+          emoji: 0x1f44d,
+          payload: '\u{1F44D}',
+          reticulum_reply_to_hash: 'aabbccddeeff00112233445566778899',
+        }),
+      ],
+      {},
+      ownNodes,
+      'reticulum',
+    );
+    expect(dmCounts.size).toBe(0);
+  });
+
+  it('clears Reticulum DM unread once the watermark reaches the newest regular message', () => {
+    const messages = [
+      msg({ channel: 0, to: 1, timestamp: 2000 }),
+      msg({
+        channel: 0,
+        to: 1,
+        timestamp: 3000,
+        emoji: 0x2764,
+        payload: '\u2764',
+        reticulum_reply_to_hash: 'aabbccddeeff00112233445566778899',
+      }),
+    ];
+    // The read watermark can only advance to the newest *visible* message (2000).
+    const dmCounts = computeDmUnreadCounts(messages, { 'dm:2': 2000 }, ownNodes, 'reticulum');
+    expect(dmCounts.size).toBe(0);
+    expect(totalUnreadCount(messages, { 'dm:2': 2000 }, ownNodes, 'reticulum')).toBe(0);
+  });
+
+  it('still excludes Meshtastic and MeshCore tapbacks keyed by numeric replyId', () => {
+    for (const protocol of ['meshtastic', 'meshcore'] as const) {
+      const dmCounts = computeDmUnreadCounts(
+        [msg({ channel: 0, to: 1, timestamp: 2000, emoji: 0x1f44d, replyId: 42 })],
+        {},
+        ownNodes,
+        protocol,
+      );
+      expect(dmCounts.size).toBe(0);
+    }
+  });
+
+  it('counts a plain Reticulum emoji message that is not a tapback', () => {
+    const dmCounts = computeDmUnreadCounts(
+      [msg({ channel: 0, to: 1, timestamp: 2000, emoji: 0x1f44d, payload: '\u{1F44D}' })],
+      {},
+      ownNodes,
+      'reticulum',
+    );
+    expect(dmCounts.get(2)).toBe(1);
   });
 
   it('totalUnreadCount sums channel and DM unreads', () => {
@@ -307,6 +376,63 @@ describe('chatUnreadCounts', () => {
     expect(peer).toBe(peerId);
   });
 
+  it('Reticulum resolveChatDmPeer collapses telephony-attributed peers onto LXMF fold', () => {
+    const identity = '0f79468863d76b3ba574baa92606ffcb';
+    const lxmf = 'e3359f1314aff4fb6261400a8202149b';
+    const telephony = 'ab1d53d6923d6983dfb4451e3869b878';
+    const telephonyId = reticulumHashToNodeId(telephony) >>> 0;
+    const lxmfId = reticulumHashToNodeId(lxmf) >>> 0;
+    clearReticulumHashRegistry();
+    registerReticulumDestinationHash(telephonyId, telephony);
+    registerReticulumDestinationHash(lxmfId, lxmf);
+    useReticulumIdentityActivityStore.setState({
+      byDestination: new Map([
+        [
+          telephony,
+          [
+            {
+              destination_hash: telephony,
+              aspect: LXST_TELEPHONY_ASPECT,
+              identity_hash: identity,
+              last_seen: 200,
+            },
+          ],
+        ],
+        [
+          lxmf,
+          [
+            {
+              destination_hash: lxmf,
+              aspect: LXMF_DELIVERY_ASPECT,
+              identity_hash: identity,
+              last_seen: 150,
+            },
+          ],
+        ],
+      ]),
+    });
+    const own = new Set([1]);
+    expect(
+      resolveChatDmPeer(msg({ channel: 0, sender_id: 1, to: telephonyId }), own, 'reticulum'),
+    ).toBe(lxmfId);
+    expect(
+      chatViewKeyForMessage(msg({ channel: 0, sender_id: telephonyId, to: 0 }), 'reticulum', own),
+    ).toBe(`dm:${String(lxmfId)}`);
+    const dmCounts = computeDmUnreadCounts(
+      [
+        msg({ channel: 0, sender_id: telephonyId, to: 0, timestamp: 2000 }),
+        msg({ channel: 0, sender_id: lxmfId, to: 0, timestamp: 2100 }),
+      ],
+      {},
+      own,
+      'reticulum',
+    );
+    expect(dmCounts.get(lxmfId)).toBe(2);
+    expect(dmCounts.get(telephonyId)).toBeUndefined();
+    clearReticulumHashRegistry();
+    useReticulumIdentityActivityStore.setState({ byDestination: new Map() });
+  });
+
   it('Reticulum inbound with to_hash infers peer when own identity is unknown', () => {
     const peerId = 2838895306;
     const peer = resolveChatDmPeer(
@@ -317,7 +443,7 @@ describe('chatUnreadCounts', () => {
     expect(peer).toBe(peerId);
   });
 
-  it('Reticulum outbound infers peer from to when own identity is unknown', () => {
+  it('Reticulum outbound with unknown own prefers hash-backed sender until identity is known', () => {
     const selfHash = 'f9aa38ba0c5a00000000000000000000';
     const selfId = parseInt(selfHash.slice(0, 12), 16) >>> 0;
     const peerId = 2838895306;
@@ -331,7 +457,9 @@ describe('chatUnreadCounts', () => {
       new Set(),
       'reticulum',
     );
-    expect(peer).toBe(peerId);
+    // Ambiguous without own IDs — prefer sender (same rule that fixes inbound self-DM on launch).
+    // Chat filters self tabs once App passes identity-backed ownNodeIds.
+    expect(peer).toBe(selfId);
   });
 
   it('Reticulum inbound to=self + hash resolves peer when ownNodeIds populated', () => {
@@ -351,7 +479,7 @@ describe('chatUnreadCounts', () => {
     expect(peer).toBe(peerId);
   });
 
-  it('Reticulum inbound to=self + hash misattributes peer to self when own empty', () => {
+  it('Reticulum inbound to=self + hash prefers sender peer when own empty', () => {
     const peerHash = '8fd7a9361aca00000000000000000000';
     const peerId = parseInt(peerHash.slice(0, 12), 16) >>> 0;
     const selfId = 4172361550;
@@ -365,7 +493,7 @@ describe('chatUnreadCounts', () => {
       new Set(),
       'reticulum',
     );
-    expect(peer).toBe(selfId);
+    expect(peer).toBe(peerId);
   });
 
   it('computeReticulumChatUnread clears after dm:peer last-read when own populated', () => {
@@ -384,10 +512,10 @@ describe('chatUnreadCounts', () => {
     expect(
       computeReticulumChatUnread([inbound], 'configured', { [`dm:${peerId}`]: 2000 }, own),
     ).toBe(0);
-    // Empty own + peer watermark still leaves sticky dm:self unread (App must pass own).
+    // Empty own still attributes inbound hash-backed DMs to the sender peer.
     expect(
       computeReticulumChatUnread([inbound], 'configured', { [`dm:${peerId}`]: 2000 }, new Set()),
-    ).toBe(1);
+    ).toBe(0);
   });
 });
 
@@ -515,5 +643,39 @@ describe('pickAudibleNotificationType', () => {
         reply,
       ]),
     ).toBe('reply');
+  });
+});
+
+describe('buildProtocolSwitcherUnreadByProtocol', () => {
+  it('keeps meshtastic and meshcore chat-only and sums reticulum chat with rrc', () => {
+    expect(buildProtocolSwitcherUnreadByProtocol(2, 5, 3, 4)).toEqual({
+      meshtastic: 2,
+      meshcore: 5,
+      reticulum: 7,
+    });
+  });
+
+  it('leaves zeros zero when chat and rrc are empty', () => {
+    expect(buildProtocolSwitcherUnreadByProtocol(0, 0, 0, 0)).toEqual({
+      meshtastic: 0,
+      meshcore: 0,
+      reticulum: 0,
+    });
+  });
+
+  it('badges reticulum from rrc alone when lxmf chat is zero', () => {
+    expect(buildProtocolSwitcherUnreadByProtocol(0, 1, 0, 6)).toEqual({
+      meshtastic: 0,
+      meshcore: 1,
+      reticulum: 6,
+    });
+  });
+
+  it('includes games unread in the reticulum protocol-switcher total', () => {
+    expect(buildProtocolSwitcherUnreadByProtocol(0, 3, 1, 2, 4)).toEqual({
+      meshtastic: 0,
+      meshcore: 3,
+      reticulum: 7,
+    });
   });
 });

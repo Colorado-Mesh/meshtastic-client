@@ -1,4 +1,6 @@
 import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
+import { normalizeMeshcoreFloodScopeHashtag } from '@/renderer/lib/meshcoreFloodScope';
+import { isValidMeshcoreFloodScopeHashtag } from '@/renderer/lib/meshcoreFloodScopePresetsStorage';
 
 import {
   type ChatLastReadSanitizeMessage,
@@ -11,6 +13,9 @@ import { loadPersistedMeshcoreSelfNodeId } from './meshcoreLastSelfNodeId';
 import { parseStoredJson } from './parseStoredJson';
 import type { MeshProtocol } from './types';
 
+/** Cap persisted flood-scope override map size (view keys). */
+const FLOOD_SCOPE_OVERRIDE_MAX_KEYS = 200;
+
 export {
   type ChatLastReadSanitizeMessage,
   maxMessageTimestampByViewKey,
@@ -22,6 +27,10 @@ const LEGACY_LAST_READ_KEY = 'mesh-client:lastRead';
 
 export function openDmTabsStorageKey(protocol: MeshProtocol): string {
   return `mesh-client:openDmTabs:${protocol}`;
+}
+
+export function activeDmStorageKey(protocol: MeshProtocol): string {
+  return `mesh-client:activeDm:${protocol}`;
 }
 
 export function lastReadStorageKey(protocol: MeshProtocol): string {
@@ -79,6 +88,97 @@ export function loadOpenDmTabsInitial(protocol: MeshProtocol): number[] {
   return [];
 }
 
+/**
+ * Last-focused DM node id for this protocol (null if missing/invalid).
+ * Reticulum normalizes with `>>> 0` like open tabs.
+ */
+export function loadActiveDmInitial(protocol: MeshProtocol): number | null {
+  const key = activeDmStorageKey(protocol);
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw == null || raw === '') return null;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return null;
+    return protocol === 'reticulum' ? parsed >>> 0 : parsed;
+  } catch (e) {
+    console.debug('[chatPanelProtocolStorage] loadActiveDmInitial failed ' + errLikeToLogString(e));
+    return null;
+  }
+}
+
+/** Persist last-focused DM; pass null to clear. */
+export function saveActiveDm(protocol: MeshProtocol, nodeId: number | null): void {
+  const key = activeDmStorageKey(protocol);
+  try {
+    if (nodeId == null) {
+      localStorage.removeItem(key);
+      return;
+    }
+    const normalized = protocol === 'reticulum' ? nodeId >>> 0 : nodeId;
+    localStorage.setItem(key, String(normalized));
+  } catch (e) {
+    console.debug('[chatPanelProtocolStorage] saveActiveDm failed ' + errLikeToLogString(e));
+  }
+}
+
+/**
+ * Scoped by the connected device's own node number (not just protocol) so that
+ * switching to a genuinely different physical node — which can reuse the same
+ * internal identity slot as the node just disconnected from — doesn't restore a
+ * channel selection that belonged to the previous device. A same-node
+ * disconnect/reconnect keeps the same node number, so the prior selection is
+ * still found and restored; a different node simply misses and falls back to
+ * the default channel.
+ */
+export function activeChannelStorageKey(protocol: MeshProtocol, nodeNum: number): string {
+  return `mesh-client:activeChannel:${protocol}:${nodeNum}`;
+}
+
+/**
+ * ChatPanel uses channel index -1 as the "primary" sentinel (MeshCore); every
+ * other valid index is >= 0. Reject anything else, including other negatives.
+ */
+function isValidChannelIndex(value: number): boolean {
+  return Number.isFinite(value) && Number.isInteger(value) && value >= -1;
+}
+
+/** Node numbers are always positive integers; reject fractional/infinite input. */
+function isValidNodeNum(value: number): boolean {
+  return Number.isSafeInteger(value) && value > 0;
+}
+
+/** Last-selected channel index for this protocol + node (null if missing/invalid). */
+export function loadActiveChannelInitial(protocol: MeshProtocol, nodeNum: number): number | null {
+  if (!isValidNodeNum(nodeNum)) return null;
+  try {
+    const raw = localStorage.getItem(activeChannelStorageKey(protocol, nodeNum));
+    if (raw == null || raw.trim() === '') return null;
+    const parsed = Number(raw);
+    if (!isValidChannelIndex(parsed)) return null;
+    return parsed;
+  } catch (e) {
+    console.debug(
+      '[chatPanelProtocolStorage] loadActiveChannelInitial failed ' + errLikeToLogString(e),
+    );
+    return null;
+  }
+}
+
+/** Persist last-selected channel index for this protocol + node. No-op without a node number. */
+export function saveActiveChannel(
+  protocol: MeshProtocol,
+  nodeNum: number,
+  channelIndex: number,
+): void {
+  if (!isValidNodeNum(nodeNum)) return;
+  if (!isValidChannelIndex(channelIndex)) return;
+  try {
+    localStorage.setItem(activeChannelStorageKey(protocol, nodeNum), String(channelIndex));
+  } catch (e) {
+    console.debug('[chatPanelProtocolStorage] saveActiveChannel failed ' + errLikeToLogString(e));
+  }
+}
+
 export function draftsStorageKey(protocol: MeshProtocol): string {
   return `mesh-client:drafts:${protocol}`;
 }
@@ -120,6 +220,90 @@ export function clearDraft(protocol: MeshProtocol, viewKey: string): void {
   } catch (e) {
     console.debug('[chatPanelProtocolStorage] clearDraft failed ' + errLikeToLogString(e));
   }
+}
+
+/**
+ * Chat composer sentinel: explicitly Unscoped (mesh-wide), distinct from Default (`''`).
+ * Must round-trip through flood-scope override storage unchanged.
+ */
+export const FLOOD_SCOPE_OVERRIDE_UNSCOPED = '__unscoped__';
+
+export function floodScopeOverridesStorageKey(protocol: MeshProtocol): string {
+  return `mesh-client:floodScopeOverrides:${protocol}`;
+}
+
+/** True when a stored override is Unscoped or a valid named hashtag (not Default). */
+function isPersistedFloodScopeOverride(value: string): boolean {
+  if (value === FLOOD_SCOPE_OVERRIDE_UNSCOPED) return true;
+  return isValidMeshcoreFloodScopeHashtag(normalizeMeshcoreFloodScopeHashtag(value));
+}
+
+function normalizePersistedFloodScopeOverride(value: string): string | null {
+  if (value === FLOOD_SCOPE_OVERRIDE_UNSCOPED) return FLOOD_SCOPE_OVERRIDE_UNSCOPED;
+  const normalized = normalizeMeshcoreFloodScopeHashtag(value);
+  return isValidMeshcoreFloodScopeHashtag(normalized) ? normalized : null;
+}
+
+/** Load persisted Chat flood-scope overrides (viewKey → override) for this protocol. */
+export function loadFloodScopeOverridesInitial(protocol: MeshProtocol): Record<string, string> {
+  const raw = localStorage.getItem(floodScopeOverridesStorageKey(protocol));
+  if (raw == null) return {};
+  const parsed = parseStoredJson<unknown>(raw, 'ChatPanel floodScopeOverrides');
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const result: Record<string, string> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof v !== 'string') continue;
+      const normalized = normalizePersistedFloodScopeOverride(v);
+      if (!normalized) continue;
+      result[k] = normalized;
+      if (Object.keys(result).length >= FLOOD_SCOPE_OVERRIDE_MAX_KEYS) break;
+    }
+    return result;
+  }
+  return {};
+}
+
+/**
+ * Persist a flood-scope override for a view key.
+ * Default (`''`) clears the key so it is distinct from Unscoped.
+ */
+export function saveFloodScopeOverride(
+  protocol: MeshProtocol,
+  viewKey: string,
+  override: string,
+): void {
+  try {
+    const key = floodScopeOverridesStorageKey(protocol);
+    const current = loadFloodScopeOverridesInitial(protocol);
+    if (!override || !isPersistedFloodScopeOverride(override)) {
+      const rest = Object.fromEntries(Object.entries(current).filter(([k]) => k !== viewKey));
+      localStorage.setItem(key, JSON.stringify(rest));
+      return;
+    }
+    const normalized = normalizePersistedFloodScopeOverride(override);
+    if (!normalized) {
+      const rest = Object.fromEntries(Object.entries(current).filter(([k]) => k !== viewKey));
+      localStorage.setItem(key, JSON.stringify(rest));
+      return;
+    }
+    current[viewKey] = normalized;
+    const entries = Object.entries(current);
+    if (entries.length > FLOOD_SCOPE_OVERRIDE_MAX_KEYS) {
+      const trimmed = Object.fromEntries(entries.slice(-FLOOD_SCOPE_OVERRIDE_MAX_KEYS));
+      localStorage.setItem(key, JSON.stringify(trimmed));
+      return;
+    }
+    localStorage.setItem(key, JSON.stringify(current));
+  } catch (e) {
+    console.debug(
+      '[chatPanelProtocolStorage] saveFloodScopeOverride failed ' + errLikeToLogString(e),
+    );
+  }
+}
+
+/** Remove the flood-scope override for a specific view key (back to Default). */
+export function clearFloodScopeOverride(protocol: MeshProtocol, viewKey: string): void {
+  saveFloodScopeOverride(protocol, viewKey, '');
 }
 
 /** Load muted view keys for this protocol (e.g. 'ch:0', 'dm:12345'). */
@@ -559,4 +743,5 @@ export function removePersistedLastReadForChannel(protocol: MeshProtocol, channe
 
 export function clearPersistedRoomsLastRead(): void {
   savePersistedRoomsLastRead({});
+  notifyPersistedRoomsLastReadChanged();
 }

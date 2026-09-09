@@ -6,6 +6,9 @@ use uuid::Uuid;
 
 use serde::Deserialize;
 
+use super::path_medium::{PathMediumPreferenceSetting, PathMediumSetting, PeerMediumPins};
+use super::pn_hosting_policy::PnHostingPolicy;
+use super::propagation_mode::PropagationMode;
 use super::types::{
     AddInterfaceRequest, ContactRow, InterfaceRow, LxmfReactionRequest, LxmfSendRequest,
     NomadNodeRow, PeerRow, PropagationRow, RrcHubRow, StackIdentity,
@@ -28,6 +31,13 @@ pub struct PersistedState {
     pub primary_local_serial_interface_id: Option<String>,
     pub propagation_sync: serde_json::Value,
     pub auto_sync_interval_sec: u32,
+    /// Renderer propagation mode; `Off` disables the outbound Direct→PN cascade.
+    pub propagation_mode: PropagationMode,
+    /// Destination hashes (32 lowercase hex) Auto must never sync or deposit on.
+    /// Manual Prefer/Sync and explicit Add remain available.
+    pub propagation_auto_blacklist: Vec<String>,
+    /// LXMF local PN hosting / peering policy (defaults match rsLXMF / lxmd).
+    pub pn_hosting_policy: PnHostingPolicy,
     pub nomad_nodes: Vec<NomadNodeRow>,
     pub rrc_hubs: Vec<RrcHubRow>,
     /// User preference: start Nomad page hosting when the live stack is up.
@@ -46,6 +56,10 @@ pub struct PersistedState {
     /// Identity hashes for `allow_all_listed` policy; empty means `ask` mode.
     pub rncp_listener_allowed: Vec<String>,
     pub rncp_listener_blocked: Vec<String>,
+    /// Global transport bias for the active path slot (rsReticulum `PathMediumPreference`).
+    pub path_medium_preference: PathMediumPreferenceSetting,
+    /// Per-destination medium pins that override the global preference.
+    pub peer_medium_pins: PeerMediumPins,
 }
 
 impl PersistedState {
@@ -77,6 +91,9 @@ impl PersistedState {
             primary_local_serial_interface_id: None,
             propagation_sync: serde_json::Value::Null,
             auto_sync_interval_sec: 3600,
+            propagation_mode: PropagationMode::default(),
+            propagation_auto_blacklist: Vec::new(),
+            pn_hosting_policy: PnHostingPolicy::default(),
             nomad_nodes: Vec::new(),
             rrc_hubs: Vec::new(),
             nomad_serving_enabled: false,
@@ -89,6 +106,8 @@ impl PersistedState {
             rncp_listener_overwrite: false,
             rncp_listener_allowed: Vec::new(),
             rncp_listener_blocked: Vec::new(),
+            path_medium_preference: PathMediumPreferenceSetting::default(),
+            peer_medium_pins: PeerMediumPins::default(),
         }
     }
 
@@ -96,7 +115,7 @@ impl PersistedState {
         if self.propagation.is_empty() {
             self.propagation.push(PropagationRow {
                 id: "local-prop".into(),
-                name: "Local propagation (offline inbox)".to_string(),
+                name: "Local propagation node".to_string(),
                 hops: Some(0),
                 enabled: false,
                 status: "unknown".into(),
@@ -237,58 +256,6 @@ impl PersistedState {
             .as_secs()
     }
 
-    pub fn export_identity_backup(&self, passphrase: &str) -> Result<serde_json::Value, String> {
-        if !self.identity.configured {
-            return Err("no identity configured".into());
-        }
-        let _ = passphrase;
-        Ok(serde_json::json!({
-            "format": "mesh-client.identity.v1",
-            "identity_hash": self.identity.identity_hash,
-            "lxmf_hash": self.identity.lxmf_hash,
-            "display_name": self.identity.display_name,
-            "exported_at": Self::now_secs()
-        }))
-    }
-
-    #[allow(clippy::needless_pass_by_value)] // backup JSON is consumed by format-specific import paths
-    pub fn import_identity_backup(
-        &mut self,
-        backup: serde_json::Value,
-        passphrase: &str,
-    ) -> Result<StackIdentity, String> {
-        let _ = passphrase;
-        let format = backup.get("format").and_then(|v| v.as_str()).unwrap_or("");
-        if format != "mesh-client.identity.v1" && format != "ratspeak.identity.v2" {
-            return Err("unsupported backup format".into());
-        }
-        let identity_hash = backup
-            .get("identity_hash")
-            .and_then(|v| v.as_str())
-            .ok_or("missing identity_hash")?
-            .to_string();
-        let lxmf_hash = backup
-            .get("lxmf_hash")
-            .and_then(|v| v.as_str())
-            .ok_or("missing lxmf_hash")?
-            .to_string();
-        let display_name = backup
-            .get("display_name")
-            .and_then(|v| v.as_str())
-            .map(str::to_string);
-        self.identity = StackIdentity {
-            configured: true,
-            identity_hash,
-            lxmf_hash,
-            display_name,
-            mnemonic: None,
-        };
-        self.rns_ready = true;
-        self.lxmf_ready = true;
-        self.sync_local_propagation_hash();
-        Ok(self.identity.clone())
-    }
-
     /// Stub-stack interface CRUD (live stack uses config file writes).
     #[allow(dead_code)]
     pub fn add_interface(&mut self, req: AddInterfaceRequest) -> Result<InterfaceRow, String> {
@@ -317,6 +284,7 @@ impl PersistedState {
             callsign: req.callsign,
             id_interval: req.id_interval,
             mode: req.mode,
+            runtime_mode: None,
             seed_addresses: req.seed_addresses,
             discoverable: req.discoverable,
             latitude: req.latitude,
@@ -328,6 +296,12 @@ impl PersistedState {
             reachable_on: req.reachable_on,
             network_name: req.network_name,
             passphrase: req.passphrase,
+            flow_control: req
+                .flow_control
+                .or_else(|| super::config::default_flow_control_for_iface_type(&req.iface_type)),
+            ignore_config_warnings: req.ignore_config_warnings,
+            tx_queue_used: None,
+            tx_queue_max: None,
             extra_config: req.extra_config,
         };
         self.interfaces.push(row.clone());
@@ -366,6 +340,8 @@ impl PersistedState {
         Ok(())
     }
 
+    // Used by StackHandle when `rns-stack` is off; tests cover the stub.
+    #[cfg_attr(feature = "rns-stack", allow(dead_code))]
     pub fn start_propagation_sync(&mut self, propagation_id: &str) -> Result<(), String> {
         if !self.propagation.iter().any(|p| p.id == propagation_id) {
             return Err(format!("propagation node not found: {propagation_id}"));
@@ -389,6 +365,68 @@ impl PersistedState {
 
     pub fn set_auto_sync_interval_sec(&mut self, sec: u32) {
         self.auto_sync_interval_sec = sec;
+    }
+
+    pub fn set_propagation_mode(&mut self, mode: PropagationMode) {
+        self.propagation_mode = mode;
+    }
+
+    /// Cap so a misbehaving UI cannot grow the Auto ignore list without bound.
+    const PROPAGATION_AUTO_BLACKLIST_CAP: usize = 256;
+
+    /// Normalize and validate a PN destination hash for the Auto blacklist.
+    /// Trim + lowercase only — reject unless the whole string is exactly 32 ASCII hex chars
+    /// (do not strip arbitrary non-hex characters).
+    pub fn normalize_propagation_auto_blacklist_hash(raw: &str) -> Result<String, String> {
+        let clean = raw.trim().to_lowercase();
+        if clean.len() != 32 || !clean.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err("destination_hash must be 32 hex characters".into());
+        }
+        Ok(clean)
+    }
+
+    pub fn add_propagation_auto_blacklist(&mut self, destination_hash: &str) -> Result<(), String> {
+        let hash = Self::normalize_propagation_auto_blacklist_hash(destination_hash)?;
+        if self.propagation_auto_blacklist.iter().any(|h| h == &hash) {
+            return Ok(());
+        }
+        if self.propagation_auto_blacklist.len() >= Self::PROPAGATION_AUTO_BLACKLIST_CAP {
+            return Err("propagation Auto blacklist is full".into());
+        }
+        self.propagation_auto_blacklist.push(hash);
+        Ok(())
+    }
+
+    pub fn remove_propagation_auto_blacklist(
+        &mut self,
+        destination_hash: &str,
+    ) -> Result<(), String> {
+        let hash = Self::normalize_propagation_auto_blacklist_hash(destination_hash)?;
+        let before = self.propagation_auto_blacklist.len();
+        self.propagation_auto_blacklist.retain(|h| h != &hash);
+        if self.propagation_auto_blacklist.len() == before {
+            return Err(format!("destination_hash not in Auto blacklist: {hash}"));
+        }
+        Ok(())
+    }
+
+    pub fn set_pn_hosting_policy(&mut self, policy: PnHostingPolicy) -> Result<(), String> {
+        let policy = policy.sanitized()?;
+        self.pn_hosting_policy = policy;
+        Ok(())
+    }
+
+    pub fn set_path_medium_preference(&mut self, preference: PathMediumPreferenceSetting) {
+        self.path_medium_preference = preference;
+    }
+
+    /// Set (`Some`) or clear (`None`) a destination's medium pin; returns the canonical hash.
+    pub fn set_peer_medium_pin(
+        &mut self,
+        hash: &str,
+        pin: Option<PathMediumSetting>,
+    ) -> Result<String, String> {
+        self.peer_medium_pins.set(hash, pin)
     }
 
     pub fn upsert_nomad_node(
@@ -609,10 +647,14 @@ impl PersistedState {
                 interface: None,
                 path_hash: None,
                 via_hash: None,
+                public_key: None,
             });
         }
     }
 
+    /// Explicit contact upsert (not called from LXMF send/receive). Kept for unit tests and
+    /// any future manual sidecar write path; messaging must not auto-promote contacts.
+    #[allow(dead_code)] // intentional: production messaging paths no longer call this
     pub fn upsert_contact(&mut self, hash: &str, name: Option<String>) {
         let hash = super::topology::canonicalize_destination_hash(hash)
             .unwrap_or_else(|| hash.trim().to_ascii_lowercase());
@@ -649,6 +691,7 @@ impl PersistedState {
     }
 
     /// Upsert a contact, filling a missing name from announce/peer cache when needed.
+    #[allow(dead_code)] // intentional: production messaging paths no longer call this
     pub fn upsert_contact_with_name_cache(
         &mut self,
         hash: &str,
@@ -679,17 +722,14 @@ impl PersistedState {
         self.upsert_contact(&hash, resolved);
     }
 
+    /// Offline/stub LXMF send used when the `rns-stack` feature is off.
+    #[cfg_attr(feature = "rns-stack", allow(dead_code))]
     pub fn send_lxmf_local(&mut self, req: &LxmfSendRequest) -> Result<serde_json::Value, String> {
         if !self.identity.configured {
             return Err("identity not configured".into());
         }
         let ts = Self::now_secs();
-        let peer_names = super::topology::build_topology_name_map(
-            &self.peers,
-            &self.contacts,
-            &self.nomad_nodes,
-        );
-        self.upsert_contact_with_name_cache(&req.destination_hash, None, &peer_names);
+        // Contacts are manual-only; offline/mock send must not auto-add the recipient.
         let sent_via = resolve_outbound_sent_via(&self.interfaces);
         let mut payload = serde_json::json!({
             "sender_hash": self.identity.lxmf_hash,
@@ -721,6 +761,7 @@ impl PersistedState {
     }
 
     #[allow(clippy::unnecessary_wraps)] // Result matches other LXMF send helpers for uniform ? handling
+    #[cfg_attr(feature = "rns-stack", allow(dead_code))]
     pub fn send_reaction(
         &mut self,
         req: &LxmfReactionRequest,
@@ -755,6 +796,7 @@ impl PersistedState {
     }
 }
 
+#[cfg_attr(feature = "rns-stack", allow(dead_code))]
 pub(crate) fn stable_hash(s: &str) -> u128 {
     let mut h: u128 = 0xcbf2_9ce4_8422_2325;
     for b in s.bytes() {
@@ -770,7 +812,7 @@ impl serde::Serialize for PersistedState {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("PersistedState", 24)?;
+        let mut s = serializer.serialize_struct("PersistedState", 29)?;
         s.serialize_field("identity", &self.identity)?;
         s.serialize_field("interfaces", &self.interfaces)?;
         s.serialize_field("contacts", &self.contacts)?;
@@ -786,6 +828,12 @@ impl serde::Serialize for PersistedState {
         )?;
         s.serialize_field("propagation_sync", &self.propagation_sync)?;
         s.serialize_field("auto_sync_interval_sec", &self.auto_sync_interval_sec)?;
+        s.serialize_field("propagation_mode", &self.propagation_mode)?;
+        s.serialize_field(
+            "propagation_auto_blacklist",
+            &self.propagation_auto_blacklist,
+        )?;
+        s.serialize_field("pn_hosting_policy", &self.pn_hosting_policy)?;
         s.serialize_field("nomad_nodes", &self.nomad_nodes)?;
         s.serialize_field("rrc_hubs", &self.rrc_hubs)?;
         s.serialize_field("nomad_serving_enabled", &self.nomad_serving_enabled)?;
@@ -804,6 +852,8 @@ impl serde::Serialize for PersistedState {
         s.serialize_field("rncp_listener_overwrite", &self.rncp_listener_overwrite)?;
         s.serialize_field("rncp_listener_allowed", &self.rncp_listener_allowed)?;
         s.serialize_field("rncp_listener_blocked", &self.rncp_listener_blocked)?;
+        s.serialize_field("path_medium_preference", &self.path_medium_preference)?;
+        s.serialize_field("peer_medium_pins", &self.peer_medium_pins)?;
         s.end()
     }
 }
@@ -833,6 +883,12 @@ impl<'de> serde::Deserialize<'de> for PersistedState {
             #[serde(default)]
             auto_sync_interval_sec: u32,
             #[serde(default)]
+            propagation_mode: PropagationMode,
+            #[serde(default)]
+            propagation_auto_blacklist: Vec<String>,
+            #[serde(default)]
+            pn_hosting_policy: PnHostingPolicy,
+            #[serde(default)]
             nomad_nodes: Vec<NomadNodeRow>,
             #[serde(default)]
             rrc_hubs: Vec<RrcHubRow>,
@@ -856,6 +912,10 @@ impl<'de> serde::Deserialize<'de> for PersistedState {
             rncp_listener_allowed: Vec<String>,
             #[serde(default)]
             rncp_listener_blocked: Vec<String>,
+            #[serde(default)]
+            path_medium_preference: PathMediumPreferenceSetting,
+            #[serde(default)]
+            peer_medium_pins: PeerMediumPins,
         }
         let raw = Raw::deserialize(deserializer)?;
         Ok(Self {
@@ -875,6 +935,22 @@ impl<'de> serde::Deserialize<'de> for PersistedState {
                 raw.propagation_sync
             },
             auto_sync_interval_sec: raw.auto_sync_interval_sec,
+            propagation_mode: raw.propagation_mode,
+            propagation_auto_blacklist: {
+                let mut cleaned = Vec::new();
+                for raw_hash in raw.propagation_auto_blacklist {
+                    if let Ok(hash) = Self::normalize_propagation_auto_blacklist_hash(&raw_hash) {
+                        if !cleaned.iter().any(|h| h == &hash) {
+                            cleaned.push(hash);
+                        }
+                    }
+                    if cleaned.len() >= Self::PROPAGATION_AUTO_BLACKLIST_CAP {
+                        break;
+                    }
+                }
+                cleaned
+            },
+            pn_hosting_policy: raw.pn_hosting_policy,
             nomad_nodes: raw.nomad_nodes,
             rrc_hubs: raw.rrc_hubs,
             nomad_serving_enabled: raw.nomad_serving_enabled,
@@ -887,6 +963,8 @@ impl<'de> serde::Deserialize<'de> for PersistedState {
             rncp_listener_overwrite: raw.rncp_listener_overwrite,
             rncp_listener_allowed: raw.rncp_listener_allowed,
             rncp_listener_blocked: raw.rncp_listener_blocked,
+            path_medium_preference: raw.path_medium_preference,
+            peer_medium_pins: raw.peer_medium_pins,
         })
     }
 }
@@ -905,6 +983,7 @@ mod tests {
             interface: None,
             path_hash: None,
             via_hash: None,
+            public_key: None,
         }
     }
 
@@ -963,6 +1042,36 @@ mod tests {
     }
 
     #[test]
+    fn send_lxmf_local_does_not_auto_add_contact() {
+        let dest = "aabbccddeeff00112233445566778899";
+        let mut state = PersistedState::default_empty();
+        state.identity = StackIdentity {
+            configured: true,
+            identity_hash: "11".repeat(16),
+            lxmf_hash: "22".repeat(16),
+            display_name: Some("Self".into()),
+            mnemonic: None,
+        };
+        state.peers.push(peer(dest, "Hub Peer"));
+        let payload = state
+            .send_lxmf_local(&LxmfSendRequest {
+                destination_hash: dest.into(),
+                text: "hi".into(),
+                reply_to_hash: None,
+                reply_to_id: None,
+                reply_preview_text: None,
+                audio: None,
+            })
+            .expect("send");
+        assert_eq!(payload["to_hash"], dest);
+        assert_eq!(payload["direction"], "outbound");
+        assert!(
+            state.contacts.is_empty(),
+            "offline send must not promote recipient to contacts"
+        );
+    }
+
+    #[test]
     fn add_propagation_node_preserves_optional_identity_fields_on_mutate() {
         let mut state = PersistedState::default_empty();
         state.ensure_defaults();
@@ -1017,6 +1126,59 @@ mod tests {
                 .get("active")
                 .and_then(serde_json::Value::as_bool),
             Some(false)
+        );
+    }
+
+    #[test]
+    fn propagation_auto_blacklist_add_remove_normalizes_hash() {
+        let mut state = PersistedState::default_empty();
+        let hash = "DEADBEEFcafeBABE0123456789ABCDEF";
+        state
+            .add_propagation_auto_blacklist(hash)
+            .expect("add blacklist");
+        assert_eq!(
+            state.propagation_auto_blacklist,
+            vec!["deadbeefcafebabe0123456789abcdef".to_string()]
+        );
+        // Trim + case fold only — do not strip embedded non-hex.
+        state
+            .add_propagation_auto_blacklist(&format!("  {hash}  "))
+            .expect("trim whitespace");
+        assert_eq!(state.propagation_auto_blacklist.len(), 1);
+        assert!(
+            state
+                .add_propagation_auto_blacklist(&format!("{hash}!"))
+                .is_err(),
+            "must reject hashes with non-hex junk instead of stripping"
+        );
+        // Idempotent re-add.
+        state.add_propagation_auto_blacklist(hash).expect("re-add");
+        assert_eq!(state.propagation_auto_blacklist.len(), 1);
+        assert!(state.add_propagation_auto_blacklist("not-a-hash").is_err());
+        state
+            .remove_propagation_auto_blacklist(hash)
+            .expect("remove");
+        assert!(state.propagation_auto_blacklist.is_empty());
+        assert!(state.remove_propagation_auto_blacklist(hash).is_err());
+    }
+
+    #[test]
+    fn propagation_auto_blacklist_rejects_add_when_at_cap() {
+        let mut state = PersistedState::default_empty();
+        for i in 0..PersistedState::PROPAGATION_AUTO_BLACKLIST_CAP {
+            let hash = format!("{i:032x}");
+            state
+                .add_propagation_auto_blacklist(&hash)
+                .unwrap_or_else(|e| panic!("add {i}: {e}"));
+        }
+        assert_eq!(
+            state.propagation_auto_blacklist.len(),
+            PersistedState::PROPAGATION_AUTO_BLACKLIST_CAP
+        );
+        let overflow = format!("{:032x}", PersistedState::PROPAGATION_AUTO_BLACKLIST_CAP);
+        assert_eq!(
+            state.add_propagation_auto_blacklist(&overflow).unwrap_err(),
+            "propagation Auto blacklist is full"
         );
     }
 
@@ -1085,6 +1247,141 @@ mod tests {
         assert!(!legacy_state.nomad_serving_enabled);
         assert!(legacy_state.nomad_serving_display_name.is_none());
         assert!(legacy_state.nomad_serving_content_source.is_none());
+    }
+
+    #[test]
+    fn pn_hosting_policy_round_trip_and_default_when_absent() {
+        let mut state = PersistedState::default_empty();
+        let policy = PnHostingPolicy {
+            peering_cost: 20,
+            max_peering_cost: 26,
+            node_name: Some("Test PN".into()),
+            static_peers: vec!["aabbccddeeff00112233445566778899".into()],
+            ..PnHostingPolicy::default()
+        };
+        state
+            .set_pn_hosting_policy(policy.clone())
+            .expect("set valid policy");
+        let json = serde_json::to_string(&state).expect("serialize");
+        let loaded: PersistedState = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(loaded.pn_hosting_policy.peering_cost, 20);
+        assert_eq!(
+            loaded.pn_hosting_policy.node_name.as_deref(),
+            Some("Test PN")
+        );
+        assert_eq!(
+            loaded.pn_hosting_policy.static_peers,
+            vec!["aabbccddeeff00112233445566778899"]
+        );
+
+        let mut value: serde_json::Value = serde_json::from_str(&json).expect("value");
+        let obj = value.as_object_mut().expect("object");
+        obj.remove("pn_hosting_policy");
+        let legacy_state: PersistedState =
+            serde_json::from_value(value).expect("legacy without pn_hosting_policy");
+        assert_eq!(legacy_state.pn_hosting_policy, PnHostingPolicy::default());
+    }
+
+    #[test]
+    fn set_pn_hosting_policy_rejects_invalid() {
+        let mut state = PersistedState::default_empty();
+        let before = state.pn_hosting_policy.clone();
+        let bad = PnHostingPolicy {
+            peering_cost: 30,
+            max_peering_cost: 26,
+            ..PnHostingPolicy::default()
+        };
+        assert_eq!(
+            state.set_pn_hosting_policy(bad).unwrap_err(),
+            "peering_cost_exceeds_max"
+        );
+        assert_eq!(state.pn_hosting_policy, before);
+    }
+
+    #[test]
+    fn path_medium_defaults_to_lowest_with_no_pins() {
+        let state = PersistedState::default_empty();
+        assert_eq!(
+            state.path_medium_preference,
+            PathMediumPreferenceSetting::Lowest
+        );
+        assert!(state.peer_medium_pins.is_empty());
+    }
+
+    #[test]
+    fn path_medium_fields_round_trip_and_default_when_absent() {
+        let hash = "aabbccddeeff00112233445566778899";
+        let mut state = PersistedState::default_empty();
+        state.set_path_medium_preference(PathMediumPreferenceSetting::Rf);
+        state
+            .set_peer_medium_pin(hash, Some(PathMediumSetting::Network))
+            .expect("pin");
+        let json = serde_json::to_string(&state).expect("serialize");
+        let loaded: PersistedState = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(
+            loaded.path_medium_preference,
+            PathMediumPreferenceSetting::Rf
+        );
+        assert_eq!(
+            loaded.peer_medium_pins.get(hash),
+            Some(PathMediumSetting::Network)
+        );
+
+        // Strip the new keys from a valid serialized document (older clients).
+        let mut value: serde_json::Value = serde_json::from_str(&json).expect("value");
+        let obj = value.as_object_mut().expect("object");
+        obj.remove("path_medium_preference");
+        obj.remove("peer_medium_pins");
+        let legacy_state: PersistedState =
+            serde_json::from_value(value).expect("legacy without path medium keys");
+        assert_eq!(
+            legacy_state.path_medium_preference,
+            PathMediumPreferenceSetting::Lowest
+        );
+        assert!(legacy_state.peer_medium_pins.is_empty());
+    }
+
+    #[test]
+    fn set_peer_medium_pin_updates_and_clears() {
+        let hash = "deadbeefcafebabe0123456789abcdef";
+        let mut state = PersistedState::default_empty();
+        let canonical = state
+            .set_peer_medium_pin(&hash.to_ascii_uppercase(), Some(PathMediumSetting::Rf))
+            .expect("pin");
+        assert_eq!(canonical, hash);
+        assert_eq!(
+            state.peer_medium_pins.get(hash),
+            Some(PathMediumSetting::Rf)
+        );
+        state
+            .set_peer_medium_pin(hash, None)
+            .expect("clear existing pin");
+        assert!(state.peer_medium_pins.get(hash).is_none());
+        assert!(
+            state
+                .set_peer_medium_pin("nothex", Some(PathMediumSetting::Rf))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn corrupt_path_medium_values_do_not_reset_state_file() {
+        let mut state = PersistedState::default_empty();
+        state.set_path_medium_preference(PathMediumPreferenceSetting::Network);
+        let json = serde_json::to_string(&state).expect("serialize");
+        let mut value: serde_json::Value = serde_json::from_str(&json).expect("value");
+        let obj = value.as_object_mut().expect("object");
+        obj.insert("path_medium_preference".into(), serde_json::json!("bogus"));
+        obj.insert(
+            "peer_medium_pins".into(),
+            serde_json::json!({ "nothex": "rf" }),
+        );
+        let loaded: PersistedState = serde_json::from_value(value).expect("tolerant load");
+        assert_eq!(
+            loaded.path_medium_preference,
+            PathMediumPreferenceSetting::Lowest
+        );
+        assert!(loaded.peer_medium_pins.is_empty());
     }
 
     #[test]

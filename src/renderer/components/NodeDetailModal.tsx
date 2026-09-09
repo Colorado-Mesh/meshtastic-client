@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
+import { formatDisplayTime } from '@/renderer/lib/formatDisplayTime';
 import { useParentIconTrigger } from '@/renderer/lib/icons/iconMotionContext';
 import { getIdentityIdForProtocol } from '@/renderer/lib/identityByProtocol';
 import {
@@ -11,13 +12,16 @@ import {
   normalizeMeshtasticAdminKeyInput,
 } from '@/renderer/lib/meshtasticRemoteAdminKeyStorage';
 import { getOfflineIdentityIdForProtocol } from '@/renderer/lib/offlineProtocolIdentities';
+import { writeClipboardText } from '@/renderer/lib/writeClipboardText';
 import { formatIsoDateTime } from '@/shared/formatIsoDate';
+import { buildMeshcoreContactAddUri, type MeshcoreContactType } from '@/shared/meshClientDeepLink';
+import { meshcoreContactDisplayName } from '@/shared/meshcoreContactSanitize';
 import { isDeleteActiveMqttIdentityError } from '@/shared/meshtasticDeleteNodeError';
 import { formatMeshtasticNodeId } from '@/shared/nodeNameUtils';
+import { touch } from '@/shared/touch';
 
 import { MESHCORE_NEIGHBORS_MAX_RECOMMENDED_HOPS } from '../hooks/meshcore/meshcoreHookPreamble';
 import { useMeshcoreRepeaterRemoteAuth } from '../hooks/useMeshcoreRepeaterRemoteAuth';
-import { useMeshcoreRoomAuth } from '../hooks/useMeshcoreRoomAuth';
 import { formatCoordPair } from '../lib/coordUtils';
 import { downloadBlob } from '../lib/downloadBlob';
 import { meshtasticHwModelDisplay } from '../lib/hardwareModels';
@@ -37,12 +41,13 @@ import {
   meshcorePathBytesEqual,
   meshcoreTraceHopDisplayRows,
 } from '../lib/meshcorePathChainDisplay';
-import { meshcoreGetRoomSession, meshcoreIsRoomLoggedIn } from '../lib/meshcoreRoomSession';
 import {
+  isMeshcoreDmExcludedHwModel,
   MESHCORE_CHAT_STUB_ID_MAX,
   MESHCORE_CHAT_STUB_ID_MIN,
   MESHCORE_CONTACTS_CRITICAL_THRESHOLD,
   MESHCORE_MAX_CONTACTS,
+  meshcoreContactTypeFromHwModel,
   meshcoreTracePathLenToHops,
 } from '../lib/meshcoreUtils';
 import {
@@ -64,11 +69,13 @@ import { useCoordFormatStore } from '../stores/coordFormatStore';
 import { useDiagnosticsStore } from '../stores/diagnosticsStore';
 import { useNodeStore } from '../stores/nodeStore';
 import { usePathHistoryStore } from '../stores/pathHistoryStore';
+import { useTimeFormatStore } from '../stores/timeFormatStore';
 import { useWatchedNodesStore } from '../stores/watchedNodesStore';
 import { HelpTooltip } from './HelpTooltip';
 import { MeshcoreRepeaterPasswordControls } from './MeshcoreRepeaterPasswordControls';
 import { MeshcoreRouteChain } from './MeshcoreRouteChain';
 import NodeInfoBody, { formatSecondsAgo } from './NodeInfoBody';
+import QrCodeImage from './QrCodeImage';
 import SnrIndicator from './SnrIndicator';
 
 const TRACE_ROUTE_UI_TIMEOUT_MS = 120_000;
@@ -86,12 +93,6 @@ interface NodeDetailModalProps {
   onMessageNode?: (nodeNum: number) => void;
   /** MeshCore room server: open Rooms tab for BBS posts (not DM). */
   onOpenRoom?: (nodeNum: number) => void;
-  /** MeshCore room server login before status/admin actions. */
-  onLoginRoom?: (
-    nodeId: number,
-    password: string,
-    opts?: { adminPassword?: string; guestPassword?: string; forceRelogin?: boolean },
-  ) => Promise<void>;
   onToggleFavorite: (nodeId: number, favorited: boolean) => void;
   isConnected: boolean;
   mqttConnected?: boolean;
@@ -217,7 +218,6 @@ export default function NodeDetailModal({
   onDeleteNode,
   onMessageNode,
   onOpenRoom,
-  onLoginRoom,
   onToggleFavorite,
   isConnected,
   mqttConnected = false,
@@ -254,9 +254,9 @@ export default function NodeDetailModal({
 }: NodeDetailModalProps) {
   const { t } = useTranslation();
   const parentIconTrigger = useParentIconTrigger();
+  const use24HourTime = useTimeFormatStore((s) => s.use24HourTime);
   const { ensureRepeaterAuth, promptRepeaterPassword, RemoteAuthModal } =
     useMeshcoreRepeaterRemoteAuth();
-  const { ensureRoomAuth, RemoteAuthModal: RoomAuthModal } = useMeshcoreRoomAuth();
   const [repeaterSecretsEpoch, setRepeaterSecretsEpoch] = useState(0);
   const refreshRepeaterSecrets = useCallback(() => {
     setRepeaterSecretsEpoch((n) => n + 1);
@@ -327,6 +327,7 @@ export default function NodeDetailModal({
   meshcoreNeighborsRef.current = meshcoreNeighbors;
   const [exportContactPending, setExportContactPending] = useState(false);
   const [shareContactPending, setShareContactPending] = useState(false);
+  const [showMeshcoreContactQr, setShowMeshcoreContactQr] = useState(false);
   const [radioContactCount, setRadioContactCount] = useState<number | null>(null);
   const [contactOnRadio, setContactOnRadio] = useState<boolean | null>(null);
   const [addRemoveLoading, setAddRemoveLoading] = useState(false);
@@ -364,9 +365,14 @@ export default function NodeDetailModal({
     const nodeId = node.node_id;
     noteSaveAllowedRef.current = true;
     let cancelled = false;
-    void window.electronAPI.db.getNodeNote(nodeId).then((note: string | null) => {
-      if (!cancelled) setNodeNote(note ?? '');
-    });
+    void window.electronAPI.db
+      .getNodeNote(nodeId)
+      .then((note: string | null) => {
+        if (!cancelled) setNodeNote(note ?? '');
+      })
+      .catch((e: unknown) => {
+        console.warn('[NodeDetailModal] getNodeNote failed ' + errLikeToLogString(e));
+      });
     return () => {
       cancelled = true;
       noteSaveAllowedRef.current = false;
@@ -377,7 +383,9 @@ export default function NodeDetailModal({
       const pending = pendingNoteRef.current;
       pendingNoteRef.current = null;
       if (pending !== null) {
-        void window.electronAPI.db.setNodeNote(nodeId, pending);
+        void window.electronAPI.db.setNodeNote(nodeId, pending).catch((e: unknown) => {
+          console.warn('[NodeDetailModal] setNodeNote (unmount) failed ' + errLikeToLogString(e));
+        });
       }
     };
   }, [node?.node_id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -409,6 +417,7 @@ export default function NodeDetailModal({
     setShowMeshcoreNeighbors(false);
     setExportContactPending(false);
     setShareContactPending(false);
+    setShowMeshcoreContactQr(false);
   }, [node?.node_id]);
 
   // Detect position update after a request was sent (gate on state, not ref — avoids flash on open)
@@ -457,47 +466,58 @@ export default function NodeDetailModal({
   // Fetch on_radio status and contact count for MeshCore
   const [contactPubkey, setContactPubkey] = useState<string | null>(null);
 
+  const {
+    nodeStaleThresholdMs,
+    nodeOfflineThresholdMs,
+    protocol: activeProtocol,
+  } = useRadioProvider(protocol ?? 'meshtastic');
+  const isMeshcoreProtocol = activeProtocol === 'meshcore';
+
+  const meshcoreContactQrUri = useMemo(() => {
+    if (!isMeshcoreProtocol || !contactPubkey || !node) return null;
+    const typeRaw = meshcoreContactTypeFromHwModel(node.hw_model ?? 'Chat') ?? 1;
+    const type = (typeRaw >= 1 && typeRaw <= 4 ? typeRaw : 1) as MeshcoreContactType;
+    try {
+      return buildMeshcoreContactAddUri({
+        name: node.long_name || node.short_name || `Node-${node.node_id.toString(16)}`,
+        publicKeyHex: contactPubkey,
+        type,
+      });
+    } catch {
+      // catch-no-log-ok Invalid pubkey simply hides the share QR.
+      return null;
+    }
+  }, [isMeshcoreProtocol, contactPubkey, node]);
+
   const ensureRemoteRpcAccess = useCallback(
     async (
       nodeId: number,
       hwModel: string | undefined,
       mode: 'guest' | 'admin',
     ): Promise<boolean> => {
-      if (hwModel === 'Room') {
-        const roomName = node?.long_name ?? `Room-${nodeId.toString(16)}`;
-        const auth = await ensureRoomAuth(nodeId, mode === 'admin' ? 'admin' : 'guest', roomName);
-        if (!auth.ok || !onLoginRoom) {
+      // Infra ops (status/telemetry/neighbors) use ops admin secrets like RepeatersPanel —
+      // not the Rooms BBS guest/admin overlay.
+      if (hwModel === 'Room' || hwModel === 'Repeater') {
+        const fallbackLabel =
+          hwModel === 'Room'
+            ? t('repeatersPanel.savedPasswordOrphanRoomLabel', {
+                nodeId: nodeId.toString(16),
+              })
+            : t('repeatersPanel.savedPasswordOrphanLabel', {
+                nodeId: nodeId.toString(16),
+              });
+        const auth = await ensureRepeaterAuth(nodeId, node?.long_name ?? fallbackLabel, hwModel);
+        if (!auth.ok) {
           setActionStatus(t('nodeDetailModal.remoteAuthCancelled'));
           return false;
         }
-        const password = mode === 'admin' ? auth.adminPassword : auth.guestPassword;
-        const session = meshcoreGetRoomSession(nodeId);
-        const forceRelogin =
-          meshcoreIsRoomLoggedIn(nodeId) &&
-          (session?.role === 'readonly' || (mode === 'admin' && session?.role !== 'admin'));
-        try {
-          await onLoginRoom(nodeId, password, {
-            adminPassword: auth.adminPassword,
-            guestPassword: auth.guestPassword,
-            forceRelogin,
-          });
-          return true;
-        } catch (e) {
-          console.warn('[NodeDetailModal] room login failed ' + errLikeToLogString(e));
-          setActionStatus(t('nodeDetailModal.remoteAuthCancelled'));
-          return false;
-        }
+        if (auth.saved) refreshRepeaterSecrets();
+        return true;
       }
-      const repeaterName = node?.long_name ?? `Repeater-${nodeId.toString(16)}`;
-      const auth = await ensureRepeaterAuth(nodeId, repeaterName);
-      if (!auth.ok) {
-        setActionStatus(t('nodeDetailModal.remoteAuthCancelled'));
-        return false;
-      }
-      if (auth.saved) refreshRepeaterSecrets();
+      touch(mode);
       return true;
     },
-    [ensureRepeaterAuth, ensureRoomAuth, node?.long_name, onLoginRoom, refreshRepeaterSecrets, t],
+    [ensureRepeaterAuth, node?.long_name, refreshRepeaterSecrets, t],
   );
 
   useEffect(() => {
@@ -561,16 +581,15 @@ export default function NodeDetailModal({
     };
   }, [traceRoutePending, t]);
 
-  const { nodeStaleThresholdMs, nodeOfflineThresholdMs } = useRadioProvider(
-    protocol ?? 'meshtastic',
-  );
-
   if (!node) return null;
 
   const hexId = formatMeshtasticNodeId(node.node_id);
   const awaitingNodeInfo =
     protocol === 'meshtastic' && meshtasticNodeAwaitingNodeInfo(node, { isConnected });
-  const displayName = node.short_name || node.long_name || hexId;
+  const displayName =
+    protocol === 'meshcore'
+      ? meshcoreContactDisplayName(node.node_id, node.long_name)
+      : node.short_name || node.long_name || hexId;
   const isOurNode = node.node_id === homeNode?.node_id;
   const nodeStatus = getNodeStatus(node.last_heard, nodeStaleThresholdMs, nodeOfflineThresholdMs);
   const nodeStatusUi =
@@ -669,7 +688,9 @@ export default function NodeDetailModal({
                 )}
               </div>
               <div className="mt-0.5 flex items-center gap-2">
-                <span className="text-muted font-mono text-xs">{hexId}</span>
+                {protocol !== 'meshcore' && (
+                  <span className="text-muted font-mono text-xs">{hexId}</span>
+                )}
                 {headerHopsDisplay != null && (
                   <span
                     className={`text-xs ${headerHopsDisplay === 0 ? 'text-bright-green' : 'text-gray-400'}`}
@@ -689,9 +710,13 @@ export default function NodeDetailModal({
                 {protocol === 'meshcore' && contactPubkey && (
                   <span
                     className="shrink-0 rounded border border-green-500/30 bg-green-500/20 px-1.5 py-0.5 text-[10px] font-medium text-green-300"
-                    title={t('nodeDetailModal.hasPublicKey')}
+                    title={
+                      isMeshcoreDmExcludedHwModel(node.hw_model)
+                        ? t('nodeDetailModal.hasPublicKeyNoDm')
+                        : t('nodeDetailModal.hasPublicKey')
+                    }
                   >
-                    🔑 DM
+                    {isMeshcoreDmExcludedHwModel(node.hw_model) ? '🔑' : '🔑 DM'}
                   </span>
                 )}
                 {protocol === 'meshcore' &&
@@ -743,6 +768,32 @@ export default function NodeDetailModal({
                     </span>
                   )}
               </div>
+              {protocol === 'meshcore' && contactPubkey && (
+                <div className="mt-1 flex w-full items-start gap-2">
+                  <span className="text-muted font-mono text-[10px] break-all whitespace-normal">
+                    {contactPubkey}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={t('nodeDetailModal.copyPublicKey')}
+                    title={t('nodeDetailModal.copyPublicKey')}
+                    onClick={() => {
+                      void writeClipboardText(contactPubkey)
+                        .then(() => {
+                          setActionStatus(t('nodeDetailModal.publicKeyCopied'));
+                        })
+                        .catch((e: unknown) => {
+                          console.warn(
+                            '[NodeDetailModal] copy pubkey failed ' + errLikeToLogString(e),
+                          );
+                        });
+                    }}
+                    className="shrink-0 text-xs text-gray-400 hover:text-gray-200"
+                  >
+                    📋
+                  </button>
+                </div>
+              )}
             </div>
             <div className="ml-3 flex shrink-0 flex-col items-end gap-1">
               <div className="flex items-center gap-1">
@@ -828,7 +879,7 @@ export default function NodeDetailModal({
 
               {protocol === 'meshcore' &&
                 !isOurNode &&
-                node.hw_model === 'Repeater' &&
+                (node.hw_model === 'Repeater' || node.hw_model === 'Room') &&
                 meshcoreNeighborError &&
                 !showMeshcoreNeighbors && (
                   <div className="mt-3 rounded-lg border border-red-800/60 bg-red-950/40 px-3 py-2 text-xs text-red-300">
@@ -935,7 +986,9 @@ export default function NodeDetailModal({
                     </h4>
                     <div className="flex items-center gap-2">
                       <span className="text-muted text-xs">
-                        {new Date(meshcoreNodeTelemetry.fetchedAt).toLocaleTimeString()}
+                        {formatDisplayTime(meshcoreNodeTelemetry.fetchedAt, {
+                          use24Hour: use24HourTime,
+                        })}
                       </span>
                       <button
                         type="button"
@@ -1220,7 +1273,7 @@ export default function NodeDetailModal({
                               <>
                                 <div className="text-muted">{t('nodeDetailModal.senderLabel')}</div>
                                 <div className="font-mono text-gray-200">
-                                  !{detection.lastSenderId.toString(16).padStart(8, '0')}
+                                  {formatMeshtasticNodeId(detection.lastSenderId)}
                                   {senderName ? ` (${senderName})` : ''}
                                 </div>
                               </>
@@ -1703,6 +1756,28 @@ export default function NodeDetailModal({
                 </div>
               )}
 
+              {protocol === 'meshtastic' &&
+                (node.has_xeddsa_signed === true || node.key_manually_verified === true) && (
+                  <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                    {node.has_xeddsa_signed === true && (
+                      <span
+                        className="rounded bg-green-900/40 px-2 py-1 text-green-300"
+                        title={t('nodeDetailModal.xeddsaSignedHint')}
+                      >
+                        {t('nodeDetailModal.xeddsaSigned')}
+                      </span>
+                    )}
+                    {node.key_manually_verified === true && (
+                      <span
+                        className="rounded bg-green-900/40 px-2 py-1 text-green-300"
+                        title={t('nodeDetailModal.keyManuallyVerifiedHint')}
+                      >
+                        {t('nodeDetailModal.keyManuallyVerified')}
+                      </span>
+                    )}
+                  </div>
+                )}
+
               {protocol === 'meshtastic' && onSaveRemoteAdminKey && !isOurNode && (
                 <div className="mt-4 space-y-2 rounded-lg border border-blue-700/40 bg-blue-900/20 px-3 py-2 text-sm text-blue-100">
                   <p className="text-xs font-medium tracking-wide text-blue-300 uppercase">
@@ -1928,57 +2003,59 @@ export default function NodeDetailModal({
                       : t('nodeDetailModal.sensorTelemetryButton')}
                   </button>
                 )}
-                {protocol === 'meshcore' && onRequestNeighbors && node.hw_model === 'Repeater' && (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (
+                {protocol === 'meshcore' &&
+                  onRequestNeighbors &&
+                  (node.hw_model === 'Repeater' || node.hw_model === 'Room') && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (
+                          node.hops_away != null &&
+                          node.hops_away >= MESHCORE_NEIGHBORS_MAX_RECOMMENDED_HOPS
+                        ) {
+                          return;
+                        }
+                        if (!(await ensureRemoteRpcAccess(node.node_id, node.hw_model, 'admin')))
+                          return;
+                        setNeighborsPending(true);
+                        setActionStatus(t('nodeDetailModal.requestingNeighbors'));
+                        try {
+                          await onRequestNeighbors(node.node_id);
+                          setActionStatus(null);
+                        } catch (e) {
+                          console.warn(
+                            '[NodeDetailModal] requestNeighbors failed ' + errLikeToLogString(e),
+                          );
+                          setActionStatus(
+                            e instanceof Error
+                              ? e.message
+                              : t('nodeDetailModal.neighborsFailed', { message: String(e) }),
+                          );
+                        } finally {
+                          setNeighborsPending(false);
+                        }
+                      }}
+                      disabled={
+                        !isConnected ||
+                        neighborsPending ||
+                        (node.hops_away != null &&
+                          node.hops_away >= MESHCORE_NEIGHBORS_MAX_RECOMMENDED_HOPS)
+                      }
+                      title={
                         node.hops_away != null &&
                         node.hops_away >= MESHCORE_NEIGHBORS_MAX_RECOMMENDED_HOPS
-                      ) {
-                        return;
+                          ? t('nodeDetailModal.neighborsHopTooFar', {
+                              hops: MESHCORE_NEIGHBORS_MAX_RECOMMENDED_HOPS,
+                            })
+                          : undefined
                       }
-                      if (!(await ensureRemoteRpcAccess(node.node_id, node.hw_model, 'admin')))
-                        return;
-                      setNeighborsPending(true);
-                      setActionStatus(t('nodeDetailModal.requestingNeighbors'));
-                      try {
-                        await onRequestNeighbors(node.node_id);
-                        setActionStatus(null);
-                      } catch (e) {
-                        console.warn(
-                          '[NodeDetailModal] requestNeighbors failed ' + errLikeToLogString(e),
-                        );
-                        setActionStatus(
-                          e instanceof Error
-                            ? e.message
-                            : t('nodeDetailModal.neighborsFailed', { message: String(e) }),
-                        );
-                      } finally {
-                        setNeighborsPending(false);
-                      }
-                    }}
-                    disabled={
-                      !isConnected ||
-                      neighborsPending ||
-                      (node.hops_away != null &&
-                        node.hops_away >= MESHCORE_NEIGHBORS_MAX_RECOMMENDED_HOPS)
-                    }
-                    title={
-                      node.hops_away != null &&
-                      node.hops_away >= MESHCORE_NEIGHBORS_MAX_RECOMMENDED_HOPS
-                        ? t('nodeDetailModal.neighborsHopTooFar', {
-                            hops: MESHCORE_NEIGHBORS_MAX_RECOMMENDED_HOPS,
-                          })
-                        : undefined
-                    }
-                    className="bg-secondary-dark min-w-[8rem] flex-1 rounded-lg px-3 py-2 text-sm font-medium text-gray-200 transition-colors hover:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {neighborsPending
-                      ? t('nodeDetailModal.requestingEllipsis')
-                      : t('nodeDetailModal.getNeighbors')}
-                  </button>
-                )}
+                      className="bg-secondary-dark min-w-[8rem] flex-1 rounded-lg px-3 py-2 text-sm font-medium text-gray-200 transition-colors hover:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {neighborsPending
+                        ? t('nodeDetailModal.requestingEllipsis')
+                        : t('nodeDetailModal.getNeighbors')}
+                    </button>
+                  )}
                 {onOpenRoom && protocol === 'meshcore' && node.hw_model === 'Room' && (
                   <button
                     type="button"
@@ -1993,24 +2070,25 @@ export default function NodeDetailModal({
                     {t('nodeDetailModal.openRoomButton')}
                   </button>
                 )}
-                {onMessageNode && !(protocol === 'meshcore' && node.hw_model === 'Room') && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onMessageNode(node.node_id);
-                      onClose();
-                    }}
-                    disabled={!isConnected || (protocol === 'meshcore' && !contactPubkey)}
-                    title={
-                      protocol === 'meshcore' && !contactPubkey
-                        ? t('nodeDetailModal.messageNoKeyTitle')
-                        : undefined
-                    }
-                    className="min-w-[8rem] flex-1 rounded-lg bg-purple-700/50 px-3 py-2 text-sm font-medium text-purple-300 transition-colors hover:bg-purple-600/50 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {t('nodeDetailModal.messageButton')}
-                  </button>
-                )}
+                {onMessageNode &&
+                  !(protocol === 'meshcore' && isMeshcoreDmExcludedHwModel(node.hw_model)) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onMessageNode(node.node_id);
+                        onClose();
+                      }}
+                      disabled={!isConnected || (protocol === 'meshcore' && !contactPubkey)}
+                      title={
+                        protocol === 'meshcore' && !contactPubkey
+                          ? t('nodeDetailModal.messageNoKeyTitle')
+                          : undefined
+                      }
+                      className="min-w-[8rem] flex-1 rounded-lg bg-purple-700/50 px-3 py-2 text-sm font-medium text-purple-300 transition-colors hover:bg-purple-600/50 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {t('nodeDetailModal.messageButton')}
+                    </button>
+                  )}
                 {protocol === 'meshcore' && onExportContact && (
                   <button
                     type="button"
@@ -2083,6 +2161,27 @@ export default function NodeDetailModal({
                       : t('nodeDetailModal.shareContact')}
                   </button>
                 )}
+                {isMeshcoreProtocol && meshcoreContactQrUri ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMeshcoreContactQr((v) => !v);
+                    }}
+                    aria-label={t('nodeDetailModal.shareContactQrAria')}
+                    className="bg-secondary-dark min-w-[8rem] flex-1 rounded-lg px-3 py-2 text-sm font-medium text-gray-200 transition-colors hover:bg-gray-600"
+                  >
+                    {t('nodeDetailModal.shareContactQr')}
+                  </button>
+                ) : null}
+                {isMeshcoreProtocol && showMeshcoreContactQr && meshcoreContactQrUri ? (
+                  <div className="w-full pt-2">
+                    <QrCodeImage
+                      value={meshcoreContactQrUri}
+                      size={160}
+                      ariaLabel={t('nodeDetailModal.shareContactQrAria')}
+                    />
+                  </div>
+                ) : null}
                 {protocol === 'meshcore' && contactPubkey && contactOnRadio === false && (
                   <button
                     type="button"
@@ -2229,7 +2328,13 @@ export default function NodeDetailModal({
                   noteSaveTimerRef.current = setTimeout(() => {
                     if (!noteSaveAllowedRef.current) return;
                     pendingNoteRef.current = null;
-                    void window.electronAPI.db.setNodeNote(node.node_id, val);
+                    void window.electronAPI.db
+                      .setNodeNote(node.node_id, val)
+                      .catch((e: unknown) => {
+                        console.warn(
+                          '[NodeDetailModal] setNodeNote failed ' + errLikeToLogString(e),
+                        );
+                      });
                   }, 600);
                 }}
               />
@@ -2291,7 +2396,6 @@ export default function NodeDetailModal({
         </div>
       </div>
       {RemoteAuthModal}
-      {RoomAuthModal}
     </>
   );
 }

@@ -37,10 +37,13 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { isAppWindowInactive } from '@/renderer/lib/appWindowActivity';
 import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
+import { formatDisplayTime } from '@/renderer/lib/formatDisplayTime';
 import { formatShortRelativeAgo } from '@/renderer/lib/formatShortRelativeAgo';
 import { useIconTrigger, useParentIconTrigger } from '@/renderer/lib/icons/iconMotionContext';
 import { withMeshcoreFloodScopeOverride } from '@/renderer/lib/meshcoreFloodScopeSend';
+import { isMeshcoreDmExcludedHwModel } from '@/renderer/lib/meshcoreUtils';
 import {
   MeshtasticHybridPathIcons,
   MeshtasticMqttPathIcon,
@@ -50,17 +53,33 @@ import {
   formatReticulumViaBadgeLabel,
   parseReticulumViaAtoms,
 } from '@/renderer/lib/reticulum/classifyReticulumVia';
-import {
-  normalizeReticulumNodeId,
-  registerReticulumDestinationHash,
-  resolveReticulumDestinationHash,
-} from '@/renderer/lib/reticulum/destHash';
+import { normalizeReticulumNodeId } from '@/renderer/lib/reticulum/destHash';
 import { parseReticulumAttachmentPayload } from '@/renderer/lib/reticulum/parseReticulumAttachmentPayload';
+import {
+  remapDmMutedViews,
+  remapDmStarredViewKeys,
+  remapDmViewKeyedRecord,
+  remapReticulumChatDmTabIds,
+} from '@/renderer/lib/reticulum/remapReticulumChatDmTabs';
+import {
+  isReticulumTelephonyOnlyDestination,
+  resolveReticulumChatLxmfDestination,
+} from '@/renderer/lib/reticulum/resolveReticulumChatLxmfDest';
 import { reticulumMessageMatchesDmPeer } from '@/renderer/lib/reticulum/reticulumChatDmFilter';
+import {
+  resolveReticulumDmBoundDestinationHash,
+  resolveReticulumDmFaceHash,
+} from '@/renderer/lib/reticulum/reticulumChatFaceHash';
 import {
   openReticulumDmFromHash,
   parseReticulumDestinationInput,
+  ReticulumChatMissingLxmfError,
 } from '@/renderer/lib/reticulum/reticulumDestinationInput';
+import { cancelReticulumVoiceMemo } from '@/renderer/lib/reticulum/reticulumVoiceMemo';
+import {
+  RETICULUM_DM_HEADER_ACTION_CLASS,
+  RETICULUM_DM_HEADER_STATUS_CLASS,
+} from '@/renderer/lib/reticulumDmHeaderActions';
 import { writeClipboardText } from '@/renderer/lib/writeClipboardText';
 import type { ChatExportMessage } from '@/shared/electron-api.types';
 import { formatIsoDate, formatIsoDateTime } from '@/shared/formatIsoDate';
@@ -70,7 +89,6 @@ import {
   isUnreasonablyFutureMessageTimestampMs,
 } from '@/shared/messageTimestampSkew';
 import { formatMeshtasticNodeId, isMeshtasticBroadcastNodeNum } from '@/shared/nodeNameUtils';
-import { canonicalizeReticulumDestinationHash } from '@/shared/reticulumDestinationHash';
 import { CHAT_COMPACT_CONTINUATION_TIME_GAP_MS } from '@/shared/timeConstants';
 
 import type { OutboxEntry } from '../../shared/electron-api.types';
@@ -78,16 +96,23 @@ import { isMeshcoreRoomChatMessage } from '../hooks/meshcore/meshcoreHookPreambl
 import { useChatOutbox } from '../hooks/useChatOutbox';
 import { useNowMs } from '../hooks/useNowMs';
 import { useReticulumDmPathProbe } from '../hooks/useReticulumDmPathProbe';
+import { chatDmPeerMessageCounts } from '../lib/chatDmPeerIndex';
 import { playMessageNotification } from '../lib/chatNotifications';
 import {
   dismissedDmTabsStorageKey,
+  draftsStorageKey,
   lastReadStorageKey,
+  loadActiveChannelInitial,
+  loadActiveDmInitial,
+  loadDraftsInitial,
   loadMutedViews,
   loadOpenDmTabsInitial,
   loadPersistedLastReadInitial,
   loadStarred,
   notifyPersistedLastReadChanged,
   openDmTabsStorageKey,
+  saveActiveChannel,
+  saveActiveDm,
   saveMutedViews,
   saveStarred,
   type StarredMessage,
@@ -126,6 +151,7 @@ import {
 } from '../lib/meshcoreConfiguredChatChannels';
 import { nodeDisplayName } from '../lib/nodeLongNameOrHex';
 import { parseStoredJson } from '../lib/parseStoredJson';
+import { useRadioProvider } from '../lib/radio/providerFactory';
 import {
   emojiDisplayLabel,
   isReactionPickerEmojiGlyph,
@@ -141,21 +167,35 @@ import {
   groupChatReactionsByParentKey,
   reactionLookupKeysForParentMessage,
 } from '../lib/storeRecordAdapters';
-import type { ChatMessage, MeshNode, MeshProtocol } from '../lib/types';
+import type { ChatMessage, IdentityId, MeshNode, MeshProtocol } from '../lib/types';
 import type { RequestStoreForwardHistoryResult } from '../runtime/useMeshtasticRuntime';
-import { reticulumHashForNodeId, useReticulumPeerStore } from '../stores/reticulumPeerStore';
+import { useReticulumIdentityActivityStore } from '../stores/reticulumIdentityActivityStore';
+import { useReticulumPeerStore } from '../stores/reticulumPeerStore';
+import { useTimeFormatStore } from '../stores/timeFormatStore';
 import { ChatComposer, type ChatComposerSendOpts } from './ChatComposer';
+import { ChatDmPaperShareControl, ChatPaperScanControl } from './ChatDmPaperControls';
 import { ChatPayloadText } from './ChatPayloadText';
+import { ChatRfHopLabel } from './ChatRfHopLabel';
 import { HelpTooltip } from './HelpTooltip';
+import MeshcoreChatChannelManager from './MeshcoreChatChannelManager';
 import { MessageStatusBadge } from './MessageStatusBadge';
+import { RelayCoverageLine, relayCoverageMessageKey } from './RelayCoverageLine';
 import { ChatDmRncpControl } from './remote/ChatDmRncpControl';
+import { ChatDmRncpOfferBanner } from './remote/ChatDmRncpOfferBanner';
+import { ReticulumGameChallengeButton } from './reticulum/ReticulumGameChallengeButton';
+import { ReticulumVoiceCallButton } from './reticulum/ReticulumVoiceCallButton';
 import { ReticulumAttachmentLine } from './ReticulumAttachmentLine';
 import {
   ReticulumDmPathActions,
   ReticulumDmPathReachabilityBadge,
 } from './ReticulumDmPathReachabilityBadge';
-import { ReticulumMessageStatusBadge } from './ReticulumMessageStatusBadge';
+import {
+  isReticulumTooLargeForPropagationError,
+  ReticulumMessageStatusBadge,
+} from './ReticulumMessageStatusBadge';
+import { ReticulumProfileIconSlot } from './ReticulumProfileIcon';
 import { ReticulumPropagationNotice } from './ReticulumPropagationNotice';
+import { ReticulumVoiceMemoLine } from './ReticulumVoiceMemoLine';
 import { useToast } from './Toast';
 
 function chatPanelIsLinux(): boolean {
@@ -189,6 +229,20 @@ function ChatToolbarTooltipButton({
   );
 }
 
+function emojiUnicodeFromEvent(event: Event): string | null {
+  if (
+    !(event instanceof CustomEvent) ||
+    typeof event.detail !== 'object' ||
+    event.detail === null
+  ) {
+    return null;
+  }
+  const detail = event.detail as Record<string, unknown>;
+  if (typeof detail.emoji !== 'object' || detail.emoji === null) return null;
+  const emoji = detail.emoji as Record<string, unknown>;
+  return typeof emoji.unicode === 'string' ? emoji.unicode : null;
+}
+
 declare module 'react' {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace JSX {
@@ -213,7 +267,7 @@ function DmPeerInfoBar({ dmNode, nowMs, t }: { dmNode: MeshNode; nowMs: number; 
   if (parts.length === 0) return null;
   return (
     <div
-      className="flex items-center gap-1.5 rounded-lg bg-slate-800/60 px-3 py-1.5 text-xs text-gray-400"
+      className={`${RETICULUM_DM_HEADER_STATUS_CLASS} text-gray-400`}
       role="status"
       aria-label={t('chatPanel.dmPeerInfoAria')}
     >
@@ -313,6 +367,14 @@ function TransportBadge({
 
   // Reticulum: explicit atom / multi-egress text labels (never Meshtastic RF+MQTT "both").
   if (protocol === 'reticulum' && via !== 'mqtt' && via !== 'both') {
+    if (via === 'paper') {
+      const paperLabel = t('chatPanel.reticulumSendPaper');
+      return (
+        <span className="text-[10px] text-sky-400" title={paperLabel} aria-label={paperLabel}>
+          {paperLabel}
+        </span>
+      );
+    }
     const viasLabel = formatReticulumViaBadgeLabel(via);
     const atoms = parseReticulumViaAtoms(via);
     const label =
@@ -441,6 +503,10 @@ export interface ChatPanelProps {
   channels: { index: number; name: string }[];
   /** Full MeshCore channel list with PSK metadata for unread filtering (display uses `channels`). */
   meshcoreChannelSources?: readonly MeshcoreChatChannelSource[];
+  /** MeshCore: save a channel on the connected companion radio. */
+  onSetMeshcoreChannel?: (index: number, name: string, secret: Uint8Array) => Promise<void>;
+  /** MeshCore: companion radio is unavailable for channel writes. */
+  meshcoreChannelManagementDisabled?: boolean;
   myNodeNum: number;
   ownNodeIds?: number[];
   onSend: (
@@ -448,7 +514,7 @@ export interface ChatPanelProps {
     channel: number,
     destination?: number,
     replyRef?: number | string,
-  ) => void | Promise<void>;
+  ) => string | undefined | Promise<string | undefined>;
   onReact: (glyph: string, replyId: number, channel: number) => Promise<void>;
   onResend: (msg: ChatMessage) => void;
   onNodeClick: (nodeNum: number) => void;
@@ -463,6 +529,8 @@ export interface ChatPanelProps {
   isActive?: boolean;
   /** When `meshcore`, show full names, hide redundant RF-only transport badge. */
   protocol?: MeshProtocol;
+  /** Identity bucket used for in-memory relay coverage lookup (matches runtime writers). */
+  identityId?: IdentityId | null;
   /** Ref for scroll-to-top (Chat has its own Top button positioned inside the message list). */
   scrollToTopRef?: React.RefObject<(() => void) | null>;
   /**
@@ -472,6 +540,8 @@ export interface ChatPanelProps {
    */
   outerScrollMetricsRootRef?: React.RefObject<HTMLElement | null>;
   compactMode?: boolean;
+  /** Keep the per-message action bar (copy/reply/react/etc.) visible instead of hover/focus-only. */
+  alwaysShowMessageActions?: boolean;
   /** Meshtastic RF: request Store & Forward chat history from the router. */
   onFetchStoreForwardHistory?: () => Promise<RequestStoreForwardHistoryResult>;
   /** Reticulum LXMF: DM-only chat (no channel pills). */
@@ -490,6 +560,16 @@ export interface ChatPanelProps {
   reticulumStackLive?: boolean;
   /** Reticulum: rncp file transfer available — shows the DM header "Send file" control. */
   hasRncpTransfer?: boolean;
+  /** Reticulum: LXST voice Call control in the DM header. */
+  hasLxstVoice?: boolean;
+  /** Reticulum: LXMF voice memo mic button in composer + playback line in chat. */
+  hasReticulumVoiceMemo?: boolean;
+  /** Called when the user presses the mic button (destination = active DM node). */
+  onVoiceMemo?: (destination: number) => void;
+  /** Reticulum: LRGP games Challenge control in the DM header. */
+  hasLrgpGames?: boolean;
+  /** Reticulum: LXMF paper Share as paper / Scan paper controls. */
+  hasLxmfPaper?: boolean;
   /** MeshCore: radio-wide flood scope to restore after a per-message override. */
   meshcoreFloodScopeHashtag?: string;
   /** MeshCore: user-managed flood-scope quick-picks for the composer menu. */
@@ -512,6 +592,8 @@ function ChatPanel({
   messagesForUnread,
   channels,
   meshcoreChannelSources,
+  onSetMeshcoreChannel,
+  meshcoreChannelManagementDisabled = false,
   myNodeNum,
   ownNodeIds,
   onSend,
@@ -527,9 +609,11 @@ function ChatPanel({
   onDmTargetConsumed,
   isActive = true,
   protocol = 'meshtastic',
+  identityId = null,
   scrollToTopRef,
   outerScrollMetricsRootRef,
   compactMode = false,
+  alwaysShowMessageActions = false,
   onFetchStoreForwardHistory,
   dmOnlyChat = false,
   showLxmfDeliveryStatus = false,
@@ -543,10 +627,17 @@ function ChatPanel({
   onOpenPropagationSettings,
   reticulumStackLive = false,
   hasRncpTransfer = false,
+  hasLxstVoice = false,
+  hasReticulumVoiceMemo = false,
+  onVoiceMemo,
+  hasLrgpGames = false,
+  hasLxmfPaper = false,
   resolveShareLocation,
   onSendLocationWaypoint,
 }: ChatPanelProps) {
   const { t } = useTranslation();
+  const capabilities = useRadioProvider(protocol);
+  const use24HourTime = useTimeFormatStore((s) => s.use24HourTime);
   const parentIconTrigger = useParentIconTrigger();
   const { addToast } = useToast();
   const ownNodeIdSet = useMemo(() => {
@@ -570,7 +661,7 @@ function ChatPanel({
 
   const meshcoreExcludeDmPeer = useMemo((): ChatUnreadDmOptions['excludeDmPeer'] | undefined => {
     if (protocol !== 'meshcore') return undefined;
-    return (peer: number) => nodes.get(peer)?.hw_model === 'Room';
+    return (peer: number) => isMeshcoreDmExcludedHwModel(nodes.get(peer)?.hw_model);
   }, [nodes, protocol]);
 
   const chatUnreadDmOptions = useMemo(
@@ -596,12 +687,215 @@ function ChatPanel({
   }, []);
 
   useImperativeHandle(scrollToTopRef, () => scrollToTop, [scrollToTop]);
-  const [channel, setChannel] = useState(() => (channels.length > 0 ? channels[0].index : 0));
+  const defaultChannelIndex = channels.length > 0 ? channels[0].index : 0;
+  const [channel, setChannel] = useState(() => {
+    const persisted = myNodeNum > 0 ? loadActiveChannelInitial(protocol, myNodeNum) : null;
+    if (persisted != null && channels.some((c) => c.index === persisted)) return persisted;
+    return defaultChannelIndex;
+  });
   useEffect(() => {
     if (channels.length > 0 && !channels.some((c) => c.index === channel)) {
-      setChannel(channels[0].index);
+      setChannel(defaultChannelIndex);
     }
-  }, [channels, channel]);
+  }, [channels, channel, defaultChannelIndex]);
+  /**
+   * ChatPanel mounts once per protocol tab and often before the radio finishes
+   * connecting, so `myNodeNum` can still be 0 (no restore attempted) at the lazy
+   * initializer above. Re-attempt the restore once a real node number is known —
+   * covers both "connected after mount" and "switched to a different node while
+   * this panel stayed mounted". Scoped by protocol + node (not node alone): a
+   * protocol switch remounts ChatPanel (App.tsx keys it on protocol) so this is
+   * belt-and-suspenders, but costs nothing.
+   */
+  const channelRestoreScopeKey = myNodeNum > 0 ? `${protocol}:${myNodeNum}` : null;
+  interface ChannelRestoreState {
+    scope: string | null;
+    resolved: boolean;
+    indexSignature: string | null;
+    /**
+     * Whether this scope was ever entered from a genuinely *different* prior
+     * scope — captured once when a scope is first seen and carried forward
+     * unchanged through every later re-check of that same scope (recomputing
+     * "did the scope just change" fresh on each pending retry reads false
+     * once we've already been pending on it for a tick, which is exactly
+     * when the leak-prevention reset below is needed most: the moment
+     * restoration gives up on a stale value, `channel` can still be the
+     * *previous* scope's leftover selection).
+     */
+    arrivedFromDifferentScope: boolean;
+  }
+  /**
+   * `resolved: false` means restoration for `scope` hasn't been settled yet —
+   * either a saved value exists for it but the current `channels` list hasn't
+   * confirmed it (e.g. still showing a *previous* node's stale, carried-forward
+   * list — see useMeshtasticRuntime's lastKnownChannelsRef), or `myNodeNum` is
+   * still 0. Saving is suppressed the whole time a scope is unresolved: a saved
+   * value not yet found in a stale list is NOT the same as "no saved value" —
+   * treating them the same let a real save get clobbered by the default the
+   * moment a different node's carried-forward list didn't happen to contain it.
+   * `indexSignature` is the set of indices `channels` had on the last pending
+   * check for this scope, used only to detect the list has *stopped* changing
+   * (see below) — never to decide whether the saved value matches.
+   *
+   * The initial value mirrors the `channel` lazy initializer above rather than
+   * assuming "resolved" outright: if `myNodeNum` is already known at mount but
+   * `channels` hasn't arrived yet (a normal race — they come from separate
+   * packets), a saved value can't be found on that first render either, and
+   * marking it resolved unconditionally would permanently skip ever retrying
+   * once the real list arrives with the match.
+   *
+   * Computed via an "initialized" guard rather than directly as `useRef`'s
+   * argument — that argument is evaluated on every render even though only
+   * the first one is ever used, and ChatPanel re-renders often (every
+   * message, every scroll update), which would repeat the localStorage read
+   * below on every one of those renders for no reason.
+   */
+  const channelRestoreInitializedRef = useRef(false);
+  const channelRestoreRef = useRef<ChannelRestoreState>({
+    scope: null,
+    resolved: true,
+    indexSignature: null,
+    arrivedFromDifferentScope: false,
+  });
+  if (!channelRestoreInitializedRef.current) {
+    channelRestoreInitializedRef.current = true;
+    if (channelRestoreScopeKey != null) {
+      const persisted = loadActiveChannelInitial(protocol, myNodeNum);
+      channelRestoreRef.current =
+        persisted == null || channels.some((c) => c.index === persisted)
+          ? {
+              scope: channelRestoreScopeKey,
+              resolved: true,
+              indexSignature: null,
+              arrivedFromDifferentScope: false,
+            }
+          : // `indexSignature: null` (not the real, computed signature) —
+            // otherwise the very first restore-effect run right after mount
+            // would compare against this same unchanged snapshot, see a
+            // "match" on indexSignature alone, and give up immediately
+            // before `channels` ever gets a chance to actually update.
+            // Stability can only be concluded by comparing two *effect*
+            // observations, never the initializer's own snapshot against
+            // itself.
+            {
+              scope: channelRestoreScopeKey,
+              resolved: false,
+              indexSignature: null,
+              arrivedFromDifferentScope: false,
+            };
+    }
+  }
+  /** True for the one save-effect run right after a restore/reset-triggered setChannel,
+   * so that run doesn't persist the pre-transition value it hasn't caught up to yet. */
+  const skipNextChannelSaveRef = useRef(false);
+  useEffect(() => {
+    if (channelRestoreScopeKey == null) return;
+    const prior = channelRestoreRef.current;
+    if (prior.scope === channelRestoreScopeKey && prior.resolved) return; // already settled
+    const arrivedFromDifferentScope =
+      prior.scope === channelRestoreScopeKey
+        ? prior.arrivedFromDifferentScope
+        : prior.scope !== null;
+
+    const persisted = loadActiveChannelInitial(protocol, myNodeNum);
+    if (persisted != null && channels.some((c) => c.index === persisted)) {
+      channelRestoreRef.current = {
+        scope: channelRestoreScopeKey,
+        resolved: true,
+        indexSignature: null,
+        arrivedFromDifferentScope,
+      };
+      if (persisted !== channel) {
+        skipNextChannelSaveRef.current = true;
+        setChannel(persisted);
+      }
+      return;
+    }
+    if (persisted != null) {
+      // A value IS saved for this scope, but `channels` doesn't contain it.
+      // Could mean the list hasn't finished arriving yet (stay pending, keep
+      // saving suppressed, re-check next `channels` change) — OR the channel
+      // was genuinely removed from this node's config since it was saved, in
+      // which case the list will stop changing and we must NOT wait forever:
+      // that would silently disable saving *any* future selection for this
+      // node for the rest of the session. Give up once the set of available
+      // indices is identical to the last pending check (content-stable, not
+      // just a new array reference).
+      const indexSignature = channels.map((c) => c.index).join(',');
+      if (prior.scope === channelRestoreScopeKey && prior.indexSignature === indexSignature) {
+        channelRestoreRef.current = {
+          scope: channelRestoreScopeKey,
+          resolved: true,
+          indexSignature: null,
+          arrivedFromDifferentScope,
+        };
+        // Fall through to the "nothing to restore" handling below — same
+        // outcome as if nothing had ever been saved for this scope.
+      } else {
+        channelRestoreRef.current = {
+          scope: channelRestoreScopeKey,
+          resolved: false,
+          indexSignature,
+          arrivedFromDifferentScope,
+        };
+        return;
+      }
+    } else {
+      channelRestoreRef.current = {
+        scope: channelRestoreScopeKey,
+        resolved: true,
+        indexSignature: null,
+        arrivedFromDifferentScope,
+      };
+    }
+    // Nothing to restore (never saved, or saved but genuinely gone). If this
+    // scope was ever arrived at from a *different* scope, `channel` may still
+    // hold that other scope's index and `channels` may still be showing its
+    // stale, carried-forward list — don't let that leak into this scope's
+    // saved preference. Force back to the default explicitly; the
+    // pre-existing clamp effect above can't catch this because the stale
+    // index is still "valid" against the stale list.
+    if (arrivedFromDifferentScope && defaultChannelIndex !== channel) {
+      skipNextChannelSaveRef.current = true;
+      setChannel(defaultChannelIndex);
+    }
+  }, [protocol, myNodeNum, channelRestoreScopeKey, channels, channel, defaultChannelIndex]);
+  useEffect(() => {
+    if (channelRestoreScopeKey == null) return;
+    const status = channelRestoreRef.current;
+    if (status.scope !== channelRestoreScopeKey || !status.resolved) return; // still pending
+    if (skipNextChannelSaveRef.current) {
+      skipNextChannelSaveRef.current = false;
+      return;
+    }
+    // Only persist a selection the current channel list actually has — never a
+    // momentarily-invalid index from a channel list that just shrank (the clamp
+    // effect above will correct `channel` next render; this run simply skips).
+    if (!channels.some((c) => c.index === channel)) return;
+    saveActiveChannel(protocol, myNodeNum, channel);
+  }, [protocol, myNodeNum, channelRestoreScopeKey, channel, channels]);
+  /**
+   * Deliberate, user-initiated channel selection. Immediately marks this
+   * scope's restore as resolved — a race otherwise exists where a restore is
+   * still pending (waiting for a saved value to show up in `channels`) when
+   * the user manually picks a *different* channel; if the saved value later
+   * matches, the pending restore would fire and silently overwrite the user's
+   * manual pick. A deliberate selection always wins and unblocks saving.
+   */
+  const selectChannel = useCallback(
+    (index: number) => {
+      if (channelRestoreScopeKey != null) {
+        channelRestoreRef.current = {
+          scope: channelRestoreScopeKey,
+          resolved: true,
+          indexSignature: null,
+          arrivedFromDifferentScope: false,
+        };
+      }
+      setChannel(index);
+    },
+    [channelRestoreScopeKey],
+  );
   const [chatActionError, setChatActionError] = useState<{
     message: string;
     viewKey: string;
@@ -692,8 +986,10 @@ function ChatPanel({
   );
   const [openDmTabs, setOpenDmTabs] = useState<number[]>(() => loadOpenDmTabsInitial(protocol));
   const openDmTabsRef = useRef(openDmTabs);
-  openDmTabsRef.current = openDmTabs;
-  const [activeDmNode, setActiveDmNode] = useState<number | null>(null);
+  const [activeDmNode, setActiveDmNode] = useState<number | null>(() =>
+    loadActiveDmInitial(protocol),
+  );
+  const activeDmNodeRef = useRef(activeDmNode);
   const [dmAddressInput, setDmAddressInput] = useState('');
   const [dmAddressError, setDmAddressError] = useState<string | null>(null);
   const [dismissedDmTabs, setDismissedDmTabs] = useState<Record<number, number>>(() => {
@@ -712,6 +1008,23 @@ function ChatPanel({
     }
     return out;
   });
+  const dismissedDmTabsRef = useRef(dismissedDmTabs);
+
+  const reticulumIdentityActivityByDestination = useReticulumIdentityActivityStore(
+    (s) => s.byDestination,
+  );
+  const reticulumPeersRevision = useReticulumPeerStore((s) => s.peersRevision);
+
+  // Keep refs aligned with committed state before remap / initialDmTarget effects read them.
+  useEffect(() => {
+    openDmTabsRef.current = openDmTabs;
+  }, [openDmTabs]);
+  useEffect(() => {
+    activeDmNodeRef.current = activeDmNode;
+  }, [activeDmNode]);
+  useEffect(() => {
+    dismissedDmTabsRef.current = dismissedDmTabs;
+  }, [dismissedDmTabs]);
 
   // Persist openDmTabs to localStorage whenever it changes
   useEffect(() => {
@@ -721,6 +1034,70 @@ function ChatPanel({
       console.warn('[ChatPanel] persist openDmTabs failed ' + errLikeToLogString(e));
     }
   }, [openDmTabs, protocol]);
+
+  // Persist last-focused DM so remount/autofocus does not jump to another open tab.
+  useEffect(() => {
+    saveActiveDm(protocol, activeDmNode);
+  }, [activeDmNode, protocol]);
+
+  // Fold telephony (and other remappable) DM tabs onto lxmf.delivery when activity knows it.
+  // Also re-run after initialDmTarget / open/active tab state commits.
+  useEffect(() => {
+    if (protocol !== 'reticulum') return;
+    const remapped = remapReticulumChatDmTabIds(
+      openDmTabsRef.current,
+      activeDmNodeRef.current,
+      dismissedDmTabsRef.current,
+    );
+    if (!remapped.changed) return;
+    setOpenDmTabs(remapped.openDmTabs);
+    setActiveDmNode(remapped.activeDmNode);
+    setDismissedDmTabs(remapped.dismissedDmTabs);
+    if (remapped.replacements.length === 0) return;
+
+    setPersistedLastRead((prev) => {
+      const { next, changed } = remapDmViewKeyedRecord(prev, remapped.replacements, (a, b) =>
+        Math.max(a, b),
+      );
+      return changed ? next : prev;
+    });
+    setMutedViews((prev) => {
+      const { next, changed } = remapDmMutedViews(prev, remapped.replacements);
+      if (!changed) return prev;
+      saveMutedViews(protocol, next);
+      return next;
+    });
+    setStarred((prev) => {
+      const { next, changed } = remapDmStarredViewKeys(prev, remapped.replacements);
+      if (!changed) return prev;
+      saveStarred(protocol, next);
+      return next;
+    });
+    try {
+      const drafts = loadDraftsInitial(protocol);
+      const { next, changed } = remapDmViewKeyedRecord(drafts, remapped.replacements, (a, b) =>
+        b.length >= a.length ? b : a,
+      );
+      if (changed) {
+        localStorage.setItem(draftsStorageKey(protocol), JSON.stringify(next));
+      }
+    } catch (e) {
+      console.warn('[ChatPanel] remap drafts failed ' + errLikeToLogString(e));
+    }
+  }, [
+    protocol,
+    reticulumIdentityActivityByDestination,
+    reticulumPeersRevision,
+    openDmTabs,
+    activeDmNode,
+  ]);
+
+  // Drop in-progress memo capture when switching DMs so the mic does not stay open.
+  useEffect(() => {
+    return () => {
+      void cancelReticulumVoiceMemo();
+    };
+  }, [activeDmNode]);
 
   useEffect(() => {
     try {
@@ -808,15 +1185,10 @@ function ChatPanel({
     return groupChatReactionsByParentKey(filtered);
   }, [displayMessages, protocol]);
 
-  const inferredDmTabs = useMemo(() => {
-    const peers = new Map<number, number>();
-    for (const msg of regularMessages) {
-      const peer = resolveDmPeer(msg);
-      if (peer == null) continue;
-      peers.set(peer, (peers.get(peer) ?? 0) + 1);
-    }
-    return peers;
-  }, [regularMessages, resolveDmPeer]);
+  const inferredDmTabs = useMemo(
+    () => chatDmPeerMessageCounts(regularMessages, ownNodeIdSet, protocol, chatUnreadDmOptions),
+    [chatUnreadDmOptions, ownNodeIdSet, protocol, regularMessages],
+  );
 
   /** Incoming DM messages per peer newer than persisted last-read for `dm:${peer}` (channel unread map skips DMs). */
   const dmUnreadCounts = useMemo(
@@ -834,48 +1206,69 @@ function ChatPanel({
   const visibleDmTabs = useMemo(() => {
     const all = new Set(openDmTabs);
     if (activeDmNode != null) all.add(activeDmNode);
-    for (const [nodeNum, dmCount] of inferredDmTabs) {
-      const dismissedCount = dismissedDmTabs[nodeNum] ?? 0;
-      if (dmCount > dismissedCount) {
-        all.add(nodeNum);
+    // Reticulum: until own identity is known, outbound history misattributes peer=self.
+    // Only keep explicitly opened/active tabs so a sticky self hex pill cannot flash on launch.
+    const allowInferredReticulumTabs = protocol !== 'reticulum' || ownNodeIdSet.size > 0;
+    if (allowInferredReticulumTabs) {
+      for (const [nodeNum, dmCount] of inferredDmTabs) {
+        const dismissedCount = dismissedDmTabs[nodeNum] ?? 0;
+        if (dmCount > dismissedCount) {
+          all.add(nodeNum);
+        }
+      }
+      for (const [nodeNum, unread] of dmUnreadCounts) {
+        if (
+          unread > 0 &&
+          (!dmOnlyChat || !isDismissedDmConversation(nodeNum, dismissedDmTabs, inferredDmTabs))
+        ) {
+          all.add(nodeNum);
+        }
       }
     }
-    for (const [nodeNum, unread] of dmUnreadCounts) {
-      if (
-        unread > 0 &&
-        (!dmOnlyChat || !isDismissedDmConversation(nodeNum, dismissedDmTabs, inferredDmTabs))
-      ) {
-        all.add(nodeNum);
-      }
-    }
-    return Array.from(all).filter(
-      (nodeNum) => protocol !== 'meshtastic' || !isMeshtasticBroadcastNodeNum(nodeNum),
-    );
+    return Array.from(all).filter((nodeNum) => {
+      if (protocol === 'meshtastic' && isMeshtasticBroadcastNodeNum(nodeNum)) return false;
+      if (protocol === 'reticulum' && isOwnNode(nodeNum)) return false;
+      return true;
+    });
   }, [
     activeDmNode,
     dismissedDmTabs,
     dmOnlyChat,
     dmUnreadCounts,
     inferredDmTabs,
+    isOwnNode,
     openDmTabs,
+    ownNodeIdSet,
     protocol,
   ]);
 
-  // Reticulum DM-only: auto-focus the conversation with the most history when none selected.
+  // Drop a sticky self DM if identity becomes known after hydrate (openDmTabs / autofocus race).
+  useEffect(() => {
+    if (protocol !== 'reticulum' || ownNodeIdSet.size === 0) return;
+    if (activeDmNode != null && isOwnNode(activeDmNode)) {
+      setActiveDmNode(null);
+    }
+    setOpenDmTabs((prev) => {
+      const next = prev.filter((id) => !isOwnNode(id));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [activeDmNode, isOwnNode, ownNodeIdSet, protocol]);
+
+  // Reticulum DM-only: when none selected, restore last-focused open tab (not
+  // "most message history" — that jumped users to an older/busier peer).
   useEffect(() => {
     if (!dmOnlyChat || activeDmNode != null || visibleDmTabs.length === 0) return;
-    let bestTab = visibleDmTabs[0];
-    let bestCount = inferredDmTabs.get(bestTab) ?? 0;
-    for (const [nodeNum, count] of inferredDmTabs) {
-      if (!visibleDmTabs.includes(nodeNum)) continue;
-      if (count > bestCount) {
-        bestCount = count;
-        bestTab = nodeNum;
-      }
-    }
-    setActiveDmNode(bestTab);
+    // Wait until own identity is known so we never autofocus a misattributed self tab.
+    if (protocol === 'reticulum' && ownNodeIdSet.size === 0) return;
+    const stored = loadActiveDmInitial(protocol);
+    const preferred =
+      (stored != null && visibleDmTabs.includes(stored) ? stored : null) ??
+      [...openDmTabsRef.current].reverse().find((id) => visibleDmTabs.includes(id)) ??
+      visibleDmTabs[0];
+    if (protocol === 'reticulum' && isOwnNode(preferred)) return;
+    setActiveDmNode(preferred);
     setViewMode('dm');
-  }, [activeDmNode, dmOnlyChat, inferredDmTabs, visibleDmTabs]);
+  }, [activeDmNode, dmOnlyChat, isOwnNode, ownNodeIdSet, protocol, visibleDmTabs]);
 
   const inferredDmTabSet = useMemo(() => new Set(inferredDmTabs.keys()), [inferredDmTabs]);
 
@@ -1107,7 +1500,7 @@ function ChatPanel({
       const peer = resolveDmPeer(msg);
       const msgViewKey = peer != null ? `dm:${peer}` : `ch:${msg.channel}`;
       if (mutedViews.has(msgViewKey)) return false;
-      return isActive && msgViewKey !== viewKey && !document.hidden;
+      return isActive && msgViewKey !== viewKey && !isAppWindowInactive();
     });
     const type = pickAudibleNotificationType(
       gated,
@@ -1145,7 +1538,7 @@ function ChatPanel({
 
   const applyNearBottomReadState = useCallback(
     (distFromBottom: number) => {
-      if (document.hidden) return;
+      if (isAppWindowInactive()) return;
       if (distFromBottom < 50) {
         markCurrentViewRead();
         setUnreadDividerTimestamp(0); // hide divider once user has read to bottom
@@ -1159,7 +1552,7 @@ function ChatPanel({
     const prevLen = prevUnreadSourceLengthRef.current;
     const newLen = unreadSourceMessages.length;
     prevUnreadSourceLengthRef.current = newLen;
-    if (!isActive || document.hidden || newLen <= prevLen) return;
+    if (!isActive || isAppWindowInactive() || newLen <= prevLen) return;
 
     const newMsgs = unreadSourceMessages.slice(prevLen);
     const hasInboundForView = newMsgs.some((msg) => {
@@ -1215,10 +1608,27 @@ function ChatPanel({
     });
   }, [updateScrollButtonVisibility]);
 
+  // Regaining window focus (e.g. clicking the dock/taskbar icon on a new-message
+  // badge) should clear unread and follow to newest when pinned near bottom —
+  // mirrors the pinned/scrolled-to-bottom read logic that is skipped while unfocused.
+  useEffect(() => {
+    if (!isActive) return;
+    const onFocus = () => {
+      requestAnimationFrame(() => {
+        const dist = updateScrollButtonVisibility();
+        if (dist !== undefined) applyNearBottomReadState(dist);
+      });
+    };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [applyNearBottomReadState, isActive, updateScrollButtonVisibility]);
+
   // Refresh scroll button + mark-read when message list changes; scrollToEnd when app-pinned
   // (followOnAppend uses the tighter VIRTUALIZER_SCROLL_END_THRESHOLD).
   useEffect(() => {
-    if (!isActive || document.hidden) return;
+    if (!isActive || isAppWindowInactive()) return;
     if (isPinnedToBottomRef.current) {
       messageVirtualizerRef.current.scrollToEnd();
     }
@@ -1508,9 +1918,19 @@ function ChatPanel({
       return;
     }
     setDmAddressError(null);
-    const nodeId = openReticulumDmFromHash(parsed);
-    setDmAddressInput('');
-    openDmTo(nodeId);
+    try {
+      const nodeId = openReticulumDmFromHash(parsed);
+      setDmAddressInput('');
+      openDmTo(nodeId);
+    } catch (e) {
+      if (e instanceof ReticulumChatMissingLxmfError) {
+        // catch-no-log-ok expected missing-lxmf; surface via field error
+        setDmAddressError(t('chatPanel.reticulumChatNeedsLxmfDelivery'));
+        return;
+      }
+      console.warn('[ChatPanel] open DM by address failed ' + errLikeToLogString(e));
+      setDmAddressError(t('chatPanel.dmAddressInvalid'));
+    }
   }, [dmAddressInput, openDmTo, t]);
 
   // Close a DM tab
@@ -1601,10 +2021,7 @@ function ChatPanel({
   );
 
   function formatTime(ts: number): string {
-    return new Date(ts).toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    return formatDisplayTime(ts, { use24Hour: use24HourTime });
   }
 
   function formatFullTimestamp(ts: number): string {
@@ -1656,7 +2073,8 @@ function ChatPanel({
       if (!reactionCapturePendingRef.current) return;
       const target = reactionPickerTarget.current;
       if (!target) return;
-      const unicode = (e as CustomEvent).detail.emoji.unicode as string;
+      const unicode = emojiUnicodeFromEvent(e);
+      if (!unicode) return;
       const parsed = reactionGlyphFromPicker(unicode);
       if (parsed) {
         void handleReactRef.current?.(parsed.glyph, target.id, target.channel);
@@ -1712,21 +2130,60 @@ function ChatPanel({
 
   const reticulumDmDestinationHash = useMemo(() => {
     if (protocol !== 'reticulum' || activeDmNode == null) return null;
-    const fromNode = nodes.get(activeDmNode)?.reticulum_destination_hash?.trim();
-    if (fromNode) {
-      registerReticulumDestinationHash(activeDmNode, fromNode);
-      return fromNode;
-    }
-    return (
-      reticulumHashForNodeId(activeDmNode) ?? resolveReticulumDestinationHash(activeDmNode) ?? null
+    return resolveReticulumDmFaceHash(
+      activeDmNode,
+      nodes.get(activeDmNode)?.reticulum_destination_hash,
     );
   }, [activeDmNode, nodes, protocol]);
 
+  const reticulumDmBoundHash = useMemo(() => {
+    if (protocol !== 'reticulum' || activeDmNode == null) return null;
+    return resolveReticulumDmBoundDestinationHash(
+      activeDmNode,
+      nodes.get(activeDmNode)?.reticulum_destination_hash,
+    );
+  }, [activeDmNode, nodes, protocol]);
+
+  /** Voice dial: prefer telephony dest when Chat has no LXMF face; else LXMF / bound hash. */
+  const reticulumDmVoiceDialHash = useMemo(() => {
+    if (protocol !== 'reticulum' || activeDmNode == null) return null;
+    // Touch Map size so telephony-only → LXMF activity flips dial hash.
+    if (reticulumIdentityActivityByDestination.size < 0) return null;
+    if (reticulumDmBoundHash && isReticulumTelephonyOnlyDestination(reticulumDmBoundHash)) {
+      return reticulumDmBoundHash;
+    }
+    return reticulumDmDestinationHash ?? reticulumDmBoundHash;
+  }, [
+    activeDmNode,
+    protocol,
+    reticulumDmBoundHash,
+    reticulumDmDestinationHash,
+    reticulumIdentityActivityByDestination,
+  ]);
+
+  const reticulumDmMissingLxmf = useMemo(() => {
+    if (protocol !== 'reticulum' || activeDmNode == null) return false;
+    // Touch Map size so LXMF activity updates re-evaluate telephony-only banners.
+    if (reticulumIdentityActivityByDestination.size < 0) return false;
+    const raw = reticulumDmBoundHash;
+    if (!raw) return false;
+    return resolveReticulumChatLxmfDestination(raw).status === 'missing_lxmf';
+  }, [activeDmNode, protocol, reticulumDmBoundHash, reticulumIdentityActivityByDestination]);
+
+  const peerAppearanceByHash = useReticulumPeerStore((s) => s.peerAppearanceByHash);
+
   const reticulumDmPeerHops = useReticulumPeerStore((s) => {
-    if (!reticulumDmDestinationHash) return null;
-    const key = reticulumDmDestinationHash.replace(/[^0-9a-f]/gi, '').toLowerCase();
-    const peer = s.contacts.get(key) ?? s.peers.get(key);
+    const keyHash = reticulumDmDestinationHash ?? reticulumDmBoundHash;
+    if (!keyHash) return null;
+    const key = keyHash.replace(/[^0-9a-f]/gi, '').toLowerCase();
+    const peer = s.contacts.get(key) ?? s.history.get(key) ?? s.peers.get(key);
     return peer?.hops ?? null;
+  });
+
+  const reticulumDmIdentityHash = useReticulumPeerStore((s) => {
+    const keyHash = reticulumDmDestinationHash ?? reticulumDmBoundHash ?? reticulumDmVoiceDialHash;
+    if (!keyHash) return null;
+    return s.getPeer(keyHash)?.identity_hash ?? null;
   });
 
   const reticulumDmPassiveHops = useMemo(() => {
@@ -1790,6 +2247,11 @@ function ChatPanel({
           const dmUnread = dmUnreadCounts.get(nodeNum) ?? 0;
           const showDmUnreadBadge =
             dmUnread > 0 && !(viewMode === 'dm' && activeDmNode === nodeNum);
+          const faceHash =
+            protocol === 'reticulum'
+              ? resolveReticulumDmFaceHash(nodeNum, nodes.get(nodeNum)?.reticulum_destination_hash)
+              : null;
+          const appearance = faceHash ? peerAppearanceByHash.get(faceHash) : undefined;
           return (
             <div
               key={`dm-${protocol}-${nodeNum}`}
@@ -1802,7 +2264,7 @@ function ChatPanel({
               <button
                 type="button"
                 aria-label={getDmLabel(nodeNum)}
-                className={`min-w-0 truncate rounded-full px-0 py-0 text-left font-medium transition-colors ${
+                className={`inline-flex max-w-full min-w-0 items-center gap-1 truncate rounded-full px-0 py-0 text-left font-medium transition-colors ${
                   viewMode === 'dm' && activeDmNode === nodeNum
                     ? 'text-white'
                     : 'text-muted hover:text-gray-200'
@@ -1811,7 +2273,16 @@ function ChatPanel({
                   openDmTo(nodeNum);
                 }}
               >
-                {getDmLabel(nodeNum)}
+                {protocol === 'reticulum' ? (
+                  <ReticulumProfileIconSlot
+                    iconName={appearance?.icon_name}
+                    iconColor={appearance?.icon_color}
+                    destinationHash={faceHash}
+                    size={14}
+                    className="shrink-0"
+                  />
+                ) : null}
+                <span className="min-w-0 truncate">{getDmLabel(nodeNum)}</span>
               </button>
               <button
                 type="button"
@@ -1894,7 +2365,7 @@ function ChatPanel({
                     key={`ch-${ch.index}-${chIdx}-${ch.name}`}
                     aria-label={`${ch.name}${channelUnreadSuffix}`}
                     onClick={() => {
-                      setChannel(ch.index);
+                      selectChannel(ch.index);
                       setViewMode('channels');
                     }}
                     className={`relative shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
@@ -1912,6 +2383,17 @@ function ChatPanel({
                   </button>
                 );
               })}
+              {meshcoreChannelSources && onSetMeshcoreChannel ? (
+                <MeshcoreChatChannelManager
+                  channels={meshcoreChannelSources}
+                  disabled={meshcoreChannelManagementDisabled}
+                  onSetChannel={onSetMeshcoreChannel}
+                  onSelectChannel={(index) => {
+                    selectChannel(index);
+                    setViewMode('channels');
+                  }}
+                />
+              ) : null}
             </>
           )}
         </div>
@@ -2063,7 +2545,7 @@ function ChatPanel({
       {/* Row 2 — DM tabs (Meshtastic/MeshCore; Reticulum promotes DMs into Row 1) */}
       {!dmOnlyChat ? (
         <div
-          className={`mb-2 flex min-h-[28px] min-w-0 items-center gap-2 whitespace-nowrap ${viewMode === 'channels' ? 'opacity-50' : ''}`}
+          className={`mb-2 flex min-h-[1.75rem] min-w-0 items-center gap-2 whitespace-nowrap ${viewMode === 'channels' ? 'opacity-50' : ''}`}
         >
           {dmTabPills}
         </div>
@@ -2227,6 +2709,17 @@ function ChatPanel({
                 onProbeSettled={reticulumDmPathProbe.applyProbeResult}
               />
             ) : null;
+          const rncpShareCandidates =
+            protocol === 'reticulum' && isDmMode
+              ? viewMessages
+                  .filter((m) => !isOwnNode(m.sender_id))
+                  .map((m) => ({
+                    payload: m.payload,
+                    senderHash: m.reticulum_sender_hash ?? null,
+                    senderName: m.sender_name ?? null,
+                    timestamp: m.timestamp,
+                  }))
+              : [];
           const rncpControl =
             protocol === 'reticulum' && hasRncpTransfer && reticulumDmDestinationHash != null ? (
               <ChatDmRncpControl
@@ -2234,14 +2727,81 @@ function ChatPanel({
                 lxmfPeerHash={reticulumDmDestinationHash}
                 peerLabel={dmNodeName}
                 sidecarRunning={reticulumStackLive}
+                dmShareCandidates={rncpShareCandidates}
               />
             ) : null;
-          if (!pathBadge && !dmNode && !rncpControl) return null;
+          const voiceCallControl =
+            protocol === 'reticulum' && hasLxstVoice && reticulumDmVoiceDialHash != null ? (
+              <ReticulumVoiceCallButton
+                key={`dm-voice-${reticulumDmVoiceDialHash}`}
+                lxmfPeerHash={reticulumDmVoiceDialHash}
+                identityHash={reticulumDmIdentityHash}
+                disabled={!reticulumStackLive}
+                className={RETICULUM_DM_HEADER_ACTION_CLASS}
+              />
+            ) : null;
+          const gamesChallengeControl =
+            protocol === 'reticulum' && hasLrgpGames && reticulumDmDestinationHash != null ? (
+              <ReticulumGameChallengeButton
+                key={`dm-games-${reticulumDmDestinationHash}`}
+                lxmfPeerHash={reticulumDmDestinationHash}
+                disabled={!reticulumStackLive}
+                className={RETICULUM_DM_HEADER_ACTION_CLASS}
+              />
+            ) : null;
+          const paperShareControl =
+            protocol === 'reticulum' && hasLxmfPaper && reticulumDmDestinationHash != null ? (
+              <ChatDmPaperShareControl
+                key={`dm-paper-${reticulumDmDestinationHash}`}
+                lxmfPeerHash={reticulumDmDestinationHash}
+                viewKey={viewKey}
+                sidecarRunning={reticulumStackLive}
+              />
+            ) : null;
+          const peerDetailsAppearance = reticulumDmDestinationHash
+            ? peerAppearanceByHash.get(reticulumDmDestinationHash)
+            : undefined;
+          const peerDetailsControl =
+            protocol === 'reticulum' && onPeerClick && reticulumDmDestinationHash != null ? (
+              <button
+                type="button"
+                className={`${RETICULUM_DM_HEADER_ACTION_CLASS} max-w-full`}
+                aria-label={t('chatPanel.openPeerDetailsAria', { name: dmNodeName })}
+                onClick={() => {
+                  onPeerClick(reticulumDmDestinationHash);
+                }}
+              >
+                <ReticulumProfileIconSlot
+                  iconName={peerDetailsAppearance?.icon_name}
+                  iconColor={peerDetailsAppearance?.icon_color}
+                  destinationHash={reticulumDmDestinationHash}
+                  size={14}
+                  className="shrink-0"
+                />
+                <span className="min-w-0 truncate">{t('chatPanel.openPeerDetails')}</span>
+              </button>
+            ) : null;
+          if (
+            !pathBadge &&
+            !dmNode &&
+            !rncpControl &&
+            !voiceCallControl &&
+            !gamesChallengeControl &&
+            !paperShareControl &&
+            !peerDetailsControl
+          ) {
+            return null;
+          }
+          // Order: path status → last heard → peer details → Probe/Path → Call → Challenge → Paper → Send file.
           return (
             <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
               {pathBadge}
-              {pathActions}
               {dmNode ? <DmPeerInfoBar dmNode={dmNode} nowMs={nowMs} t={t} /> : null}
+              {peerDetailsControl}
+              {pathActions}
+              {voiceCallControl}
+              {gamesChallengeControl}
+              {paperShareControl}
               {rncpControl}
             </div>
           );
@@ -2292,7 +2852,7 @@ function ChatPanel({
                             if (type === 'dm' && raw) {
                               openDmTo(Number(raw));
                             } else {
-                              if (raw !== undefined) setChannel(Number(raw));
+                              if (raw !== undefined) selectChannel(Number(raw));
                               setViewMode('channels');
                             }
                           }}
@@ -2371,10 +2931,16 @@ function ChatPanel({
                 const pickerOpensAbove = i >= filteredMessages.length - 3;
 
                 const senderNode = nodes.get(msg.sender_id);
-                const displaySenderName =
+                const rawSenderName =
                   nodeDisplayName(senderNode, protocol) ||
                   msg.sender_name.trim() ||
                   (msg.sender_id > 0 ? getDmLabel(msg.sender_id) : '');
+                // MeshCore wire/ingest uses English "Unknown" as a sentinel; localize for display.
+                // Other protocols may use a legitimate node/display name "Unknown" — leave as-is.
+                const displaySenderName =
+                  protocol === 'meshcore' && rawSenderName === 'Unknown'
+                    ? t('common.unknown')
+                    : rawSenderName;
 
                 // Day separator
                 const daySeparator = daySeparatorIndices.has(i) ? (
@@ -2460,86 +3026,101 @@ function ChatPanel({
                             }`}
                           >
                             {/* Header: sender name (clickable) + DM indicator + time */}
-                            {!isContinuation && (
-                              <div className="mb-0.5 flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (protocol === 'reticulum' && onPeerClick) {
-                                      const rawHash =
-                                        msg.reticulum_sender_hash?.trim() ||
-                                        nodes
-                                          .get(msg.sender_id)
-                                          ?.reticulum_destination_hash?.trim() ||
-                                        reticulumHashForNodeId(msg.sender_id) ||
-                                        resolveReticulumDestinationHash(msg.sender_id) ||
-                                        '';
-                                      const peerHash =
-                                        canonicalizeReticulumDestinationHash(rawHash);
-                                      if (peerHash) {
-                                        onPeerClick(peerHash);
-                                        return;
-                                      }
-                                      // No resolvable LXMF hash — avoid Meshtastic/MeshCore NodeDetailModal.
-                                      return;
-                                    }
-                                    onNodeClick(msg.sender_id);
-                                  }}
-                                  className={`cursor-pointer text-xs font-semibold hover:underline ${
-                                    isDm
-                                      ? 'text-purple-400'
-                                      : isOwn
-                                        ? 'text-blue-400'
-                                        : filterSender === msg.sender_id
-                                          ? 'text-blue-300 underline'
-                                          : 'text-bright-green'
-                                  }`}
-                                  title={t('chatPanel.filterBySender')}
-                                >
-                                  {displaySenderName}
-                                </button>
-                                {!isOwn && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setFilterSender((prev) =>
-                                        prev === msg.sender_id ? null : msg.sender_id,
-                                      );
-                                    }}
-                                    aria-label={t('chatPanel.filterBySender')}
-                                    aria-pressed={filterSender === msg.sender_id}
-                                    {...{ [PARENT_HOVER_ATTR]: '' }}
-                                    className={`shrink-0 rounded px-1 py-0.5 text-[9px] transition-colors ${
-                                      filterSender === msg.sender_id
-                                        ? 'bg-blue-700/40 text-blue-300'
-                                        : 'text-gray-600 hover:text-blue-400'
-                                    }`}
-                                    title={t('chatPanel.filterBySender')}
-                                  >
-                                    <ListFilter
-                                      aria-hidden
-                                      className="h-2.5 w-2.5"
-                                      trigger={parentIconTrigger}
-                                      size={10}
-                                    />
-                                  </button>
-                                )}
-                                {isDm && (
-                                  <span className="text-[10px] font-medium text-purple-400/70">
-                                    DM
-                                  </span>
-                                )}
-                                <span
-                                  className="text-muted/70 text-[10px]"
-                                  title={formatFullTimestamp(msg.timestamp)}
-                                >
-                                  {formatTime(msg.timestamp)}
-                                </span>
-                                {channels.length > 1 && !isDm && (
-                                  <span className="text-[10px] text-gray-600">ch{msg.channel}</span>
-                                )}
-                              </div>
-                            )}
+                            {!isContinuation &&
+                              (() => {
+                                const senderFaceHash =
+                                  protocol === 'reticulum'
+                                    ? resolveReticulumDmFaceHash(
+                                        msg.sender_id,
+                                        msg.reticulum_sender_hash ??
+                                          nodes.get(msg.sender_id)?.reticulum_destination_hash,
+                                      )
+                                    : null;
+                                const senderAppearance = senderFaceHash
+                                  ? peerAppearanceByHash.get(senderFaceHash)
+                                  : undefined;
+                                return (
+                                  <div className="mb-0.5 flex items-center gap-2">
+                                    {senderFaceHash ? (
+                                      <ReticulumProfileIconSlot
+                                        iconName={senderAppearance?.icon_name}
+                                        iconColor={senderAppearance?.icon_color}
+                                        destinationHash={senderFaceHash}
+                                        size={14}
+                                        className="shrink-0"
+                                      />
+                                    ) : null}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (protocol === 'reticulum' && onPeerClick) {
+                                          if (senderFaceHash) {
+                                            onPeerClick(senderFaceHash);
+                                            return;
+                                          }
+                                          // No resolvable LXMF hash — avoid Meshtastic/MeshCore NodeDetailModal.
+                                          return;
+                                        }
+                                        onNodeClick(msg.sender_id);
+                                      }}
+                                      className={`cursor-pointer text-xs font-semibold hover:underline ${
+                                        isDm
+                                          ? 'text-purple-400'
+                                          : isOwn
+                                            ? 'text-blue-400'
+                                            : filterSender === msg.sender_id
+                                              ? 'text-blue-300 underline'
+                                              : 'text-bright-green'
+                                      }`}
+                                      title={t('chatPanel.filterBySender')}
+                                    >
+                                      {displaySenderName}
+                                    </button>
+                                    {!isOwn && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setFilterSender((prev) =>
+                                            prev === msg.sender_id ? null : msg.sender_id,
+                                          );
+                                        }}
+                                        aria-label={t('chatPanel.filterBySender')}
+                                        aria-pressed={filterSender === msg.sender_id}
+                                        {...{ [PARENT_HOVER_ATTR]: '' }}
+                                        className={`shrink-0 rounded px-1 py-0.5 text-[9px] transition-colors ${
+                                          filterSender === msg.sender_id
+                                            ? 'bg-blue-700/40 text-blue-300'
+                                            : 'text-gray-600 hover:text-blue-400'
+                                        }`}
+                                        title={t('chatPanel.filterBySender')}
+                                      >
+                                        <ListFilter
+                                          aria-hidden
+                                          className="h-2.5 w-2.5"
+                                          trigger={parentIconTrigger}
+                                          size={10}
+                                        />
+                                      </button>
+                                    )}
+                                    {isDm && (
+                                      <span className="text-[10px] font-medium text-purple-400/70">
+                                        DM
+                                      </span>
+                                    )}
+                                    <span
+                                      className="text-muted/70 text-[10px]"
+                                      title={formatFullTimestamp(msg.timestamp)}
+                                    >
+                                      {formatTime(msg.timestamp)}
+                                    </span>
+                                    {channels.length > 1 && !isDm && (
+                                      <span className="text-[10px] text-gray-600">
+                                        ch{msg.channel}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
 
                             {showContinuationTime && (
                               <div className={`mb-0.5 ${isOwn ? 'flex justify-end' : ''}`}>
@@ -2657,8 +3238,23 @@ function ChatPanel({
 
                             {/* Message text with optional search highlight (div: ChatPayloadText may render block link previews) */}
                             <div className="text-sm leading-relaxed break-words whitespace-pre-wrap text-gray-200">
-                              {showLxmfAttachmentLine &&
-                              parseReticulumAttachmentPayload(msg.payload) ? (
+                              {/^\[voice:/i.test(msg.payload) &&
+                              !(hasReticulumVoiceMemo && msg.reticulumAttachmentPath) ? (
+                                <span className="text-gray-400 italic">
+                                  {t('chatPanel.voiceMemo.unavailable')}
+                                </span>
+                              ) : hasReticulumVoiceMemo &&
+                                msg.reticulumAttachmentPath &&
+                                (msg.reticulumAttachmentKind === 'audio' ||
+                                  msg.reticulumAttachmentPath.toLowerCase().endsWith('.ogg') ||
+                                  /^\[voice:/i.test(msg.payload)) ? (
+                                <ReticulumVoiceMemoLine
+                                  attachmentPath={msg.reticulumAttachmentPath}
+                                  durationSec={msg.reticulumAudioDurationSec}
+                                  audioMode={msg.reticulumAudioMode}
+                                />
+                              ) : showLxmfAttachmentLine &&
+                                parseReticulumAttachmentPayload(msg.payload) ? (
                                 <ReticulumAttachmentLine
                                   payload={msg.payload}
                                   attachmentPath={msg.reticulumAttachmentPath}
@@ -2686,12 +3282,7 @@ function ChatPanel({
                                 <div className="mt-0.5 flex items-center justify-end gap-2">
                                   {msg.rxHops != null &&
                                     (msg.receivedVia === 'rf' || msg.receivedVia === 'both') && (
-                                      <span
-                                        className="text-[10px] text-gray-500"
-                                        title={t('nodeDetailModal.hopsFromRoutingTitle')}
-                                      >
-                                        {t('nodeDetailModal.hopLabel', { count: msg.rxHops })}
-                                      </span>
+                                      <ChatRfHopLabel rxHops={msg.rxHops} msg={msg} />
                                     )}
                                   {msg.viaStoreForward && <StoreForwardBadge />}
                                   {msg.receivedVia && (
@@ -2704,8 +3295,8 @@ function ChatPanel({
                             {isOwn && (msg.status || msg.mqttStatus) && (
                               <div className="mt-0.5 flex items-center justify-end gap-1">
                                 {isOwn &&
-                                  (msg.status === 'failed' ||
-                                    (protocol === 'reticulum' && msg.status === 'sending')) && (
+                                  msg.status === 'failed' &&
+                                  !isReticulumTooLargeForPropagationError(msg.error) && (
                                     <button
                                       type="button"
                                       onClick={(e) => {
@@ -2737,6 +3328,16 @@ function ChatPanel({
                                     deliveryMethod={msg.reticulumDeliveryMethod}
                                     error={msg.error}
                                   />
+                                ) : capabilities.prefersDeviceDeliveryStatusOverMqtt &&
+                                  msg.status ? (
+                                  // Prefer RF/device delivery status over MQTT ✓ on MeshCore
+                                  // (coverage line carries heard-by; MQTT badge was masking it).
+                                  <MessageStatusBadge
+                                    status={msg.status}
+                                    transport="device"
+                                    connectionType={connectionType}
+                                    error={msg.error}
+                                  />
                                 ) : msg.mqttStatus ? (
                                   <>
                                     <MessageStatusBadge status={msg.mqttStatus} transport="mqtt" />
@@ -2757,12 +3358,34 @@ function ChatPanel({
                                     error={msg.error}
                                   />
                                 ) : null}
+                                <RelayCoverageLine
+                                  protocol={protocol}
+                                  messageId={relayCoverageMessageKey(msg)}
+                                  isOwn={isOwn}
+                                  identityId={identityId}
+                                />
+                              </div>
+                            )}
+                            {isOwn && !(msg.status || msg.mqttStatus) && (
+                              <div className="mt-0.5 flex items-center justify-end gap-1">
+                                <RelayCoverageLine
+                                  protocol={protocol}
+                                  messageId={relayCoverageMessageKey(msg)}
+                                  isOwn={isOwn}
+                                  identityId={identityId}
+                                />
                               </div>
                             )}
                           </div>
 
-                          {/* Inline reaction trigger — visible on hover or focus-within */}
-                          <div className="flex shrink-0 gap-0.5 opacity-0 transition-all group-focus-within/msg:opacity-100 group-hover/msg:opacity-100">
+                          {/* Inline reaction trigger — visible on hover/focus-within, or always when alwaysShowMessageActions is set */}
+                          <div
+                            className={`message-actions-bar flex shrink-0 gap-0.5 rounded transition-all ${
+                              alwaysShowMessageActions
+                                ? 'opacity-100'
+                                : 'opacity-0 group-focus-within/msg:opacity-100 group-hover/msg:opacity-100'
+                            }`}
+                          >
                             {/* Copy — always available */}
                             <button
                               type="button"
@@ -2773,7 +3396,7 @@ function ChatPanel({
                                 });
                               }}
                               {...{ [PARENT_HOVER_ATTR]: '' }}
-                              className="rounded p-1 text-xs text-gray-600 hover:text-green-400"
+                              className="message-action rounded p-1 text-xs text-gray-600"
                               aria-label={t('chatPanel.copyMessage')}
                               title={t('chatPanel.copyMessage')}
                             >
@@ -2793,7 +3416,7 @@ function ChatPanel({
                                     composerInputRef.current?.focus();
                                   }}
                                   {...{ [PARENT_HOVER_ATTR]: '' }}
-                                  className="rounded p-1 text-xs text-gray-600 hover:text-blue-400"
+                                  className="message-action rounded p-1 text-xs text-gray-600"
                                   aria-label={t('chatPanel.replyToMessage')}
                                   title={t('chatPanel.replyButton')}
                                 >
@@ -2827,11 +3450,18 @@ function ChatPanel({
                                     } else {
                                       reactionPickerTarget.current = { id, channel: msg.channel };
                                       reactionCapturePendingRef.current = true;
-                                      void window.electronAPI.showEmojiPanel();
+                                      void window.electronAPI
+                                        .showEmojiPanel()
+                                        .catch((e: unknown) => {
+                                          console.debug(
+                                            '[ChatPanel] showEmojiPanel failed ' +
+                                              errLikeToLogString(e),
+                                          );
+                                        });
                                     }
                                   }}
                                   {...{ [PARENT_HOVER_ATTR]: '' }}
-                                  className="rounded p-1 text-xs text-gray-600 hover:text-gray-300"
+                                  className="message-action rounded p-1 text-xs text-gray-600"
                                   aria-label={t('chatPanel.addReaction')}
                                   title={t('chatPanel.reactButton')}
                                 >
@@ -2843,24 +3473,33 @@ function ChatPanel({
                                   />
                                 </button>
                                 {/* Quick DM */}
-                                {!isOwn && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      openDmTo(msg.sender_id);
-                                    }}
-                                    {...{ [PARENT_HOVER_ATTR]: '' }}
-                                    className="rounded p-1 text-xs text-gray-600 hover:text-purple-400"
-                                    title={t('chatPanel.directMessage', { name: msg.sender_name })}
-                                  >
-                                    <Mail
-                                      aria-hidden
-                                      className="h-3.5 w-3.5"
-                                      trigger={parentIconTrigger}
-                                      size={14}
-                                    />
-                                  </button>
-                                )}
+                                {!isOwn &&
+                                  !(
+                                    protocol === 'meshcore' &&
+                                    isMeshcoreDmExcludedHwModel(nodes.get(msg.sender_id)?.hw_model)
+                                  ) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        openDmTo(msg.sender_id);
+                                      }}
+                                      {...{ [PARENT_HOVER_ATTR]: '' }}
+                                      className="message-action rounded p-1 text-xs text-gray-600"
+                                      aria-label={t('chatPanel.directMessage', {
+                                        name: msg.sender_name,
+                                      })}
+                                      title={t('chatPanel.directMessage', {
+                                        name: msg.sender_name,
+                                      })}
+                                    >
+                                      <Mail
+                                        aria-hidden
+                                        className="h-3.5 w-3.5"
+                                        trigger={parentIconTrigger}
+                                        size={14}
+                                      />
+                                    </button>
+                                  )}
                                 {/* Star message */}
                                 {(() => {
                                   const starId = msgStarId(msg);
@@ -2872,10 +3511,8 @@ function ChatPanel({
                                         toggleStar(msg);
                                       }}
                                       {...{ [PARENT_HOVER_ATTR]: '' }}
-                                      className={`rounded p-1 text-xs transition-colors ${
-                                        isStarred
-                                          ? 'text-amber-400 hover:text-amber-200'
-                                          : 'text-gray-600 hover:text-amber-400'
+                                      className={`message-action-star rounded p-1 text-xs ${
+                                        isStarred ? 'starred' : 'text-gray-600'
                                       }`}
                                       aria-label={
                                         isStarred
@@ -2994,6 +3631,23 @@ function ChatPanel({
       />
 
       {/* Compose emoji picker — Linux only; macOS/Windows use native showEmojiPanel() */}
+      {protocol === 'reticulum' &&
+        hasRncpTransfer &&
+        isDmMode &&
+        reticulumDmDestinationHash != null && (
+          <ChatDmRncpOfferBanner lxmfPeerHash={reticulumDmDestinationHash} />
+        )}
+      {protocol === 'reticulum' && isDmMode && reticulumDmMissingLxmf ? (
+        <div
+          role="status"
+          className="mt-1 rounded border border-amber-700/50 bg-amber-950/40 px-2 py-1.5 text-xs text-amber-200"
+        >
+          {t('chatPanel.reticulumChatNeedsLxmfDelivery')}
+        </div>
+      ) : null}
+      {protocol === 'reticulum' && hasLxmfPaper ? (
+        <ChatPaperScanControl sidecarRunning={reticulumStackLive} />
+      ) : null}
       <ChatComposer
         className="mt-1"
         protocol={protocol}
@@ -3002,7 +3656,7 @@ function ChatPanel({
         connectionType={connectionType}
         isMqttOnly={isMqttOnly}
         isDmMode={isDmMode}
-        disabled={dmOnlyChat && activeDmNode == null}
+        disabled={(dmOnlyChat && activeDmNode == null) || reticulumDmMissingLxmf}
         composerContext={viewMode === 'dm' ? 'dm' : 'channel'}
         senderDisplayName={composerSelfDisplayName}
         placeholder={composePlaceholder}
@@ -3032,6 +3686,18 @@ function ChatPanel({
           setUnreadDividerTimestamp(0);
         }}
         textareaRef={composerInputRef}
+        onVoiceMemo={
+          protocol === 'reticulum' &&
+          hasReticulumVoiceMemo &&
+          isDmMode &&
+          onVoiceMemo != null &&
+          !reticulumDmMissingLxmf
+            ? () => {
+                if (activeDmNode == null) return;
+                onVoiceMemo(activeDmNode);
+              }
+            : undefined
+        }
       />
 
       {chatActionError?.viewKey === viewKey && (

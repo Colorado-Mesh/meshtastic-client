@@ -4,23 +4,21 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-RNS_DIR="$(cd "${REPO_ROOT}/.." && pwd)/rsReticulum"
-LXMF_DIR="$(cd "${REPO_ROOT}/.." && pwd)/rsLXMF"
+# shellcheck source=lib/ratspeak-overlay-apply-list.sh
+source "${SCRIPT_DIR}/lib/ratspeak-overlay-apply-list.sh"
+RNS_DIR="${RS_RETICULUM_DIR:-${REPO_ROOT}/.rsstack/rsReticulum}"
+LXMF_DIR="${RS_LXMF_DIR:-${REPO_ROOT}/.rsstack/rsLXMF}"
 
 if [[ ! -d "${RNS_DIR}/.git" ]]; then
   echo "rsReticulum not found at ${RNS_DIR}; skipping overlay apply (stub build)"
   exit 0
 fi
 
-"${SCRIPT_DIR}/apply-rsReticulum-packet-tap.sh"
-"${SCRIPT_DIR}/apply-rsReticulum-auto-beacon-utun.sh"
-"${SCRIPT_DIR}/apply-rsReticulum-link-client-nomad.sh"
-"${SCRIPT_DIR}/apply-rsReticulum-rnode-tcp-activity-keepalive.sh"
-"${SCRIPT_DIR}/apply-rsReticulum-ble-rnode-pairing-transition-debounce.sh"
+apply_ratspeak_rns_overlays "${SCRIPT_DIR}"
 
 if [[ ! -d "${LXMF_DIR}/.git" ]]; then
   echo "rsLXMF not found at ${LXMF_DIR}; skipping lxmf overlay apply"
   exit 0
 fi
 
-"${SCRIPT_DIR}/apply-rsLXMF-propagation-sync-peering.sh"
+apply_ratspeak_lxmf_overlays "${SCRIPT_DIR}"

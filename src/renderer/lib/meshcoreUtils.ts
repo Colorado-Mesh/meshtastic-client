@@ -1,3 +1,5 @@
+import { touch } from '@/shared/touch';
+
 import { isValidLatLon } from '../../shared/geoCoords';
 import {
   meshcorePackPathLenByte,
@@ -7,6 +9,7 @@ import {
 } from '../../shared/meshcorePathHash';
 import { isPlaceholderLongName } from '../../shared/nodeNameUtils';
 import { errLikeToLogString } from './errLikeToLogString';
+import { filterOutMeshcoreLocallyDeletedContacts } from './meshcoreLocallyDeletedContacts';
 import { mergeMeshcoreLastHeardFromAdvert } from './nodeStatus';
 import type { ConnectionType, MeshNode } from './types';
 
@@ -90,18 +93,17 @@ export function meshcoreMergeChannelDisplayNameOntoNode(
 
 /**
  * Companion ContactMsgRecv / ChannelMsgRecv `pathLen` → chat RF hop count.
- * meshcore.js: ChannelMsgRecv uses 0xFF for direct; otherwise flood hop count.
- * Rejects out-of-range values (no `& 0xff` wrap) so negatives / oversized bytes
- * cannot become false "direct" or absurd hop badges. Flood counts above 63 are
- * rejected (RF path length max uses 6 bits); 0xFF remains the direct sentinel.
+ * `0xFF` = direct (0 hops). Flood values use the same packed path_length byte as
+ * on-air RF (low 6 bits = hop count, high 2 bits = hash-size code) — including
+ * multibyte path-hash modes where the packed byte is ≥ 64.
+ * Rejects non-finite / out-of-byte-range inputs (no wrap).
  */
 export function meshcoreCompanionRxPathLenToHopCount(pathLen: unknown): number | undefined {
   if (typeof pathLen !== 'number' || !Number.isFinite(pathLen)) return undefined;
   const n = Math.trunc(pathLen);
   if (n < 0 || n > 255) return undefined;
   if (n === 0xff) return 0;
-  if (n > 63) return undefined;
-  return n;
+  return meshcoreUnpackPathLenByte(n).hopCount;
 }
 
 /**
@@ -139,7 +141,7 @@ export function meshcoreTraceResultPackedPathLen(pathLenByte: number, traceFlags
 
 /** MeshCore companion lines that are transport metadata, not user channel chat (splitting on `:` would mispick `SNR:`). */
 export function isMeshcoreTransportStatusChatLine(text: string): boolean {
-  const t = (text ?? '').trim();
+  const t = text.trim();
   if (!t) return false;
   if (/^\s*ack\s+@/iu.test(t)) return true;
   if (/^\s*nack\s+@/iu.test(t)) return true;
@@ -202,7 +204,7 @@ export function mergeMeshcoreChatStubNodes(
       next.set(id, node);
     }
   }
-  return next;
+  return filterOutMeshcoreLocallyDeletedContacts(next);
 }
 
 /** Placeholder pubkey stored until a real contact (0x8A) replaces the row. */
@@ -251,6 +253,13 @@ export function pubKeyPrefixHex(publicKey: Uint8Array): string {
   return Array.from(publicKey.slice(0, 6))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
+}
+
+/** `!` + first 8 hex chars (4 bytes) of a MeshCore public key hex, for UI identity. */
+export function meshcorePubkeyShortId(publicKeyHex: string | undefined | null): string | null {
+  const h = (publicKeyHex ?? '').replace(/\s/g, '').toLowerCase();
+  if (h.length < 8) return null;
+  return `!${h.slice(0, 8)}`;
 }
 
 /**
@@ -368,8 +377,13 @@ export const MESHCORE_HW_MODELS_EXCLUDED_FROM_CONTACT_GROUPS: ReadonlySet<string
 ]);
 
 export function isMeshcoreContactEligibleForUserGroup(node: Pick<MeshNode, 'hw_model'>): boolean {
-  const hw = node.hw_model ?? '';
+  const hw = node.hw_model;
   return !MESHCORE_HW_MODELS_EXCLUDED_FROM_CONTACT_GROUPS.has(hw);
+}
+
+/** MeshCore roles that must not appear as Chat DM peers (Repeater + Room; Sensor stays eligible). */
+export function isMeshcoreDmExcludedHwModel(hwModel: string | undefined): boolean {
+  return hwModel != null && MESHCORE_HW_MODELS_EXCLUDED_FROM_CONTACT_GROUPS.has(hwModel);
 }
 
 interface MeshCoreContact {
@@ -404,6 +418,26 @@ export function meshcoreScaledAdvLatLonToDeg(
     return { lat: null, lon: null };
   }
   return { lat: latDeg, lon: lonDeg };
+}
+
+/**
+ * Formats MeshCore advert lat/lon for Radio Panel display.
+ * Returns null when both axes are missing / invalid (nothing to show).
+ */
+export function formatMeshcoreAdvertisedPositionDegrees(
+  advLat: number | undefined | null,
+  advLon: number | undefined | null,
+  fractionDigits = 5,
+): { lat: string; lon: string } | null {
+  const { lat, lon } = meshcoreScaledAdvLatLonToDeg(
+    typeof advLat === 'number' ? advLat : 0,
+    typeof advLon === 'number' ? advLon : 0,
+  );
+  if (lat == null && lon == null) return null;
+  return {
+    lat: lat != null ? lat.toFixed(fractionDigits) : '—',
+    lon: lon != null ? lon.toFixed(fractionDigits) : '—',
+  };
 }
 
 /**
@@ -530,25 +564,30 @@ export function meshcoreInferHopsFromOutPath(contact: {
 }
 
 /**
- * Hop count for room login timeout scaling when UI `hops_away` is 0/unknown but a route exists.
- * Failure point: firmware reports direct (0 hops) while `outPath` still holds multi-hop bytes.
+ * Hop count for room login path/timeout decisions.
+ * Prefer route bytes when UI reports 0 but `outPath` still holds multi-hop path.
+ * Do not trust sticky UI `hops_away > 0` alone with an empty path — that blocks 0-hop
+ * SendLogin (noRoute) for rooms that are actually direct (contact merge keeps old hops).
  */
 export function resolveMeshcoreRoomLoginHopsAway(
   node: Pick<MeshNode, 'hops_away'> | undefined,
   outPathBytes?: Uint8Array,
 ): number {
   const hops = node?.hops_away;
-  if (typeof hops === 'number' && Number.isFinite(hops) && hops > 0) {
+  const inferred =
+    outPathBytes && outPathBytes.length > 0
+      ? meshcoreInferHopsFromOutPath({ outPath: outPathBytes, outPathLen: -1 })
+      : undefined;
+  const hasMultiHopPath = inferred != null && inferred > 0;
+  if (typeof hops === 'number' && Number.isFinite(hops) && hops > 0 && hasMultiHopPath) {
     return Math.trunc(hops);
   }
-  if (outPathBytes && outPathBytes.length > 0) {
-    const inferred = meshcoreInferHopsFromOutPath({ outPath: outPathBytes, outPathLen: -1 });
-    if (inferred != null && inferred > 0) {
-      return inferred;
-    }
-    if (outPathBytes.length > 1) {
-      return Math.max(1, outPathBytes.length - 1);
-    }
+  if (inferred != null && inferred > 0) {
+    return inferred;
+  }
+  // Sticky multi-hop with no (trimmed) route bytes → treat as direct for login.
+  if (typeof hops === 'number' && Number.isFinite(hops) && hops >= 0 && !hasMultiHopPath) {
+    return 0;
   }
   if (typeof hops === 'number' && Number.isFinite(hops) && hops >= 0) {
     return Math.trunc(hops);
@@ -565,7 +604,7 @@ export function meshcoreMergeContactHopsAwayFromPrevious(
   prev: number | undefined,
   slicedPathByteLength: number,
 ): number | undefined {
-  void slicedPathByteLength;
+  touch(slicedPathByteLength);
   if (prev !== undefined && prev >= 1) {
     // Never replace a known multi-hop route with 0/unknown from a transient contact or RF parse:
     // firmware sometimes reports outPathLen/direct while bytes still imply hops, or packets carry hop 0.
@@ -578,6 +617,61 @@ export function meshcoreMergeContactHopsAwayFromPrevious(
     return prev;
   }
   return inferred;
+}
+
+export interface MeshcoreMergeContactAdvNameOpts {
+  prevLastHeard?: number;
+  radioLastAdvert?: number;
+}
+
+/**
+ * Advert name to merge against a `getContacts` dump. UI `long_name` is often the nickname overlay,
+ * so prefer a real previous advert name and fall back to the stored SQLite/live advert name.
+ */
+export function meshcorePreviousAdvertNameForRebuild(
+  prevLongName: string | undefined,
+  nickname: string | undefined,
+  storedAdvertName: string | undefined,
+  nodeId: number,
+): string | undefined {
+  const prev = (prevLongName ?? '').trim();
+  const nick = (nickname ?? '').trim();
+  const stored = (storedAdvertName ?? '').trim();
+  const prevIsNick = nick.length > 0 && prev === nick;
+  if (prev && !prevIsNick && !meshcoreIsPlaceholderNodeLongName(prev, nodeId)) {
+    return prev;
+  }
+  if (stored && !meshcoreIsPlaceholderNodeLongName(stored, nodeId)) {
+    return stored;
+  }
+  return undefined;
+}
+
+/**
+ * When rebuilding from `getContacts`, companion firmware often keeps the name from when the
+ * contact was first stored and may bump `lastAdvert` without renaming. Prefer a live advert
+ * name already in the UI whenever both names are real and differ; on-air adverts / local
+ * setAdvertName are the authoritative rename paths (`opts` kept for call-site compat).
+ */
+export function meshcoreMergeContactAdvNameFromPrevious(
+  radioAdvName: string | undefined,
+  prevLongName: string | undefined,
+  nodeId: number,
+  _opts?: MeshcoreMergeContactAdvNameOpts,
+): string {
+  touch(_opts);
+  const radioTrim = (radioAdvName ?? '').trim();
+  const prevTrim = (prevLongName ?? '').trim();
+  const radioReal = radioTrim.length > 0 && !meshcoreIsPlaceholderNodeLongName(radioTrim, nodeId);
+  const prevReal = prevTrim.length > 0 && !meshcoreIsPlaceholderNodeLongName(prevTrim, nodeId);
+  const hexFallback = `Node-${nodeId.toString(16).toUpperCase()}`;
+
+  if (!radioReal && prevReal) return prevTrim;
+  if (!prevReal) return radioTrim || prevTrim || hexFallback;
+  if (radioTrim === prevTrim) return radioTrim;
+  // Companion dump disagrees with a real live/previous name — keep the live name. lastAdvert
+  // is not a reliable name version (path hears often bump time without updating advName).
+  return prevTrim;
 }
 
 /** Result of mapping a heard RF advert (push 0x80) into UI + DB when the node is not yet a contact. */

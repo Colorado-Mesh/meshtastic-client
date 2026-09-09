@@ -3,8 +3,13 @@ import { create } from 'zustand';
 import { preferNonEmptyTrimmedString } from '@/shared/nodeNameUtils';
 
 import {
+  getMeshtasticConfigurePhase,
+  touchMeshtasticConfigureProgress,
+} from '../lib/meshtastic/meshtasticConfigurePhase';
+import {
   computeNodeInfoLastHeardMs,
   mergeMeshtasticLivePacketLastHeard,
+  mergeMeshtasticUserPacketLastHeard,
 } from '../lib/meshtasticLastHeard';
 import { mergeMeshcoreLastHeardFromAdvert } from '../lib/nodeStatus';
 import type {
@@ -61,6 +66,10 @@ export interface NodeRecord {
   lux?: number;
   windSpeed?: number;
   windDirection?: number;
+  lightningStrikeCount1h?: number;
+  lightningDistanceKm?: number;
+  pm25Standard?: number;
+  co2?: number;
   telemetryTimestamp?: number;
   snr?: number;
   rssi?: number;
@@ -87,6 +96,8 @@ export interface NodeRecord {
   publicKey?: Uint8Array;
   /** Meshtastic PKC public key hex from NodeInfo/User (remote admin destination key). */
   publicKeyHex?: string;
+  keyManuallyVerified?: boolean;
+  hasXeddsaSigned?: boolean;
   // MeshCore per-node op state (results of on-demand requests for repeaters /
   // remote nodes). Optional fields; non-MeshCore nodes leave them undefined.
   meshcoreNodeStatus?: StatusResult;
@@ -196,11 +207,22 @@ export function upsertNode(identityId: IdentityId, event: NodeInfoEvent): void {
     } else if (protocolType === 'meshtastic') {
       const selfNum = getConnection(identityId)?.myNodeNum ?? 0;
       const isSelf = selfNum > 0 && nodeId === selfNum;
-      lastHeardAt = computeNodeInfoLastHeardMs(
-        eventLastHeardAt,
-        existing?.lastHeardAt ?? 0,
-        isSelf,
-      );
+      if (event.fromUserPacket) {
+        lastHeardAt = mergeMeshtasticUserPacketLastHeard(
+          existing?.lastHeardAt ?? 0,
+          eventLastHeardAt ?? 0,
+          getMeshtasticConfigurePhase(),
+        );
+      } else {
+        lastHeardAt = computeNodeInfoLastHeardMs(
+          eventLastHeardAt,
+          existing?.lastHeardAt ?? 0,
+          isSelf,
+        );
+      }
+      if (getMeshtasticConfigurePhase() && !event.fromUserPacket) {
+        touchMeshtasticConfigureProgress();
+      }
     }
     const identityFields = nodeIdentityPatch(
       existing,
@@ -263,6 +285,24 @@ export function upsertNodeRecordsForIdentity(identityId: IdentityId, records: No
   });
 }
 
+/** Replace the full node bucket for an identity (post-delete DB reload). Empty clears nodes only. */
+export function replaceNodeRecordsForIdentity(identityId: IdentityId, records: NodeRecord[]): void {
+  useNodeStore.setState((s) => {
+    const prior = s.nodes[identityId] ?? {};
+    const byId: Record<number, NodeRecord> = {};
+    for (const record of records) {
+      const { nodeId, ...patch } = record;
+      byId[nodeId] = mergeNode(prior[nodeId], nodeId, patch);
+    }
+    return {
+      nodes: {
+        ...s.nodes,
+        [identityId]: byId,
+      },
+    };
+  });
+}
+
 function meshtasticLastHeardPatch(
   identityId: IdentityId,
   packetTimestampMs: number,
@@ -272,9 +312,16 @@ function meshtasticLastHeardPatch(
   const merged = mergeMeshtasticLivePacketLastHeard(
     existingLastHeardAt ?? 0,
     packetTimestampMs,
-    false,
+    getMeshtasticConfigurePhase(),
   );
   return merged > 0 ? merged : undefined;
+}
+
+function maybeTouchMeshtasticNodeDbConfigureProgress(identityId: IdentityId): void {
+  if (getIdentity(identityId)?.protocol.type !== 'meshtastic') return;
+  if (getMeshtasticConfigurePhase()) {
+    touchMeshtasticConfigureProgress();
+  }
 }
 
 /** Toggle favorite flag on a node in the identity-scoped store (UI reads this bucket). */
@@ -362,6 +409,7 @@ export function updatePosition(identityId: IdentityId, event: PositionEvent): vo
     const { nodeId, latitude, longitude, altitude, timestamp, groundSpeed, groundTrack } = event;
     const existing = byId[nodeId];
     const lastHeardAt = meshtasticLastHeardPatch(identityId, timestamp, existing?.lastHeardAt);
+    maybeTouchMeshtasticNodeDbConfigureProgress(identityId);
     return {
       nodes: {
         ...s.nodes,
@@ -400,6 +448,7 @@ export function updateTelemetry(identityId: IdentityId, event: TelemetryEvent): 
     } = event;
     const existing = byId[nodeId];
     const lastHeardAt = meshtasticLastHeardPatch(identityId, timestamp, existing?.lastHeardAt);
+    maybeTouchMeshtasticNodeDbConfigureProgress(identityId);
     return {
       nodes: {
         ...s.nodes,

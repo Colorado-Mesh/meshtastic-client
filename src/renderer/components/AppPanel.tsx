@@ -18,15 +18,27 @@ import {
 } from '../lib/appSettingsStorage';
 import { formatCoordPair } from '../lib/coordUtils';
 import { DEFAULT_APP_SETTINGS_SHARED } from '../lib/defaultAppSettings';
+import {
+  applyFontScale,
+  clampFontScale,
+  DEFAULT_FONT_SCALE,
+  FONT_SCALE_MAX,
+  FONT_SCALE_MIN,
+  FONT_SCALE_STEP,
+  loadFontScale,
+  persistFontScale,
+  resetFontScale,
+} from '../lib/fontScale';
 import type { OurPosition } from '../lib/gpsSource';
 import { getIdentityIdForProtocol } from '../lib/identityByProtocol';
+import { appPanelSettingsPersistPayload } from '../lib/meshcorePathHashMode';
 import {
   DEFAULT_MESSAGE_RETENTION,
-  fetchMessageRetention,
   MESSAGE_RETENTION_KEYS,
   MESSAGE_RETENTION_MAX_COUNT,
   MESSAGE_RETENTION_MIN_COUNT,
   type MessageRetentionSettings,
+  parseMessageRetention,
 } from '../lib/messageRetention';
 import { getNodeStatus, haversineDistanceKm } from '../lib/nodeStatus';
 import { parseStoredJson } from '../lib/parseStoredJson';
@@ -36,9 +48,14 @@ import { nodeRecordsToMeshNodeMap } from '../lib/storeRecordAdapters';
 import {
   applyThemeColors,
   DEFAULT_THEME_COLORS,
+  hasThemeSnapshot,
+  isMessageActionsBarBgVisible,
   loadThemeColors,
   persistThemeColors,
   resetThemeColors,
+  restoreThemeSnapshot,
+  saveThemeSnapshot,
+  setMessageActionsBarBgVisible,
   THEME_COLOR_PRESETS,
   THEME_TOKEN_META,
   type ThemeColorKey,
@@ -49,9 +66,9 @@ import { useDiagnosticsStore } from '../stores/diagnosticsStore';
 import { useNodeStore } from '../stores/nodeStore';
 import { usePositionHistoryStore } from '../stores/positionHistoryStore';
 import { useReticulumPeerStore } from '../stores/reticulumPeerStore';
+import { useTimeFormatStore } from '../stores/timeFormatStore';
 import { ConfirmModal } from './ConfirmModal';
 import { HelpTooltip } from './HelpTooltip';
-import { ReticulumAppPanelSection } from './ReticulumAppPanelSection';
 import { useToast } from './Toast';
 
 /** Sentinel for "clear all channels" so MeshCore DM (`channel_idx === -1`) does not collide with "All". */
@@ -94,24 +111,6 @@ function readNodesMapForProtocol(protocol: MeshProtocol): Map<number, MeshNode> 
   const byId = useNodeStore.getState().nodes[identityId] ?? {};
   return nodeRecordsToMeshNodeMap(Object.values(byId));
 }
-
-const DANGER_ACTION_LABEL_KEY: Record<DangerActionId, string> = {
-  resetDiagnostics: 'appPanel.resetDiagnostics',
-  clearGpsData: 'appPanel.clearGpsData',
-  clearPositionHistory: 'appPanel.clearPositionHistory',
-  deleteOldNodes: 'appPanel.deleteOldNodes',
-  pruneMqttOnlyNodes: 'appPanel.pruneMqttOnlyNodes',
-  pruneUnnamedNodes: 'appPanel.pruneUnnamedNodes',
-  pruneNoFixNodes: 'appPanel.pruneNoFixNodes',
-  pruneDistantNodes: 'appPanel.pruneDistantNodesTitle',
-  pruneOfflineNodes: 'appPanel.pruneOfflineNodesTitle',
-  clearNodes: 'appPanel.clearAllNodesButton',
-  deleteContactsNoPubkeys: 'appPanel.deleteContactsNoPubkeysTitle',
-  clearReticulumContacts: 'appPanel.clearReticulumContactsTitle',
-  clearMessages: 'appPanel.clearMessagesTitle',
-  clearAllRepeaters: 'appPanel.clearAllRepeaters',
-  clearAllData: 'appPanel.clearAllLocalData',
-};
 
 function gpsIntervalLabel(t: (key: string) => string, secs: number): string {
   switch (secs) {
@@ -160,12 +159,16 @@ interface AppSettings {
   meshcoreFloodScopeHashtag: string;
   meshcoreFloodScopePresets: string[];
   chatCompactMode: boolean;
+  alwaysShowMessageActions: boolean;
   storeForwardAutoFetchHistory: boolean;
   storeForwardHistoryProfile: 'conservative' | 'aggressive';
   shareLocationSendWaypoint: boolean;
+  shareMyLocation: boolean;
   reduceMotion: boolean;
+  use24HourTime: boolean;
   meshcoreOpenWireCompatEnabled: boolean;
   meshcorePathHashMode: 0 | 1 | 2;
+  rrcUnreadAllRoomMessages: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -205,13 +208,10 @@ interface Props {
   onAutoFloodAdvertIntervalChange?: (hours: number) => void;
   onAutoFloodAdvertTypeChange?: (type: 'flood' | 'zeroHop') => void;
   onChatCompactModeChange?: (compact: boolean) => void;
-  deviceReportedPathHashMode?: 0 | 1 | 2 | null;
-  isMeshcoreRadioConnected?: boolean;
-  onApplyMeshcorePathHashMode?: (mode: 0 | 1 | 2) => Promise<void>;
+  onAlwaysShowMessageActionsChange?: (alwaysShow: boolean) => void;
   /** Reticulum LXMF identity for DM-only message clear in Danger Zone. */
   reticulumIdentityId?: string | null;
   reticulumSidecarReady?: boolean;
-  reticulumControlsDisabled?: boolean;
 }
 
 interface PendingAction {
@@ -244,12 +244,9 @@ export default function AppPanel({
   onAutoFloodAdvertIntervalChange,
   onAutoFloodAdvertTypeChange,
   onChatCompactModeChange,
-  deviceReportedPathHashMode,
-  isMeshcoreRadioConnected = false,
-  onApplyMeshcorePathHashMode,
+  onAlwaysShowMessageActionsChange,
   reticulumIdentityId = null,
   reticulumSidecarReady = false,
-  reticulumControlsDisabled = false,
 }: Props) {
   const [soundNotifEnabled, setSoundNotifEnabled] = useState(
     () => localStorage.getItem('mesh-client:notifMuted') !== '1',
@@ -293,24 +290,81 @@ export default function AppPanel({
     };
   }, [t]);
 
-  const { nodeStaleThresholdMs, nodeOfflineThresholdMs, hasReticulumInterfaceConfig } =
+  const { nodeStaleThresholdMs, nodeOfflineThresholdMs, hasReticulumInterfaceConfig, hasRrcPanel } =
     useRadioProvider(protocol);
   const isReticulumDmOnly = hasReticulumInterfaceConfig;
 
   // ─── Node retention settings ────────────────────────────────
   const [settings, setSettings] = useState<AppSettings>(loadSettings);
   const [themeColors, setThemeColors] = useState<Record<ThemeColorKey, string>>(loadThemeColors);
+  const [hasSavedThemeSnapshot, setHasSavedThemeSnapshot] = useState<boolean>(hasThemeSnapshot);
+  const [messageActionsBarBgVisible, setMessageActionsBarBgVisibleState] = useState<boolean>(
+    isMessageActionsBarBgVisible(),
+  );
   const [deleteAgeDays, setDeleteAgeDays] = useState(90);
+  const [fontScale, setFontScale] = useState<number>(loadFontScale);
+
+  const updateFontScale = useCallback((next: number) => {
+    const clamped = clampFontScale(next);
+    setFontScale(clamped);
+    applyFontScale(clamped);
+    persistFontScale(clamped);
+  }, []);
+
+  const handleResetFontScale = useCallback(() => {
+    resetFontScale();
+    setFontScale(DEFAULT_FONT_SCALE);
+  }, []);
 
   const commitThemeColor = useCallback((key: ThemeColorKey, hex: string) => {
     setThemeColors((prev) => {
       if (prev[key] === hex) return prev;
       const next = { ...prev, [key]: hex };
-      applyThemeColors(next);
-      persistThemeColors(next);
-      return next;
+      // Prefer the clamped map applyThemeColors returns so readableGreen stays
+      // contrast-safe in React state and localStorage (not only on :root).
+      const applied = applyThemeColors(next);
+      if (!applied) return prev;
+      persistThemeColors(applied);
+      return applied;
     });
   }, []);
+
+  const handleSaveThemeSnapshot = useCallback(() => {
+    try {
+      saveThemeSnapshot();
+      setHasSavedThemeSnapshot(true);
+      addToast(t('appPanel.themeSaved'), 'success');
+    } catch (err) {
+      console.warn('[AppPanel] saveThemeSnapshot failed ' + errLikeToLogString(err));
+      addToast(t('appPanel.themeSaveFailed'), 'error');
+    }
+  }, [addToast, t]);
+
+  const handleRestoreThemeSnapshot = useCallback(() => {
+    try {
+      const restored = restoreThemeSnapshot();
+      setThemeColors(restored);
+      setMessageActionsBarBgVisibleState(isMessageActionsBarBgVisible());
+      addToast(t('appPanel.themeRestored'), 'success');
+    } catch (err) {
+      console.warn('[AppPanel] restoreThemeSnapshot failed ' + errLikeToLogString(err));
+      addToast(t('appPanel.themeRestoreFailed'), 'error');
+    }
+  }, [addToast, t]);
+
+  const handleResetThemeColors = useCallback(() => {
+    try {
+      // resetThemeColors() persists and applies the messageActionsBarBg visibility
+      // reset internally — just sync the React state mirrors here.
+      resetThemeColors();
+      setThemeColors({ ...DEFAULT_THEME_COLORS });
+      setMessageActionsBarBgVisibleState(false);
+      addToast(t('appPanel.colorsReset'), 'success');
+    } catch (err) {
+      console.warn('[AppPanel] resetThemeColors failed ' + errLikeToLogString(err));
+      addToast(t('appPanel.themeResetFailed'), 'error');
+    }
+  }, [addToast, t]);
 
   const handleExportSupportBundle = useCallback(
     async (mode: SupportBundleMode) => {
@@ -342,7 +396,7 @@ export default function AppPanel({
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
       mergeAppSettingsPartial(
-        settings as unknown as Record<string, unknown>,
+        appPanelSettingsPersistPayload(settings as unknown as Record<string, unknown>),
         'AppPanel saveSettings',
       );
     }, 300);
@@ -370,6 +424,10 @@ export default function AppPanel({
     onChatCompactModeChange?.(settings.chatCompactMode);
   }, [settings.chatCompactMode, onChatCompactModeChange]);
 
+  useEffect(() => {
+    onAlwaysShowMessageActionsChange?.(settings.alwaysShowMessageActions);
+  }, [settings.alwaysShowMessageActions, onAlwaysShowMessageActionsChange]);
+
   const updateSetting = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
     mergeAppSetting(key, value, 'AppPanel updateSetting');
@@ -381,13 +439,18 @@ export default function AppPanel({
           console.warn('[AppPanel] reduceMotion persist failed ' + errLikeToLogString(err));
         });
     }
+    if (key === 'use24HourTime') {
+      void window.electronAPI.appSettings
+        .set('use24HourTime', value ? 'true' : 'false')
+        .catch((err: unknown) => {
+          console.warn('[AppPanel] use24HourTime persist failed ' + errLikeToLogString(err));
+        });
+    }
   };
 
-  // ─── DB-backed message retention (issue #387) ─────────────────
-  // Source of truth lives in SQLite (`app_settings` KV table). Hydrate on
-  // mount; debounce writes through IPC. Two independent caps gated by the
-  // currently selected protocol — pruning still runs for both tables on
-  // startup (see App.tsx) since both stacks may be active simultaneously.
+  // ─── DB-backed settings hydrate (message retention + 24h clock) ─
+  // Source of truth lives in SQLite (`app_settings` KV table). One getAll()
+  // on mount so tests that mockResolvedValueOnce still see retention keys.
   const [retention, setRetention] = useState<MessageRetentionSettings>({
     ...DEFAULT_MESSAGE_RETENTION,
   });
@@ -396,14 +459,24 @@ export default function AppPanel({
 
   useEffect(() => {
     let cancelled = false;
-    fetchMessageRetention()
-      .then((loaded) => {
+    void window.electronAPI.appSettings
+      .getAll()
+      .then((raw) => {
         if (cancelled) return;
+        const use24 = raw?.use24HourTime;
+        if (use24 === 'true' || use24 === 'false') {
+          const enabled = use24 === 'true';
+          useTimeFormatStore.getState().hydrateFromSqlite(enabled);
+          setSettings((prev) =>
+            prev.use24HourTime === enabled ? prev : { ...prev, use24HourTime: enabled },
+          );
+        }
+        const loaded = parseMessageRetention(raw);
         setRetention(loaded);
         lastSavedRetentionRef.current = loaded;
       })
-      .catch((e: unknown) => {
-        console.warn('[AppPanel] fetchMessageRetention failed ' + errLikeToLogString(e));
+      .catch((err: unknown) => {
+        console.warn('[AppPanel] app settings hydrate failed ' + errLikeToLogString(err));
       });
     return () => {
       cancelled = true;
@@ -628,7 +701,7 @@ export default function AppPanel({
 
   const handleConfirm = useCallback(async () => {
     if (!pendingAction) return;
-    const { actionId, action, messageClearMeta } = pendingAction;
+    const { actionId, action, messageClearMeta, title } = pendingAction;
     setPendingAction(null);
     try {
       await action();
@@ -639,7 +712,7 @@ export default function AppPanel({
       }
       addToast(
         t('appPanel.actionCompleted', {
-          name: t(DANGER_ACTION_LABEL_KEY[actionId]),
+          name: title,
         }),
         'success',
       );
@@ -729,17 +802,33 @@ export default function AppPanel({
         </div>
       )}
 
-      {protocol === 'reticulum' ? (
-        <ReticulumAppPanelSection
-          sidecarReady={reticulumSidecarReady}
-          disabled={reticulumControlsDisabled}
-        />
-      ) : null}
-
       {/* GPS / Location */}
       <div className="space-y-3">
         <h3 className="text-muted text-sm font-medium">{t('appPanel.gpsSection')}</h3>
         <div className="bg-secondary-dark space-y-4 rounded-lg p-4">
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="shareMyLocation"
+              checked={settings.shareMyLocation}
+              onChange={(e) => {
+                const enabled = e.target.checked;
+                updateSetting('shareMyLocation', enabled);
+                if (!enabled) {
+                  handleGpsIntervalChange(0);
+                }
+              }}
+              aria-label={t('appPanel.shareMyLocation')}
+              className="accent-brand-green"
+            />
+            <label htmlFor="shareMyLocation" className="cursor-pointer text-sm text-gray-300">
+              {t('appPanel.shareMyLocation')}
+            </label>
+            <HelpTooltip text={t('appPanel.shareMyLocationHint')} />
+          </div>
+          {!settings.shareMyLocation && (
+            <p className="text-muted text-xs">{t('appPanel.shareMyLocationOffInfo')}</p>
+          )}
           {ourPosition && (
             <p className="text-brand-green text-xs">
               {ourPosition.source === 'device'
@@ -832,9 +921,9 @@ export default function AppPanel({
               onChange={(e) => {
                 handleGpsIntervalChange(Number(e.target.value));
               }}
-              disabled={hasStaticPosition}
+              disabled={hasStaticPosition || !settings.shareMyLocation}
               aria-label={`${t('appPanel.autoRefreshInterval')} ${gpsIntervalLabel(t, gpsRefreshInterval)}`}
-              className={`bg-deep-black focus:border-brand-green rounded border border-gray-600 px-2 py-1 text-sm text-gray-200 focus:outline-none ${hasStaticPosition ? 'cursor-not-allowed opacity-40' : ''}`}
+              className={`bg-deep-black focus:border-brand-green rounded border border-gray-600 px-2 py-1 text-sm text-gray-200 focus:outline-none ${hasStaticPosition || !settings.shareMyLocation ? 'cursor-not-allowed opacity-40' : ''}`}
             >
               <option value={0}>{t('appPanel.gpsIntervalManual')}</option>
               <option value={900}>{t('appPanel.gpsInterval15min')}</option>
@@ -868,9 +957,10 @@ export default function AppPanel({
           <button
             type="button"
             onClick={() => onRefreshGps?.()}
-            disabled={gpsLoading}
+            disabled={gpsLoading || !settings.shareMyLocation}
+            title={!settings.shareMyLocation ? t('appPanel.shareMyLocationOffInfo') : undefined}
             aria-label={gpsLoading ? t('appPanel.gpsRefreshing') : t('appPanel.gpsRefreshNow')}
-            className={`bg-secondary-dark rounded-lg px-4 py-2 text-sm font-medium text-gray-300 transition-colors ${gpsLoading ? 'cursor-not-allowed opacity-50' : 'hover:bg-gray-600'}`}
+            className={`bg-secondary-dark rounded-lg px-4 py-2 text-sm font-medium text-gray-300 transition-colors ${gpsLoading || !settings.shareMyLocation ? 'cursor-not-allowed opacity-50' : 'hover:bg-gray-600'}`}
           >
             {gpsLoading ? t('appPanel.gpsRefreshing') : t('appPanel.gpsRefreshNow')}
           </button>
@@ -1323,12 +1413,12 @@ export default function AppPanel({
                 id="apppanel-reticulum-destination-cap-count"
                 type="number"
                 min={1}
-                max={50000}
+                max={100000}
                 value={settings.reticulumDestinationCapCount}
                 onChange={(e) => {
                   updateSetting(
                     'reticulumDestinationCapCount',
-                    Math.max(1, Math.min(50000, parseInt(e.target.value) || 1)),
+                    Math.max(1, Math.min(100000, parseInt(e.target.value) || 1)),
                   );
                 }}
                 disabled={!settings.reticulumDestinationCapEnabled}
@@ -1343,91 +1433,6 @@ export default function AppPanel({
                   count: settings.reticulumDestinationCapCount,
                 })}
               </span>
-            </div>
-          </div>
-        )}
-
-        {/* MeshCore Open wire compatibility (experimental) */}
-        {protocol === 'meshcore' && (
-          <div className="space-y-2">
-            <h3 className="text-muted text-sm font-medium">
-              {t('appPanel.meshcoreOpenWireExperimentalTitle')}
-            </h3>
-            <div className="space-y-3 rounded-lg border border-yellow-700 bg-yellow-900/30 px-4 py-3">
-              <div className="flex items-start gap-2">
-                <input
-                  type="checkbox"
-                  id="meshcoreOpenWireCompat"
-                  checked={settings.meshcoreOpenWireCompatEnabled}
-                  onChange={(e) => {
-                    updateSetting('meshcoreOpenWireCompatEnabled', e.target.checked);
-                  }}
-                  aria-label={t('appPanel.meshcoreOpenWireCompatLabel')}
-                  className="accent-brand-green mt-0.5"
-                />
-                <label
-                  htmlFor="meshcoreOpenWireCompat"
-                  className="flex-1 cursor-pointer text-sm text-yellow-100"
-                >
-                  {t('appPanel.meshcoreOpenWireCompatLabel')}
-                </label>
-              </div>
-              <p className="text-xs leading-relaxed text-yellow-300/90">
-                {t('appPanel.meshcoreOpenWireCompatHint')}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {protocol === 'meshcore' && (
-          <div className="space-y-2">
-            <h3 className="text-muted text-sm font-medium">
-              {t('appPanel.meshcorePathHashExperimentalTitle')}
-            </h3>
-            <div className="space-y-3 rounded-lg border border-yellow-700 bg-yellow-900/30 px-4 py-3">
-              <label htmlFor="meshcore-path-hash-mode" className="text-sm text-yellow-100">
-                {t('appPanel.meshcorePathHashModeLabel')}
-              </label>
-              <select
-                id="meshcore-path-hash-mode"
-                value={settings.meshcorePathHashMode}
-                onChange={(e) => {
-                  const raw = Number.parseInt(e.target.value, 10);
-                  if (raw !== 0 && raw !== 1 && raw !== 2) return;
-                  updateSetting('meshcorePathHashMode', raw);
-                  if (isMeshcoreRadioConnected && onApplyMeshcorePathHashMode) {
-                    void onApplyMeshcorePathHashMode(raw).catch((err: unknown) => {
-                      addToast(
-                        t('appPanel.meshcorePathHashApplyFailed', {
-                          message: err instanceof Error ? err.message : t('common.unknown'),
-                        }),
-                        'error',
-                      );
-                    });
-                  }
-                }}
-                aria-label={t('appPanel.meshcorePathHashModeLabel')}
-                className="bg-deep-black focus:border-brand-green w-full max-w-md rounded border border-gray-600 px-2 py-1.5 text-sm text-gray-200 focus:outline-none"
-              >
-                <option value={0}>{t('appPanel.meshcorePathHashMode1Byte')}</option>
-                <option value={1}>{t('appPanel.meshcorePathHashMode2Byte')}</option>
-                <option value={2}>{t('appPanel.meshcorePathHashMode3Byte')}</option>
-              </select>
-              {deviceReportedPathHashMode != null && isMeshcoreRadioConnected ? (
-                <p className="text-xs text-yellow-200/90">
-                  {t('appPanel.meshcorePathHashDeviceReported', {
-                    mode:
-                      deviceReportedPathHashMode === 0
-                        ? t('appPanel.meshcorePathHashModeShort0')
-                        : deviceReportedPathHashMode === 1
-                          ? t('appPanel.meshcorePathHashModeShort1')
-                          : t('appPanel.meshcorePathHashModeShort2'),
-                  })}
-                </p>
-              ) : null}
-              <p className="text-xs leading-relaxed text-yellow-300/90">
-                {t('appPanel.meshcorePathHashModeHint')}
-              </p>
             </div>
           </div>
         )}
@@ -1652,6 +1657,25 @@ export default function AppPanel({
             <label htmlFor="chatCompactMode" className="cursor-pointer text-sm text-gray-300">
               {t('appPanel.compactMessages')}
             </label>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="alwaysShowMessageActions"
+              checked={settings.alwaysShowMessageActions}
+              onChange={(e) => {
+                updateSetting('alwaysShowMessageActions', e.target.checked);
+              }}
+              aria-label={t('appPanel.alwaysShowMessageActions')}
+              className="accent-brand-green"
+            />
+            <label
+              htmlFor="alwaysShowMessageActions"
+              className="cursor-pointer text-sm text-gray-300"
+            >
+              {t('appPanel.alwaysShowMessageActions')}
+            </label>
+            <HelpTooltip text={t('appPanel.alwaysShowMessageActionsDesc')} />
           </div>
           {protocol === 'meshtastic' && (
             <>
@@ -1886,6 +1910,79 @@ export default function AppPanel({
           </label>
           <HelpTooltip text={t('appPanel.reduceMotionDesc')} />
         </div>
+        <div className="bg-secondary-dark flex items-center gap-2 rounded-lg border border-gray-700 px-4 py-3">
+          <input
+            type="checkbox"
+            id="use24HourTime"
+            checked={settings.use24HourTime}
+            onChange={(e) => {
+              updateSetting('use24HourTime', e.target.checked);
+              useTimeFormatStore.getState().setUse24HourTime(e.target.checked);
+            }}
+            aria-label={t('appPanel.use24HourTime')}
+            className="accent-brand-green"
+          />
+          <label htmlFor="use24HourTime" className="cursor-pointer text-sm text-gray-300">
+            {t('appPanel.use24HourTime')}
+          </label>
+          <HelpTooltip text={t('appPanel.use24HourTimeDesc')} />
+        </div>
+        <div className="bg-secondary-dark flex flex-col gap-2 rounded-lg border border-gray-700 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <label htmlFor="fontScale" className="cursor-pointer text-sm text-gray-300">
+              {t('appPanel.fontSize')}
+            </label>
+            <HelpTooltip text={t('appPanel.fontSizeDesc')} />
+            <span className="text-muted ml-auto text-xs" aria-live="polite">
+              {Math.round(fontScale * 100)}%
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              aria-label={t('appPanel.decreaseFontSize')}
+              onClick={() => {
+                updateFontScale(fontScale - FONT_SCALE_STEP);
+              }}
+              disabled={fontScale <= FONT_SCALE_MIN}
+              className="rounded border border-gray-600 px-2 py-1 text-sm text-gray-300 transition-colors hover:bg-gray-600 disabled:opacity-40"
+            >
+              −
+            </button>
+            <input
+              id="fontScale"
+              type="range"
+              min={FONT_SCALE_MIN}
+              max={FONT_SCALE_MAX}
+              step={FONT_SCALE_STEP}
+              value={fontScale}
+              aria-label={t('appPanel.fontSize')}
+              onChange={(e) => {
+                updateFontScale(Number.parseFloat(e.target.value));
+              }}
+              className="accent-brand-green flex-1"
+            />
+            <button
+              type="button"
+              aria-label={t('appPanel.increaseFontSize')}
+              onClick={() => {
+                updateFontScale(fontScale + FONT_SCALE_STEP);
+              }}
+              disabled={fontScale >= FONT_SCALE_MAX}
+              className="rounded border border-gray-600 px-2 py-1 text-sm text-gray-300 transition-colors hover:bg-gray-600 disabled:opacity-40"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              aria-label={t('appPanel.resetFontSizeAria')}
+              onClick={handleResetFontScale}
+              className="text-muted text-xs underline transition-colors hover:text-gray-300"
+            >
+              {t('appPanel.resetFontSize')}
+            </button>
+          </div>
+        </div>
         <details className="group bg-secondary-dark rounded-lg border border-gray-700">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-4 py-3 text-sm font-medium text-gray-200 hover:bg-gray-800/40 [&::-webkit-details-marker]:hidden">
             <span>{t('appPanel.colorScheme')}</span>
@@ -1895,6 +1992,10 @@ export default function AppPanel({
             <p className="text-muted text-xs">{t('appPanel.themeColorsApplyHint')}</p>
             {THEME_TOKEN_META.map((meta) => {
               const hex = themeColors[meta.key];
+              // messageActionsBarBg is hidden (opacity 0) until the "Show background"
+              // checkbox is on — fade the preview swatch to match what's actually applied.
+              const swatchOpacity =
+                meta.key === 'messageActionsBarBg' && !messageActionsBarBgVisible ? 0.15 : 1;
               return (
                 <div
                   key={meta.key}
@@ -1902,7 +2003,7 @@ export default function AppPanel({
                 >
                   <span
                     className="h-6 w-6 shrink-0 rounded border border-gray-600"
-                    style={{ backgroundColor: hex }}
+                    style={{ backgroundColor: hex, opacity: swatchOpacity }}
                     title={hex}
                     aria-hidden="true"
                   />
@@ -1942,22 +2043,56 @@ export default function AppPanel({
                         />
                       );
                     })}
+                    {meta.key === 'messageActionsBarBg' && (
+                      <label className="ml-2 flex items-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          checked={messageActionsBarBgVisible}
+                          onChange={(e) => {
+                            const newValue = e.target.checked;
+                            setMessageActionsBarBgVisibleState(newValue);
+                            setMessageActionsBarBgVisible(newValue);
+                          }}
+                          className="h-4 w-4"
+                          aria-label={t('appPanel.messageActionsBarBgVisible')}
+                        />
+                        <span className="text-[10px] text-gray-400">
+                          {t('appPanel.messageActionsBarBgVisible')}
+                        </span>
+                      </label>
+                    )}
                   </div>
                 </div>
               );
             })}
-            <button
-              type="button"
-              onClick={() => {
-                resetThemeColors();
-                setThemeColors({ ...DEFAULT_THEME_COLORS });
-                addToast(t('appPanel.colorsReset'), 'success');
-              }}
-              aria-label={t('appPanel.resetAllColors')}
-              className="bg-deep-black w-full rounded-lg border border-gray-600 px-3 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-700"
-            >
-              {t('appPanel.resetAllColorsButton')}
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleSaveThemeSnapshot}
+                aria-label={t('appPanel.saveTheme')}
+                className="bg-deep-black flex-1 rounded-lg border border-gray-600 px-3 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-700"
+              >
+                {t('appPanel.saveThemeButton')}
+              </button>
+              <button
+                type="button"
+                onClick={handleRestoreThemeSnapshot}
+                disabled={!hasSavedThemeSnapshot}
+                aria-label={t('appPanel.restoreTheme')}
+                title={hasSavedThemeSnapshot ? undefined : t('appPanel.noSavedThemeTooltip')}
+                className="bg-deep-black disabled:hover:bg-deep-black flex-1 rounded-lg border border-gray-600 px-3 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {t('appPanel.restoreThemeButton')}
+              </button>
+              <button
+                type="button"
+                onClick={handleResetThemeColors}
+                aria-label={t('appPanel.resetAllColors')}
+                className="bg-deep-black flex-1 rounded-lg border border-gray-600 px-3 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-700"
+              >
+                {t('appPanel.resetAllColorsButton')}
+              </button>
+            </div>
           </div>
         </details>
       </div>
@@ -1980,6 +2115,31 @@ export default function AppPanel({
             {t('appPanel.soundNotifications')}
           </label>
         </div>
+        {hasRrcPanel && (
+          <div className="space-y-1">
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="rrcUnreadAllRoomMessages"
+                checked={settings.rrcUnreadAllRoomMessages}
+                onChange={(e) => {
+                  updateSetting('rrcUnreadAllRoomMessages', e.target.checked);
+                }}
+                aria-label={t('appPanel.rrcUnreadAllRoomMessages')}
+                className="accent-brand-green h-4 w-4 rounded"
+              />
+              <label
+                htmlFor="rrcUnreadAllRoomMessages"
+                className="cursor-pointer text-sm text-gray-300"
+              >
+                {t('appPanel.rrcUnreadAllRoomMessages')}
+              </label>
+            </div>
+            <p className="text-muted pl-7 text-xs leading-relaxed">
+              {t('appPanel.rrcUnreadAllRoomMessagesHint')}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Danger Zone — collapsible; same pattern as Appearance → Color scheme */}

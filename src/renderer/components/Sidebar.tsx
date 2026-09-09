@@ -19,6 +19,10 @@ interface SidebarProps {
   roomsUnread?: number;
   /** Unread RRC message count for RRC tab badge; 0 hides badge */
   rrcUnread?: number;
+  /** Pending rncp inbound offers for Remote tab badge; 0 hides badge */
+  remotePendingOffers?: number;
+  /** Unread LRGP game session count for Games tab badge; 0 hides badge */
+  gamesUnread?: number;
   /** Set of tab indices that are disabled (greyed out, non-clickable) */
   disabledTabs?: Set<number>;
   collapsed: boolean;
@@ -33,6 +37,8 @@ export default function Sidebar({
   chatUnread = 0,
   roomsUnread = 0,
   rrcUnread = 0,
+  remotePendingOffers = 0,
+  gamesUnread = 0,
   disabledTabs,
   collapsed,
   onToggle,
@@ -64,19 +70,30 @@ export default function Sidebar({
           const showChatBadge = slotId === 'Chat' && chatUnread > 0;
           const showRoomsBadge = slotId === 'Rooms' && roomsUnread > 0;
           const showRrcBadge = slotId === 'RRC' && rrcUnread > 0;
+          const showRemoteBadge = slotId === 'Remote' && remotePendingOffers > 0;
+          const showGamesBadge = slotId === 'Games' && gamesUnread > 0;
           const badgeCount = showChatBadge
             ? chatUnread
             : showRoomsBadge
               ? roomsUnread
               : showRrcBadge
                 ? rrcUnread
-                : 0;
-          const showBadge = showChatBadge || showRoomsBadge || showRrcBadge;
+                : showRemoteBadge
+                  ? remotePendingOffers
+                  : showGamesBadge
+                    ? gamesUnread
+                    : 0;
+          const showBadge =
+            showChatBadge || showRoomsBadge || showRrcBadge || showRemoteBadge || showGamesBadge;
           const tabAriaLabel = showBadge
-            ? t('aria.tabWithUnread', {
-                label: displayLabel,
-                count: badgeCount > 99 ? '99+' : badgeCount,
-              })
+            ? showRemoteBadge
+              ? badgeCount > 99
+                ? t('reticulumRemote.transfer.pendingOffersBadgeAriaCapped')
+                : t('reticulumRemote.transfer.pendingOffersBadgeAria', { count: badgeCount })
+              : t('aria.tabWithUnread', {
+                  label: displayLabel,
+                  count: badgeCount > 99 ? '99+' : badgeCount,
+                })
             : displayLabel;
 
           return (
@@ -108,7 +125,11 @@ export default function Sidebar({
               <span className="relative shrink-0">
                 <TabIcon name={slotId} />
                 {showBadge && (
-                  <span className="absolute -top-1.5 -right-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
+                  <span
+                    className={`absolute -top-1.5 -right-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-bold text-white ${
+                      showRemoteBadge ? 'bg-amber-800' : 'bg-red-600'
+                    }`}
+                  >
                     {badgeCount > 99 ? '99+' : badgeCount}
                   </span>
                 )}

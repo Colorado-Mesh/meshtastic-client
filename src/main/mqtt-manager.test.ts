@@ -7,6 +7,8 @@ import * as mqtt from 'mqtt';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MQTTSettings } from '../renderer/lib/types';
+import { computeMeshtasticChannelHash } from '../shared/meshtasticChannelHash';
+import { MESHTASTIC_DEFAULT_PUBLIC_PSK_BYTES } from '../shared/meshtasticDefaultPublicPsk';
 import {
   BAD_ENVELOPE_SIGNATURE_MAX,
   bufferListIncludesKey,
@@ -38,13 +40,36 @@ const { ServiceEnvelopeSchema } = MqttProto;
 const { UserSchema, PositionSchema, DataSchema, MeshPacketSchema } = Mesh;
 const { PortNum } = Portnums;
 
-const DEFAULT_PSK = Buffer.from([
-  0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-]);
+// The real firmware default channel key (Channels.h `defaultpsk`) — matches production
+// MESHTASTIC_DEFAULT_PUBLIC_PSK_BYTES / mqtt-manager DEFAULT_PSK, not a hand-copied literal,
+// so this fixture can't silently drift from the value parsePsk("AQ==") actually produces.
+const DEFAULT_PSK = Buffer.from(MESHTASTIC_DEFAULT_PUBLIC_PSK_BYTES);
 
 const CUSTOM_PSK = Buffer.from([
   0x1e, 0x2f, 0x3a, 0x4b, 0x5c, 0x6d, 0x7e, 0x8f, 0x90, 0xa1, 0xb2, 0xc3, 0xd4, 0xe5, 0xf6, 0x07,
 ]);
+
+/** Wire a mock, already-connected `mqtt` client + settings onto `manager`; returns the publish spy. */
+function wireConnected(manager: MQTTManager): ReturnType<typeof vi.fn> {
+  const publish = vi.fn();
+  (manager as unknown as { client: unknown }).client = {
+    on: vi.fn(),
+    end: vi.fn(),
+    removeAllListeners: vi.fn(),
+    connected: true,
+    publish,
+    subscribe: vi.fn(),
+  };
+  (manager as unknown as { currentSettings: MQTTSettings }).currentSettings = {
+    server: 'localhost',
+    port: 1883,
+    username: '',
+    password: '',
+    topicPrefix: 'msh/US/',
+    autoLaunch: false,
+  };
+  return publish;
+}
 
 /** Build the AES-128-CTR nonce used by Meshtastic: packetId (4 LE) + fromId (4 LE) + 8 zeros */
 function makeNonce(packetId: number, fromId: number): Buffer {
@@ -165,11 +190,28 @@ describe('parsePsk', () => {
     expect(result!).toEqual(CUSTOM_PSK);
   });
 
-  it('zero-pads a short key (1 byte) to 16 bytes', () => {
+  it('expands the default PSK shorthand alias (AQ== / 0x01) to the real firmware key, not zero-padded', () => {
     const result = parsePsk('AQ=='); // [0x01]
     expect(result).not.toBeNull();
     expect(result!.length).toBe(16);
-    expect(result![0]).toBe(0x01);
+    expect(result).toEqual(Buffer.from(MESHTASTIC_DEFAULT_PUBLIC_PSK_BYTES));
+  });
+
+  it('expands "simple" preset shorthand aliases (0x02-0x0a) via the default key + offset', () => {
+    for (let index = 2; index <= 10; index++) {
+      const result = parsePsk(Buffer.from([index]).toString('base64'));
+      expect(result).not.toBeNull();
+      const expected = Buffer.from(MESHTASTIC_DEFAULT_PUBLIC_PSK_BYTES);
+      expected[15] = (expected[15] + (index - 1)) & 0xff;
+      expect(result).toEqual(expected);
+    }
+  });
+
+  it('zero-pads a 1-byte value outside the defined 0x01-0x0a alias range', () => {
+    const result = parsePsk(Buffer.from([200]).toString('base64'));
+    expect(result).not.toBeNull();
+    expect(result!.length).toBe(16);
+    expect(result![0]).toBe(200);
     expect(result!.subarray(1).every((b) => b === 0)).toBe(true);
   });
 
@@ -282,27 +324,6 @@ describe('parseMeshtasticMqttEncryptedTopicGatewayId', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('publish — MQTT uplink JSON mirror', () => {
-  function wireConnected(manager: MQTTManager): ReturnType<typeof vi.fn> {
-    const publish = vi.fn();
-    (manager as unknown as { client: unknown }).client = {
-      on: vi.fn(),
-      end: vi.fn(),
-      removeAllListeners: vi.fn(),
-      connected: true,
-      publish,
-      subscribe: vi.fn(),
-    };
-    (manager as unknown as { currentSettings: MQTTSettings }).currentSettings = {
-      server: 'localhost',
-      port: 1883,
-      username: '',
-      password: '',
-      topicPrefix: 'msh/US/',
-      autoLaunch: false,
-    };
-    return publish;
-  }
-
   it('publishes only protobuf when publishJsonMirror is false', () => {
     const manager = new MQTTManager();
     const publish = wireConnected(manager);
@@ -365,6 +386,116 @@ describe('publish — MQTT uplink JSON mirror', () => {
     const body = JSON.parse(publish.mock.calls[1][1] as string) as Record<string, unknown>;
     expect(body.portnum).toBe('WAYPOINT_APP');
     expect(body.type).toBe('waypoint');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// publishEncryptedData — MeshPacket.channel is the wire hash, not the local slot index
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('publish — MeshPacket.channel wire hash', () => {
+  function decodePublishedPacket(publish: ReturnType<typeof vi.fn>, callIndex = 0) {
+    const envelope = fromBinary(
+      ServiceEnvelopeSchema,
+      publish.mock.calls[callIndex][1] as Uint8Array,
+    );
+    return envelope.packet;
+  }
+
+  it('publish() stamps the name+PSK hash, not the local slot index, for the default channel', () => {
+    const manager = new MQTTManager();
+    const publish = wireConnected(manager);
+    manager.publish({
+      text: 'hi',
+      from: 0x11223344,
+      channel: 5, // local slot index — must not leak onto the wire
+      channelName: 'LongFast',
+      publishJsonMirror: false,
+    });
+    const packet = decodePublishedPacket(publish);
+    expect(packet?.channel).toBe(computeMeshtasticChannelHash('LongFast', DEFAULT_PSK));
+    expect(packet?.channel).not.toBe(5);
+  });
+
+  it('publish() stamps the name+PSK hash for a custom-PSK channel', () => {
+    const manager = new MQTTManager();
+    const publish = wireConnected(manager);
+    manager.publish({
+      text: 'hi',
+      from: 0x11223344,
+      channel: 1,
+      channelName: 'TGIFMESH',
+      pskBase64: CUSTOM_PSK.toString('base64'),
+      publishJsonMirror: false,
+    });
+    const packet = decodePublishedPacket(publish);
+    expect(packet?.channel).toBe(computeMeshtasticChannelHash('TGIFMESH', CUSTOM_PSK));
+  });
+
+  it('publishNodeInfo() stamps the hash instead of its hardcoded 0', () => {
+    const manager = new MQTTManager();
+    const publish = wireConnected(manager);
+    manager.publishNodeInfo(
+      0x11223344,
+      'Long Name',
+      'LN',
+      'TGIFMESH',
+      undefined,
+      false,
+      CUSTOM_PSK.toString('base64'),
+    );
+    const packet = decodePublishedPacket(publish);
+    expect(packet?.channel).toBe(computeMeshtasticChannelHash('TGIFMESH', CUSTOM_PSK));
+  });
+
+  it('publishPosition() and publishWaypoint() also stamp the hash, not the passed slot index', () => {
+    const manager = new MQTTManager();
+    const publish = wireConnected(manager);
+    manager.publishPosition(
+      0x11223344,
+      3,
+      'TGIFMESH',
+      450000000,
+      -900000000,
+      undefined,
+      false,
+      CUSTOM_PSK.toString('base64'),
+    );
+    expect(decodePublishedPacket(publish)?.channel).toBe(
+      computeMeshtasticChannelHash('TGIFMESH', CUSTOM_PSK),
+    );
+
+    manager.publishWaypoint(
+      0x11223344,
+      0xffffffff,
+      3,
+      'TGIFMESH',
+      { id: 1, latitudeI: 0, longitudeI: 0, name: 'x' },
+      false,
+      CUSTOM_PSK.toString('base64'),
+    );
+    expect(decodePublishedPacket(publish, 1)?.channel).toBe(
+      computeMeshtasticChannelHash('TGIFMESH', CUSTOM_PSK),
+    );
+  });
+
+  it('JSON mirror channel field matches the same hash as the encrypted packet, not the local slot', () => {
+    const manager = new MQTTManager();
+    const publish = wireConnected(manager);
+    manager.publish({
+      text: 'hi',
+      from: 0x11223344,
+      channel: 4, // local slot index — must not leak into either wire representation
+      channelName: 'TGIFMESH',
+      pskBase64: CUSTOM_PSK.toString('base64'),
+      publishJsonMirror: true,
+    });
+    expect(publish).toHaveBeenCalledTimes(2);
+    const encryptedChannel = decodePublishedPacket(publish, 0)?.channel;
+    const jsonBody = JSON.parse(publish.mock.calls[1][1] as string) as Record<string, unknown>;
+    const expectedHash = computeMeshtasticChannelHash('TGIFMESH', CUSTOM_PSK);
+    expect(encryptedChannel).toBe(expectedHash);
+    expect(jsonBody.channel).toBe(expectedHash);
   });
 });
 
@@ -1263,6 +1394,22 @@ describe('connect — channelPsks parsing', () => {
 });
 
 describe('updateChannelKeys', () => {
+  /** Test-only surface for private MQTTManager members used by channel-map regressions. */
+  interface MqttManagerChannelTestAccess {
+    _doConnect: () => void;
+    channelNameToIndex: Map<string, number>;
+    channelKeysByName: Map<string, Buffer>;
+    onMessage: (topic: string, payload: Buffer) => void;
+  }
+
+  function mqttChannelTestAccess(manager: MQTTManager): MqttManagerChannelTestAccess {
+    return manager as unknown as MqttManagerChannelTestAccess;
+  }
+
+  function stubMqttConnect(manager: MQTTManager): void {
+    mqttChannelTestAccess(manager)._doConnect = () => {};
+  }
+
   it('registers radio channel keys for decrypt and publish', () => {
     const manager = new MQTTManager();
     (manager as any)._doConnect = () => {};
@@ -1347,7 +1494,7 @@ describe('updateChannelKeys', () => {
 
   it('stores LongFast index mapping from default public radio sync', () => {
     const manager = new MQTTManager();
-    (manager as any)._doConnect = () => {};
+    stubMqttConnect(manager);
     manager.connect({
       server: 'localhost',
       port: 1883,
@@ -1359,13 +1506,149 @@ describe('updateChannelKeys', () => {
 
     manager.updateChannelKeys([{ name: 'LongFast', pskBase64: 'AQ==', index: 1 }]);
 
-    const nameToIndex: Map<string, number> = (manager as any).channelNameToIndex;
-    expect(nameToIndex.get('LongFast')).toBe(1);
+    expect(mqttChannelTestAccess(manager).channelNameToIndex.get('LongFast')).toBe(1);
+    expect(manager.getChannelNameToIndex()).toEqual({ LongFast: 1 });
+  });
+
+  it('cold-start then RF re-push: empty map then LongFast@1 (resolvedChannelConfigs path)', () => {
+    const manager = new MQTTManager();
+    stubMqttConnect(manager);
+    const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    manager.connect({
+      server: 'localhost',
+      port: 1883,
+      username: '',
+      password: '',
+      topicPrefix: 'msh/US/CO/',
+      autoLaunch: false,
+    });
+
+    // MQTT connected before RF channel configs arrived.
+    expect(manager.getChannelNameToIndex().LongFast).toBeUndefined();
+
+    manager.updateChannelKeys([{ name: 'LongFast', pskBase64: 'AQ==', index: 1 }]);
+    expect(manager.getChannelNameToIndex().LongFast).toBe(1);
+    expect(debugSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/\[Meshtastic MQTT\] channelNameToIndex updated \(1\): LongFast=1/),
+    );
+    debugSpy.mockRestore();
+  });
+
+  it('Nathan/Colorado: radio LongFast@1 overrides manual LongFast@0 for topic attribution', () => {
+    const manager = new MQTTManager();
+    const access = mqttChannelTestAccess(manager);
+    stubMqttConnect(manager);
+    manager.connect({
+      server: 'localhost',
+      port: 1883,
+      username: '',
+      password: '',
+      topicPrefix: 'msh/US/CO/',
+      autoLaunch: false,
+      channelPsks: ['LongFast@0=AQ=='],
+    });
+
+    expect(access.channelNameToIndex.get('LongFast')).toBe(0);
+
+    manager.updateChannelKeys([{ name: 'LongFast', pskBase64: 'AQ==', index: 1 }]);
+
+    expect(manager.getChannelNameToIndex().LongFast).toBe(1);
+    // Manual default-public PSK preserved when radio also pushes AQ==
+    expect(access.channelKeysByName.get('LongFast')?.equals(DEFAULT_PSK)).toBe(true);
+  });
+
+  it('Nathan/Colorado: inbound LongFast topic + packet channel 0 attributes to slot 1 after radio sync overrides @0', () => {
+    const manager = new MQTTManager();
+    const access = mqttChannelTestAccess(manager);
+    stubMqttConnect(manager);
+    manager.connect({
+      server: 'localhost',
+      port: 1883,
+      username: '',
+      password: '',
+      topicPrefix: 'msh/US/CO/',
+      autoLaunch: false,
+      channelPsks: ['LongFast@0=AQ=='],
+    });
+    manager.updateChannelKeys([{ name: 'LongFast', pskBase64: 'AQ==', index: 1 }]);
+
+    const nodeId = 0x095cf12b;
+    const packetId = 0x00000099;
+    const dataBytes = toBinary(
+      DataSchema,
+      create(DataSchema, {
+        portnum: PortNum.TEXT_MESSAGE_APP,
+        payload: new TextEncoder().encode('Good morning everyone!'),
+      }),
+    );
+    const payload = buildEnvelope({
+      nodeId,
+      packetId,
+      dataBytes,
+      psk: DEFAULT_PSK,
+      channelName: 'LongFast',
+      channel: 0,
+    });
+
+    const messages: unknown[] = [];
+    manager.on('message', (m) => messages.push(m));
+    access.onMessage('msh/US/CO/2/e/LongFast/!095cf12b', payload);
+
+    expect(messages).toHaveLength(1);
+    expect((messages[0] as { channel: number }).channel).toBe(1);
+  });
+
+  it('Nathan/Colorado: JSON LongFast with manual @0 then radio @1 attributes to slot 1', () => {
+    const manager = new MQTTManager();
+    const access = mqttChannelTestAccess(manager);
+    stubMqttConnect(manager);
+    manager.connect({
+      server: 'localhost',
+      port: 1883,
+      username: '',
+      password: '',
+      topicPrefix: 'msh/US/CO/',
+      autoLaunch: false,
+      channelPsks: ['LongFast@0=AQ=='],
+    });
+    manager.updateChannelKeys([{ name: 'LongFast', pskBase64: 'AQ==', index: 1 }]);
+
+    const nodeId = 0xaabbccdd;
+    const json = {
+      type: 'text',
+      from: nodeId,
+      channel: 0,
+      text: 'json public chat',
+    };
+
+    const messages: unknown[] = [];
+    manager.on('message', (m) => messages.push(m));
+    access.onMessage('msh/US/CO/2/json/LongFast/!aabbccdd', Buffer.from(JSON.stringify(json)));
+
+    expect(messages).toHaveLength(1);
+    expect((messages[0] as { channel: number }).channel).toBe(1);
+  });
+
+  it('keeps LongFast@1 when manual and radio both say slot 1', () => {
+    const manager = new MQTTManager();
+    stubMqttConnect(manager);
+    manager.connect({
+      server: 'localhost',
+      port: 1883,
+      username: '',
+      password: '',
+      topicPrefix: 'msh/',
+      autoLaunch: false,
+      channelPsks: ['LongFast@1=AQ=='],
+    });
+    manager.updateChannelKeys([{ name: 'LongFast', pskBase64: 'AQ==', index: 1 }]);
+    expect(manager.getChannelNameToIndex().LongFast).toBe(1);
   });
 
   it('preserves manual Garber PSK when radio sync pushes a different key', () => {
     const manager = new MQTTManager();
-    (manager as any)._doConnect = () => {};
+    const access = mqttChannelTestAccess(manager);
+    stubMqttConnect(manager);
     const customGarber = Buffer.alloc(32, 0x11);
     const radioGarber = Buffer.alloc(32, 0x22);
 
@@ -1383,9 +1666,8 @@ describe('updateChannelKeys', () => {
       { name: 'Garber', pskBase64: radioGarber.toString('base64'), index: 2 },
     ]);
 
-    const byName: Map<string, Buffer> = (manager as any).channelKeysByName;
-    expect(byName.get('Garber')?.equals(customGarber)).toBe(true);
-    expect(byName.get('Garber')?.equals(radioGarber)).toBe(false);
+    expect(access.channelKeysByName.get('Garber')?.equals(customGarber)).toBe(true);
+    expect(access.channelKeysByName.get('Garber')?.equals(radioGarber)).toBe(false);
 
     const nodeId = 0x11223344;
     const packetId = 0x00000041;
@@ -1406,7 +1688,7 @@ describe('updateChannelKeys', () => {
 
     const messages: unknown[] = [];
     manager.on('message', (m) => messages.push(m));
-    (manager as any).onMessage('msh/US/2/e/Garber/!11223344', payload);
+    access.onMessage('msh/US/2/e/Garber/!11223344', payload);
 
     expect(messages).toHaveLength(1);
     expect((messages[0] as { payload: string }).payload).toBe('manual garber key');
@@ -1454,27 +1736,6 @@ describe('updateChannelKeys', () => {
 });
 
 describe('publish — decrypt round-trip (explicit PSK)', () => {
-  function wireConnected(manager: MQTTManager): ReturnType<typeof vi.fn> {
-    const publish = vi.fn();
-    (manager as unknown as { client: unknown }).client = {
-      on: vi.fn(),
-      end: vi.fn(),
-      removeAllListeners: vi.fn(),
-      connected: true,
-      publish,
-      subscribe: vi.fn(),
-    };
-    (manager as unknown as { currentSettings: MQTTSettings }).currentSettings = {
-      server: 'localhost',
-      port: 1883,
-      username: '',
-      password: '',
-      topicPrefix: 'msh/US/',
-      autoLaunch: false,
-    };
-    return publish;
-  }
-
   it('decrypts broker echo of publish when pskBase64 is only passed on publish IPC', () => {
     const manager = new MQTTManager();
     (manager as any)._doConnect = () => {};
@@ -3046,6 +3307,15 @@ describe('portNumEnumToProtoName', () => {
     expect(portNumEnumToProtoName(PortNum.NODEINFO_APP)).toBe('NODEINFO_APP');
   });
 
+  it('names the portnums added in protobufs 2.8.0', () => {
+    expect(portNumEnumToProtoName(11)).toBe('ALERT_APP');
+    expect(portNumEnumToProtoName(12)).toBe('KEY_VERIFICATION_APP');
+    expect(portNumEnumToProtoName(13)).toBe('REMOTE_SHELL_APP');
+    expect(portNumEnumToProtoName(36)).toBe('NODE_STATUS_APP');
+    expect(portNumEnumToProtoName(37)).toBe('MESH_BEACON_APP');
+    expect(portNumEnumToProtoName(78)).toBe('ATAK_PLUGIN_V2');
+  });
+
   it('returns UNKNOWN_APP for unmapped port numbers', () => {
     expect(portNumEnumToProtoName(999_999)).toBe('UNKNOWN_APP');
   });
@@ -3084,5 +3354,77 @@ describe('enforceBadEnvelopeSignatureCap', () => {
     expect(map.size).toBe(BAD_ENVELOPE_SIGNATURE_MAX);
     expect(map.has('sig-0')).toBe(false);
     expect(map.has(`sig-${BAD_ENVELOPE_SIGNATURE_MAX + 4}`)).toBe(true);
+  });
+});
+
+describe('MQTTManager stale client isolation', () => {
+  const settings: MQTTSettings = {
+    server: 'localhost',
+    port: 1883,
+    username: '',
+    password: '',
+    topicPrefix: 'msh/US/',
+    autoLaunch: false,
+    maxRetries: 3,
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.mocked(mqtt.connect).mockClear();
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  /** Distinct client object per connect() so handler identity can be distinguished. */
+  function trackDistinctClients() {
+    const made: { on: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> }[] = [];
+    vi.mocked(mqtt.connect).mockImplementation((() => {
+      const client = {
+        on: vi.fn(),
+        end: vi.fn(),
+        removeAllListeners: vi.fn(),
+        connected: false,
+        publish: vi.fn(),
+        subscribe: vi.fn(),
+      };
+      made.push(client);
+      return client;
+    }) as unknown as typeof mqtt.connect);
+    return made;
+  }
+
+  it('ignores close from a replaced client instead of reconnecting over the live one', () => {
+    const made = trackDistinctClients();
+    const manager = new MQTTManager();
+    manager.on('error', () => {});
+
+    manager.connect(settings);
+    manager.connect(settings);
+    expect(made).toHaveLength(2);
+
+    // mqtt.js may emit close for the first client after end(true); it must not schedule a
+    // reconnect that tears down the second, live client.
+    lastHandler(made[0], 'close')();
+    vi.advanceTimersByTime(300_000);
+
+    expect(mqtt.connect).toHaveBeenCalledTimes(2);
+  });
+
+  it('still reconnects when the live client closes', () => {
+    const made = trackDistinctClients();
+    const manager = new MQTTManager();
+    manager.on('error', () => {});
+
+    manager.connect(settings);
+    expect(made).toHaveLength(1);
+
+    lastHandler(made[0], 'close')();
+    vi.advanceTimersByTime(300_000);
+
+    expect(vi.mocked(mqtt.connect).mock.calls.length).toBeGreaterThan(1);
   });
 });

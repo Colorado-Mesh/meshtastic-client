@@ -31,13 +31,20 @@ import { ReticulumSidecarAutoBeaconTracker } from './reticulumSidecarAutoBeaconT
 import { ReticulumSidecarInterfaceIssueTracker } from './reticulumSidecarIssueTracker';
 import {
   logReticulumSidecarStderrLine,
+  resolveSidecarRustLog,
   ReticulumSidecarStderrDedupe,
+  shouldForwardReticulumSidecarStdout,
 } from './reticulumSidecarStderrLog';
 import { startSidecarWatchdog } from './reticulumSidecarWatchdog';
+import { ReticulumStackSessionTracker } from './reticulumStackSessionTracker';
 
 const HEALTH_POLL_INTERVAL_MS = 250;
 const HEALTH_POLL_TIMEOUT_MS = 30 * MS_PER_SECOND;
+/** Wait for BLE RNode detach via POST /api/v1/stack/prepare-stop before SIGTERM. */
+const PREPARE_STOP_TIMEOUT_MS = 1 * MS_PER_SECOND;
 const STOP_GRACE_MS = 5 * MS_PER_SECOND;
+/** App is exiting: skip the BLE detach drain and SIGKILL quickly so quit stays responsive. */
+const QUIT_STOP_GRACE_MS = 750;
 /** After yielding Noble BLE, allow CoreBluetooth/btleplug to settle before sidecar connect. */
 const RETICULUM_BLE_RNODE_NOBLE_SETTLE_MS = 500;
 
@@ -50,6 +57,7 @@ export function sidecarChildEnv(): NodeJS.ProcessEnv {
     TMPDIR: process.env.TMPDIR, // NOSONAR passthrough of existing env var only; no temp file write here
     LANG: process.env.LANG,
     LC_ALL: process.env.LC_ALL,
+    RUST_LOG: resolveSidecarRustLog(),
   };
   if (process.platform === 'win32') {
     env.APPDATA = process.env.APPDATA;
@@ -144,7 +152,9 @@ async function pollSidecarHealth(port: number): Promise<ReticulumStatusResponse>
         lastError = `status ${res.status}`;
       } else {
         const body = (await res.json()) as ReticulumStatusResponse;
-        if (body.status === 'ok') return body;
+        if (body.status === 'ok') {
+          return body;
+        }
         lastError = `unexpected status field: ${body.status}`;
       }
     } catch (err) {
@@ -159,13 +169,39 @@ async function pollSidecarHealth(port: number): Promise<ReticulumStatusResponse>
 export class ReticulumSidecarManager extends EventEmitter {
   private proc: ChildProcess | null = null;
   private ws: { close: () => void } | null = null;
+  private voiceWs: { close: () => void } | null = null;
   private wsPort = 0;
   private wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private voiceWsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private wsReconnectAttempt = 0;
+  private voiceWsReconnectAttempt = 0;
+  /** True after the first successful WS open for this sidecar process (reconnects set reconnect=true). */
+  private wsEverConnected = false;
   private startPromise: Promise<ReticulumSidecarStatus> | null = null;
+  /** In-flight stop — start must await so a fresh spawn does not race SIGTERM exit. */
+  private stopPromise: Promise<void> | null = null;
+  /**
+   * Set by stop() so an in-flight startOnce exits at the next checkpoint instead of
+   * spawning after cargo/BLE yield. Lets Cancel/Disconnect return without waiting on cargo.
+   */
+  private startAbortRequested = false;
+  /**
+   * Bumped on stop and each new start so a late Noble yield from an aborted attempt
+   * cannot observe a cleared startAbortRequested from a newer start.
+   */
+  private startAttemptGeneration = 0;
+  /** Latched by stop({ forQuit: true }) so an in-flight graceful stop escalates to quit speed. */
+  private quitFastRequested = false;
+  /** Aborts an in-flight prepare-stop fetch when quit escalates a graceful stop. */
+  private stopPrepareAbort: AbortController | null = null;
+  /** Shortens the SIGTERM grace of an in-flight stop when quit escalates it. */
+  private escalateStopKill: (() => void) | null = null;
   private readonly stderrDedupe = new ReticulumSidecarStderrDedupe();
   private readonly autoBeaconTracker = new ReticulumSidecarAutoBeaconTracker();
   private readonly interfaceIssueTracker = new ReticulumSidecarInterfaceIssueTracker();
+  private readonly stackSessionTracker = new ReticulumStackSessionTracker(
+    path.join(app.getPath('userData'), 'reticulum', 'stack-sessions.json'),
+  );
   private lastIssueStatusEmitAt = 0;
   private watchdogStop: (() => void) | null = null;
   private _status: ReticulumSidecarStatus = {
@@ -184,6 +220,7 @@ export class ReticulumSidecarManager extends EventEmitter {
       ...this._status,
       autoBeaconAlert: this.autoBeaconTracker.getAlert(),
       interfaceIssueAlert: this.interfaceIssueTracker.getAlert(),
+      stackFastFlapSuspected: this.stackSessionTracker.isFastFlapSuspected(),
     };
   }
 
@@ -234,6 +271,7 @@ export class ReticulumSidecarManager extends EventEmitter {
 
   private finalizeStopped(): void {
     this.stopWatchdog();
+    this.stackSessionTracker.recordStop();
     this.clearSidecarTrackers();
     this._status = { running: false, port: 0, pid: null, healthy: true, unhealthySince: undefined };
     this.emit('status', this.getStatus());
@@ -244,18 +282,41 @@ export class ReticulumSidecarManager extends EventEmitter {
   }
 
   async start(opts: ReticulumSidecarStartOptions = {}): Promise<ReticulumSidecarStatus> {
+    // After Cancel/stop aborts an in-flight start, do not rejoin that doomed promise —
+    // wait for it to clear, then start fresh.
+    if (this.startPromise && this.startAbortRequested) {
+      try {
+        await this.startPromise;
+      } catch {
+        // catch-no-log-ok: previous start aborted or failed; continue with a new start
+      }
+    }
     if (this.startPromise) {
       return this.startPromise;
     }
+    this.startAbortRequested = false;
+    this.quitFastRequested = false;
+    this.startAttemptGeneration += 1;
     this.startPromise = this.startOnce(opts).finally(() => {
       this.startPromise = null;
     });
     return this.startPromise;
   }
 
+  /** Abort in-flight start at await checkpoints (cargo / BLE yield / pre-spawn). */
+  private throwIfStartAborted(releaseNobleYield?: () => void): void {
+    if (!this.startAbortRequested) return;
+    releaseNobleYield?.();
+    throw new Error('RETICULUM_SIDECAR_START_ABORTED: stop requested during start');
+  }
+
   private async startOnce(
     opts: ReticulumSidecarStartOptions = {},
   ): Promise<ReticulumSidecarStatus> {
+    if (this.stopPromise) {
+      await this.stopPromise;
+    }
+    this.throwIfStartAborted();
     if (opts.reuseIfRunning && this._status.running && this.proc) {
       try {
         await pollSidecarHealth(this._status.port);
@@ -284,31 +345,18 @@ export class ReticulumSidecarManager extends EventEmitter {
     }
 
     const needsBleRnodeNobleYield = reticulumConfigDirHasEnabledBleRnode(configDir);
-    let nobleYieldHeldForStart = false;
-    if (needsBleRnodeNobleYield) {
-      await bleCoexistenceCoordinator.suspendNobleForReticulumBleConnect();
-      nobleYieldHeldForStart = true;
-      await new Promise((r) => setTimeout(r, RETICULUM_BLE_RNODE_NOBLE_SETTLE_MS));
-    }
-
-    const releaseNobleYieldOnStartFailure = (): void => {
-      if (!nobleYieldHeldForStart) return;
-      nobleYieldHeldForStart = false;
-      bleCoexistenceCoordinator.releaseScan('reticulum');
-    };
 
     const port = await findFreePort();
     const binary = this.resolveBinaryPath();
     try {
       await ensureDevSidecarBinary(binary);
+      this.throwIfStartAborted();
     } catch (err) {
-      releaseNobleYieldOnStartFailure();
       const msg = err instanceof Error ? err.message : String(err);
       this._status = { running: false, port: 0, pid: null, lastError: msg };
       throw new Error(msg);
     }
     if (!fs.existsSync(binary)) {
-      releaseNobleYieldOnStartFailure();
       const msg = app.isPackaged
         ? `RETICULUM_SIDECAR_BUNDLED_MISSING: packaged sidecar binary not found at ${binary}`
         : `Reticulum sidecar binary not found: ${binary}. Run \`pnpm run reticulum:sidecar:build\` from the repo root (requires Rust).`;
@@ -316,6 +364,10 @@ export class ReticulumSidecarManager extends EventEmitter {
       throw new Error(msg);
     }
 
+    this.throwIfStartAborted();
+    // Kick Noble yield only after health succeeds (below) so Cancel during cargo/spawn
+    // never suspends Meshtastic/MeshCore, while TCP/API readiness still does not await BLE.
+    const needsBleYieldAfterHealth = needsBleRnodeNobleYield;
     const args = [
       '--headless',
       '--host',
@@ -334,10 +386,24 @@ export class ReticulumSidecarManager extends EventEmitter {
     });
     this.proc = proc;
 
-    proc.stdout?.on('data', (chunk: Buffer) => {
-      const text = sanitizeLogMessage(chunk.toString('utf8').trim());
+    let stdoutBuffer = '';
+    const processStdoutLine = (line: string): void => {
+      const text = sanitizeLogMessage(line.trim());
+      if (!text) return;
       this.recordSidecarOutputLine(text);
-      console.debug('[ReticulumSidecar]', text);
+      if (!shouldForwardReticulumSidecarStdout(text)) return;
+      // WARN/ERROR and PN-triage INFO must reach mesh-client.log (debug is filtered in packaged).
+      console.warn('[ReticulumSidecar]', text);
+    };
+    proc.stdout?.on('data', (chunk: Buffer) => {
+      stdoutBuffer += chunk.toString('utf8');
+      const lines = stdoutBuffer.split(/\r?\n/);
+      stdoutBuffer = lines.pop() ?? '';
+      for (const line of lines) processStdoutLine(line);
+    });
+    proc.stdout?.on('end', () => {
+      if (stdoutBuffer) processStdoutLine(stdoutBuffer);
+      stdoutBuffer = '';
     });
     proc.stderr?.on('data', (chunk: Buffer) => {
       const text = sanitizeLogMessage(chunk.toString('utf8').trim());
@@ -359,7 +425,11 @@ export class ReticulumSidecarManager extends EventEmitter {
     proc.on('exit', (code, signal) => {
       console.debug(`[ReticulumSidecar] exited code=${code ?? 'null'} signal=${signal ?? 'null'}`);
       this.teardownWs();
+      // The watchdog no-ops once proc is null, but leaving it armed leaks its interval
+      // across the next spawn.
+      this.stopWatchdog();
       this.proc = null;
+      this.stackSessionTracker.recordStop();
       this.clearSidecarTrackers();
       this._status = {
         running: false,
@@ -373,14 +443,20 @@ export class ReticulumSidecarManager extends EventEmitter {
     try {
       await pollSidecarHealth(port);
     } catch (err) {
-      releaseNobleYieldOnStartFailure();
       const msg = err instanceof Error ? err.message : String(err);
       await this.stopProc();
       this._status = { running: false, port: 0, pid: null, lastError: msg };
       throw new Error(msg);
     }
 
-    nobleYieldHeldForStart = false;
+    // stop() kills the child during the health poll ("Process already spawned (e.g. health
+    // poll): kill via stopProc"), so a health response landing just before the kill would
+    // otherwise report a dead PID as running, connect a WS to a dead port, and arm a
+    // watchdog for a process that is already gone.
+    this.throwIfStartAborted();
+    if (this.proc !== proc) {
+      throw new Error('RETICULUM_SIDECAR_START_ABORTED: process replaced during start');
+    }
 
     this._status = {
       running: true,
@@ -389,10 +465,52 @@ export class ReticulumSidecarManager extends EventEmitter {
       healthy: true,
       unhealthySince: undefined,
     };
+    this.stackSessionTracker.recordStart();
     this.connectWs(port);
     this.startWatchdog();
+    // Mark yield pending before status emit so RF auto-connect does not race fire-and-forget yield.
+    if (needsBleYieldAfterHealth) {
+      bleCoexistenceCoordinator.setNobleYieldDecisionPending(true);
+    } else {
+      bleCoexistenceCoordinator.setNobleYieldDecisionPending(false);
+    }
     this.emit('status', this.getStatus());
+    // Do not await BLE yield — TCP/LXMF/RRC/Nomad are already usable. Start yield only
+    // after health so Cancel during cargo never yanks Meshtastic/MeshCore.
+    if (needsBleYieldAfterHealth) {
+      const yieldGeneration = this.startAttemptGeneration;
+      void this.yieldNobleForEnabledBleRnode()
+        .catch((e: unknown) => {
+          console.warn(
+            '[ReticulumSidecar] background Noble yield for BLE RNode failed:',
+            sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+          );
+        })
+        .finally(() => {
+          // Overlapping start/stop: only the current attempt may clear pending.
+          if (yieldGeneration === this.startAttemptGeneration) {
+            bleCoexistenceCoordinator.setNobleYieldDecisionPending(false);
+          }
+        });
+    }
     return this.getStatus();
+  }
+
+  /**
+   * Yield CoreBluetooth/Noble to the sidecar for BLE RNode (macOS/Windows).
+   * Runs after health so stack TCP features are not gated on BLE.
+   */
+  private async yieldNobleForEnabledBleRnode(): Promise<void> {
+    const attemptGeneration = this.startAttemptGeneration;
+    if (this.startAbortRequested) return;
+    await bleCoexistenceCoordinator.suspendNobleForReticulumBleConnect();
+    if (this.startAbortRequested || attemptGeneration !== this.startAttemptGeneration) {
+      if (bleCoexistenceCoordinator.getState().scanOwner === 'reticulum') {
+        bleCoexistenceCoordinator.releaseScan('reticulum');
+      }
+      return;
+    }
+    await new Promise((r) => setTimeout(r, RETICULUM_BLE_RNODE_NOBLE_SETTLE_MS));
   }
 
   private startWatchdog(): void {
@@ -412,8 +530,8 @@ export class ReticulumSidecarManager extends EventEmitter {
       },
       restartFn: async () => {
         // Hung-only: process still alive but HTTP dead. Renderer owns exit/crash reconnect.
-        this.stopWatchdog();
-        await this.stopProc();
+        // Use stop() so stopPromise stays set and concurrent start() awaits the guard.
+        await this.stop();
         await this.start();
       },
     });
@@ -424,18 +542,50 @@ export class ReticulumSidecarManager extends EventEmitter {
     this.watchdogStop = null;
   }
 
-  async stop(): Promise<void> {
-    if (this.startPromise) {
-      await this.startPromise.catch(() => {
-        // catch-no-log-ok: in-flight start may fail; explicit stop still runs afterward
+  /**
+   * Stop the sidecar. `forQuit` skips the BLE detach drain and shortens the SIGTERM grace —
+   * the app is exiting, so the OS reclaims the child and no other stack reuses the adapter.
+   */
+  async stop(opts: { forQuit?: boolean } = {}): Promise<void> {
+    if (opts.forQuit) {
+      this.quitFastRequested = true;
+    }
+    // Abort in-flight start at checkpoints (cargo/BLE) so Cancel does not wait on build.
+    this.startAbortRequested = true;
+    this.startAttemptGeneration += 1;
+    // Invalidate any in-flight yield's finally before a subsequent start can latch pending again.
+    bleCoexistenceCoordinator.setNobleYieldDecisionPending(false);
+    if (this.startPromise && !this.proc) {
+      // Pre-spawn: do not await cargo — startOnce throws at next checkpoint.
+      void this.startPromise.catch(() => {
+        // catch-no-log-ok: aborted/failed start; stop continues without blocking UI
+      });
+    } else if (this.startPromise) {
+      // Process already spawned (e.g. health poll): kill via stopProc; do not wait on health.
+      void this.startPromise.catch(() => {
+        // catch-no-log-ok: start fails when proc is killed mid-health-poll
       });
     }
-    await this.stopProc();
+    if (this.stopPromise) {
+      if (opts.forQuit) {
+        // A graceful stop is already draining; do not let quit wait on it.
+        this.stopPrepareAbort?.abort();
+        this.escalateStopKill?.();
+      }
+      return this.stopPromise;
+    }
+    this.stopPromise = this.stopProc().finally(() => {
+      this.stopPromise = null;
+    });
+    return this.stopPromise;
   }
 
   private async stopProc(): Promise<void> {
     this.stopWatchdog();
     this.teardownWs();
+    if (!this.quitFastRequested) {
+      await this.prepareStopBestEffort();
+    }
     if (bleCoexistenceCoordinator.getState().scanOwner === 'reticulum') {
       bleCoexistenceCoordinator.releaseScan('reticulum');
     }
@@ -447,14 +597,22 @@ export class ReticulumSidecarManager extends EventEmitter {
     }
 
     await new Promise<void>((resolve) => {
-      const killTimer = setTimeout(() => {
+      const forceKill = (): void => {
         try {
           proc.kill('SIGKILL');
         } catch {
           // catch-no-log-ok: process may already be gone during forced shutdown
         }
         resolve();
-      }, STOP_GRACE_MS);
+      };
+      let killTimer = setTimeout(
+        forceKill,
+        this.quitFastRequested ? QUIT_STOP_GRACE_MS : STOP_GRACE_MS,
+      );
+      this.escalateStopKill = () => {
+        clearTimeout(killTimer);
+        killTimer = setTimeout(forceKill, QUIT_STOP_GRACE_MS);
+      };
 
       proc.once('exit', () => {
         clearTimeout(killTimer);
@@ -470,7 +628,42 @@ export class ReticulumSidecarManager extends EventEmitter {
       }
     });
 
+    this.escalateStopKill = null;
     this.finalizeStopped();
+  }
+
+  /** Ask the sidecar to detach BLE RNode before process kill (best-effort). */
+  private async prepareStopBestEffort(): Promise<void> {
+    const status = this.getStatus();
+    if (!status.running || status.port <= 0 || !this.proc) {
+      return;
+    }
+    const abort = new AbortController();
+    this.stopPrepareAbort = abort;
+    const timeoutTimer = setTimeout(() => {
+      abort.abort();
+    }, PREPARE_STOP_TIMEOUT_MS);
+    try {
+      const res = await fetch(`http://127.0.0.1:${status.port}/api/v1/stack/prepare-stop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+        signal: abort.signal,
+      });
+      if (!res.ok) {
+        console.debug(
+          `[ReticulumSidecar] prepare-stop HTTP ${res.status} — continuing with SIGTERM`,
+        );
+      }
+    } catch (e: unknown) {
+      console.debug(
+        '[ReticulumSidecar] prepare-stop failed — continuing with SIGTERM:',
+        sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+      );
+    } finally {
+      clearTimeout(timeoutTimer);
+      this.stopPrepareAbort = null;
+    }
   }
 
   async proxyGet(apiPath: string): Promise<unknown> {
@@ -479,8 +672,9 @@ export class ReticulumSidecarManager extends EventEmitter {
       throw new Error('Reticulum sidecar is not running');
     }
     const normalized = assertReticulumProxyPath(apiPath);
+    const timeoutMs = reticulumProxyGetTimeoutMs(apiPath);
     const res = await fetch(`http://127.0.0.1:${status.port}${normalized}`, {
-      signal: AbortSignal.timeout(reticulumProxyGetTimeoutMs(apiPath)),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) {
       throw new Error(`sidecar GET ${normalized} failed: ${res.status}`);
@@ -599,7 +793,14 @@ export class ReticulumSidecarManager extends EventEmitter {
         maxPayload: RETICULUM_WS_MAX_MESSAGE_BYTES,
       });
       socket.on('open', () => {
+        const reconnect = this.wsEverConnected;
+        this.wsEverConnected = true;
         this.wsReconnectAttempt = 0;
+        // Notify renderer so inbound LXMF catch-up can run after lag/disconnect gaps.
+        this.emit('event', {
+          type: 'ws_connected',
+          payload: { reconnect },
+        });
       });
       socket.on('message', (data: Buffer) => {
         if (data.length > RETICULUM_WS_MAX_MESSAGE_BYTES) {
@@ -611,6 +812,8 @@ export class ReticulumSidecarManager extends EventEmitter {
         const text = data.toString('utf8');
         try {
           const parsed = JSON.parse(text) as { type?: string; payload?: unknown };
+          // voice.audio must arrive on /ws/voice → voiceAudio (not shared event bus).
+          if (parsed.type === 'voice.audio') return;
           this.emit('event', {
             type: parsed.type ?? 'message',
             payload: parsed.payload ?? parsed,
@@ -650,12 +853,83 @@ export class ReticulumSidecarManager extends EventEmitter {
       );
       this.scheduleWsReconnect();
     }
+    this.connectVoiceWs(port);
+  }
+
+  /** Dedicated high-rate PCM stream (`/ws/voice` → `voiceAudio` IPC). */
+  private connectVoiceWs(port: number): void {
+    this.clearVoiceWsReconnectTimer();
+    const prev = this.voiceWs;
+    this.voiceWs = null;
+    prev?.close();
+    try {
+      const socket = new WebSocket(`ws://127.0.0.1:${port}/ws/voice`, {
+        maxPayload: RETICULUM_WS_MAX_MESSAGE_BYTES,
+      });
+      socket.on('open', () => {
+        this.voiceWsReconnectAttempt = 0;
+      });
+      socket.on('message', (data: Buffer) => {
+        if (data.length > RETICULUM_WS_MAX_MESSAGE_BYTES) {
+          console.warn(
+            `[ReticulumSidecar] voice ws message exceeded ${RETICULUM_WS_MAX_MESSAGE_BYTES} byte cap, dropping`,
+          );
+          return;
+        }
+        const text = data.toString('utf8');
+        try {
+          const parsed = JSON.parse(text) as { type?: string; payload?: unknown };
+          if (parsed.type !== 'voice.audio') return;
+          this.emit('voiceAudio', {
+            type: 'voice.audio',
+            payload: parsed.payload ?? parsed,
+          });
+        } catch {
+          // catch-no-log-ok: ignore non-JSON on the voice audio socket
+        }
+      });
+      socket.on('error', (err: Error) => {
+        console.warn('[ReticulumSidecar] voice ws error:', sanitizeLogMessage(err.message));
+      });
+      socket.on('close', () => {
+        if (this.wsPort === port) {
+          this.voiceWs = null;
+          this.scheduleVoiceWsReconnect();
+        }
+      });
+      this.voiceWs = {
+        close: () => {
+          try {
+            socket.removeAllListeners();
+            socket.on('error', () => {
+              // catch-no-log-ok: intentional teardown; CONNECTING abort is expected
+            });
+            socket.close();
+          } catch {
+            // catch-no-log-ok: socket may already be closed
+          }
+        },
+      };
+    } catch (err) {
+      console.warn(
+        '[ReticulumSidecar] voice ws bridge unavailable:',
+        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+      );
+      this.scheduleVoiceWsReconnect();
+    }
   }
 
   private clearWsReconnectTimer(): void {
     if (this.wsReconnectTimer) {
       clearTimeout(this.wsReconnectTimer);
       this.wsReconnectTimer = null;
+    }
+  }
+
+  private clearVoiceWsReconnectTimer(): void {
+    if (this.voiceWsReconnectTimer) {
+      clearTimeout(this.voiceWsReconnectTimer);
+      this.voiceWsReconnectTimer = null;
     }
   }
 
@@ -676,13 +950,35 @@ export class ReticulumSidecarManager extends EventEmitter {
     }, delayMs);
   }
 
+  private scheduleVoiceWsReconnect(): void {
+    this.clearVoiceWsReconnectTimer();
+    if (!this._status.running || this.wsPort <= 0) return;
+    const attempt = this.voiceWsReconnectAttempt;
+    this.voiceWsReconnectAttempt = Math.min(attempt + 1, 8);
+    const delayMs = Math.min(30_000, 500 * 2 ** attempt);
+    this.voiceWsReconnectTimer = setTimeout(() => {
+      this.voiceWsReconnectTimer = null;
+      if (!this._status.running || this.wsPort <= 0) return;
+      console.debug(
+        `[ReticulumSidecar] voice ws reconnect attempt=${this.voiceWsReconnectAttempt} port=${this.wsPort}`,
+      );
+      this.connectVoiceWs(this.wsPort);
+    }, delayMs);
+  }
+
   /** Tear down the WS bridge and cancel reconnect (used on sidecar stop). */
   private teardownWs(): void {
     this.clearWsReconnectTimer();
+    this.clearVoiceWsReconnectTimer();
     this.wsPort = 0;
     this.wsReconnectAttempt = 0;
+    this.voiceWsReconnectAttempt = 0;
+    this.wsEverConnected = false;
     const prev = this.ws;
     this.ws = null;
     prev?.close();
+    const prevVoice = this.voiceWs;
+    this.voiceWs = null;
+    prevVoice?.close();
   }
 }

@@ -1,7 +1,9 @@
 /**
  * Flatpak offline pnpm store version must match the packageManager major
- * (pnpm 11 → store v11). flatpak-node-generator defaults to v10 for lockfile 9.
+ * (pnpm major N → store vN). flatpak-node-generator defaults to v10 for lockfile 9.
  */
+import fs from 'node:fs';
+import path from 'node:path';
 
 /**
  * Pinned flatpak-builder-tools commit used by Flatpak CI + PR offline checks.
@@ -30,6 +32,409 @@ export const FLATPAK_NODE_GENERATOR_PIP_INSTALL_ARGS = [
 /** Shell one-liner for workflows / docs (keep in sync with PIP_INSTALL_ARGS). */
 export const FLATPAK_NODE_GENERATOR_PIP_INSTALL_CMD = `pip3 ${FLATPAK_NODE_GENERATOR_PIP_INSTALL_ARGS.map((a) => (/\s/.test(a) ? `'${a}'` : a)).join(' ')}`;
 
+/** Documented local CI-pin venv (see check:flatpak-offline-pnpm install hint). */
+export const FLATPAK_NODE_GENERATOR_LOCAL_VENV_DIR = '.cache/flatpak-node-venv';
+
+/**
+ * Marker written into the pinned generator's special.py so Playwright browser
+ * zips are not vendored. GitHub `github.com/…/raw/…` 404s; Flatpak uses
+ * PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 (Electron E2E).
+ */
+export const PLAYWRIGHT_SPECIAL_SKIP_MARKER = 'mesh-client-skip-playwright-browsers';
+
+/** Exact upstream dispatch in special.py (ac5a296a). */
+export const PLAYWRIGHT_SPECIAL_SOURCE_CALL = `        elif package.name == 'playwright':
+            await self._handle_playwright(package)`;
+
+export const PLAYWRIGHT_SPECIAL_SOURCE_SKIP = `        elif package.name == 'playwright':
+            # mesh-client-skip-playwright-browsers: GitHub github.com/.../raw/... 404s;
+            # Flatpak uses PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 (Electron E2E).
+            pass`;
+
+/**
+ * Marker written into the pinned generator's electron.py so Electron >= 44 does
+ * not request linux-armv7l zips (Electron 43 was the last armv7l release).
+ */
+export const ELECTRON_ARMV7L_SKIP_MARKER = 'mesh-client-skip-electron-armv7l-44';
+
+/** Exact upstream ia32 skip block in electron.py (ac5a296a) — insert armv7l skip after. */
+export const ELECTRON_IA32_SKIP_BLOCK = `            # Electron v19+ drop linux-ia32 support.
+            if (
+                SemVer.parse(self.version) >= SemVer.parse('19.0.0')
+                and electron_arch == 'ia32'
+            ):
+                continue`;
+
+export const ELECTRON_ARMV7L_SKIP_BLOCK = `            # Electron v19+ drop linux-ia32 support.
+            if (
+                SemVer.parse(self.version) >= SemVer.parse('19.0.0')
+                and electron_arch == 'ia32'
+            ):
+                continue
+
+            # mesh-client-skip-electron-armv7l-44: Electron v44+ drop linux-armv7l
+            # (Electron 43 was the last armv7l release). Flatpak ships x64+arm64 only.
+            if (
+                SemVer.parse(self.version) >= SemVer.parse('44.0.0')
+                and electron_arch == 'armv7l'
+            ):
+                continue`;
+
+/**
+ * Rewrite generator electron.py so Electron >= 44 skips missing armv7l archives.
+ *
+ * @param {string} source
+ * @returns {{ source: string, changed: boolean, already: boolean, missing: boolean }}
+ */
+export function rewriteGeneratorSkipElectronArmv7l(source) {
+  if (source.includes(ELECTRON_ARMV7L_SKIP_MARKER)) {
+    return { source, changed: false, already: true, missing: false };
+  }
+  if (!source.includes(ELECTRON_IA32_SKIP_BLOCK)) {
+    return { source, changed: false, already: false, missing: true };
+  }
+  return {
+    source: source.replace(ELECTRON_IA32_SKIP_BLOCK, ELECTRON_ARMV7L_SKIP_BLOCK),
+    changed: true,
+    already: false,
+    missing: false,
+  };
+}
+
+/**
+ * Locate electron.py next to a generator console-script (venv or pip --user).
+ *
+ * @param {string} generatorBin
+ * @param {{
+ *   existsSync?: (p: string) => boolean;
+ *   globSync?: (pattern: string, opts: { cwd: string }) => string[];
+ * }} [opts]
+ * @returns {string | null}
+ */
+export function resolveGeneratorElectronPyPath(generatorBin, opts = {}) {
+  if (!generatorBin) return null;
+  const exists = opts.existsSync ?? ((p) => fs.existsSync(p));
+  const glob = opts.globSync ?? ((pattern, o) => fs.globSync(pattern, { cwd: o.cwd }));
+  const binDir = path.dirname(generatorBin);
+  const roots = [path.dirname(binDir)];
+  const patterns = [
+    'lib/python*/site-packages/flatpak_node_generator/electron.py',
+    'lib/python*/dist-packages/flatpak_node_generator/electron.py',
+  ];
+  for (const root of roots) {
+    for (const pattern of patterns) {
+      let hits;
+      try {
+        hits = glob(pattern, { cwd: root });
+      } catch {
+        // catch-no-log-ok glob miss is a normal miss
+        hits = [];
+      }
+      for (const rel of hits) {
+        const abs = path.join(root, rel);
+        if (exists(abs)) return abs;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Patch an installed generator so Electron >= 44 skips linux-armv7l archives.
+ *
+ * @param {string} electronPyPath
+ * @param {{
+ *   readFileSync?: (p: string, enc: BufferEncoding) => string;
+ *   writeFileSync?: (p: string, data: string, enc: BufferEncoding) => void;
+ * }} [opts]
+ * @returns {{ ok: true, already: boolean } | { ok: false, message: string }}
+ */
+export function applyGeneratorSkipElectronArmv7l(electronPyPath, opts = {}) {
+  const read = opts.readFileSync ?? ((p, enc) => fs.readFileSync(p, enc));
+  const write = opts.writeFileSync ?? ((p, data, enc) => fs.writeFileSync(p, data, enc));
+  let source;
+  try {
+    source = read(electronPyPath, 'utf8');
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return { ok: false, message: `could not read ${electronPyPath}: ${detail}` };
+  }
+  const rewritten = rewriteGeneratorSkipElectronArmv7l(source);
+  if (rewritten.already) {
+    return { ok: true, already: true };
+  }
+  if (rewritten.missing) {
+    return {
+      ok: false,
+      message:
+        `${electronPyPath} has no anchor block to insert ` +
+        `ELECTRON_ARMV7L_SKIP_BLOCK (linux-armv7l skip for Electron >= 44). ` +
+        `Bump the generator pin or update ELECTRON_IA32_SKIP_BLOCK / ELECTRON_ARMV7L_SKIP_BLOCK.`,
+    };
+  }
+  try {
+    write(electronPyPath, rewritten.source, 'utf8');
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return { ok: false, message: `could not write ${electronPyPath}: ${detail}` };
+  }
+  return { ok: true, already: false };
+}
+
+/**
+ * Rewrite generator special.py so Playwright does not fetch browsers.json.
+ *
+ * @param {string} source
+ * @returns {{ source: string, changed: boolean, already: boolean, missing: boolean }}
+ */
+export function rewriteGeneratorSkipPlaywrightSpecialSources(source) {
+  if (source.includes(PLAYWRIGHT_SPECIAL_SKIP_MARKER)) {
+    return { source, changed: false, already: true, missing: false };
+  }
+  if (!source.includes(PLAYWRIGHT_SPECIAL_SOURCE_CALL)) {
+    return { source, changed: false, already: false, missing: true };
+  }
+  return {
+    source: source.replace(PLAYWRIGHT_SPECIAL_SOURCE_CALL, PLAYWRIGHT_SPECIAL_SOURCE_SKIP),
+    changed: true,
+    already: false,
+    missing: false,
+  };
+}
+
+/**
+ * Locate special.py next to a generator console-script (venv or pip --user).
+ *
+ * @param {string} generatorBin
+ * @param {{
+ *   existsSync?: (p: string) => boolean;
+ *   globSync?: (pattern: string, opts: { cwd: string }) => string[];
+ * }} [opts]
+ * @returns {string | null}
+ */
+export function resolveGeneratorSpecialPyPath(generatorBin, opts = {}) {
+  if (!generatorBin) return null;
+  const exists = opts.existsSync ?? ((p) => fs.existsSync(p));
+  const glob = opts.globSync ?? ((pattern, o) => fs.globSync(pattern, { cwd: o.cwd }));
+  const binDir = path.dirname(generatorBin);
+  const roots = [path.dirname(binDir)];
+  const patterns = [
+    'lib/python*/site-packages/flatpak_node_generator/providers/special.py',
+    'lib/python*/dist-packages/flatpak_node_generator/providers/special.py',
+  ];
+  for (const root of roots) {
+    for (const pattern of patterns) {
+      let hits;
+      try {
+        hits = glob(pattern, { cwd: root });
+      } catch {
+        // catch-no-log-ok glob miss is a normal miss
+        hits = [];
+      }
+      for (const rel of hits) {
+        const abs = path.join(root, rel);
+        if (exists(abs)) return abs;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Patch an installed generator so Playwright special sources are skipped.
+ *
+ * @param {string} specialPyPath
+ * @param {{
+ *   readFileSync?: (p: string, enc: BufferEncoding) => string;
+ *   writeFileSync?: (p: string, data: string, enc: BufferEncoding) => void;
+ * }} [opts]
+ * @returns {{ ok: true, already: boolean } | { ok: false, message: string }}
+ */
+export function applyGeneratorSkipPlaywrightSpecialSources(specialPyPath, opts = {}) {
+  const read = opts.readFileSync ?? ((p, enc) => fs.readFileSync(p, enc));
+  const write = opts.writeFileSync ?? ((p, data, enc) => fs.writeFileSync(p, data, enc));
+  let source;
+  try {
+    source = read(specialPyPath, 'utf8');
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return { ok: false, message: `could not read ${specialPyPath}: ${detail}` };
+  }
+  const rewritten = rewriteGeneratorSkipPlaywrightSpecialSources(source);
+  if (rewritten.already) {
+    return { ok: true, already: true };
+  }
+  if (rewritten.missing) {
+    return {
+      ok: false,
+      message:
+        `${specialPyPath} has no playwright special-source dispatch ` +
+        `(expected elif package.name == 'playwright'). Bump the generator pin or update ` +
+        `PLAYWRIGHT_SPECIAL_SOURCE_CALL.`,
+    };
+  }
+  try {
+    write(specialPyPath, rewritten.source, 'utf8');
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return { ok: false, message: `could not write ${specialPyPath}: ${detail}` };
+  }
+  return { ok: true, already: false };
+}
+
+/**
+ * Plan and apply Playwright + Electron armv7l generator patches atomically.
+ * Both files are validated before any write; a failed second write rolls back the first.
+ *
+ * @param {string} specialPyPath
+ * @param {string} electronPyPath
+ * @param {{
+ *   readFileSync?: (p: string, enc: BufferEncoding) => string;
+ *   writeFileSync?: (p: string, data: string, enc: BufferEncoding) => void;
+ * }} [opts]
+ * @returns {{
+ *   ok: true;
+ *   playwright: { already: boolean; changed: boolean };
+ *   armv7l: { already: boolean; changed: boolean };
+ * } | { ok: false; message: string }}
+ */
+export function applyGeneratorFlatpakNodeGeneratorPatches(
+  specialPyPath,
+  electronPyPath,
+  opts = {},
+) {
+  const read = opts.readFileSync ?? ((p, enc) => fs.readFileSync(p, enc));
+  const write = opts.writeFileSync ?? ((p, data, enc) => fs.writeFileSync(p, data, enc));
+
+  let specialOriginal;
+  try {
+    specialOriginal = read(specialPyPath, 'utf8');
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return { ok: false, message: `could not read ${specialPyPath}: ${detail}` };
+  }
+
+  let electronOriginal;
+  try {
+    electronOriginal = read(electronPyPath, 'utf8');
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return { ok: false, message: `could not read ${electronPyPath}: ${detail}` };
+  }
+
+  const specialPlan = rewriteGeneratorSkipPlaywrightSpecialSources(specialOriginal);
+  const electronPlan = rewriteGeneratorSkipElectronArmv7l(electronOriginal);
+
+  if (!specialPlan.already && specialPlan.missing) {
+    return {
+      ok: false,
+      message:
+        `${specialPyPath} has no playwright special-source dispatch ` +
+        `(expected elif package.name == 'playwright'). Bump the generator pin or update ` +
+        `PLAYWRIGHT_SPECIAL_SOURCE_CALL.`,
+    };
+  }
+  if (!electronPlan.already && electronPlan.missing) {
+    return {
+      ok: false,
+      message:
+        `${electronPyPath} has no anchor block to insert ` +
+        `ELECTRON_ARMV7L_SKIP_BLOCK (linux-armv7l skip for Electron >= 44). ` +
+        `Bump the generator pin or update ELECTRON_IA32_SKIP_BLOCK / ELECTRON_ARMV7L_SKIP_BLOCK.`,
+    };
+  }
+
+  let specialWritten = false;
+  try {
+    if (specialPlan.changed) {
+      write(specialPyPath, specialPlan.source, 'utf8');
+      specialWritten = true;
+    }
+    if (electronPlan.changed) {
+      write(electronPyPath, electronPlan.source, 'utf8');
+    }
+  } catch (err) {
+    if (specialWritten) {
+      try {
+        write(specialPyPath, specialOriginal, 'utf8');
+      } catch {
+        // catch-no-log-ok rollback best-effort after partial patch failure
+      }
+    }
+    const detail = err instanceof Error ? err.message : String(err);
+    return { ok: false, message: `could not write generator patch file(s): ${detail}` };
+  }
+
+  return {
+    ok: true,
+    playwright: { already: specialPlan.already, changed: specialPlan.changed },
+    armv7l: { already: electronPlan.already, changed: electronPlan.changed },
+  };
+}
+
+/**
+ * Resolve flatpak-node-generator: FLATPAK_NODE_GENERATOR → PATH → local CI-pin venv.
+ *
+ * @param {{
+ *   root: string;
+ *   env?: NodeJS.ProcessEnv | Record<string, string | undefined>;
+ *   which?: (() => string | null) | null;
+ *   platform?: NodeJS.Platform;
+ *   existsSync?: (p: string) => boolean;
+ *   accessSync?: (p: string, mode?: number) => void;
+ *   X_OK?: number;
+ * }} opts
+ * @returns {string | null}
+ */
+export function resolveFlatpakNodeGeneratorBin(opts) {
+  const env = opts.env ?? process.env;
+  const fromEnv =
+    typeof env.FLATPAK_NODE_GENERATOR === 'string' ? env.FLATPAK_NODE_GENERATOR.trim() : '';
+  if (fromEnv) return fromEnv;
+
+  if (opts.which) {
+    const fromPath = opts.which()?.trim();
+    if (fromPath) return fromPath;
+  }
+
+  const platform = opts.platform ?? process.platform;
+  const exists = opts.existsSync ?? ((p) => fs.existsSync(p));
+  const access = opts.accessSync ?? ((p, mode) => fs.accessSync(p, mode));
+  const xOk = opts.X_OK ?? fs.constants.X_OK;
+
+  /** @param {string} candidate */
+  const usable = (candidate) => {
+    try {
+      if (!exists(candidate)) return false;
+      access(candidate, xOk);
+      return true;
+    } catch {
+      // catch-no-log-ok missing/non-executable local venv is a normal miss, not a fault
+      return false;
+    }
+  };
+
+  if (platform === 'win32') {
+    const winBin = path.join(
+      opts.root,
+      FLATPAK_NODE_GENERATOR_LOCAL_VENV_DIR,
+      'Scripts',
+      'flatpak-node-generator.exe',
+    );
+    return usable(winBin) ? winBin : null;
+  }
+
+  const unixBin = path.join(
+    opts.root,
+    FLATPAK_NODE_GENERATOR_LOCAL_VENV_DIR,
+    'bin',
+    'flatpak-node-generator',
+  );
+  if (usable(unixBin)) return unixBin;
+
+  return null;
+}
+
 /**
  * @param {string | null | undefined} packageManager
  * @returns {number | null}
@@ -45,10 +450,15 @@ export function pnpmMajorFromPackageManager(packageManager) {
 }
 
 /**
+ * Offline Flatpak pnpm store version for a pnpm CLI major.
+ * Lockfile 9 uses store v10 or v11; pnpm 11 and 12 both materialize store v11
+ * (`pnpm store path` → …/store/v11). flatpak-node-generator rejects v12 today.
+ *
  * @param {number} pnpmMajor
  * @returns {string}
  */
 export function expectedPnpmStoreVersion(pnpmMajor) {
+  if (pnpmMajor >= 11) return 'v11';
   return `v${pnpmMajor}`;
 }
 
@@ -173,6 +583,20 @@ export function flatpakWorkflowStoreVersionViolations(
     return violations;
   }
 
+  const commands = listWorkflowNonCommentShellCommands(workflowYaml);
+  const patchIdx = commands.findIndex((c) =>
+    /patch-flatpak-node-generator-playwright\.mjs/.test(c),
+  );
+  const generatorIdx = commands.findIndex((c) => /flatpak-node-generator\s+pnpm\b/.test(c));
+  if (patchIdx === -1 || (generatorIdx >= 0 && patchIdx > generatorIdx)) {
+    violations.push({
+      file: fileRel,
+      message:
+        'flatpak.yaml must run scripts/patch-flatpak-node-generator-playwright.mjs before the ' +
+        'generator (GitHub github.com/.../raw/... 404s for Playwright browsers.json)',
+    });
+  }
+
   violations.push(...flatpakWorkflowGeneratorInstallViolations(workflowYaml, fileRel));
 
   // Accept an explicit --pnpm-store-version vN, or a shell var set from packageManager.
@@ -202,7 +626,7 @@ export function flatpakWorkflowStoreVersionViolations(
     }
     violations.push({
       file: fileRel,
-      message: `flatpak.yaml --pnpm-store-version is ${flag}, expected ${expectedStoreVersion} (pnpm packageManager major)`,
+      message: `flatpak.yaml --pnpm-store-version is ${flag}, expected ${expectedStoreVersion} (pnpm store for current packageManager)`,
     });
     return violations;
   }
@@ -216,13 +640,15 @@ export function flatpakWorkflowStoreVersionViolations(
 
 /**
  * Parse package keys from the lockfile `packages:` map (name@version).
+ * For pnpm 12 multi-document lockfiles, only the project document is used
+ * (the leading packageManagerDependencies document is ignored).
  * @param {string} lockfileText
  * @returns {string[]}
  */
 export function listLockfilePackageIds(lockfileText) {
   const ids = [];
   let inPackages = false;
-  for (const line of lockfileText.split('\n')) {
+  for (const line of extractProjectPnpmLockfile(lockfileText).split('\n')) {
     if (/^packages:\s*$/.test(line)) {
       inPackages = true;
       continue;
@@ -237,6 +663,23 @@ export function listLockfilePackageIds(lockfileText) {
     if (id) ids.push(id);
   }
   return ids;
+}
+
+/**
+ * pnpm 12 may write a two-document lockfile: a leading packageManagerDependencies
+ * document, then the project lockfile. flatpak-node-generator uses yaml.safe_load
+ * (single-document) and fails with ComposerError on the second `---`.
+ * Return the project document (last document), unchanged for single-doc lockfiles.
+ *
+ * @param {string} lockfileText
+ * @returns {string}
+ */
+export function extractProjectPnpmLockfile(lockfileText) {
+  const text = String(lockfileText);
+  // Split before each document marker (keep the marker on the following part).
+  const parts = text.split(/(?=^---\r?\n)/m).filter((part) => part.trim().length > 0);
+  if (parts.length <= 1) return text;
+  return parts[parts.length - 1];
 }
 
 /**

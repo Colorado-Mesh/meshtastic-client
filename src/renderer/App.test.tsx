@@ -9,7 +9,11 @@ import {
   OFFLINE_MESHCORE_IDENTITY_ID,
 } from './lib/offlineProtocolIdentities';
 import { meshtasticProtocol } from './lib/protocols/MeshtasticProtocol';
-import { MESHCORE_CAPABILITIES, MESHTASTIC_CAPABILITIES } from './lib/radio/BaseRadioProvider';
+import {
+  MESHCORE_CAPABILITIES,
+  MESHTASTIC_CAPABILITIES,
+  RETICULUM_CAPABILITIES,
+} from './lib/radio/BaseRadioProvider';
 import * as providerFactory from './lib/radio/providerFactory';
 import { registerMeshtasticSession } from './lib/sessions/meshtasticSession';
 import {
@@ -21,9 +25,13 @@ import type { ChatMessage } from './lib/types';
 import { setConnection, useConnectionStore } from './stores/connectionStore';
 import { useIdentityStore } from './stores/identityStore';
 import { useMessageStore } from './stores/messageStore';
-import { useNodeStore } from './stores/nodeStore';
+import { upsertNode, useNodeStore } from './stores/nodeStore';
 
 const MESHTASTIC_TEST_IDENTITY = 'meshtastic-app-test';
+
+const { openReticulumGameSessionMock } = vi.hoisted(() => ({
+  openReticulumGameSessionMock: vi.fn().mockResolvedValue(true),
+}));
 
 function syncMeshtasticMessagesToStore(messages: ChatMessage[]): void {
   const byId: Record<string, ReturnType<typeof chatMessageToMessageRecord>> = {};
@@ -45,6 +53,15 @@ function syncMeshcoreMessagesToStore(messages: ChatMessage[]): void {
   useMessageStore.setState((s) => ({
     messages: { ...s.messages, [OFFLINE_MESHCORE_IDENTITY_ID]: byId },
   }));
+}
+
+function ensureMeshcoreRoomNode(roomServerId: number): void {
+  ensureOfflineProtocolIdentities();
+  upsertNode(OFFLINE_MESHCORE_IDENTITY_ID, {
+    nodeId: roomServerId,
+    longName: `Room ${roomServerId.toString(16)}`,
+    hwModel: 'Room',
+  });
 }
 
 const {
@@ -276,6 +293,8 @@ beforeEach(() => {
   vi.mocked(providerFactory.useRadioProvider).mockImplementation((protocol) =>
     protocol === 'meshcore' ? MESHCORE_CAPABILITIES : MESHTASTIC_CAPABILITIES,
   );
+  openReticulumGameSessionMock.mockClear();
+  openReticulumGameSessionMock.mockResolvedValue(true);
 });
 
 function setDocumentHidden(hidden: boolean): void {
@@ -321,6 +340,10 @@ vi.mock('./lib/radio/providerFactory', async (importOriginal) => {
   };
 });
 
+vi.mock('./components/ReticulumStackAutostartCoordinator', () => ({
+  ReticulumStackAutostartCoordinator: () => null,
+}));
+
 vi.mock('./lazyAppPanels', () => ({
   ChatPanel: (props: Record<string, unknown>) => {
     lastChatPanelProps.current = props;
@@ -329,7 +352,7 @@ vi.mock('./lazyAppPanels', () => ({
       : '';
     return <div data-testid="chat-panel-props">{channels}</div>;
   },
-  ConnectionPanel: () => null,
+  ConnectionPanel: () => <div data-testid="connection-panel-mock">connection</div>,
   LogPanel: () => null,
   NodeListPanel: () => null,
 }));
@@ -337,6 +360,7 @@ vi.mock('./lazyAppPanels', () => ({
 vi.mock('./lazyTabPanels', () => ({
   AppPanel: () => null,
   DiagnosticsPanel: () => null,
+  GamesPanel: () => <div data-testid="games-panel-mock">games</div>,
   MapPanel: () => null,
   ModulePanel: () => null,
   PacketDistributionPanel: () => <div data-testid="packet-distribution-mock">dist</div>,
@@ -349,7 +373,25 @@ vi.mock('./lazyTabPanels', () => ({
   SecurityPanel: () => null,
   TakServerPanel: () => null,
   TelemetryPanel: () => null,
+  ReticulumNetworkPanel: ({ onOpenInterfaces }: { onOpenInterfaces?: () => void }) => (
+    <button
+      type="button"
+      aria-label="test-open-reticulum-interfaces"
+      onClick={() => onOpenInterfaces?.()}
+    >
+      open interfaces
+    </button>
+  ),
 }));
+
+vi.mock('./lib/reticulum/reticulumGamesSession', async (importOriginal) => {
+  // eslint-disable-next-line @typescript-eslint/consistent-type-imports -- vi.importOriginal needs typeof import()
+  const actual = await importOriginal<typeof import('./lib/reticulum/reticulumGamesSession')>();
+  return {
+    ...actual,
+    openReticulumGameSession: (...args: unknown[]) => openReticulumGameSessionMock(...args),
+  };
+});
 
 vi.mock('./lazyModals', () => ({
   ContactGroupsModal: () => null,
@@ -363,6 +405,7 @@ vi.mock('./lib/appSettingsStorage', () => ({
   getAppSettingsRaw: vi.fn().mockReturnValue(null),
   mergeAppSetting: vi.fn(),
   mergeAppSettingsPartial: vi.fn(),
+  isShareMyLocationEnabled: vi.fn().mockReturnValue(true),
 }));
 
 vi.mock('./lib/firmwareCheck', () => ({
@@ -460,6 +503,7 @@ vi.mock('../preload', () => ({
       disconnectNobleBle: vi.fn(),
       onNobleBleDisconnected: vi.fn(),
       onNobleBleDeviceDiscovered: vi.fn(),
+      onNobleBleLinkRssi: vi.fn(),
       startNobleBleScanning: vi.fn(),
       onSerialPortsDiscovered: vi.fn(),
     },
@@ -1220,6 +1264,7 @@ describe('App accessibility', () => {
       selfNodeId,
       messages,
     });
+    ensureMeshcoreRoomNode(0x1005);
     syncMeshcoreMessagesToStore(messages);
     setConnection(OFFLINE_MESHCORE_IDENTITY_ID, {
       status: 'configured',
@@ -1291,6 +1336,7 @@ describe('App accessibility', () => {
       ],
       messages: meshcoreMessages,
     });
+    ensureMeshcoreRoomNode(0x1005);
     syncMeshcoreMessagesToStore(meshcoreMessages);
     setConnection(OFFLINE_MESHCORE_IDENTITY_ID, {
       status: 'configured',
@@ -1375,5 +1421,80 @@ describe('App accessibility', () => {
     await waitFor(() => {
       expect(localStorage.getItem('mesh-client:meshcoreChatUnread')).toBe('0');
     });
+  });
+
+  it('opens Games from mesh-client:openGamesSession while MeshCore is active', async () => {
+    getStoredMeshProtocolMock.mockReturnValue('meshcore');
+    expect(MESHCORE_CAPABILITIES.hasLrgpGames).toBe(false);
+    expect(RETICULUM_CAPABILITIES.hasLrgpGames).toBe(true);
+
+    // App.test defaults reticulum → Meshtastic caps; restore Games capability without
+    // mounting ReticulumStackAutostartCoordinator (needs appSettingsStorage exports).
+    vi.mocked(providerFactory.useRadioProvider).mockImplementation((protocol) => {
+      if (protocol === 'meshcore') return MESHCORE_CAPABILITIES;
+      if (protocol === 'reticulum') {
+        return { ...RETICULUM_CAPABILITIES, hasReticulumInterfaceConfig: false };
+      }
+      return MESHTASTIC_CAPABILITIES;
+    });
+
+    renderApp();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Switch to Meshtastic/ })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('tab', { name: /^Games/ })).not.toBeInTheDocument();
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent('mesh-client:openGamesSession', {
+          detail: { sessionId: 'lrgp:test-session-from-meshcore' },
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(localStorage.getItem('mesh-protocol')).toBe('reticulum');
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: /^Games/ })).toHaveAttribute('aria-selected', 'true');
+    });
+    expect(screen.getByTestId('games-panel-mock')).toBeInTheDocument();
+    expect(openReticulumGameSessionMock).toHaveBeenCalledWith('lrgp:test-session-from-meshcore');
+  });
+
+  it('dual-TCP Open Interfaces CTA activates the Reticulum Connection panel', async () => {
+    getStoredMeshProtocolMock.mockReturnValue('reticulum');
+    vi.mocked(providerFactory.useRadioProvider).mockImplementation((protocol) => {
+      if (protocol === 'reticulum') return RETICULUM_CAPABILITIES;
+      if (protocol === 'meshcore') return MESHCORE_CAPABILITIES;
+      return MESHTASTIC_CAPABILITIES;
+    });
+
+    renderApp();
+
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'Network' })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('tab', { name: 'Network' }));
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: 'test-open-reticulum-interfaces' }),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByRole('tab', { name: 'Connection' })).toHaveAttribute(
+      'aria-selected',
+      'false',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'test-open-reticulum-interfaces' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'Connection' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+    });
+    expect(screen.getByTestId('connection-panel-mock')).toBeInTheDocument();
   });
 });

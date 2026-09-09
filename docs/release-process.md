@@ -6,18 +6,27 @@ This document describes how maintainers create releases for Mesh-Client.
 
 ## Overview
 
-Releases are driven by **annotated version tags** (`v*`) on `main`. Pushing a tag triggers:
+Cut releases from **Actions → Cut release** ([`cut-release.yaml`](../.github/workflows/cut-release.yaml)), which bumps/tags `main`. Pushing an annotated version tag (`v*`) then triggers:
 
-| Workflow                                            | Purpose                                                                                       |
-| --------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| [`release.yaml`](../.github/workflows/release.yaml) | Build and publish macOS, Linux, and Windows installers via `electron-builder`                 |
-| [`flatpak.yaml`](../.github/workflows/flatpak.yaml) | Build Reticulum sidecar + Flatpak bundles (x86_64 and aarch64) and attach them to the release |
+| Workflow                                            | Purpose                                                                                              |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| [`release.yaml`](../.github/workflows/release.yaml) | Build macOS/Linux/Windows via `electron-builder` (`--publish never`) and attach to the prepare draft |
+| [`flatpak.yaml`](../.github/workflows/flatpak.yaml) | Build Reticulum sidecar + Flatpak bundles (x86_64 and aarch64) and attach them to the same draft     |
 
 Both workflows upload to a **draft** GitHub Release. A maintainer reviews artifacts and publishes manually when ready.
 
-`electron-builder.yml` sets `releaseType: draft`, so the Electron jobs also create/update a draft release rather than publishing live immediately.
+`prepare-github-release` is the **only** job that creates the draft (`MESH_CLIENT_ALLOW_DRAFT_CREATE=1`). Matrix builds and Flatpak attach with `ci-upload-release-assets.mjs` by `release_id` so parallel jobs cannot fork duplicate drafts. `electron-builder.yml` still sets `releaseType: draft` for local `dist:*:publish` use.
 
 Documentation deploys separately: [`docs.yml`](../.github/workflows/docs.yml) runs on every push to `main` (including the version-bump commit from `pnpm run release`).
+
+### Database schema upgrades
+
+`CURRENT_SCHEMA_VERSION` in [`src/main/db-schema-sync.ts`](../src/main/db-schema-sync.ts) is the on-disk SQLite `user_version` this build supports. Schema upgrades are **one-way**:
+
+- **CI:** `schema-release-compare` (Build Binaries, Build Flatpak, and Release) warns when this build’s schema is newer than the last published release. Test builds also upload a `READ-ME-FIRST-*.md` artifact with the download set.
+- **Installers:** when bumped, Windows NSIS shows an advisory MessageBox; macOS/Linux/Flatpak packages may include `SCHEMA-UPGRADE.txt` in app resources.
+- **App launch:** if an existing database’s `user_version` is behind this build, Mesh-Client shows a blocking **Quit / Upgrade** dialog **before** running `runSchemaUpgrade`. Quit leaves the database unchanged. Set `MESH_CLIENT_ACCEPT_SCHEMA_UPGRADE=1` to auto-accept (E2E / automation only).
+- **Too new:** opening a database upgraded by a newer app with an older build still fails with the existing schema-too-new fatal dialog.
 
 ---
 
@@ -31,15 +40,31 @@ Documentation deploys separately: [`docs.yml`](../.github/workflows/docs.yml) ru
 
 ---
 
-## Recommended: `pnpm run release`
+## Recommended: Cut release from GitHub Actions
 
-The release script (`scripts/release.sh`) is the supported maintainer path. It:
+**Preferred path:** Actions → **Cut release** ([`cut-release.yaml`](../.github/workflows/cut-release.yaml)).
+
+1. (Optional) Run once with **dry_run** checked to confirm the computed version in the job summary (`feat(scope):` → minor, etc.).
+2. Re-run with dry_run unchecked. Default bump is **auto**; override with `patch` / `minor` / `major` / exact `X.Y.Z` when needed.
+3. **skip_dep_update** defaults to **true** — bump dependencies in a normal PR via `pnpm run update` before cutting.
+4. The workflow sets `MESH_CLIENT_RELEASE_YES=1` (non-interactive). Locally use `pnpm run release --yes` or the same env var.
+5. Wait for `release.yaml` + `flatpak.yaml` to attach draft artifacts, then **Publish** on GitHub.
+
+**Secret:** `RELEASE_PUSH_TOKEN` — fine-grained PAT (or GitHub App installation token) owned by a repo **admin** (so the merge-queue ruleset bypass applies), with **contents: write**, **workflows: write**, and **pull requests: write** (also used by `third-party-licenses.yaml` so bot PRs run required checks). Plain `GITHUB_TOKEN` cannot trigger tag workflows, cannot push past the ruleset, and cannot open check-running license PRs.
+
+Version detection lives in [`scripts/detectReleaseBump.mjs`](../scripts/detectReleaseBump.mjs) (handles scoped Conventional Commits such as `feat(rrc): …`). Do not set `MESH_CLIENT_RELEASE_PARSE_ONLY` in Actions (test-only hook; Cut release clears it).
+
+---
+
+## Local fallback: `pnpm run release`
+
+Local `scripts/release.sh` remains for emergencies when Actions is unavailable. It:
 
 1. Verifies you are on `main` and pulls latest
 2. Runs **`pnpm update`** and **`pnpm dedupe`** (updates lockfile before the bump)
 3. Syncs **`org.coloradomesh.MeshClient.yml`** Electron vendored archives to match `package.json` (`node scripts/sync-flatpak-electron.mjs`)
-4. Auto-detects **patch / minor / major** from [Conventional Commits](https://www.conventionalcommits.org/) since the last tag (or accept an explicit bump — see below)
-5. Runs **pre-flight validation** (`check:environment`, format, lint, typecheck, **all** `check:*` scanners including path-gated pre-commit ones, **`check:flatpak`**, **`check:flatpak-offline-pnpm`**, **`check:i18n`**, dedupe check, audit, **required** actionlint + yamllint, **full** Vitest via `pnpm run test:run`, Reticulum sidecar `cargo test`)
+4. Auto-detects **patch / minor / major** via [`detectReleaseBump.mjs`](../scripts/detectReleaseBump.mjs) (scoped Conventional Commits such as `feat(rrc):` count as **minor**) since the last tag (or accept an explicit bump — see below)
+5. Runs **pre-flight validation** (`check:environment`, release CLI health, format, lint, typecheck, **all** `check:*` scanners including path-gated pre-commit ones, **`check:flatpak`**, **`check:flatpak-offline-pnpm`**, **`check:i18n`**, lockfile re-dedupe stability (not `pnpm dedupe --check` — that breaks hoisted `node_modules/.bin`), audit, **required** actionlint + yamllint, **full** Vitest via `pnpm run test:run`, Reticulum sidecar `cargo test`)
 6. Prints **copy-paste release notes** grouped by feat/fix/other/breaking
 7. Bumps `package.json` via `pnpm version`
 8. Prepends a `<release>` entry to `flatpak/org.coloradomesh.MeshClient.metainfo.xml`
@@ -48,17 +73,33 @@ The release script (`scripts/release.sh`) is the supported maintainer path. It:
 ```bash
 git checkout main
 git pull origin main
-pnpm run release        # auto-detect bump from commits since last tag
-pnpm run release minor  # force minor
-pnpm run release 5.21.0 # force exact version
-pnpm run release --auto # explicit auto-detect
+pnpm run release                               # auto-detect bump from commits since last tag
+pnpm run release minor                         # force minor
+pnpm run release 5.21.0                        # force exact version
+pnpm run release --auto                        # explicit auto-detect
+pnpm run release --finish                      # complete a mid-release after package.json was already bumped
+pnpm run release --yes                         # non-interactive (skip both confirmation prompts)
+pnpm run release --yes --skip-dep-update patch # CI-style: no pnpm update
+MESH_CLIENT_RELEASE_YES=1 pnpm run release     # same as --yes (avoids pnpm's own -y)
+# Invalid: --auto cannot be combined with patch|minor|major|x.x.x
+# Note: `pnpm run release -- minor` is fine — pnpm 11 forwards bare `--`; release.sh ignores it.
 ```
 
-The script prompts twice (start pre-flight, then confirm after checks pass). **Expect several minutes** for the full validation chain.
+The script prompts twice by default (start pre-flight, then confirm after checks pass). Pass **`--yes`** after `pnpm run release` (or set `MESH_CLIENT_RELEASE_YES=1`) to skip those prompts — useful for automation. **`--auto` plus an explicit bump is rejected.** **Expect several minutes** for the full validation chain.
 
-**Full suite only:** Release must never use `test:staged`, `test:changed`, or `vitest related`. Pre-commit may run a staged subset for speed; release matches PR CI by running the unrestricted `pnpm run test:run` (`vitest run`) and does not soft-skip actionlint/yamllint when those tools are missing.
+**Full suite only:** Release must never use `test:staged`, `test:changed`, or `vitest related`. Pre-commit and pull-request CI may run affected subsets for speed; release matches protected merge-queue CI by running the unrestricted `pnpm run test:run` (`vitest run`) and does not soft-skip actionlint/yamllint when those tools are missing.
 
-If pre-flight fails, fix the issue on `main` and run `pnpm run release` again — do not tag manually until checks pass.
+If pre-flight fails, fix the issue on `main` and cut again — do not tag manually until checks pass.
+
+### Mid-release MetaInfo failure
+
+If `package.json` was already bumped but the Flatpak MetaInfo `<release>` entry is wrong/corrupt (or the release commit was blocked by `check:flatpak`):
+
+1. **Do not** re-run `pnpm run release` — that would bump again.
+2. Fix the top `<release version="…">` in `flatpak/org.coloradomesh.MeshClient.metainfo.xml` to match `package.json`’s `version`.
+3. Complete with `pnpm run release --finish` (commit + tag + push; no version bump, no full preflight replay).
+
+The version written into MetaInfo always comes from `package.json` after `pnpm version` (never from `pnpm version` stdout).
 
 ---
 
@@ -72,6 +113,7 @@ Configure these in **Settings → Secrets and variables → Actions** (maintaine
 
 | Secret                            | Purpose                                                                 |
 | --------------------------------- | ----------------------------------------------------------------------- |
+| **`RELEASE_PUSH_TOKEN`**          | Admin PAT for **Cut release** (contents + workflows); see above         |
 | **`CSC_LINK`**                    | Base64-encoded `.p12` **Developer ID Application** certificate          |
 | **`CSC_KEY_PASSWORD`**            | Password protecting the `.p12` file                                     |
 | **`APPLE_ID`**                    | Apple ID email used with App Store Connect / notarytool                 |
@@ -130,33 +172,34 @@ git push origin vX.Y.Z
 
 Matrix build jobs:
 
-- **`macos-latest`** → `pnpm run dist:mac:publish`
-- **`ubuntu-latest`** → `pnpm run dist:linux:publish` (x64 + arm64 AppImage, `.deb`, `.rpm`)
-- **`windows-latest`** → `pnpm run dist:win:publish` (x64 + arm64 NSIS installers)
+- **`macos-latest`** → `pnpm run dist:mac` then `ci-upload-release-assets.mjs`
+- **`ubuntu-latest`** → `pnpm run dist:linux` (x64 + arm64 AppImage, `.deb`, `.rpm`) then upload
+- **`windows-latest`** → `pnpm run dist:win` (x64 + arm64 NSIS installers) then upload
 
-Each job runs `pnpm install --frozen-lockfile`, `pnpm run rebuild`, then publishes via `electron-builder` using the built-in **`GITHUB_TOKEN`** (exported as `GH_TOKEN` for electron-publish).
+Each job runs `pnpm install --frozen-lockfile`, `pnpm run rebuild`, builds with `--publish never`, then attaches artifacts to the prepare draft with **`GITHUB_TOKEN`** as `GH_TOKEN`.
 
 After builds finish, **`packaging-smoke`** runs on:
 
 - macOS — `verify-mac-packaging.mjs` (includes bundled Reticulum sidecar in `.app`)
 - Linux — `verify-linux-packaging.mjs` plus `test-linux-appimage-reticulum-sidecar.mjs` (extracts x64/arm64 AppImages and asserts sidecar). **`verify-linux-packaging.mjs`** also asserts each `.deb` **Description** field is ASCII-only (no mojibake `??`) via `dpkg-deb -f` — non-ASCII control metadata breaks some package managers and mirrors.
 - Windows x64 — NSIS install smoke test (`test-win-nsis-install.mjs`, asserts sidecar after install)
-- **`windows-11-arm`** — arm64 NSIS install smoke test with 7z probe (asserts sidecar inside installer payload and after install)
+- **`windows-11-vs2026-arm`** — arm64 NSIS install smoke test with 7z probe (asserts sidecar inside installer payload and after install). Uses GitHub's advance-testing WoA runner ahead of the Sept 2026 VS 2026 rollout on `windows-11-arm`.
 
 Build jobs also run `verify-reticulum-sidecar-staged.mjs` after staging sidecars and before `electron-builder`.
 
 ### `flatpak.yaml` (Build Flatpak)
 
-1. **`reticulum-sidecar`** — builds `mesh-client-reticulum` per arch (x86_64 on `ubuntu-latest`, aarch64 on `ubuntu-24.04-arm`) with full RNS stack features
-2. **`flatpak`** — generates offline pnpm sources, builds `org.coloradomesh.MeshClient.flatpak` per arch inside the Flathub freedesktop 24.08 container, smoke-installs the bundle
-3. **`publish`** — attaches both `.flatpak` files to the GitHub Release with **`draft: true`** (does not auto-publish an existing draft)
+1. **`schema-release-compare`** — compares this SHA’s schema to the last published release; uploads `READ-ME-FIRST-flatpak.md` (included again beside Flatpak Actions artifacts)
+2. **`reticulum-sidecar`** — builds `mesh-client-reticulum` per arch (x86_64 on `ubuntu-latest`, aarch64 on `ubuntu-24.04-arm`) with full RNS stack features
+3. **`flatpak`** — stamps CI build info, writes schema upgrade notice when bumped, generates offline pnpm sources, builds `org.coloradomesh.MeshClient.flatpak` per arch inside the Flathub freedesktop 24.08 container, smoke-installs the unstamped bundle (manual **Build Flatpak (no release)** dispatch also renames downloadable artifacts to `…-run{N}.flatpak`; tag runs keep clean names)
+4. **`publish`** (tag only) — waits for the Electron prepare draft (`ci-wait-github-draft-release.mjs`), then attaches both clean-named `.flatpak` files with `ci-upload-release-assets.mjs` using the shared `release_id` (never creates or publishes a release)
 
 Both tag-triggered workflows must complete before the release is fully populated. Flatpak bundles often arrive a few minutes after the Electron artifacts.
 
 ### Reticulum sidecar in installers
 
 - **Flatpak:** sidecar is built in CI and embedded under `resources/reticulum-sidecar/` before `flatpak-builder` runs.
-- **macOS / Linux / Windows (Electron):** `release.yaml` / `build.yaml` run `scripts/build-reticulum-sidecar-release.mjs` per platform before `dist:*`, staging per-arch binaries under `resources/reticulum-sidecar/staged/`. The `beforePack` hook in [`electron-builder.yml`](../electron-builder.yml) copies the correct `mesh-client-reticulum` binary into each installer (Windows x64 + arm64, Linux x64 + arm64, macOS arm64). Packaging verify scripts assert the sidecar is present in unpacked bundles.
+- **macOS / Linux / Windows (Electron):** `release.yaml` / `build.yaml` run `scripts/build-reticulum-sidecar-release.mjs` per platform before `dist:*`, staging per-arch binaries under `resources/reticulum-sidecar/staged/`. The `beforePack` hook in [`electron-builder.yml`](../electron-builder.yml) copies the correct `mesh-client-reticulum` binary into each installer (Windows x64 + arm64, Linux x64 + arm64, macOS x64 + arm64). Packaging verify scripts assert the sidecar is present in unpacked bundles.
 - **Releases before this pipeline shipped** may show “Reticulum sidecar not built” in packaged installs — upgrade to a release that includes the sidecar or use Flatpak on Linux.
 - **Dev builds** use `reticulum-sidecar/target/debug/` instead — see [Reticulum sidecar (optional)](development-environment.md#reticulum-sidecar-optional).
 
@@ -166,7 +209,8 @@ Both tag-triggered workflows must complete before the release is fully populated
 
 1. Go to GitHub → **Releases**
 2. Open the new **draft** for the version tag
-3. Confirm artifacts:
+3. Confirm the release **tag** is `vX.Y.Z` (not `untagged-*` — a wrong tag breaks the in-app updater footer)
+4. Confirm artifacts:
 
 | Platform      | Artifacts                                                                                   |
 | ------------- | ------------------------------------------------------------------------------------------- |
@@ -194,13 +238,13 @@ When artifacts and notes look correct:
 
 ## Version naming
 
-Follow [Semantic Versioning](https://semver.org/):
+Follow [Semantic Versioning](https://semver.org/). Auto-detect is implemented in [`scripts/detectReleaseBump.mjs`](../scripts/detectReleaseBump.mjs) (called from `release.sh` / Cut release):
 
-- **Major (X.0.0):** Breaking changes (`BREAKING CHANGE:` footer or `feat!:` / `fix!:`)
-- **Minor (0.X.0):** New features (`feat:`), backward compatible
+- **Major (X.0.0):** `type!:` / `type(scope)!:`, or a line-anchored `BREAKING CHANGE:` / `BREAKING-CHANGE:` footer in a commit body
+- **Minor (0.X.0):** New features (`feat:` or `feat(scope):`), backward compatible
 - **Patch (0.0.X):** Fixes and other conventional commits without `feat:`
 
-`release.sh` applies these rules when auto-detecting the bump.
+Release notes “Breaking Changes” use the same subject bang + footer rules (not subject-only).
 
 ---
 
@@ -224,17 +268,18 @@ Follow [Semantic Versioning](https://semver.org/):
 - Platform failures are often native-module or packaging related
 - Fix on `main`, then cut a new patch release (`pnpm run release patch`)
 
-### Electron-builder fails to publish
+### Upload to draft release fails
 
-- Confirm the workflow job has `contents: write`
-- Publishing uses `GITHUB_TOKEN` as `GH_TOKEN`; forked or restricted workflows may lack upload permission
-- **404 uploading to `/releases/{id}/assets`:** parallel `dist:*:publish` jobs raced and created duplicate draft releases. Re-run the failed release workflow after merging the `prepare-github-release` gate (or delete orphan drafts and re-run). Do not PATCH release `tag_name` via API while CI is uploading — that orphans in-flight upload targets.
+- Confirm the workflow job has `contents: write` and `RELEASE_ID` is set from `prepare-github-release`
+- Uploads use `GITHUB_TOKEN` as `GH_TOKEN` via `ci-upload-release-assets.mjs`; forked or restricted workflows may lack upload permission
+- Tag CI builds with `dist:*` (`--publish never`) and attaches by id — do **not** reintroduce `dist:*:publish` in `release.yaml` (electron-builder `POST /releases` forks drafts)
 
 ### Duplicate draft releases for one tag
 
-- Caused when GitHub’s `GET /releases/tags/{tag}` returns **404** while multiple draft releases share the same `tag_name` — parallel `dist:*:publish` jobs each create another draft. `release.yaml` runs `scripts/ci-ensure-github-draft-release.mjs` before builds and again in `finalize-github-release` (list + merge split assets + delete duplicates + set `target_commitish`).
-- **Assets spread across duplicates:** CI now merges automatically; for a broken tag outside CI, run `node scripts/consolidate-github-release-duplicates.mjs --tag vX.Y.Z` (requires `GH_TOKEN`), then re-run the release workflow for any missing platform artifacts.
-- To recover on a broken tag: consolidate duplicates, keep the draft with merged assets, re-run **Build/Release Electron App** on the tag.
+- Historically caused when parallel `dist:*:publish` / softprops jobs each `POST`ed a draft after a List Releases miss. Current CI: only `prepare-github-release` may create (`MESH_CLIENT_ALLOW_DRAFT_CREATE=1`); builds/Flatpak upload by id; Flatpak waits with `ci-wait-github-draft-release.mjs`.
+- **`finalize-github-release`** runs consolidation then **`ci-verify-github-draft-release.mjs`**, which **fails the workflow** if the draft `tag_name` is still `untagged-*`. Do not publish until that job is green and the draft tag shows `vX.Y.Z`.
+- **Finalize PATCH 403 (`Resource not accessible by integration`):** Actions `GITHUB_TOKEN` cannot PATCH `target_commitish` when the tagged commit differs in `.github/workflows/` from the default branch. Consolidation retries tag repair with `RELEASE_PUSH_TOKEN` when set; tag repair must succeed or the verify step fails.
+- **Assets still split (external fork):** `finalize-github-release` merges via `ci-ensure-github-draft-release.mjs`; outside CI run `node scripts/consolidate-github-release-duplicates.mjs --tag vX.Y.Z` (requires `GH_TOKEN`).
 - **Do not force-move the `v*` tag while a release workflow is in progress.** Retagging starts another run and (with workflow concurrency) cancels the in-flight build; smoke jobs also assume a stable workflow `github.sha`.
 - **Smoke tests fail with “ref does not point to the expected commit”:** the tag was moved after the workflow started. Re-run failed jobs only after the tag matches the run’s `headSha`, or merge the checkout `ref: ${{ github.sha }}` fix and trigger a fresh tag run.
 
@@ -256,12 +301,12 @@ pnpm run rebuild
 pnpm run build
 ```
 
-Release jobs run `pnpm run rebuild` automatically before `dist:*:publish`.
+Release jobs run `pnpm run rebuild` automatically before `dist:*`.
 
 ### Flatpak publish did not attach bundles
 
 - Confirm `flatpak.yaml` **`publish`** job ran on the tag (not only manual `workflow_dispatch`)
-- The publish step uses `draft: true` so it will not promote a draft to live — it only adds files
+- Publish waits for the prepare draft, then uploads with `ci-upload-release-assets.mjs` + `RELEASE_ID` (it does not create or publish a release)
 
 ---
 

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 /**
  * NobleBleManager depends on @stoprocent/noble (native). We cannot unit-test
@@ -11,6 +11,41 @@ import { describe, expect, it } from 'vitest';
  * the preservation + re-emit behavior.
  */
 const SOURCE = readFileSync(join(__dirname, 'noble-ble-manager.ts'), 'utf-8');
+
+vi.mock('@stoprocent/noble', () => {
+  const api = {
+    state: 'poweredOn',
+    on: vi.fn(() => api),
+    removeListener: vi.fn(),
+    removeAllListeners: vi.fn(),
+    startScanning: vi.fn(),
+    stopScanning: vi.fn(),
+    stop: vi.fn(),
+  };
+  return api;
+});
+
+vi.mock('./ble-coexistence-coordinator', () => ({
+  bleCoexistenceCoordinator: {
+    assertCanConnect: vi.fn(),
+    register: vi.fn(),
+    unregister: vi.fn(),
+    // Not used by connect(), but kept to avoid accidental runtime import failures
+    // if other code paths are reached during the test.
+    acquireScan: vi.fn(),
+    releaseScan: vi.fn(),
+  },
+}));
+
+/** Noble skips session init on Linux (Web Bluetooth in renderer); seed both LoRa sessions for connect() tests. */
+function seedNobleSessions(manager: unknown): void {
+  const m = manager as {
+    sessions: Map<string, unknown>;
+    createSessionState: () => unknown;
+  };
+  m.sessions.set('meshtastic', m.createSessionState());
+  m.sessions.set('meshcore', m.createSessionState());
+}
 
 describe('NobleBleManager.startScanning (regression)', () => {
   it('preserves connected peripherals and re-emits deviceDiscovered when clearing knownPeripherals', () => {
@@ -53,14 +88,69 @@ describe('NobleBleManager.connect — per-session UUID selection (regression)', 
     expect(SOURCE).toContain('6ba1b21815a8461f9fa85dcae273eafd');
   });
 
-  it('meshcore skips duplicate connect IPC when already connected (WinRT handshake race)', () => {
+  it('skips duplicate connect IPC when already connected (Meshtastic + MeshCore)', () => {
     expect(SOURCE).toContain('connect idempotent skip');
     expect(SOURCE).toContain('duplicate IPC would disconnect and break handshake');
+    // Must not be meshcore-only — Meshtastic duplicate connectAutomatic must retain the session.
+    expect(SOURCE).not.toMatch(/sessionId === 'meshcore' &&[\s\S]{0,120}connect idempotent skip/);
   });
 
-  it('meshcore coalesces duplicate connect while GATT is still in progress', () => {
+  it('coalesces duplicate connect while GATT is still in progress (Meshtastic + MeshCore)', () => {
     expect(SOURCE).toContain('connect coalesce');
-    expect(SOURCE).toContain('meshcoreGattInflight');
+    expect(SOURCE).toContain('gattSetupInflight');
+    expect(SOURCE).toContain('tryCoalesceInflightGattConnect');
+    expect(SOURCE).not.toContain('meshcoreGattInflight');
+  });
+
+  it('awaits GATT coalesce before joining connectQueue', () => {
+    expect(SOURCE).toMatch(
+      /tryCoalesceInflightGattConnect[\s\S]*?const prevQueue = this\.connectQueue/,
+    );
+  });
+
+  it('installs gattSetupInflight after connectAsync for both LoRa sessions', () => {
+    expect(SOURCE).toMatch(
+      /connectAsync done[\s\S]*?session\.gattSetupInflight = \{[\s\S]*?discoverSomeServicesAndCharacteristicsAsync|discoverAllServicesAndCharacteristicsAsync/,
+    );
+    // Must not be gated on meshcore-only anymore.
+    expect(SOURCE).not.toMatch(
+      /if \(isMeshcore\) \{\s*let resolveGatt[\s\S]*?session\.gattSetupInflight/,
+    );
+    expect(SOURCE).toMatch(
+      /clearSessionState[\s\S]*?session\.gattSetupInflight\.reject\(new Error\('BLE session cleared'\)\)/,
+    );
+  });
+
+  it('bounds connect-error disconnectAsync and skips when already disconnected', () => {
+    expect(SOURCE).toContain('BLE connect-error disconnectAsync');
+    expect(SOURCE).toMatch(
+      /peripheral\.state !== 'disconnected'[\s\S]*?withTimeout\(\s*peripheral\.disconnectAsync\(\)/,
+    );
+  });
+
+  it('emits deviceDiscovered with rssi and address on scan and at connect start', () => {
+    expect(SOURCE).toContain('toNobleDiscoveredDevice');
+    expect(SOURCE).toContain('toDiscoveredDevice');
+    expect(SOURCE).toContain('resolvePeripheralMac');
+    expect(SOURCE).toContain('Refresh picker / connecting banner with connect-time RSSI');
+    expect(SOURCE).toMatch(/this\.toDiscoveredDevice\(peripheral\)/);
+  });
+
+  it('loads darwin GAP name→MAC map before scanning so picker rows can show sticker MACs', () => {
+    expect(SOURCE).toContain('refreshDarwinNameAddressMap');
+    expect(SOURCE).toContain('loadDarwinBluetoothNameAddressMap');
+    expect(SOURCE).toContain('resolveDarwinScanAddress');
+    const fnMatch = /async startScanning\b[\s\S]+?(?=\n {2}async stopScanning)/.exec(SOURCE);
+    expect(fnMatch).not.toBeNull();
+    const body = fnMatch![0];
+    const refreshIdx = body.indexOf('await this.refreshDarwinNameAddressMap()');
+    const requestersIdx = body.indexOf('this.scanRequesters.add(sessionId)');
+    const scanIdx = body.indexOf('this.doStartScanning()');
+    expect(refreshIdx).toBeGreaterThan(-1);
+    expect(requestersIdx).toBeGreaterThan(-1);
+    expect(scanIdx).toBeGreaterThan(-1);
+    expect(refreshIdx).toBeLessThan(requestersIdx);
+    expect(refreshIdx).toBeLessThan(scanIdx);
   });
 
   it('branches on sessionId to pick the correct service UUID for discovery', () => {
@@ -88,6 +178,259 @@ describe('NobleBleManager.connect — per-session UUID selection (regression)', 
     const meshcoreBranch = meshcoreBranchMatch![1];
     expect(meshcoreBranch).not.toContain('fromNumChar');
   });
+
+  it('retries MeshCore non-Windows discovery once with full discovery after missing-services failure', async () => {
+    // IS_WIN32 is compile-time derived from process.platform at module load.
+    if (process.platform === 'win32') return;
+
+    const { NobleBleManager } = await import('./noble-ble-manager');
+
+    const MESHCORE_RX_UUID = '6e400002b5a3f393e0a9e50e24dcca9e';
+    const MESHCORE_TX_UUID = '6e400003b5a3f393e0a9e50e24dcca9e';
+    const MESHCORE_SERVICE_UUID = '6e400001b5a3f393e0a9e50e24dcca9e';
+
+    const makeChar = (uuid: string, properties: string[]) => {
+      return {
+        uuid,
+        properties,
+        on: vi.fn().mockReturnThis(),
+        off: vi.fn().mockReturnThis(),
+        removeListener: vi.fn().mockReturnThis(),
+        removeAllListeners: vi.fn().mockReturnThis(),
+        readAsync: vi.fn().mockResolvedValue(Buffer.alloc(0)),
+        writeAsync: vi.fn().mockResolvedValue(undefined),
+        subscribeAsync: vi.fn().mockResolvedValue(undefined),
+        unsubscribeAsync: vi.fn().mockResolvedValue(undefined),
+      };
+    };
+
+    const rxChar = makeChar(MESHCORE_RX_UUID, ['write']);
+    const txChar = makeChar(MESHCORE_TX_UUID, ['notify']);
+
+    const discoverSomeServicesAndCharacteristicsAsync = vi
+      .fn()
+      .mockRejectedValue(new Error('Could not find all requested services'));
+    const discoverAllServicesAndCharacteristicsAsync = vi.fn().mockResolvedValue({
+      characteristics: [rxChar, txChar],
+    });
+
+    const peripheralId = 'peripheral-1';
+    const peripheral = {
+      id: peripheralId,
+      address: 'aa:bb:cc:dd:ee:ff',
+      advertisement: { localName: 'MeshCore-NUS' },
+      rssi: -55,
+      mtu: 23,
+      state: 'disconnected',
+      connectAsync: vi.fn().mockImplementation(() => {
+        peripheral.state = 'connected';
+        return Promise.resolve();
+      }),
+      disconnectAsync: vi.fn().mockImplementation(() => {
+        peripheral.state = 'disconnected';
+        return Promise.resolve();
+      }),
+      updateRssiAsync: vi.fn().mockResolvedValue(-55),
+      once: vi.fn().mockReturnThis(),
+      on: vi.fn().mockReturnThis(),
+      removeListener: vi.fn().mockReturnThis(),
+      removeAllListeners: vi.fn().mockReturnThis(),
+      discoverSomeServicesAndCharacteristicsAsync,
+      discoverAllServicesAndCharacteristicsAsync,
+    };
+
+    const manager = new NobleBleManager() as unknown as {
+      knownPeripherals: Map<string, unknown>;
+      sessions: Map<string, unknown>;
+      startLinkRssiPolling: (
+        sessionId: string,
+        session: unknown,
+        peripheral: unknown,
+        seedRssi: unknown,
+      ) => void;
+      connect: (sessionId: 'meshcore' | 'meshtastic', peripheralId: string) => Promise<void>;
+      isConnected: (sessionId: 'meshcore' | 'meshtastic') => boolean;
+    };
+
+    // Avoid leaving active timers in the test process.
+    manager.startLinkRssiPolling = vi.fn();
+    seedNobleSessions(manager);
+    (manager as any).adapterReady = true;
+    manager.knownPeripherals.set(peripheralId, peripheral);
+
+    await manager.connect('meshcore', peripheralId);
+
+    expect(discoverSomeServicesAndCharacteristicsAsync).toHaveBeenCalledTimes(1);
+    expect(discoverSomeServicesAndCharacteristicsAsync).toHaveBeenCalledWith(
+      [MESHCORE_SERVICE_UUID],
+      [MESHCORE_RX_UUID, MESHCORE_TX_UUID],
+    );
+    expect(discoverAllServicesAndCharacteristicsAsync).toHaveBeenCalledTimes(1);
+
+    expect(manager.isConnected('meshcore')).toBe(true);
+    const session = manager.sessions.get('meshcore') as any;
+    expect(session.toRadioChar?.uuid).toBe(MESHCORE_RX_UUID);
+    expect(session.fromRadioChar?.uuid).toBe(MESHCORE_TX_UUID);
+  });
+
+  it('does not full-discovery retry for unrelated discovery errors (non-Windows)', async () => {
+    if (process.platform === 'win32') return;
+
+    const { NobleBleManager } = await import('./noble-ble-manager');
+
+    const makeChar = (uuid: string, properties: string[]) => {
+      return {
+        uuid,
+        properties,
+        on: vi.fn().mockReturnThis(),
+        off: vi.fn().mockReturnThis(),
+        removeListener: vi.fn().mockReturnThis(),
+        removeAllListeners: vi.fn().mockReturnThis(),
+        readAsync: vi.fn().mockResolvedValue(Buffer.alloc(0)),
+        writeAsync: vi.fn().mockResolvedValue(undefined),
+        subscribeAsync: vi.fn().mockResolvedValue(undefined),
+        unsubscribeAsync: vi.fn().mockResolvedValue(undefined),
+      };
+    };
+
+    const peripheralId = 'peripheral-2';
+    const discoverSomeServicesAndCharacteristicsAsync = vi
+      .fn()
+      .mockRejectedValue(new Error('Bluetooth adapter is not powered on'));
+    const discoverAllServicesAndCharacteristicsAsync = vi.fn().mockResolvedValue({
+      characteristics: [makeChar('irrelevant', ['notify'])],
+    });
+
+    const peripheral = {
+      id: peripheralId,
+      address: 'aa:bb:cc:dd:ee:ff',
+      advertisement: { localName: 'NotMeshCore' },
+      rssi: -55,
+      mtu: 23,
+      state: 'disconnected',
+      connectAsync: vi.fn().mockImplementation(() => {
+        peripheral.state = 'connected';
+        return Promise.resolve();
+      }),
+      disconnectAsync: vi.fn().mockImplementation(() => {
+        peripheral.state = 'disconnected';
+        return Promise.resolve();
+      }),
+      updateRssiAsync: vi.fn().mockResolvedValue(-55),
+      once: vi.fn().mockReturnThis(),
+      on: vi.fn().mockReturnThis(),
+      removeListener: vi.fn().mockReturnThis(),
+      removeAllListeners: vi.fn().mockReturnThis(),
+      discoverSomeServicesAndCharacteristicsAsync,
+      discoverAllServicesAndCharacteristicsAsync,
+    };
+
+    const manager = new NobleBleManager() as unknown as {
+      knownPeripherals: Map<string, unknown>;
+      sessions: Map<string, unknown>;
+      startLinkRssiPolling: () => void;
+      connect: (sessionId: 'meshcore' | 'meshtastic', peripheralId: string) => Promise<void>;
+    };
+
+    manager.startLinkRssiPolling = vi.fn();
+    seedNobleSessions(manager);
+    (manager as any).adapterReady = true;
+    manager.knownPeripherals.set(peripheralId, peripheral);
+
+    await expect(manager.connect('meshcore', peripheralId)).rejects.toThrow(
+      'Bluetooth adapter is not powered on',
+    );
+
+    expect(discoverSomeServicesAndCharacteristicsAsync).toHaveBeenCalledTimes(1);
+    expect(discoverAllServicesAndCharacteristicsAsync).toHaveBeenCalledTimes(0);
+  });
+
+  it('does not use targeted→full discovery fallback on Windows (full discovery is primary)', async () => {
+    if (process.platform !== 'win32') return;
+
+    const { NobleBleManager } = await import('./noble-ble-manager');
+
+    vi.useFakeTimers();
+    try {
+      const MESHCORE_RX_UUID = '6e400002b5a3f393e0a9e50e24dcca9e';
+      const MESHCORE_TX_UUID = '6e400003b5a3f393e0a9e50e24dcca9e';
+      const makeChar = (uuid: string, properties: string[]) => {
+        return {
+          uuid,
+          properties,
+          on: vi.fn().mockReturnThis(),
+          off: vi.fn().mockReturnThis(),
+          removeListener: vi.fn().mockReturnThis(),
+          removeAllListeners: vi.fn().mockReturnThis(),
+          readAsync: vi.fn().mockResolvedValue(Buffer.alloc(0)),
+          writeAsync: vi.fn().mockResolvedValue(undefined),
+          subscribeAsync: vi.fn().mockResolvedValue(undefined),
+          unsubscribeAsync: vi.fn().mockResolvedValue(undefined),
+        };
+      };
+
+      const rxChar = makeChar(MESHCORE_RX_UUID, ['write']);
+      const txChar = makeChar(MESHCORE_TX_UUID, ['notify']);
+
+      const peripheralId = 'peripheral-3';
+      const discoverSomeServicesAndCharacteristicsAsync = vi
+        .fn()
+        .mockRejectedValue(new Error('Should not be called'));
+      const discoverAllServicesAndCharacteristicsAsync = vi.fn().mockResolvedValue({
+        characteristics: [rxChar, txChar],
+      });
+
+      const peripheral = {
+        id: peripheralId,
+        address: 'aa:bb:cc:dd:ee:ff',
+        advertisement: { localName: 'MeshCore-NUS' },
+        rssi: -55,
+        mtu: 23,
+        state: 'disconnected',
+        connectAsync: vi.fn().mockImplementation(() => {
+          peripheral.state = 'connected';
+          return Promise.resolve();
+        }),
+        disconnectAsync: vi.fn().mockImplementation(() => {
+          peripheral.state = 'disconnected';
+          return Promise.resolve();
+        }),
+        updateRssiAsync: vi.fn().mockResolvedValue(-55),
+        once: vi.fn().mockReturnThis(),
+        on: vi.fn().mockReturnThis(),
+        removeListener: vi.fn().mockReturnThis(),
+        removeAllListeners: vi.fn().mockReturnThis(),
+        discoverSomeServicesAndCharacteristicsAsync,
+        discoverAllServicesAndCharacteristicsAsync,
+      };
+
+      const manager = new NobleBleManager() as unknown as {
+        knownPeripherals: Map<string, unknown>;
+        sessions: Map<string, unknown>;
+        startLinkRssiPolling: () => void;
+        connect: (sessionId: 'meshcore' | 'meshtastic', peripheralId: string) => Promise<void>;
+        isConnected: (sessionId: 'meshcore' | 'meshtastic') => boolean;
+      };
+
+      manager.startLinkRssiPolling = vi.fn();
+      seedNobleSessions(manager);
+      (manager as any).adapterReady = true;
+      manager.knownPeripherals.set(peripheralId, peripheral);
+
+      await manager.connect('meshcore', peripheralId);
+
+      expect(discoverSomeServicesAndCharacteristicsAsync).toHaveBeenCalledTimes(0);
+      expect(discoverAllServicesAndCharacteristicsAsync).toHaveBeenCalledTimes(1);
+      expect(manager.isConnected('meshcore')).toBe(true);
+
+      const session = manager.sessions.get('meshcore') as any;
+      expect(session.toRadioChar?.uuid).toBe(MESHCORE_RX_UUID);
+      expect(session.fromRadioChar?.uuid).toBe(MESHCORE_TX_UUID);
+    } finally {
+      vi.runOnlyPendingTimers();
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('NobleBleManager.connect — macOS wake zombie peripheral (regression)', () => {
@@ -109,6 +452,26 @@ describe('NobleBleManager.connect — macOS wake zombie peripheral (regression)'
  * MeshCore uses notify-only (like Web Bluetooth); GATT read on NUS TX fails on Windows WinRT.
  * Meshtastic keeps a non-Darwin read-pump safety net when notify is active.
  */
+describe('NobleBleManager — connected link RSSI polling (regression)', () => {
+  it('declares link RSSI poll timer fields and start/stop helpers', () => {
+    expect(SOURCE).toContain('linkRssiPollTimer: ReturnType<typeof setInterval> | null');
+    expect(SOURCE).toContain('NOBLE_LINK_RSSI_POLL_MS');
+    expect(SOURCE).toContain('startLinkRssiPolling');
+    expect(SOURCE).toContain('stopLinkRssiPolling');
+    expect(SOURCE).toContain("emit('linkRssi'");
+    expect(SOURCE).toContain('updateRssiAsync');
+  });
+
+  it('starts link RSSI polling after successful connect and stops in clearSessionState', () => {
+    expect(SOURCE).toMatch(
+      /this\.startLinkRssiPolling\(sessionId, session, peripheral, connectRssi\)/,
+    );
+    const clearMatch = /private clearSessionState\([\s\S]+?\n {2}\}/.exec(SOURCE);
+    expect(clearMatch).not.toBeNull();
+    expect(clearMatch![0]).toContain('stopLinkRssiPolling');
+  });
+});
+
 describe('NobleBleManager — notify-first fromRadio read pump strategy (regression)', () => {
   it('declares fromRadioNotifyOnly in session state and initialises it to false', () => {
     expect(SOURCE).toContain('fromRadioNotifyOnly: boolean');
@@ -251,5 +614,42 @@ describe('NobleBleManager long-session maintenance (regression)', () => {
     expect(SOURCE).toContain('postWriteTimer');
     expect(SOURCE).toContain('sessionAgeSec');
     expect(SOURCE).toContain('getLongSessionHealthSnapshot');
+  });
+
+  /**
+   * On Linux, Noble is never initialized (Web Bluetooth is used in the renderer instead),
+   * so `sessions` stays empty for the app's whole lifetime. getLongSessionHealthSnapshot()
+   * used to call the throwing getSession() unconditionally, so once the hourly main-process
+   * health-log timer's 24h uptime gate opened, the very first tick threw an uncaught
+   * "Unknown noble session: meshtastic" in the main process — surfaced to the user as the
+   * "Mesh-Client — Unexpected Error" dialog on Linux after ~1 day of uptime.
+   */
+  it('reports a benign not-initialized snapshot on Linux instead of throwing from getSession()', () => {
+    expect(SOURCE).toMatch(
+      /getLongSessionHealthSnapshot\(\)[\s\S]*?const linuxNotInitialized = this\.isLinuxNotInitialized\(\);/,
+    );
+    // The guard must be checked inside sessionDetail() before the throwing getSession() call.
+    expect(SOURCE).toMatch(
+      /const sessionDetail = \(sessionId: 'meshtastic' \| 'meshcore'\) => \{\s*if \(linuxNotInitialized\) \{[\s\S]*?\};\s*\}\s*const session = this\.getSession\(sessionId\);/,
+    );
+    expect(SOURCE).toContain(
+      'getLongSessionHealthSnapshot: skipping session detail (not initialized on Linux)',
+    );
+  });
+
+  /**
+   * Follow-up cleanup (code review, PR self-review): the `sessions.size === 0` Linux check was
+   * duplicated across getLongSessionHealthSnapshot(), stopAllScanning(), and disconnectAll().
+   * Centralize it so all three call sites can't drift if the detection semantics ever change.
+   */
+  it('centralizes the Linux not-initialized check in a shared helper used by all call sites', () => {
+    expect(SOURCE).toMatch(
+      /private isLinuxNotInitialized\(\): boolean \{\s*return this\.sessions\.size === 0;\s*\}/,
+    );
+    expect(SOURCE).toContain('const linuxNotInitialized = this.isLinuxNotInitialized();');
+    expect(SOURCE).toContain('if (this.isLinuxNotInitialized()) return;');
+    expect(SOURCE).toContain('if (this.isLinuxNotInitialized()) {');
+    // No remaining inline `sessions.size === 0` checks — everything routes through the helper.
+    expect(SOURCE).not.toMatch(/(?<!return )this\.sessions\.size === 0/);
   });
 });

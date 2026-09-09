@@ -1,4 +1,7 @@
-import { meshcoreContactRawFromDevice } from '../../hooks/meshcore/meshcoreHookPreamble';
+import {
+  meshcoreContactRawFromDevice,
+  retryRadioRemoveDeletedContacts,
+} from '../../hooks/meshcore/meshcoreHookPreamble';
 import { usePathHistoryStore } from '../../stores/pathHistoryStore';
 import { errLikeToLogString } from '../errLikeToLogString';
 import type {
@@ -56,6 +59,7 @@ export interface MeshcoreContactsRebuildDeps {
       self?: MeshCoreSelfInfo | null;
       myNodeId?: number;
       previousNodes?: Map<number, MeshNode>;
+      contactsFromRadio?: boolean;
     },
   ) => Promise<Map<number, MeshNode>>;
   self: MeshCoreSelfInfo | null;
@@ -81,12 +85,18 @@ export async function rebuildMeshcoreContactsAfterPathUpdated(
 ): Promise<void> {
   try {
     const contactsRaw = await deps.conn.getContacts();
-    const contacts = contactsRaw.map(meshcoreContactRawFromDevice);
+    const contacts = await retryRadioRemoveDeletedContacts(
+      deps.conn,
+      contactsRaw.map(meshcoreContactRawFromDevice),
+    );
     deps.onContacts(contacts);
     const newNodes = await deps.buildNodesFromContacts(contacts, {
       self: deps.self,
       myNodeId: deps.myNodeId,
       previousNodes: deps.previousNodes,
+      // These contacts come from a live `getContacts` dump; preserve `on_radio=1` so a
+      // path-updated rebuild does not wipe on-radio state after a successful sync.
+      contactsFromRadio: true,
     });
     deps.onNodes(newNodes);
     for (const contact of contacts) {

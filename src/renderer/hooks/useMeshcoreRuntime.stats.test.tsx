@@ -1,6 +1,8 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { touch } from '@/shared/touch';
+
 const getSelfInfoMock = vi.fn();
 const getStatsCoreMock = vi.fn();
 const getStatsRadioMock = vi.fn();
@@ -21,7 +23,7 @@ vi.mock('@liamcottle/meshcore.js', () => {
     private listeners = new Map<string | number, Set<(...args: unknown[]) => void>>();
 
     constructor(port: unknown) {
-      void port;
+      touch(port);
     }
     on(event: string | number, cb: (...args: unknown[]) => void) {
       const listeners = this.listeners.get(event) ?? new Set();
@@ -67,7 +69,7 @@ vi.mock('@liamcottle/meshcore.js', () => {
     getStatsRadio = getStatsRadioMock;
     getStatsPackets = getStatsPacketsMock;
     sendToRadioFrame = vi.fn().mockImplementation((data: Uint8Array) => {
-      void data;
+      touch(data);
       this.emit('rx', new Uint8Array([25, 0x0f, 3]));
     });
   }
@@ -75,11 +77,11 @@ vi.mock('@liamcottle/meshcore.js', () => {
   class MockSerialConnection {
     async write(bytes: Uint8Array) {
       await Promise.resolve();
-      void bytes;
+      touch(bytes);
     }
     async onDataReceived(value: Uint8Array) {
       await Promise.resolve();
-      void value;
+      touch(value);
     }
     async onConnected() {
       await Promise.resolve();
@@ -106,11 +108,11 @@ vi.mock('@liamcottle/meshcore.js', () => {
   class MockConnection {
     async write(bytes: Uint8Array) {
       await Promise.resolve();
-      void bytes;
+      touch(bytes);
     }
     async sendToRadioFrame(data: Uint8Array) {
       await Promise.resolve();
-      void data;
+      touch(data);
     }
     async onConnected() {
       await Promise.resolve();
@@ -119,7 +121,7 @@ vi.mock('@liamcottle/meshcore.js', () => {
       return undefined;
     }
     onFrameReceived(frame: Uint8Array) {
-      void frame;
+      touch(frame);
       return undefined;
     }
     close = vi.fn().mockResolvedValue(undefined);
@@ -272,15 +274,10 @@ describe('useMeshcoreRuntime stats parsing', () => {
 
   it('serial awaits channel hydration after contacts before connect resolves', async () => {
     const contactsGate = deferred<[]>();
+    const channelsGate = deferred<{ channelIdx: number; name: string; secret: Uint8Array }[]>();
     const opsSecret = new Uint8Array(16).fill(0x11);
     getContactsMock.mockReturnValueOnce(contactsGate.promise);
-    getChannelsMock.mockResolvedValueOnce([
-      {
-        channelIdx: 1,
-        name: 'Ops',
-        secret: opsSecret,
-      },
-    ]);
+    getChannelsMock.mockReturnValueOnce(channelsGate.promise);
 
     const port = makeMockSerialPort();
     Object.defineProperty(navigator, 'serial', {
@@ -299,18 +296,27 @@ describe('useMeshcoreRuntime stats parsing', () => {
     });
 
     await waitFor(() => {
-      expect(result.current.state.status).toBe('configured');
+      expect(result.current.state.status).toBe('connected');
     });
     expect(result.current.channels).toEqual([]);
     expect(getChannelsMock).not.toHaveBeenCalled();
     expect(result.current.nodes.size).toBe(0);
 
     contactsGate.resolve([]);
+    await waitFor(() => {
+      expect(result.current.state.status).toBe('configured');
+    });
+    // Status is configured after contacts, but initConn still owns getChannels — suppress stats.
+    expect(getStatsCoreMock).not.toHaveBeenCalled();
+    expect(getChannelsMock).toHaveBeenCalled();
+
+    channelsGate.resolve([{ channelIdx: 1, name: 'Ops', secret: opsSecret }]);
     await act(async () => {
       await connectPromise;
     });
 
     await waitFor(() => {
+      expect(result.current.state.status).toBe('configured');
       expect(result.current.channels).toEqual([{ index: 1, name: 'Ops', secret: opsSecret }]);
     });
   });
