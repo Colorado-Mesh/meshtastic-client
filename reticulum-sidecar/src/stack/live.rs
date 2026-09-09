@@ -28,6 +28,7 @@ const REPLY_QUOTE_MAX_CHARS: usize = 50;
 const MAX_LXMF_AUDIO_FIELD_BYTES: usize = 256 * 1024;
 use lxmf_core::peer::OutboundOfferPolicy;
 use lxmf_core::router::LxmRouter;
+use nomad_core::{DEFAULT_MAX_FILE_BYTES, DEFAULT_MAX_PAGE_BYTES, NOMAD_NODE_ASPECT};
 use rns_identity::destination::Destination;
 use rns_identity::identity::Identity;
 use rns_runtime::lifecycle::ShutdownSignal;
@@ -95,9 +96,6 @@ const TRANSPORT_QUERY_TIMEOUT: Duration = Duration::from_secs(20);
 /// lxmd `last_propagation_check` parity: Host-serving silent client `/get` when
 /// the local store is quiet (inbox catch-up from peered remotes).
 const HOST_PERIODIC_GET_INTERVAL: Duration = Duration::from_secs(90);
-
-/// Aspect Nomad Network nodes announce and serve page/file requests under.
-const NOMAD_NODE_ASPECT: &str = "nomadnetwork.node";
 
 #[cfg(feature = "rns-ble")]
 struct BlePeerRuntimeState {
@@ -1660,7 +1658,7 @@ impl LiveBridge {
         if let Some(local) = self.nomad_server.try_read_local_route(hash_hex, path).await {
             return match local {
                 Ok(bytes) => {
-                    if bytes.len() > NOMAD_FILE_MAX_BYTES {
+                    if bytes.len() > DEFAULT_MAX_FILE_BYTES {
                         return serde_json::json!({ "ok": false, "error": "response_too_large" });
                     }
                     let file_name = nomad_file_name_from_path(path);
@@ -1694,7 +1692,7 @@ impl LiveBridge {
             .await
         {
             Ok((bytes, meta)) => {
-                if bytes.len() > NOMAD_FILE_MAX_BYTES {
+                if bytes.len() > DEFAULT_MAX_FILE_BYTES {
                     return nomad_response_too_large_json(&meta);
                 }
                 let file_name = nomad_file_name_from_path(path);
@@ -1728,7 +1726,7 @@ impl LiveBridge {
         if let Some(local) = self.nomad_server.try_read_local_route(hash_hex, path).await {
             return match local {
                 Ok(bytes) => {
-                    if bytes.len() > NOMAD_PAGE_MAX_BYTES {
+                    if bytes.len() > DEFAULT_MAX_PAGE_BYTES {
                         return serde_json::json!({ "ok": false, "error": "response_too_large" });
                     }
                     let content = String::from_utf8_lossy(&bytes).into_owned();
@@ -1771,7 +1769,7 @@ impl LiveBridge {
             .await
         {
             Ok((bytes, meta)) => {
-                if bytes.len() > NOMAD_PAGE_MAX_BYTES {
+                if bytes.len() > DEFAULT_MAX_PAGE_BYTES {
                     return nomad_response_too_large_json(&meta);
                 }
                 let content = String::from_utf8_lossy(&bytes).into_owned();
@@ -6160,10 +6158,6 @@ fn insert_display_name_bounded(cache: &mut HashMap<String, String>, hash: String
     }
     cache.insert(hash, name);
 }
-/// Cap Nomad page body before UTF-8 conversion (DoS bound).
-const NOMAD_PAGE_MAX_BYTES: usize = 512 * 1024;
-/// Cap Nomad file body before base64 (aligned with Axum 4 MiB body limit).
-const NOMAD_FILE_MAX_BYTES: usize = 4 * 1024 * 1024;
 /// After preempting the prior query, allow time for LinkClient to unwind and
 /// release the lock before surfacing `nomad_busy` to a newer request.
 /// Wait for a preempted Nomad Link query to unwind (not the full page budget).
