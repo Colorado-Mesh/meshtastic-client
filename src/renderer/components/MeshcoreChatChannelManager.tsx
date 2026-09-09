@@ -1,5 +1,5 @@
 import { Plus, X } from 'lucide-react-motion';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
@@ -13,7 +13,7 @@ import {
   MESHCORE_CHANNEL_NAME_MAX_LEN,
   meshcoreDeriveChannelKeyHexFromName,
 } from '@/renderer/lib/meshcoreUtils';
-import { hexToBytesExactOrThrow } from '@/shared/hexBytes';
+import { bytesToHex, hexToBytesExactOrThrow } from '@/shared/hexBytes';
 
 import { useToast } from './Toast';
 
@@ -34,11 +34,25 @@ export default function MeshcoreChatChannelManager({
   const { addToast } = useToast();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
+  const [privateChannel, setPrivateChannel] = useState(false);
+  const [keyHex, setKeyHex] = useState('');
   const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const normalizedName = normalizeMeshcoreHashtagChannelName(name);
-  const validName = isValidMeshcoreHashtagChannelName(name);
+  const normalizedName = privateChannel ? name.trim() : normalizeMeshcoreHashtagChannelName(name);
+  const validName = privateChannel
+    ? normalizedName.length > 0 && normalizedName.length <= MESHCORE_CHANNEL_NAME_MAX_LEN
+    : isValidMeshcoreHashtagChannelName(name);
+  const normalizedKeyHex = keyHex.trim().toLowerCase();
+  const validKey = /^[0-9a-f]{32}$/.test(normalizedKeyHex) && /[1-9a-f]/.test(normalizedKeyHex);
+  const valid = validName && (!privateChannel || validKey);
   const configuredChannels = meshcoreConfiguredChatChannels(channels);
+
+  const closeDialog = useCallback(() => {
+    setOpen(false);
+    setName('');
+    setKeyHex('');
+    setPrivateChannel(false);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -46,23 +60,27 @@ export default function MeshcoreChatChannelManager({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.stopPropagation();
-        setOpen(false);
+        if (!saving) closeDialog();
       }
     };
     window.addEventListener('keydown', onKeyDown, true);
     return () => {
       window.removeEventListener('keydown', onKeyDown, true);
     };
-  }, [open]);
+  }, [open, saving, closeDialog]);
 
   async function handleAdd(): Promise<void> {
-    if (!validName || saving || disabled) return;
+    if (!valid || saving || disabled) return;
 
-    const existing = configuredChannels.find((channel) => channel.name === normalizedName);
+    const existing = configuredChannels.find((channel) => {
+      if (channel.name !== normalizedName) return false;
+      if (!privateChannel) return true;
+      const secret = channels.find((candidate) => candidate.index === channel.index)?.secret;
+      return secret != null && bytesToHex(secret) === normalizedKeyHex;
+    });
     if (existing) {
       onSelectChannel(existing.index);
-      setOpen(false);
-      setName('');
+      closeDialog();
       return;
     }
 
@@ -74,12 +92,13 @@ export default function MeshcoreChatChannelManager({
 
     setSaving(true);
     try {
-      const secretHex = await meshcoreDeriveChannelKeyHexFromName(normalizedName);
+      const secretHex = privateChannel
+        ? normalizedKeyHex
+        : await meshcoreDeriveChannelKeyHexFromName(normalizedName);
       await onSetChannel(index, normalizedName, hexToBytesExactOrThrow(secretHex, 16));
       addToast(t('radioPanel.channelSavedStatus', { index }), 'success');
       onSelectChannel(index);
-      setOpen(false);
-      setName('');
+      closeDialog();
     } catch (error) {
       const message = errLikeToLogString(error);
       console.warn('[MeshcoreChatChannelManager] add failed ' + message);
@@ -119,8 +138,9 @@ export default function MeshcoreChatChannelManager({
               <button
                 type="button"
                 onClick={() => {
-                  setOpen(false);
+                  closeDialog();
                 }}
+                disabled={saving}
                 aria-label={t('common.close')}
                 className="text-muted rounded p-1 hover:bg-gray-700 hover:text-white"
               >
@@ -134,9 +154,11 @@ export default function MeshcoreChatChannelManager({
                   <button
                     type="button"
                     key={channel.index}
+                    disabled={saving}
+                    aria-label={channel.name}
                     onClick={() => {
                       onSelectChannel(channel.index);
-                      setOpen(false);
+                      closeDialog();
                     }}
                     className="bg-deep-black text-muted hover:border-brand-green rounded-full border border-gray-700 px-2.5 py-1 text-xs hover:text-gray-100"
                   >
@@ -155,6 +177,19 @@ export default function MeshcoreChatChannelManager({
                 void handleAdd();
               }}
             >
+              <label className="text-muted flex items-center gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={privateChannel}
+                  onChange={(event) => {
+                    setPrivateChannel(event.target.checked);
+                    setKeyHex('');
+                  }}
+                  disabled={saving || disabled}
+                  aria-label={t('radioPanel.meshcoreChannel.privateChannel')}
+                />
+                {t('radioPanel.meshcoreChannel.privateChannel')}
+              </label>
               <label htmlFor="meshcore-chat-channel-name" className="text-muted block text-xs">
                 {t('radioPanel.meshcoreChannelNameLabel')}
               </label>
@@ -167,23 +202,53 @@ export default function MeshcoreChatChannelManager({
                     setName(event.target.value);
                   }}
                   maxLength={
-                    name.trimStart().startsWith('#')
-                      ? MESHCORE_CHANNEL_NAME_MAX_LEN
-                      : MESHCORE_CHANNEL_NAME_MAX_LEN - 1
+                    privateChannel
+                      ? undefined
+                      : name.trimStart().startsWith('#')
+                        ? MESHCORE_CHANNEL_NAME_MAX_LEN
+                        : MESHCORE_CHANNEL_NAME_MAX_LEN - 1
                   }
-                  placeholder="#channel"
+                  placeholder={privateChannel ? undefined : '#channel'}
+                  aria-label={t('radioPanel.meshcoreChannelNameLabel')}
                   disabled={saving || disabled}
                   className="bg-deep-black focus:border-brand-green min-w-0 flex-1 rounded border border-gray-600 px-3 py-2 text-sm text-white outline-none disabled:opacity-50"
                 />
                 <button
                   type="submit"
-                  disabled={!validName || saving || disabled}
+                  disabled={!valid || saving || disabled}
+                  aria-label={saving ? t('common.saving') : t('common.save')}
                   className="bg-readable-green hover:bg-readable-green/90 rounded px-3 py-2 text-xs font-medium text-white disabled:cursor-not-allowed disabled:bg-gray-600 disabled:text-gray-400"
                 >
                   {saving ? t('common.saving') : t('common.save')}
                 </button>
               </div>
-              <p className="text-muted text-xs">{t('radioPanel.meshcoreSha256KeyTitle')}</p>
+              {privateChannel ? (
+                <div className="space-y-2">
+                  <label htmlFor="meshcore-chat-channel-key" className="text-muted block text-xs">
+                    {t('radioPanel.meshcoreChannelKeyLabel')}
+                  </label>
+                  <input
+                    id="meshcore-chat-channel-key"
+                    type="password"
+                    value={keyHex}
+                    onChange={(event) => {
+                      setKeyHex(event.target.value);
+                    }}
+                    autoComplete="off"
+                    spellCheck={false}
+                    disabled={saving || disabled}
+                    aria-label={t('radioPanel.meshcoreChannelKeyLabel')}
+                    aria-describedby="meshcore-chat-channel-key-hint"
+                    aria-invalid={keyHex.length > 0 && !validKey}
+                    className="bg-deep-black focus:border-brand-green w-full rounded border border-gray-600 px-3 py-2 font-mono text-sm text-white outline-none disabled:opacity-50"
+                  />
+                  <p id="meshcore-chat-channel-key-hint" className="text-muted text-xs">
+                    {t('radioPanel.meshcoreChannel.privateKeyHint')}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-muted text-xs">{t('radioPanel.meshcoreSha256KeyTitle')}</p>
+              )}
             </form>
           </div>
         </div>

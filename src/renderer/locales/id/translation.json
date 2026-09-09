@@ -4053,7 +4053,9 @@
       "addButton": "+ Tambahkan Saluran",
       "footerHelp": "Kunci berukuran 128-bit (16 byte), ditampilkan sebagai 32 karakter hex. Nama saluran maksimal {{nameMax}} karakter. Hingga {{channelCount}} saluran (indeks 0–{{indexMax}}). Untuk #saluran, gunakan \"Berasal dari nama\" (SHA-256 dari nama dengan # di depannya).",
       "shareQr": "QR",
-      "shareQrAria": "Tampilkan QR saluran MeshCore untuk {{name}}"
+      "shareQrAria": "Tampilkan QR saluran MeshCore untuk {{name}}",
+      "privateChannel": "Saluran pribadi (masukkan kunci)",
+      "privateKeyHint": "Masukkan kunci saluran bersama: tepat 32 karakter heksadesimal (16 byte), tidak semuanya nol."
     },
     "regions": {
       "UNSET": {

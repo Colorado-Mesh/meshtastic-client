@@ -4053,7 +4053,9 @@
       "addButton": "+ 채널 추가",
       "footerHelp": "키는 128비트(16바이트)이며 32개의 16진수 문자로 표시됩니다. 채널 이름은 최대 {{nameMax}}자입니다. 최대 {{channelCount}} 채널(인덱스 0~{{indexMax}}). #채널의 경우 \"이름에서 파생\"(#이 앞에 오는 이름의 SHA-256)을 사용합니다.",
       "shareQr": "QR",
-      "shareQrAria": "{{name}} 에 대한 MeshCore 채널 QR 표시"
+      "shareQrAria": "{{name}} 에 대한 MeshCore 채널 QR 표시",
+      "privateChannel": "비공개 채널(키 입력)",
+      "privateKeyHint": "공유 채널 키를 입력하세요. 모두 0이 아닌 정확히 32개의 16진수 문자(16바이트)입니다."
     },
     "regions": {
       "UNSET": {

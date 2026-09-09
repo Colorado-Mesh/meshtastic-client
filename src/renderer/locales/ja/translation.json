@@ -4053,7 +4053,9 @@
       "addButton": "+ チャンネルを追加",
       "footerHelp": "キーは 128 ビット (16 バイト) で、32 個の 16 進文字として表示されます。チャネル名は最大 {{nameMax}} 文字です。最大 {{channelCount}} チャネル (インデックス 0 ～ {{indexMax}})。 #channels の場合は、「名前から派生」(先頭に # が付いている名前の SHA-256) を使用します。",
       "shareQr": "QR",
-      "shareQrAria": "{{name}}のMeshCoreチャンネルQRを表示"
+      "shareQrAria": "{{name}}のMeshCoreチャンネルQRを表示",
+      "privateChannel": "プライベートチャンネル（キーを入力）",
+      "privateKeyHint": "共有チャネル キーを入力します。すべて 0 ではなく、正確に 32 個の 16 進数文字 (16 バイト) を入力します。"
     },
     "regions": {
       "UNSET": {

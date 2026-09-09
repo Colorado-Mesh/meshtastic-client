@@ -4063,6 +4063,8 @@
     "meshcoreGenerateRandomKey": "Generate random",
     "meshcoreChannelNameLabel": "Name",
     "meshcoreChannel": {
+      "privateChannel": "Private channel (enter key)",
+      "privateKeyHint": "Enter the shared channel key: exactly 32 hexadecimal characters (16 bytes), not all zeros.",
       "defaultName": "Channel {{index}}",
       "addTitle": "Add Channel",
       "editTitle": "Edit Channel {{index}}",

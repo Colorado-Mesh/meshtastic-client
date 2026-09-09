@@ -4053,7 +4053,9 @@
       "addButton": "+ Ajouter une chaîne",
       "footerHelp": "Les clés sont de 128 bits (16 octets), affichées sous forme de 32 caractères hexadécimaux. Noms de chaînes jusqu'à {{nameMax}} caractères. Jusqu'à {{channelCount}} canaux (indices 0 à {{indexMax}}). Pour #channels, utilisez « Derive from name » (SHA-256 du nom avec un # en tête).",
       "shareQr": "QR",
-      "shareQrAria": "Afficher la chaîne QR MeshCore pour {{name}}"
+      "shareQrAria": "Afficher la chaîne QR MeshCore pour {{name}}",
+      "privateChannel": "Canal privé (saisir la clé)",
+      "privateKeyHint": "Saisissez la clé du canal partagé : exactement 32 caractères hexadécimaux (16 octets), pas tous des zéros."
     },
     "regions": {
       "UNSET": {
