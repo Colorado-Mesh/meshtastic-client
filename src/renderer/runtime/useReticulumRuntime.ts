@@ -146,6 +146,7 @@ import {
   isRrcAutoJoinBackoffWorthyReason,
   recordRrcHubAutoJoinFailure,
 } from '@/renderer/lib/rrcHubAutoJoinBackoff';
+import { parseRrcHubLimits } from '@/renderer/lib/rrcHubLimits';
 import { isRrcRoomMuted, resolveRrcAlertType } from '@/renderer/lib/rrcMention';
 import {
   resolveRrcHubScopedNoticeRoom,
@@ -1038,6 +1039,13 @@ export function useReticulumRuntime(): ProtocolRuntime {
             action?: boolean;
             resource_envelope?: boolean;
           };
+          limits?: {
+            max_nick_bytes?: number | null;
+            max_room_name_bytes?: number | null;
+            max_msg_body_bytes?: number | null;
+            max_rooms_per_session?: number | null;
+            rate_limit_msgs_per_minute?: number | null;
+          };
         };
         const hubDestHash = p.hub_dest_hash ?? undefined;
         const st =
@@ -1061,6 +1069,8 @@ export function useReticulumRuntime(): ProtocolRuntime {
             hubDestHash,
           );
         }
+        // Always apply: absent WELCOME limits normalize to {} and clear stale caps.
+        useRrcSessionStore.getState().setLimits(parseRrcHubLimits(p.limits), hubDestHash);
         if (st === 'active' && hubDestHash && p.hub_name) {
           useRrcHubStore.getState().applyWelcomeName(hubDestHash, p.hub_name);
         }
@@ -1084,6 +1094,11 @@ export function useReticulumRuntime(): ProtocolRuntime {
                 },
                 hubDestHash,
               );
+            }
+            if (sessionSnap) {
+              useRrcSessionStore
+                .getState()
+                .setLimits(parseRrcHubLimits(sessionSnap.limits), hubDestHash);
             }
           })
           .catch((e: unknown) => {

@@ -5454,7 +5454,17 @@
     "memberCount_few": "{{count}} członkowie",
     "memberCount_many": "{{count}} członków",
     "userCount_few": "{{count}} użytkownicy",
-    "userCount_many": "{{count}} użytkowników"
+    "userCount_many": "{{count}} użytkowników",
+    "byteLimit": {
+      "approaching": "{{count}} / {{limit}}",
+      "overMax": "Wiadomość zbyt długa — limit koncentratora wynosi {{limit}} bajtów"
+    },
+    "nickLimit": {
+      "overMax": "Pseudonim zbyt długi — limit koncentratora to {{limit}} bajtów"
+    },
+    "roomNameLimit": {
+      "overMax": "Nazwa pokoju jest zbyt długa — limit koncentratora wynosi {{limit}} bajtów"
+    }
   },
   "signalMeter": {
     "rssi": "RSSI",

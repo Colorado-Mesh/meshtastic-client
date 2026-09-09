@@ -5364,7 +5364,17 @@
     "addressChoiceTitle": "Reticulum-Adresse öffnen",
     "addressChoiceMessage": "{{address}} könnte eine Nomad-Seite oder ein Peer sein. Was möchten Sie öffnen?",
     "addressChoiceNomad": "Nomad-Seite",
-    "addressChoiceDm": "Direktnachricht"
+    "addressChoiceDm": "Direktnachricht",
+    "byteLimit": {
+      "approaching": "{{count}} / {{limit}}",
+      "overMax": "Nachricht zu lang — Hub-Limit ist {{limit}} Bytes"
+    },
+    "nickLimit": {
+      "overMax": "Spitzname zu lang — Hub-Limit ist {{limit}} Bytes"
+    },
+    "roomNameLimit": {
+      "overMax": "Raumname zu lang — Hub-Limit ist {{limit}} Bytes"
+    }
   },
   "signalMeter": {
     "rssi": "RSSI",

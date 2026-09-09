@@ -5364,7 +5364,17 @@
     "addressChoiceTitle": "Reticulum adresini aç",
     "addressChoiceMessage": "{{address}} bir Nomad sayfası veya eş olabilir. Hangisini açmak istersiniz?",
     "addressChoiceNomad": "Nomad sayfası",
-    "addressChoiceDm": "Doğrudan mesaj"
+    "addressChoiceDm": "Doğrudan mesaj",
+    "byteLimit": {
+      "approaching": "{{count}} / {{limit}}",
+      "overMax": "Mesaj çok uzun — hub sınırı {{limit}} bayt"
+    },
+    "nickLimit": {
+      "overMax": "Takma ad çok uzun — hub sınırı {{limit}} bayt"
+    },
+    "roomNameLimit": {
+      "overMax": "Oda adı çok uzun — merkez sınırı {{limit}} bayt"
+    }
   },
   "signalMeter": {
     "rssi": "RSSI",
