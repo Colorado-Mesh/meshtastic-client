@@ -75,6 +75,11 @@ import {
   withReticulumIpcSendDeadline,
 } from '@/renderer/lib/reticulum/reticulumIpcDeadline';
 import {
+  clearLinkTimeoutDestProcessed,
+  markLinkTimeoutDestProcessed,
+  shouldSkipLinkTimeoutDest,
+} from '@/renderer/lib/reticulum/reticulumLinkTimeoutBridgeDedup';
+import {
   logReticulumInterfaceStateEvent,
   logReticulumLocalInterfaceHealthChanges,
 } from '@/renderer/lib/reticulum/reticulumLocalInterfaceLogging';
@@ -1747,8 +1752,12 @@ export function useReticulumRuntime(): ProtocolRuntime {
               ) {
                 return;
               }
+              if (
+                shouldSkipLinkTimeoutDest(processedLinkTimeoutDestsRef.current, destinationHash)
+              ) {
+                continue;
+              }
               const norm = destinationHash.replace(/[^0-9a-f]/gi, '').toLowerCase();
-              if (!norm || processedLinkTimeoutDestsRef.current.has(norm)) continue;
               // PN cascade (remote or local-prop): sidecar owns outcome via WS.
               if (!applyBridge) {
                 console.debug(
@@ -1756,10 +1765,14 @@ export function useReticulumRuntime(): ProtocolRuntime {
                 );
                 continue;
               }
-              processedLinkTimeoutDestsRef.current.add(norm);
+              const marked = markLinkTimeoutDestProcessed(
+                processedLinkTimeoutDestsRef.current,
+                destinationHash,
+              );
+              if (!marked) continue;
               failReticulumSendingOutboundToDestHash(
                 bridgeIdentityId,
-                norm,
+                marked,
                 i18n.t('chatPanel.reticulumSendFailed'),
               );
             }
@@ -2245,6 +2258,9 @@ export function useReticulumRuntime(): ProtocolRuntime {
         typeof to === 'string'
           ? to
           : (reticulumHashForNodeId(to) ?? resolveReticulumDestinationHash(to) ?? String(to));
+      // New outbound: allow a later link-timeout bridge to fail this attempt
+      // (do not permanently skip the dest after a prior bridge apply).
+      clearLinkTimeoutDestProcessed(processedLinkTimeoutDestsRef.current, destination);
       const body: Record<string, unknown> = {
         destination_hash: destination,
         text,
