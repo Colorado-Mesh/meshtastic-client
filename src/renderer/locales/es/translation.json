@@ -5364,7 +5364,16 @@
     "addressChoiceTitle": "Abrir dirección Reticulum",
     "addressChoiceMessage": "{{address}} podría ser una página Nomad o un par. ¿Cuál quieres abrir?",
     "addressChoiceNomad": "Página Nomad",
-    "addressChoiceDm": "Mensaje directo"
+    "addressChoiceDm": "Mensaje directo",
+    "byteLimit": {
+      "approaching": "{{count}} / {{limit}}"
+    },
+    "nickLimit": {
+      "overMax": "Apodo demasiado largo: el límite del concentrador es {{limit}} bytes"
+    },
+    "roomNameLimit": {
+      "overMax": "El nombre de la sala es demasiado largo: el límite del hub es de {{limit}} bytes"
+    }
   },
   "signalMeter": {
     "rssi": "RSSI",

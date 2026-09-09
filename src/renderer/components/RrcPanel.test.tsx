@@ -1170,16 +1170,18 @@ describe('RrcPanel', () => {
     store.applyStatus('active', hubA, 'Hub A');
     store.setCapabilities({ direct_notice: true });
     store.setActiveRoom('[hub]');
+    store.setError(null);
     vi.mocked(window.electronAPI.reticulum.rrc.send).mockClear();
+    localStorage.clear();
 
     render(<RrcPanel isActive />);
 
-    const composer = screen.getByRole('textbox', { name: /Message or \/command/i });
-    await user.type(composer, 'hello hub');
-    await user.click(screen.getByRole('button', { name: 'Send' }));
+    const composer = await screen.findByRole('textbox', { name: /Message or \/command/i });
+    await user.clear(composer);
+    await user.type(composer, 'hello hub{Enter}');
 
     await waitFor(() => {
-      expect(useRrcSessionStore.getState().lastError).toBe('Join a room to start chatting.');
+      expect(useRrcSessionStore.getState().lastError).toMatch(/join a room/i);
     });
     expect(window.electronAPI.reticulum.rrc.send).not.toHaveBeenCalled();
   });

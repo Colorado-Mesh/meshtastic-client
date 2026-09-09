@@ -5538,6 +5538,15 @@
     "dismissBanner": "Dismiss notice",
     "directNoticeUnsupported": "This hub does not support direct NOTICE (/msg).",
     "capDirectNotice": "direct msg",
+    "byteLimit": {
+      "approaching": "{{count}} / {{limit}}"
+    },
+    "nickLimit": {
+      "overMax": "Nickname too long — hub limit is {{limit}} bytes"
+    },
+    "roomNameLimit": {
+      "overMax": "Room name too long — hub limit is {{limit}} bytes"
+    },
     "errors": {
       "linkProofTimeout": "Timed out waiting for the hub link (link proof). Try again, or check path/hops to the hub.",
       "pathTimeout": "Could not find a path to the hub. Wait for a fresher announce, then reconnect.",

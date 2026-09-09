@@ -5364,7 +5364,16 @@
     "addressChoiceTitle": "Buka alamat Reticulum",
     "addressChoiceMessage": "{{address}} bisa berupa halaman Nomad atau sebuah peer. Mana yang ingin dibuka?",
     "addressChoiceNomad": "Halaman Nomad",
-    "addressChoiceDm": "Pesan langsung"
+    "addressChoiceDm": "Pesan langsung",
+    "byteLimit": {
+      "approaching": "{{count}} / {{limit}}"
+    },
+    "nickLimit": {
+      "overMax": "Nama panggilan terlalu panjang — batas hub adalah {{limit}} byte"
+    },
+    "roomNameLimit": {
+      "overMax": "Nama ruangan terlalu panjang — batas hub {{limit}} byte"
+    }
   },
   "signalMeter": {
     "rssi": "RSSI",

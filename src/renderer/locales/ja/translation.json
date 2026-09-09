@@ -5364,7 +5364,16 @@
     "addressChoiceTitle": "Reticulum アドレスを開く",
     "addressChoiceMessage": "{{address}} は Nomad ページかピアの可能性があります。どちらを開きますか？",
     "addressChoiceNomad": "Nomad ページ",
-    "addressChoiceDm": "ダイレクトメッセージ"
+    "addressChoiceDm": "ダイレクトメッセージ",
+    "byteLimit": {
+      "approaching": "{{count}}/{{limit}}"
+    },
+    "nickLimit": {
+      "overMax": "ニックネームが長すぎます—ハブの制限は{{limit}}バイトです"
+    },
+    "roomNameLimit": {
+      "overMax": "ルーム名が長すぎます—ハブの制限は{{limit}}バイトです"
+    }
   },
   "signalMeter": {
     "rssi": "RSSI",

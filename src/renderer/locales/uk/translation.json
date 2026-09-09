@@ -5454,7 +5454,16 @@
     "memberCount_few": "{{count}} учасники",
     "memberCount_many": "{{count}} учасників",
     "userCount_few": "{{count}} користувачі",
-    "userCount_many": "{{count}} користувачів"
+    "userCount_many": "{{count}} користувачів",
+    "byteLimit": {
+      "approaching": "{{count}} / {{limit}}"
+    },
+    "nickLimit": {
+      "overMax": "Задовгий псевдонім — ліміт концентратора становить {{limit}} байт"
+    },
+    "roomNameLimit": {
+      "overMax": "Назва кімнати задовга — ліміт концентратора становить {{limit}} байт"
+    }
   },
   "signalMeter": {
     "rssi": "RSSI (індикатор потужності прийнятого сигналу)",

@@ -59,7 +59,10 @@ import { withMeshtasticTextSendPacing } from '../lib/meshtasticTextSendPacing';
 import { useRadioProvider } from '../lib/radio/providerFactory';
 import { MESHCORE_FAST_SEND_WARN_INTERVAL_MS } from '../lib/timeConstants';
 import { HelpTooltip } from './HelpTooltip';
-import MentionAutocomplete, { buildMentionCandidates } from './MentionAutocomplete';
+import MentionAutocomplete, {
+  buildMentionCandidates,
+  type MentionCandidate,
+} from './MentionAutocomplete';
 import { useToast } from './Toast';
 
 /**
@@ -196,6 +199,28 @@ export interface ChatComposerProps {
   /** When set, renders a mic button that triggers voice memo recording. */
   onVoiceMemo?: () => void;
   className?: string;
+  /**
+   * When provided and returns true, ChatComposer clears the draft and skips split/send
+   * (RRC slash commands handled by the panel).
+   */
+  onInterceptSend?: (text: string) => Promise<boolean>;
+  /** Count approaching/warn using UTF-8 wire bytes (RRC hub body limits). */
+  useWireByteCount?: boolean;
+  /** Hide split/overMax chrome for this draft (RRC slash bypass). */
+  shouldSuppressLimits?: (text: string) => boolean;
+  /**
+   * Alternate @mention completion (RRC IRC nicks). When set, replaces MeshNode lookup
+   * and default `@[name] ` insert format.
+   */
+  mentionAdapter?: {
+    findAtCaret: (text: string, caret: number) => { start: number; query: string } | null;
+    buildCandidates: (query: string) => MentionCandidate[];
+    formatInsert: (name: string) => string;
+  };
+  /**
+   * When `token` changes, replace the composer input (e.g. RRC nicklist → `/msg nick `).
+   */
+  composeSeed?: { text: string; token: number } | null;
 }
 
 export function ChatComposer({
@@ -230,6 +255,11 @@ export function ChatComposer({
   textareaRef,
   onVoiceMemo,
   className,
+  onInterceptSend,
+  useWireByteCount = false,
+  shouldSuppressLimits,
+  mentionAdapter,
+  composeSeed,
 }: ChatComposerProps) {
   const { t } = useTranslation();
   const { addToast } = useToast();
@@ -381,6 +411,8 @@ export function ChatComposer({
       ? replyTo.reticulum_message_hash
       : undefined;
 
+  const suppressLimits = shouldSuppressLimits?.(input) ?? false;
+
   const limitStatus = useMemo(
     () =>
       computeComposerLimitStatus(input, protocol, {
@@ -390,6 +422,8 @@ export function ChatComposer({
         replyToSenderName,
         replyKey,
         useKeyedReplies: meshcoreOpenWireCompat,
+        useWireByteCount,
+        suppressLimits,
       }),
     [
       input,
@@ -400,6 +434,8 @@ export function ChatComposer({
       replyToSenderName,
       replyKey,
       meshcoreOpenWireCompat,
+      useWireByteCount,
+      suppressLimits,
     ],
   );
 
@@ -476,16 +512,30 @@ export function ChatComposer({
     setMeshcoreFastSendWarn(false);
   }, [viewKey, protocol, showFloodScopeOverride]);
 
+  // Apply nicklist `/msg` seeds without an effect (avoids set-state-in-effect).
+  const [appliedComposeSeedToken, setAppliedComposeSeedToken] = useState<number | null>(null);
+  if (composeSeed && composeSeed.token !== appliedComposeSeedToken) {
+    setAppliedComposeSeedToken(composeSeed.token);
+    setInput(composeSeed.text);
+    setMentionQuery(null);
+    setChatActionError(null);
+  }
+
   const mentionCandidates = useMemo(
-    () => (mentionQuery != null ? buildMentionCandidates(nodes, protocol, mentionQuery) : []),
-    [mentionQuery, nodes, protocol],
+    () =>
+      mentionQuery != null
+        ? mentionAdapter
+          ? mentionAdapter.buildCandidates(mentionQuery)
+          : buildMentionCandidates(nodes, protocol, mentionQuery)
+        : [],
+    [mentionQuery, mentionAdapter, nodes, protocol],
   );
 
   const insertMention = useCallback(
     (name: string) => {
       const textarea = inputRef.current;
       const currentInput = inputValueRef.current;
-      const insert = `@[${name}] `;
+      const insert = mentionAdapter ? mentionAdapter.formatInsert(name) : `@[${name}] `;
       const before = currentInput.slice(0, mentionTriggerPos);
       const after = currentInput.slice(mentionTriggerPos + (mentionQuery?.length ?? 0) + 1);
       const newVal = before + insert + after;
@@ -498,7 +548,7 @@ export function ChatComposer({
         textarea?.setSelectionRange(newCursor, newCursor);
       });
     },
-    [maxInputLength, mentionTriggerPos, mentionQuery],
+    [maxInputLength, mentionAdapter, mentionTriggerPos, mentionQuery],
   );
 
   const clearSentDraft = useCallback(
@@ -568,15 +618,45 @@ export function ChatComposer({
       const gifWire = normalizeMeshcoreGifOutboundWire(trimmedSend);
       if (gifWire != null) trimmedSend = gifWire;
     }
-    const chunks = splitChatMessage(
-      trimmedSend,
-      protocol,
-      limitStatus.singleMessageLimit,
-      wireOverheadFirstChunk,
-    );
-    if (chunks === null) return;
-
-    const textsToSend = chunks.length === 0 ? [trimmedSend] : chunks;
+    if (onInterceptSend) {
+      setSending(true);
+      setChatActionError(null);
+      try {
+        const handled = await onInterceptSend(trimmedSend);
+        if (handled) {
+          clearSentDraft(draftSnapshot);
+          setMentionQuery(null);
+          onReplyClear?.();
+          onSendSuccess?.();
+          return;
+        }
+      } catch (err) {
+        console.error('[ChatComposer] Intercept send failed: ' + errLikeToLogString(err));
+        const fallback =
+          variant === 'room' ? t('roomsPanel.postFailed') : t('chatPanel.sendFailed');
+        setChatActionError({
+          message: err instanceof Error ? err.message : fallback,
+          viewKey,
+        });
+        return;
+      } finally {
+        setSending(false);
+      }
+    }
+    // suppressLimits: slash / no hub cap — never multi-part split this draft.
+    let textsToSend: string[];
+    if (suppressLimits) {
+      textsToSend = [trimmedSend];
+    } else {
+      const chunks = splitChatMessage(
+        trimmedSend,
+        protocol,
+        limitStatus.singleMessageLimit,
+        wireOverheadFirstChunk,
+      );
+      if (chunks === null) return;
+      textsToSend = chunks.length === 0 ? [trimmedSend] : chunks;
+    }
 
     if (replyTo && protocol === 'meshtastic' && (replyKey == null || replyKey === 0)) {
       setChatActionError({
@@ -699,6 +779,7 @@ export function ChatComposer({
     isConnected,
     isMqttOnly,
     limitStatus.singleMessageLimit,
+    onInterceptSend,
     onReplyClear,
     onSendChunk,
     onSendSuccess,
@@ -719,6 +800,7 @@ export function ChatComposer({
     meshcoreOpenWireCompat,
     tracksSendCadence,
     finishSendCadence,
+    suppressLimits,
   ]);
 
   const sendGifWire = useCallback(
@@ -1234,13 +1316,25 @@ export function ChatComposer({
               const val = e.target.value;
               setInput(val);
               setChatActionError(null);
-              const match = /@(\w*)$/.exec(val);
-              if (match) {
-                setMentionQuery(match[1]);
-                setMentionTriggerPos(val.length - match[0].length);
-                setMentionSelectedIdx(0);
+              if (mentionAdapter) {
+                const caret = e.target.selectionStart ?? val.length;
+                const at = mentionAdapter.findAtCaret(val, caret);
+                if (at) {
+                  setMentionQuery(at.query);
+                  setMentionTriggerPos(at.start);
+                  setMentionSelectedIdx(0);
+                } else {
+                  setMentionQuery(null);
+                }
               } else {
-                setMentionQuery(null);
+                const match = /@(\w*)$/.exec(val);
+                if (match) {
+                  setMentionQuery(match[1]);
+                  setMentionTriggerPos(val.length - match[0].length);
+                  setMentionSelectedIdx(0);
+                } else {
+                  setMentionQuery(null);
+                }
               }
             }}
             onKeyDown={handleKeyDown}
@@ -1257,7 +1351,7 @@ export function ChatComposer({
             aria-busy={sending}
             disabled={disabled || (!isConnected && !allowOutbox)}
             className={`${textareaClass} ${!isConnected ? 'opacity-60' : ''} ${disabled ? 'opacity-40' : ''}`}
-            maxLength={maxInputLength}
+            maxLength={suppressLimits ? undefined : maxInputLength}
           />
         </div>
         <HelpTooltip text={t('chatPanel.insertEmoji')}>
@@ -1326,7 +1420,9 @@ export function ChatComposer({
               onClick={() => {
                 void handleSend();
               }}
-              disabled={!input.trim() || sending || inputChunks === null || disabled}
+              disabled={
+                !input.trim() || sending || (!suppressLimits && inputChunks === null) || disabled
+              }
               aria-label={sendLabel}
               className={sendButtonSplitMainClass}
             >
@@ -1546,7 +1642,9 @@ export function ChatComposer({
               onClick={() => {
                 void handleSend();
               }}
-              disabled={!input.trim() || sending || inputChunks === null || disabled}
+              disabled={
+                !input.trim() || sending || (!suppressLimits && inputChunks === null) || disabled
+              }
               aria-label={sendLabel}
               className={sendButtonClass}
             >

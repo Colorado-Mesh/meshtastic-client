@@ -5454,7 +5454,16 @@
     "memberCount_few": "{{count}} участника",
     "memberCount_many": "{{count}} участников",
     "userCount_few": "{{count}} пользователя",
-    "userCount_many": "{{count}} пользователей"
+    "userCount_many": "{{count}} пользователей",
+    "byteLimit": {
+      "approaching": "{{count}} / {{limit}}"
+    },
+    "nickLimit": {
+      "overMax": "Слишком длинное имя псевдонима — ограничение концентратора составляет {{limit}} байт"
+    },
+    "roomNameLimit": {
+      "overMax": "Слишком длинное название комнаты — ограничение концентратора составляет {{limit}} байт"
+    }
   },
   "signalMeter": {
     "rssi": "РССИ",

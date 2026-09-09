@@ -5364,7 +5364,16 @@
     "addressChoiceTitle": "打开 Reticulum 地址",
     "addressChoiceMessage": "{{address}} 可能是 Nomad 页面，也可能是一个节点。要打开哪一个？",
     "addressChoiceNomad": "Nomad 页面",
-    "addressChoiceDm": "私信"
+    "addressChoiceDm": "私信",
+    "byteLimit": {
+      "approaching": "{{count}}/{{limit}}"
+    },
+    "nickLimit": {
+      "overMax": "昵称太长—集线器限制为{{limit}}字节"
+    },
+    "roomNameLimit": {
+      "overMax": "房间名称太长—集线器限制为{{limit}}字节"
+    }
   },
   "signalMeter": {
     "rssi": "RSSI",
