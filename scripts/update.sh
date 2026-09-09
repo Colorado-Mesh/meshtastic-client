@@ -381,6 +381,7 @@ check_ratspeak_patches() {
 RATSPEAK_STACK_PR_ENTRIES=(
   'ratspeak/rsReticulum|26|rsReticulum ReplyFile / LinkClient query metadata|clear RS_RETICULUM_REF from scripts/ratspeak-stack-ci-pins.env (+ reticulum-sidecar.yaml / flatpak.yaml env pins)'
   'ratspeak/rsLXMF|7|rsLXMF multi-file attachment APIs|clear RS_LXMF_REF from scripts/ratspeak-stack-ci-pins.env (+ reticulum-sidecar.yaml / flatpak.yaml env pins)'
+  'Colorado-Mesh/rsNomad|8|rsNomad NomadNet 1.4.1 /media ACL CGI|clear RS_NOMAD_REF from scripts/ratspeak-stack-ci-pins.env (+ reticulum-sidecar.yaml / flatpak.yaml env pins)'
 )
 
 check_ratspeak_stack_prs() {
