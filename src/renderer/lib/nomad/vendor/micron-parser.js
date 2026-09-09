@@ -417,6 +417,14 @@ class MicronParser {
           line = line.slice(1);
           preEscape = true;
         } else if (line[0] === '#') {
+          // NomadNet comments are invisible. mesh-client-only tips use:
+          // `# mesh-client: …` (optional `→ /page/…` link target).
+          const meshClientPrefix = '# mesh-client:';
+          if (line.startsWith(meshClientPrefix)) {
+            return (
+              this.parseMeshClientHint(line.slice(meshClientPrefix.length).trim(), state) || []
+            );
+          }
           return [];
         } else if (line.startsWith('`{')) {
           return this.parsePartial(line.slice(2)) || [];
@@ -1215,6 +1223,36 @@ class MicronParser {
   }
 
   /**
+   * mesh-client-only page tip (NomadNet treats `# …` as a comment / invisible).
+   * Format: `# mesh-client: Visible text → /page/path.mu`
+   */
+  parseMeshClientHint(body, state) {
+    if (!body) return null;
+    let text = body;
+    let href = null;
+    const arrow = body.match(/^(.*?)(?:\s*→\s*|\s+->\s+)(\/page\/\S+)\s*$/);
+    if (arrow) {
+      text = arrow[1].trim();
+      href = arrow[2].trim();
+    }
+
+    const wrap = document.createElement('div');
+    wrap.className = 'nomad-mesh-client-hint';
+    this.applySectionIndent(wrap, state);
+
+    if (href) {
+      const a = document.createElement('a');
+      a.className = 'nomad-network-link';
+      a.href = href;
+      a.textContent = text || href;
+      wrap.appendChild(a);
+    } else {
+      wrap.textContent = text;
+    }
+    return [wrap];
+  }
+
+  /**
    * NomadNet 1.4.1 image tag: `(alt`w=`h=`a=`url)
    * Emits an <img> placeholder; the view layer fetches /media bytes.
    */
@@ -1248,6 +1286,10 @@ class MicronParser {
     else if (alignProp === 'r') alignCss = 'right';
     else if (alignProp === 'center' || alignProp === 'left' || alignProp === 'right') {
       alignCss = alignProp;
+    } else if (state?.align === 'center' || state?.align === 'left' || state?.align === 'right') {
+      // Inherit page alignment when `a=` is omitted (avoids old NomadNet
+      // interpreting `` `a `` inside the image tag as an align reset).
+      alignCss = state.align;
     }
 
     const figure = document.createElement('figure');
