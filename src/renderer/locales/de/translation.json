@@ -750,7 +750,9 @@
     "heardByRepeatersAdditional_one": "{{count}} zusätzlicher nicht identifizierter Spediteur (Hashes: {{hashes}})",
     "heardByRepeatersAdditional_other": "{{count}} weitere nicht identifizierte Spediteure (Hashes: {{hashes}})",
     "reticulumSendAwaitingPeerReceipt": "Gesendet (wartet auf Peer-Eingang)",
-    "reticulumChatNeedsLxmfDelivery": "Dieser Peer hat noch keine LXMF-Lieferadresse (Chat kann kein Voice-only-Ziel verwenden). Warten Sie auf eine LXMF-Ankündigung oder fügen Sie ihren 32-stelligen LXMF-Hash ein."
+    "reticulumChatNeedsLxmfDelivery": "Dieser Peer hat noch keine LXMF-Lieferadresse (Chat kann kein Voice-only-Ziel verwenden). Warten Sie auf eine LXMF-Ankündigung oder fügen Sie ihren 32-stelligen LXMF-Hash ein.",
+    "saveAttachment": "Speichern…",
+    "revealAttachment": "In Ordner"
   },
   "chatPayload": {
     "mention": "Erwähne {{label}}",
@@ -3416,7 +3418,9 @@
     "pageProgressFailover": "Versuche eine andere Route über {{iface}} ({{hops}} Hops)…",
     "pageProgressFailoverIface": "Versuche eine andere Route über {{iface}}…",
     "pageProgressFailoverGeneric": "Eine andere Route wird versucht...",
-    "pageProgressNoAlternate": "Keine anderen Routen verfügbar — Beenden dieses Versuchs..."
+    "pageProgressNoAlternate": "Keine anderen Routen verfügbar — Beenden dieses Versuchs...",
+    "downloadFile": "Herunterladen",
+    "dismissPreview": "Ablehnen"
   },
   "packetDistribution": {
     "overallDistribution": "Gesamtverteilung",

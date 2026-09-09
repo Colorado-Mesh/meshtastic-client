@@ -750,7 +750,9 @@
     "heardByRepeatersAdditional_one": "{{count}} extra niet-geïdentificeerde expediteur (hashes: {{hashes}})",
     "heardByRepeatersAdditional_other": "{{count}} extra niet-geïdentificeerde expediteurs (hashes: {{hashes}})",
     "reticulumSendAwaitingPeerReceipt": "Verzonden (in afwachting van ontvangst door collega's)",
-    "reticulumChatNeedsLxmfDelivery": "Deze peer heeft nog geen LXMF-bezorgadres (chat kan geen bestemming met alleen spraak gebruiken). Wacht op een LXMF-aankondiging of plak hun LXMF-hash van 32 tekens."
+    "reticulumChatNeedsLxmfDelivery": "Deze peer heeft nog geen LXMF-bezorgadres (chat kan geen bestemming met alleen spraak gebruiken). Wacht op een LXMF-aankondiging of plak hun LXMF-hash van 32 tekens.",
+    "saveAttachment": "Opslaan",
+    "revealAttachment": "Tonen in map"
   },
   "chatPayload": {
     "mention": "Vermeld {{label}}",
@@ -3416,7 +3418,9 @@
     "pageProgressFailover": "Een andere route proberen via {{iface}} ({{hops}} hops)...",
     "pageProgressFailoverIface": "Een andere route proberen via {{iface}}…",
     "pageProgressFailoverGeneric": "Probeer een andere route...",
-    "pageProgressNoAlternate": "Geen andere routes beschikbaar — deze poging afronden..."
+    "pageProgressNoAlternate": "Geen andere routes beschikbaar — deze poging afronden...",
+    "downloadFile": "Download",
+    "dismissPreview": "Afwijzen"
   },
   "packetDistribution": {
     "overallDistribution": "Algemene distributie",

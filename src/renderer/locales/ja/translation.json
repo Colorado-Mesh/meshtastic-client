@@ -750,7 +750,9 @@
     "heardByRepeatersAdditional_one": "{{count}}追加の未確認フォワーダー（ハッシュ： {{hashes}} ）",
     "heardByRepeatersAdditional_other": "{{count}}追加の未確認フォワーダー（ハッシュ： {{hashes}} ）",
     "reticulumSendAwaitingPeerReceipt": "送信済み（ピアレシート待ち）",
-    "reticulumChatNeedsLxmfDelivery": "このピアにはまだLXMF配信アドレスがありません（チャットは音声のみの宛先を使用できません）。LXMFの発表を待つか、32文字のLXMFハッシュを貼り付けます。"
+    "reticulumChatNeedsLxmfDelivery": "このピアにはまだLXMF配信アドレスがありません（チャットは音声のみの宛先を使用できません）。LXMFの発表を待つか、32文字のLXMFハッシュを貼り付けます。",
+    "saveAttachment": "保存...",
+    "revealAttachment": "フォルダを表示"
   },
   "chatPayload": {
     "mention": "{{label}} について言及してください",
@@ -3416,7 +3418,9 @@
     "pageProgressFailover": "{{iface}} （ {{hops}}ホップ）経由で別のルートを試しています…",
     "pageProgressFailoverIface": "{{iface}}経由で別のルートを試しています…",
     "pageProgressFailoverGeneric": "別のルートを試しています…",
-    "pageProgressNoAlternate": "他に利用可能なルートはありません—この試みを終了しています…"
+    "pageProgressNoAlternate": "他に利用可能なルートはありません—この試みを終了しています…",
+    "downloadFile": "ダウンロード",
+    "dismissPreview": "却下"
   },
   "packetDistribution": {
     "overallDistribution": "全体の分布",
