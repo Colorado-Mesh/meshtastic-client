@@ -2,6 +2,10 @@ name: Tests
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Stacked Nomad file/metadata work (match reticulum-sidecar.yaml). Drop after upstream merges.
+  RS_RETICULUM_REF: 36456230cc29be5722c6f57c95f52c3b655e97f6
+  RS_LXMF_REF: c3d8b44942e7726dbbe6bb53e0976d4c72134119
+  RS_NOMAD_REF: 66d725785930039b5c527955e69dfa75474ebf71
 
 on:
   push:
