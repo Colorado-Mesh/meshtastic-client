@@ -417,14 +417,6 @@ class MicronParser {
           line = line.slice(1);
           preEscape = true;
         } else if (line[0] === '#') {
-          // NomadNet comments are invisible. mesh-client-only tips use:
-          // `# mesh-client: …` (optional `→ /page/…` link target).
-          const meshClientPrefix = '# mesh-client:';
-          if (line.startsWith(meshClientPrefix)) {
-            return (
-              this.parseMeshClientHint(line.slice(meshClientPrefix.length).trim(), state) || []
-            );
-          }
           return [];
         } else if (line.startsWith('`{')) {
           return this.parsePartial(line.slice(2)) || [];
@@ -781,6 +773,12 @@ class MicronParser {
 
     if (fgColor && fgColor !== 'default') {
       el.style.color = fgColor;
+      // Same fg as page/default bg → progressive tip for non-truecolor clients;
+      // hide on color-capable renderers (mesh-client).
+      const pageBgCss = this.colorToCss(defaultBg);
+      if (pageBgCss && fgColor.toLowerCase() === pageBgCss.toLowerCase()) {
+        el.classList.add('nomad-micron-fg-matches-bg');
+      }
     }
     if (bgColor && bgColor !== 'default' && style.bg !== defaultBg) {
       el.style.backgroundColor = bgColor;
@@ -1220,36 +1218,6 @@ class MicronParser {
     if (partial_fields.length > 0) el.setAttribute('data-partial-fields', partial_fields.join('|'));
 
     return [el];
-  }
-
-  /**
-   * mesh-client-only page tip (NomadNet treats `# …` as a comment / invisible).
-   * Format: `# mesh-client: Visible text → /page/path.mu`
-   */
-  parseMeshClientHint(body, state) {
-    if (!body) return null;
-    let text = body;
-    let href = null;
-    const arrow = body.match(/^(.*?)(?:\s*→\s*|\s+->\s+)(\/page\/\S+)\s*$/);
-    if (arrow) {
-      text = arrow[1].trim();
-      href = arrow[2].trim();
-    }
-
-    const wrap = document.createElement('div');
-    wrap.className = 'nomad-mesh-client-hint';
-    this.applySectionIndent(wrap, state);
-
-    if (href) {
-      const a = document.createElement('a');
-      a.className = 'nomad-network-link';
-      a.href = href;
-      a.textContent = text || href;
-      wrap.appendChild(a);
-    } else {
-      wrap.textContent = text;
-    }
-    return [wrap];
   }
 
   /**

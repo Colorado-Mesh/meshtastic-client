@@ -305,26 +305,24 @@ describe('isNomadFilePath', () => {
 });
 
 describe('NomadNet 1.4.1 micron images and collapsibles', () => {
-  it('renders mesh-client hint comments that NomadNet hides', () => {
-    const markup =
-      '# mesh-client: Site looks odd? Get the mesh client → /page/mesh-client.mu\n`!Visible:`!';
-    const html = renderNomadMicronPage(markup);
-    const container = document.createElement('div');
-    mountNomadMicronHtml(container, html);
-    const hint = container.querySelector<HTMLElement>('.nomad-mesh-client-hint');
-    expect(hint).not.toBeNull();
-    const link = hint?.querySelector('a.nomad-network-link');
-    expect(link?.getAttribute('href')).toBe('/page/mesh-client.mu');
-    expect(link?.textContent).toContain('Site looks odd?');
-    expect(container.textContent).toContain('Visible');
-  });
-
-  it('hides ordinary NomadNet comments', () => {
+  it('hides NomadNet comment lines', () => {
     const html = renderNomadMicronPage('# secret\n`!Hi:`!');
     const container = document.createElement('div');
     mountNomadMicronHtml(container, html);
     expect(container.textContent).not.toContain('secret');
     expect(container.textContent).toContain('Hi');
+  });
+
+  it('marks truecolor tips that match page background for hiding', () => {
+    const markup =
+      '#!bg=020617\n`FT020617Site looks odd? `[Get the mesh client`:/page/mesh-client.mu]`\n`FT86efacVisible`f';
+    const html = renderNomadMicronPage(markup);
+    const container = document.createElement('div');
+    mountNomadMicronHtml(container, html);
+    const hidden = container.querySelectorAll('.nomad-micron-fg-matches-bg');
+    expect(hidden.length).toBeGreaterThan(0);
+    expect([...hidden].some((el) => (el.textContent || '').includes('Site looks odd'))).toBe(true);
+    expect(container.textContent).toContain('Visible');
   });
 
   it('renders image placeholders with media data attributes', () => {

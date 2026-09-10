@@ -384,24 +384,17 @@ html[data-reduce-motion='true'] .cm-watermark-mesh-tube--flicker-off .cm-waterma
   font-size: 0.85em;
   opacity: 0.75;
 }
-.nomad-micron-page .nomad-mesh-client-hint {
-  display: block;
-  width: 100%;
-  max-width: 100%;
-  box-sizing: border-box;
-  margin: 0 0 0.75em;
-  padding: 0.4em 0.65em;
-  font-size: 0.9em;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  color: var(--text-muted, #94a3b8);
-  background: color-mix(in srgb, var(--surface-2, #1e293b) 80%, transparent);
-  border-radius: 4px;
-}
-.nomad-micron-page .nomad-mesh-client-hint a {
-  color: inherit;
-  text-decoration: underline;
+/* Micron `` `FTxxxxxx` `` matching #!bg — hide on color-capable clients */
+.nomad-micron-page .nomad-micron-fg-matches-bg {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
 }
 .nomad-micron-page .nomad-micron-collapsible {
   margin: 0.25em 0;
