@@ -4,6 +4,17 @@ Patches applied on top of [ratspeak/rsReticulum](https://github.com/ratspeak/rsR
 
 By default `scripts/clone-ratspeak-stack.sh` floats the `.rsstack/` checkouts to **`origin/main`** and applies these overlays (fails loud if a patch will not apply). Use `RS_RETICULUM_REF` / `RS_LXMF_REF` / `RS_NOMAD_REF` to pin a known-good SHA for bisect. Per-overlay **Base commit** tables below record the last regeneration baseline, not a permanent pin — when regenerating, prefer floated `origin/main` and record the short SHA in the PR.
 
+## Stacked upstream feature PRs (CI pins)
+
+mesh-client sometimes depends on **open** ratspeak PRs that are not local overlays (new library APIs). Those are pinned for CI via `scripts/ratspeak-stack-ci-pins.env` (loaded when `CI=true`) and matching workflow `env` blocks. `pnpm run update` tracks them in `RATSPEAK_STACK_PR_ENTRIES` (`scripts/update.sh`) and warns when they merge so pins can be cleared.
+
+| Upstream | What we need | Pin / watch |
+| -------- | ------------ | ----------- |
+| [ratspeak/rsReticulum#26](https://github.com/ratspeak/rsReticulum/pull/26) | `RequestOutcome::ReplyFile` + `LinkClient::query` Resource metadata | `RS_RETICULUM_REF` |
+| [ratspeak/rsLXMF#7](https://github.com/ratspeak/rsLXMF/pull/7) | Multi-file LXMF attachment pack/list APIs | `RS_LXMF_REF` |
+
+After both merge and floated `origin/main` includes them: delete or empty `ratspeak-stack-ci-pins.env`, drop workflow env pins, and remove the matching `RATSPEAK_STACK_PR_ENTRIES` rows.
+
 ## Development — overlays/patches
 
 Overlays require **git checkouts** in the repo-local `.rsstack/` workspace (not a bare Cargo cache path):
