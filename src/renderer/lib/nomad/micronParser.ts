@@ -187,6 +187,29 @@ export interface NomadMicronMediaFetchResult {
   error?: string;
 }
 
+/** Max in-flight Nomad `/media` fetches per bind (avoids stampeding a node). */
+export const NOMAD_MICRON_MEDIA_FETCH_CONCURRENCY = 4;
+
+async function runPool<T>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  if (items.length === 0) return;
+  let next = 0;
+  const n = Math.min(Math.max(1, concurrency), items.length);
+  await Promise.all(
+    Array.from({ length: n }, async () => {
+      while (next < items.length) {
+        const item = items[next];
+        next += 1;
+        if (item === undefined) continue;
+        await worker(item);
+      }
+    }),
+  );
+}
+
 /**
  * After Micron mount, fetch WebP bytes for each `[data-nomad-media-url]` placeholder.
  * Does not use `/file` downloads — callers must use the Nomad `/media` API.
@@ -199,58 +222,71 @@ export async function bindNomadMicronMedia(
     fetchMedia: (hash: string, mediaPath: string) => Promise<NomadMicronMediaFetchResult>;
     /** Force image/webp data URLs (NomadNet media is always WebP). */
     toDataUrl?: (fileName: string, contentBase64: string) => string | null;
+    signal?: AbortSignal;
+    /** Override default {@link NOMAD_MICRON_MEDIA_FETCH_CONCURRENCY} (tests). */
+    concurrency?: number;
   },
 ): Promise<void> {
   const defaultPagePath = opts.defaultPagePath ?? DEFAULT_NOMAD_NODE_PAGE_PATH;
   const toDataUrl = opts.toDataUrl;
+  const signal = opts.signal;
+  const concurrency = opts.concurrency ?? NOMAD_MICRON_MEDIA_FETCH_CONCURRENCY;
   const images = Array.from(root.querySelectorAll<HTMLImageElement>('[data-nomad-media-url]'));
-  await Promise.all(
-    images.map(async (img) => {
-      const url = img.getAttribute('data-nomad-media-url') ?? '';
-      const alt = img.getAttribute('data-nomad-media-alt') ?? img.alt;
-      const notice = img.parentElement?.querySelector('.nomad-micron-media-notice');
-      const target = resolveNomadMediaFetchTarget(url, opts.selectedHash, defaultPagePath);
-      if (!target) {
-        if (notice) notice.textContent = alt ? `[${alt}]` : '[invalid media url]';
+
+  const setNotice = (notice: Element | null | undefined, text: string) => {
+    if (signal?.aborted || !notice) return;
+    notice.textContent = text;
+  };
+
+  await runPool(images, concurrency, async (img) => {
+    if (signal?.aborted) return;
+    const url = img.getAttribute('data-nomad-media-url') ?? '';
+    const alt = img.getAttribute('data-nomad-media-alt') ?? img.alt;
+    const notice = img.parentElement?.querySelector('.nomad-micron-media-notice');
+    const target = resolveNomadMediaFetchTarget(url, opts.selectedHash, defaultPagePath);
+    if (!target) {
+      setNotice(notice, alt ? `[${alt}]` : '[invalid media url]');
+      return;
+    }
+    setNotice(notice, alt ? `Loading ${alt}…` : 'Loading image…');
+    try {
+      const res = await opts.fetchMedia(target.hash, target.mediaPath);
+      if (signal?.aborted) return;
+      if (!res.ok || !res.content_base64) {
+        setNotice(
+          notice,
+          alt
+            ? `Could not load ${alt}`
+            : `Could not load image${res.error ? `: ${res.error}` : ''}`,
+        );
         return;
       }
-      if (notice) notice.textContent = alt ? `Loading ${alt}…` : 'Loading image…';
-      try {
-        const res = await opts.fetchMedia(target.hash, target.mediaPath);
-        if (!res.ok || !res.content_base64) {
-          if (notice) {
-            notice.textContent = alt
-              ? `Could not load ${alt}`
-              : `Could not load image${res.error ? `: ${res.error}` : ''}`;
-          }
-          return;
-        }
-        const fileName =
-          res.file_name && /\.webp$/i.test(res.file_name)
-            ? res.file_name
-            : `${(target.mediaPath.split('/').pop() || 'image').replace(/\.[^.]+$/, '') || 'image'}.webp`;
-        const dataUrl = toDataUrl
-          ? toDataUrl(fileName, res.content_base64)
-          : `data:image/webp;base64,${res.content_base64}`;
-        if (!dataUrl) {
-          if (notice) {
-            notice.textContent = alt ? `Could not display ${alt}` : 'Could not display image';
-          }
-          return;
-        }
-        img.src = dataUrl;
-        if (notice) notice.textContent = '';
-        notice?.setAttribute('hidden', 'true');
-      } catch (e) {
-        console.warn('[bindNomadMicronMedia] fetch failed', e);
-        if (notice) {
-          notice.textContent = alt
-            ? `Could not load ${alt}`
-            : `Could not load image: ${e instanceof Error ? e.message : String(e)}`;
-        }
+      const fileName =
+        res.file_name && /\.webp$/i.test(res.file_name)
+          ? res.file_name
+          : `${(target.mediaPath.split('/').pop() || 'image').replace(/\.[^.]+$/, '') || 'image'}.webp`;
+      const dataUrl = toDataUrl
+        ? toDataUrl(fileName, res.content_base64)
+        : `data:image/webp;base64,${res.content_base64}`;
+      if (signal?.aborted) return;
+      if (!dataUrl) {
+        setNotice(notice, alt ? `Could not display ${alt}` : 'Could not display image');
+        return;
       }
-    }),
-  );
+      img.src = dataUrl;
+      setNotice(notice, '');
+      if (!signal?.aborted) notice?.setAttribute('hidden', 'true');
+    } catch (e) {
+      if (signal?.aborted) return;
+      console.warn('[bindNomadMicronMedia] fetch failed', e);
+      setNotice(
+        notice,
+        alt
+          ? `Could not load ${alt}`
+          : `Could not load image: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  });
 }
 
 function stripNomadUrlSchemes(url: string): string {

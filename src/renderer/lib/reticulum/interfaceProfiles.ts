@@ -200,7 +200,7 @@ export function updateDefaultInterfaceMembersIfCustom(
     const members = [...membersExisting(p, names)].sort();
     return members.length === enabled.length && members.every((m, i) => m === enabled[i]);
   });
-  if (matchesNamed && state.defaultMembers != null) return state;
+  if (matchesNamed) return state;
   if (
     state.defaultMembers?.length === enabled.length &&
     state.defaultMembers.every((m, i) => m === enabled[i])
@@ -228,25 +228,28 @@ export type InterfaceEnableToggle = (
   id: string,
   enabled: boolean,
   ifaceTypeName?: string,
-) => void | Promise<void>;
+) => boolean | undefined | Promise<boolean | undefined>;
 
 /**
  * Apply an enable-set: enable members, disable the rest.
- * Returns whether any toggle was attempted.
+ * Stops early when a toggle reports failure (`false`).
  */
 export async function applyInterfaceEnableSet(
   interfaces: readonly { id: string; name: string; enabled: boolean; type: string }[],
   members: ReadonlySet<string>,
   toggle: InterfaceEnableToggle,
-): Promise<{ changed: boolean; needsRestartHint: boolean }> {
+): Promise<{ changed: boolean; needsRestartHint: boolean; ok: boolean }> {
   let changed = false;
   let needsRestartHint = false;
   for (const iface of interfaces) {
     const want = members.has(iface.name);
     if (iface.enabled === want) continue;
     changed = true;
-    await Promise.resolve(toggle(iface.id, want, iface.type));
+    const result = await Promise.resolve(toggle(iface.id, want, iface.type));
+    if (result === false) {
+      return { changed, needsRestartHint, ok: false };
+    }
     if (want) needsRestartHint = true;
   }
-  return { changed, needsRestartHint };
+  return { changed, needsRestartHint, ok: true };
 }

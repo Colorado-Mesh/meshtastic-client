@@ -384,7 +384,8 @@ html[data-reduce-motion='true'] .cm-watermark-mesh-tube--flicker-off .cm-waterma
   font-size: 0.85em;
   opacity: 0.75;
 }
-/* Micron `` `FTxxxxxx` `` matching #!bg — hide on color-capable clients */
+/* Micron `` `FTxxxxxx` `` matching #!bg — hide on color-capable clients.
+   Matching elements also get aria-hidden="true" from the Micron renderer. */
 .nomad-micron-page .nomad-micron-fg-matches-bg {
   position: absolute !important;
   width: 1px !important;

@@ -67,7 +67,7 @@ export function parseRrcLinkUrl(url: string): ParsedRrcLink | null {
           .replace(/^\/+|\/+$/g, '') || null
       : null;
 
-  const hubHash = hexPart.replace(/[^a-f0-9]/g, '');
+  const hubHash = hexPart;
   if (!HUB_HASH_RE.test(hubHash)) return null;
 
   const room = roomRaw.replace(/^#+/, '').trim();

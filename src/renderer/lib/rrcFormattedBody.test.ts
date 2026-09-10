@@ -18,6 +18,15 @@ describe('rrcFormattedBody', () => {
     );
   });
 
+  it('keeps emphasis markers inside markdown link destinations', () => {
+    expect(lightMarkdownToMicron('[x](https://example.com/foo__bar__baz)')).toBe(
+      '`[x`https://example.com/foo__bar__baz`]',
+    );
+    expect(lightMarkdownToMicron('[*lab*](https://example.com/a_b)')).toBe(
+      '`[`*lab`*`https://example.com/a_b`]',
+    );
+  });
+
   it('routes markdown bodies through micron conversion before render', () => {
     // Full HTML render needs jsdom (MicronParser); this asserts the preprocess path.
     expect(rrcBodyLooksFormatted('see **bold**')).toBe(true);

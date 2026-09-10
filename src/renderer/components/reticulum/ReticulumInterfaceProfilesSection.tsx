@@ -19,7 +19,11 @@ import type { ReticulumInterfaceRow } from '@/renderer/lib/reticulum/useReticulu
 export interface ReticulumInterfaceProfilesSectionProps {
   interfaces: ReticulumInterfaceRow[];
   actionsDisabled: boolean;
-  onToggle: (id: string, enabled: boolean, ifaceType: string) => void | Promise<void>;
+  onToggle: (
+    id: string,
+    enabled: boolean,
+    ifaceType: string,
+  ) => boolean | undefined | Promise<boolean | undefined>;
   onApplied?: (needsRestartHint: boolean) => void;
 }
 
@@ -38,12 +42,14 @@ export function ReticulumInterfaceProfilesSection({
   const [renameValue, setRenameValue] = useState('');
 
   useEffect(() => {
+    // Skip while applying a named profile so mid-toggle snapshots do not invent Default.
+    if (busy) return;
     setState((prev) => {
       const next = updateDefaultInterfaceMembersIfCustom(prev, interfaces);
       if (next !== prev) saveInterfaceProfiles(next);
       return next;
     });
-  }, [interfaces]);
+  }, [interfaces, busy]);
 
   const activeId = useMemo(() => activeInterfaceProfileId(state, interfaces), [state, interfaces]);
 
@@ -60,6 +66,7 @@ export function ReticulumInterfaceProfilesSection({
         new Set(members),
         (id, enabled, typeName) => onToggle(id, enabled, typeName ?? ''),
       );
+      if (!res.ok) return;
       onApplied?.(res.needsRestartHint);
     } finally {
       setBusy(false);

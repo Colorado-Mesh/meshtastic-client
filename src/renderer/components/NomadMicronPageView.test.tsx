@@ -245,6 +245,32 @@ describe('NomadMicronPageView', () => {
     expect(onDownloadFile).not.toHaveBeenCalled();
   });
 
+  it('fetches /media placeholders that appear inside loaded partials', async () => {
+    const onFetchMedia = vi.fn().mockResolvedValue({
+      ok: true,
+      content_base64: 'UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAAwA0JaQAA3AA/vuUAAA=',
+      file_name: 'inner.webp',
+    });
+    const onFetchPartial = vi.fn().mockResolvedValue({
+      ok: true,
+      content: '`(Inner`a=c`:/media/inner.webp)',
+    });
+    render(
+      <NomadMicronPageView
+        {...defaultProps}
+        onFetchPartial={onFetchPartial}
+        onFetchMedia={onFetchMedia}
+        content="`{:/page/partial.mu}"
+      />,
+    );
+
+    await vi.waitFor(() => {
+      const img = document.querySelector<HTMLImageElement>('.nomad-micron-media');
+      expect(img?.getAttribute('src') ?? '').toMatch(/^data:image\/webp;base64,/);
+    });
+    expect(onFetchMedia).toHaveBeenCalledWith(defaultProps.selectedHash, '/media/inner.webp');
+  });
+
   it('shows alt notice when onFetchMedia fails', async () => {
     const onFetchMedia = vi.fn().mockResolvedValue({ ok: false, error: 'link_timeout' });
     render(

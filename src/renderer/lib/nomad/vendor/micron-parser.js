@@ -778,6 +778,7 @@ class MicronParser {
       const pageBgCss = this.colorToCss(defaultBg);
       if (pageBgCss && fgColor.toLowerCase() === pageBgCss.toLowerCase()) {
         el.classList.add('nomad-micron-fg-matches-bg');
+        el.setAttribute('aria-hidden', 'true');
       }
     }
     if (bgColor && bgColor !== 'default' && style.bg !== defaultBg) {

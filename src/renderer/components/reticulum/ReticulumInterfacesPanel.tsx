@@ -645,14 +645,18 @@ export function ReticulumInterfacesPanel({
     }
   };
 
-  const toggleInterface = async (id: string, enabled: boolean, ifaceTypeName?: string) => {
+  const toggleInterface = async (
+    id: string,
+    enabled: boolean,
+    ifaceTypeName?: string,
+  ): Promise<boolean> => {
     setInterfaceError(null);
     const row = interfaces.find((iface) => iface.id === id);
     if (enabled && row && isDecommissionedReticulumTcpInterfaceRow(row)) {
       const blockedMsg = t('connectionPanel.reticulumInterfaces.decommissionedHubEnableBlocked');
       setInterfaceError(blockedMsg);
       addToast(blockedMsg, 'error');
-      return;
+      return false;
     }
     try {
       const path = enabled ? `/api/v1/interfaces/${id}/enable` : `/api/v1/interfaces/${id}/disable`;
@@ -668,7 +672,7 @@ export function ReticulumInterfacesPanel({
             'connectionPanel.reticulumInterfaces.toggleFailed',
           ),
         );
-        return;
+        return false;
       }
       await onRefresh();
       if (enabled) {
@@ -677,6 +681,7 @@ export function ReticulumInterfacesPanel({
       if (enabled && ifaceTypeName && reticulumInterfaceChangeRequiresStackRestart(ifaceTypeName)) {
         await restartStackForInterfaceChange();
       }
+      return true;
     } catch (e) {
       // catch-no-log-ok: interface toggle failure shown via interfaceError
       setInterfaceError(
@@ -686,6 +691,7 @@ export function ReticulumInterfacesPanel({
           'connectionPanel.reticulumInterfaces.toggleFailed',
         ),
       );
+      return false;
     }
   };
 

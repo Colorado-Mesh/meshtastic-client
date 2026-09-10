@@ -48,6 +48,8 @@ describe('parseRrcLinkUrl', () => {
 
   it('rejects invalid hashes and non-RRC urls', () => {
     expect(parseRrcLinkUrl('rrc://deadbeef')).toBeNull();
+    expect(parseRrcLinkUrl(`rrc://${HASH}zz`)).toBeNull();
+    expect(parseRrcLinkUrl(`rrc://${HASH.slice(0, 31)}g`)).toBeNull();
     expect(parseRrcLinkUrl(`lxmf://${HASH}`)).toBeNull();
     expect(parseRrcLinkUrl('https://example.com')).toBeNull();
     expect(isRrcLink(`rrc://${HASH}`)).toBe(true);

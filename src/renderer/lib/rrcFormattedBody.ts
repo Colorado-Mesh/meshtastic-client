@@ -20,12 +20,23 @@ export function rrcBodyLooksFormatted(text: string): boolean {
  * common Channel-style bodies without vendoring NomadNet's MarkdownToMicron.
  */
 export function lightMarkdownToMicron(text: string): string {
-  let out = text;
-  // Links first so nested emphasis inside labels still works on the label text.
-  out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '`[$1`$2`]');
+  // Protect link destinations so emphasis markers inside URLs stay intact.
+  const destinations: string[] = [];
+  let out = text.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+    (_m, label: string, url: string) => {
+      const i = destinations.length;
+      destinations.push(url);
+      return `«MDURL${i}»${label}«/MDURL»`;
+    },
+  );
   out = out.replace(/\*\*([^*\n]+)\*\*/g, '`!$1`!');
   out = out.replace(/__([^_\n]+)__/g, '`!$1`!');
   out = out.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1`*$2`*');
+  out = out.replace(/«MDURL(\d+)»([\s\S]*?)«\/MDURL»/g, (_m, idx, label) => {
+    const url = destinations[Number(idx)] ?? '';
+    return `\`[${label}\`${url}\`]`;
+  });
   return out;
 }
 

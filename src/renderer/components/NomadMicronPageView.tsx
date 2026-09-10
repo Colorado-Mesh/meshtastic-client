@@ -40,6 +40,29 @@ interface NomadMicronPageViewProps {
   onFetchMedia?: (hash: string, mediaPath: string) => Promise<NomadMicronMediaFetchResult>;
 }
 
+function mediaBindOptions(
+  ctx: {
+    selectedHash: string;
+    defaultPagePath: string;
+    onFetchMedia?: (hash: string, mediaPath: string) => Promise<NomadMicronMediaFetchResult>;
+  },
+  signal: AbortSignal,
+) {
+  const fetchMedia = ctx.onFetchMedia;
+  if (!fetchMedia) return null;
+  return {
+    selectedHash: ctx.selectedHash,
+    defaultPagePath: ctx.defaultPagePath,
+    signal,
+    fetchMedia: (hash: string, mediaPath: string) => fetchMedia(hash, mediaPath),
+    toDataUrl: (fileName: string, contentBase64: string) =>
+      nomadRasterDataUrl(
+        fileName.toLowerCase().endsWith('.webp') ? fileName : `${fileName}.webp`,
+        contentBase64,
+      ) ?? nomadRasterDataUrl('image.webp', contentBase64),
+  };
+}
+
 export default function NomadMicronPageView({
   content,
   defaultPagePath,
@@ -156,6 +179,19 @@ export default function NomadMicronPageView({
     };
     container.addEventListener('click', onActivate);
 
+    const partialMediaAborts: AbortController[] = [];
+    const onPartialLoaded = (event: Event) => {
+      const el = event.target;
+      if (!(el instanceof HTMLElement) || !el.classList.contains('Mu-partial')) return;
+      if (!container.contains(el)) return;
+      const ac = new AbortController();
+      partialMediaAborts.push(ac);
+      const bindOpts = mediaBindOptions(linkContextRef.current, ac.signal);
+      if (!bindOpts) return;
+      void bindNomadMicronMedia(el, bindOpts);
+    };
+    container.addEventListener('partial-loaded', onPartialLoaded);
+
     let unbindPartials: (() => void) | undefined;
     if (linkContextRef.current.onFetchPartial) {
       unbindPartials = bindNomadMicronPartials(container, async (info) => {
@@ -180,31 +216,25 @@ export default function NomadMicronPageView({
       });
     }
 
-    let cancelled = false;
-    const fetchMedia = linkContextRef.current.onFetchMedia;
-    if (fetchMedia) {
-      void bindNomadMicronMedia(container, {
-        selectedHash: linkContextRef.current.selectedHash,
-        defaultPagePath: linkContextRef.current.defaultPagePath,
-        fetchMedia: (hash, mediaPath) => fetchMedia(hash, mediaPath),
-        toDataUrl: (fileName, contentBase64) =>
-          nomadRasterDataUrl(
-            fileName.toLowerCase().endsWith('.webp') ? fileName : `${fileName}.webp`,
-            contentBase64,
-          ) ?? nomadRasterDataUrl('image.webp', contentBase64),
-      }).then(() => {
-        if (cancelled) {
-          // Unmounted before fetch finished — DOM already replaced/cleared.
-        }
-      });
-    }
-
     return () => {
-      cancelled = true;
       container.removeEventListener('click', onActivate);
+      container.removeEventListener('partial-loaded', onPartialLoaded);
+      for (const ac of partialMediaAborts) ac.abort();
       unbindPartials?.();
     };
   }, [content]);
+
+  // Rebind /media when page content or fetch context changes (hash / path / fetcher).
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !onFetchMedia) return;
+    const ac = new AbortController();
+    const opts = mediaBindOptions({ selectedHash, defaultPagePath, onFetchMedia }, ac.signal);
+    if (opts) void bindNomadMicronMedia(container, opts);
+    return () => {
+      ac.abort();
+    };
+  }, [content, selectedHash, defaultPagePath, onFetchMedia]);
 
   return (
     <div

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  bindNomadMicronMedia,
   bindNomadMicronPartials,
   buildNomadLinkRequest,
   collectNomadFormFieldValues,
@@ -15,6 +16,7 @@ import {
   isNomadMicronPage,
   loadNomadMicronPartial,
   mountNomadMicronHtml,
+  NOMAD_MICRON_MEDIA_FETCH_CONCURRENCY,
   nomadPageRequestDataEquals,
   normalizeNomadPageRequestData,
   parseNomadLinkFieldsSpec,
@@ -321,6 +323,7 @@ describe('NomadNet 1.4.1 micron images and collapsibles', () => {
     mountNomadMicronHtml(container, html);
     const hidden = container.querySelectorAll('.nomad-micron-fg-matches-bg');
     expect(hidden.length).toBeGreaterThan(0);
+    expect([...hidden].every((el) => el.getAttribute('aria-hidden') === 'true')).toBe(true);
     expect([...hidden].some((el) => (el.textContent || '').includes('Site looks odd'))).toBe(true);
     expect(container.textContent).toContain('Visible');
   });
@@ -387,6 +390,67 @@ describe('NomadNet 1.4.1 micron images and collapsibles', () => {
     expect(isNomadMediaPath('/media/demo.webp')).toBe(true);
     expect(isNomadMediaPath('media/demo.webp')).toBe(true);
     expect(isNomadMediaPath('/file/demo.webp')).toBe(false);
+  });
+
+  it('limits concurrent /media fetches to the configured pool size', async () => {
+    const lines = Array.from(
+      { length: NOMAD_MICRON_MEDIA_FETCH_CONCURRENCY + 3 },
+      (_, i) => `\`(Img ${i}\`:/media/i${i}.webp)`,
+    );
+    const container = document.createElement('div');
+    mountNomadMicronHtml(container, renderNomadMicronPage(lines.join('\n')));
+
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const fetchMedia = vi.fn(async () => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((r) => setTimeout(r, 20));
+      inFlight -= 1;
+      return {
+        ok: true,
+        content_base64: 'UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAAwA0JaQAA3AA/vuUAAA=',
+        file_name: 'i.webp',
+      };
+    });
+
+    await bindNomadMicronMedia(container, {
+      selectedHash: 'a'.repeat(32),
+      fetchMedia,
+      concurrency: NOMAD_MICRON_MEDIA_FETCH_CONCURRENCY,
+    });
+
+    expect(fetchMedia).toHaveBeenCalledTimes(NOMAD_MICRON_MEDIA_FETCH_CONCURRENCY + 3);
+    expect(maxInFlight).toBeLessThanOrEqual(NOMAD_MICRON_MEDIA_FETCH_CONCURRENCY);
+    expect(maxInFlight).toBeGreaterThan(1);
+  });
+
+  it('skips DOM updates after AbortSignal aborts', async () => {
+    const container = document.createElement('div');
+    mountNomadMicronHtml(container, renderNomadMicronPage('`(Banner`:/media/demo.webp)'));
+    const ac = new AbortController();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fetchMedia = vi.fn(async () => {
+      await gate;
+      return {
+        ok: true,
+        content_base64: 'UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAAwA0JaQAA3AA/vuUAAA=',
+        file_name: 'demo.webp',
+      };
+    });
+    const pending = bindNomadMicronMedia(container, {
+      selectedHash: 'a'.repeat(32),
+      fetchMedia,
+      signal: ac.signal,
+    });
+    ac.abort();
+    release();
+    await pending;
+    const img = container.querySelector<HTMLImageElement>('.nomad-micron-media');
+    expect(img?.getAttribute('src') ?? '').not.toMatch(/^data:image\/webp/);
   });
 });
 

@@ -759,10 +759,10 @@ export default function RrcPanel({
   }, [handleConnect, upsertManual]);
 
   useEffect(() => {
-    if (!hubDestHash || !isRrcHubLinked(status)) return;
+    if (!hubDestHash || status !== 'active') return;
     const room = consumePendingRrcLinkJoin(hubDestHash);
     if (!room) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- deep-link room join after hub becomes live
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- deep-link room join after hub becomes active
     void joinRoom(room);
   }, [hubDestHash, status, joinRoom]);
 

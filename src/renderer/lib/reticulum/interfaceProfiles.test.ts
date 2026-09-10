@@ -46,16 +46,34 @@ describe('interfaceProfiles', () => {
     expect(state.defaultMembers).toEqual(['Beta']);
   });
 
+  it('does not invent Default members when live set matches a named profile', () => {
+    let state = saveCurrentAsInterfaceProfile(emptyInterfaceProfilesState(), 'Dual', ifaces);
+    expect(state.defaultMembers).toBeNull();
+    state = updateDefaultInterfaceMembersIfCustom(state, ifaces);
+    expect(state.defaultMembers).toBeNull();
+  });
+
   it('applies enable set via toggles', async () => {
     const calls: { id: string; enabled: boolean }[] = [];
     const res = await applyInterfaceEnableSet(ifaces, new Set(['Beta']), (id, enabled) => {
       calls.push({ id, enabled });
     });
     expect(res.changed).toBe(true);
+    expect(res.ok).toBe(true);
     expect(calls).toEqual([
       { id: 'a', enabled: false },
       { id: 'b', enabled: true },
       { id: 'c', enabled: false },
     ]);
+  });
+
+  it('stops applying enable set when a toggle fails', async () => {
+    const calls: { id: string; enabled: boolean }[] = [];
+    const res = await applyInterfaceEnableSet(ifaces, new Set(['Beta']), (id, enabled) => {
+      calls.push({ id, enabled });
+      return id !== 'a';
+    });
+    expect(res.ok).toBe(false);
+    expect(calls).toEqual([{ id: 'a', enabled: false }]);
   });
 });
