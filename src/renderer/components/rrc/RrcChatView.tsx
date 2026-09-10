@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next';
 
 import { ChatComposer } from '@/renderer/components/ChatComposer';
 import { ConfirmModal } from '@/renderer/components/ConfirmModal';
+import { RrcFormattedBody } from '@/renderer/components/rrc/RrcFormattedBody';
 import { useAppWindowActivity } from '@/renderer/lib/appWindowActivity';
 import { isSafeChatUrl } from '@/renderer/lib/chatMentionSegments';
 import {
@@ -615,11 +616,14 @@ export function RrcChatView({
                       : msg.kind === 'error'
                         ? 'text-red-300'
                         : 'text-gray-100';
-                const body = highlightRrcSelfMentions(
-                  whisperEcho ? whisperEcho.text : msg.body,
-                  nickname,
-                  inlineOpts,
-                );
+                const rawBody = whisperEcho ? whisperEcho.text : msg.body;
+                const plainBody = highlightRrcSelfMentions(rawBody, nickname, inlineOpts);
+                const body =
+                  msg.kind === 'msg' || msg.kind === 'action' || whisperAsRoomMsg ? (
+                    <RrcFormattedBody text={rawBody} fallback={plainBody} onOpenDm={onOpenDm} />
+                  ) : (
+                    plainBody
+                  );
 
                 return (
                   <div

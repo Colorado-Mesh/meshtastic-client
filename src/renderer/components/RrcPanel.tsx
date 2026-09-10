@@ -11,6 +11,12 @@ import { RrcTopicBar } from '@/renderer/components/rrc/RrcTopicBar';
 import { runRrcHubAutoConnectBatch } from '@/renderer/hooks/useRrcStartupAutoConnect';
 import { loadMutedViews, saveMutedViews } from '@/renderer/lib/chatPanelProtocolStorage';
 import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
+import {
+  consumePendingRrcLinkJoin,
+  OPEN_RRC_HUB_EVENT,
+  type OpenRrcHubDetail,
+  takePendingRrcHubOpen,
+} from '@/renderer/lib/openRrcHubFromLink';
 import { withReticulumIpcSendDeadline } from '@/renderer/lib/reticulum/reticulumIpcDeadline';
 import { isReticulumSidecarRunning } from '@/renderer/lib/reticulum/reticulumSidecarReads';
 import {
@@ -725,6 +731,40 @@ export default function RrcPanel({
     },
     [hubDestHash, limits.max_room_name_bytes, listedRooms, rooms, setActiveRoom, setError, t],
   );
+
+  // Micron / deep-link rrc:// — upsert hub, connect/focus; room join waits until linked.
+  useEffect(() => {
+    const openFromLink = async (detail: OpenRrcHubDetail) => {
+      const hub = await upsertManual(detail.hubHash, detail.destName ?? undefined);
+      const hash = hub?.destination_hash ?? detail.hubHash;
+      await handleConnect(hash, { focus: true });
+    };
+
+    const pending = takePendingRrcHubOpen();
+    if (pending) {
+      void openFromLink(pending);
+    }
+
+    const onOpen = (event: Event) => {
+      // Prefer the event detail; clear any queued pending so remount does not double-connect.
+      takePendingRrcHubOpen();
+      const detail = (event as CustomEvent<OpenRrcHubDetail>).detail;
+      if (!detail?.hubHash) return;
+      void openFromLink(detail);
+    };
+    window.addEventListener(OPEN_RRC_HUB_EVENT, onOpen);
+    return () => {
+      window.removeEventListener(OPEN_RRC_HUB_EVENT, onOpen);
+    };
+  }, [handleConnect, upsertManual]);
+
+  useEffect(() => {
+    if (!hubDestHash || status !== 'active') return;
+    const room = consumePendingRrcLinkJoin(hubDestHash);
+    if (!room) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- deep-link room join after hub becomes active
+    void joinRoom(room);
+  }, [hubDestHash, status, joinRoom]);
 
   const handlePart = useCallback(
     async (room?: string) => {

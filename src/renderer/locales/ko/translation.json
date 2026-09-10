@@ -1314,7 +1314,19 @@
       "fieldNotANumber": "정수 (숫자만) 를 입력하세요.",
       "fieldOutOfRange": "값이 허용된 범위를 벗어났습니다.",
       "fieldTooLong": "값이 너무 깁니다.",
-      "fieldInvalidOption": "지원되지 않는 값입니다."
+      "fieldInvalidOption": "지원되지 않는 값입니다.",
+      "profilesTitle": "Interface profiles",
+      "profilesHint": "Named enable-sets for which interfaces are on. Switching a profile enables its members and disables the rest.",
+      "profilesEmpty": "No profiles yet. Save the current enable-set to create one.",
+      "profilesDefault": "Default",
+      "profilesUnnamed": "(unnamed)",
+      "profilesNamePlaceholder": "Profile name",
+      "profilesSaveCurrent": "Save current",
+      "profilesCreateEmpty": "New empty",
+      "profilesRename": "Rename",
+      "profilesSaveRename": "Save",
+      "profilesDelete": "Delete",
+      "profilesRenameAria": "Rename profile {{name}}"
     },
     "reticulumPeers": {
       "hops": "홉",

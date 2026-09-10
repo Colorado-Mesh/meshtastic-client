@@ -106,6 +106,7 @@ describe('update.sh Reticulum stack functionality check', () => {
     expect(result.status, result.stderr || result.stdout).toBe(0);
     expect(result.stdout).toContain('RATSPEAK_STACK_PR_ENTRIES:');
     expect(result.stdout).toContain('ratspeak/rsReticulum|26|');
+    expect(result.stdout).toContain('Colorado-Mesh/rsNomad|8|');
     expect(result.stdout).toContain('ratspeak/rsLXMF|7|');
     expect(result.stdout).toContain('RATSPEAK_RELEASE_WATCH_ENTRIES:');
     expect(result.stdout).toContain('ratspeak/rsLXST||rsLXST voice (lxst-telephony)|v0.2.0');
@@ -130,6 +131,7 @@ describe('update.sh Reticulum stack functionality check', () => {
     expect(updateScript).toContain('RATSPEAK_STACK_PR_ENTRIES');
     expect(updateScript).toContain('ratspeak/rsReticulum|26|');
     expect(updateScript).toContain('ratspeak/rsLXMF|7|');
+    expect(updateScript).toContain('Colorado-Mesh/rsNomad|8|');
     expect(updateScript).toContain('ratspeak-stack-ci-pins.env');
     const patchesCall = updateScript.lastIndexOf('\ncheck_ratspeak_patches\n');
     const stackPrsCall = updateScript.lastIndexOf('\ncheck_ratspeak_stack_prs\n');

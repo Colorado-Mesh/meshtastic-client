@@ -53,7 +53,7 @@ use super::lxmf_delivery::{
 };
 use super::nomad_file::{nomad_file_name_from_metadata_or_path, nomad_file_name_from_path};
 use super::nomad_link_errors::map_nomad_link_error;
-use super::nomad_request_payload::nomad_page_request_payload;
+use super::nomad_request_payload::{nomad_media_request_payload, nomad_page_request_payload};
 use super::nomad_server::NomadServerHandle;
 use super::nomad_timeouts;
 use super::packet_log::{
@@ -1699,6 +1699,80 @@ impl LiveBridge {
                 }
                 let file_name =
                     nomad_file_name_from_metadata_or_path(meta.resource_metadata.as_deref(), path);
+                let content_base64 =
+                    base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
+                let mut out = serde_json::json!({
+                    "ok": true,
+                    "file_name": file_name,
+                    "content_base64": content_base64,
+                });
+                merge_nomad_remote_ok_fields(&mut out, &meta);
+                out
+            }
+            Err(e) => nomad_remote_error_json(&e),
+        }
+    }
+
+    /// Fetch NomadNet 1.4.1 in-page WebP via Link query path `/media` with
+    /// `{path, key: nil}` payload (not the `/file/...` route).
+    /// See `fetch_nomad_file` for `hash_hex` / `identity_hash_hex` semantics.
+    pub async fn fetch_nomad_media(
+        &self,
+        hash_hex: &str,
+        identity_hash_hex: Option<&str>,
+        media_path: &str,
+        interfaces: &[InterfaceRow],
+        force_path_refresh: bool,
+    ) -> serde_json::Value {
+        if let Some(local) = self
+            .nomad_server
+            .try_read_local_media(hash_hex, media_path)
+            .await
+        {
+            return match local {
+                Ok(bytes) => {
+                    if bytes.len() > DEFAULT_MAX_FILE_BYTES {
+                        return serde_json::json!({ "ok": false, "error": "response_too_large" });
+                    }
+                    let file_name = nomad_file_name_from_path(media_path);
+                    let content_base64 =
+                        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
+                    serde_json::json!({
+                        "ok": true,
+                        "file_name": file_name,
+                        "content_base64": content_base64,
+                    })
+                }
+                Err(e) => serde_json::json!({ "ok": false, "error": e }),
+            };
+        }
+        let Some(identity_hash_hex) = identity_hash_hex.filter(|s| !s.is_empty()) else {
+            return serde_json::json!({ "ok": false, "error": "missing_identity_hash" });
+        };
+        if self.is_own_identity_hash(identity_hash_hex) {
+            return serde_json::json!({ "ok": false, "error": "nomad_not_serving" });
+        }
+        let payload = nomad_media_request_payload(media_path);
+        match self
+            .query_nomad_node(
+                hash_hex,
+                identity_hash_hex,
+                "/media",
+                payload,
+                interfaces,
+                force_path_refresh,
+                None,
+            )
+            .await
+        {
+            Ok((bytes, meta)) => {
+                if bytes.len() > DEFAULT_MAX_FILE_BYTES {
+                    return nomad_response_too_large_json(&meta);
+                }
+                let file_name = nomad_file_name_from_metadata_or_path(
+                    meta.resource_metadata.as_deref(),
+                    media_path,
+                );
                 let content_base64 =
                     base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
                 let mut out = serde_json::json!({
